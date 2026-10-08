@@ -334,11 +334,23 @@ class TodoReminderService:
         """当前条目（面板打开时以服务内副本为准，保存路径仍走 store）。"""
         return list(self._items)
 
-    def set_items(self, items: list[dict], *, save: bool = True) -> None:
-        """面板保存入口：整体替换条目并立即落盘。"""
-        self._items = clean_todo_items(items)
-        if save:
-            self._store.save(self._items)
+    def set_items(self, items: list[dict], *, save: bool = True) -> bool:
+        """面板保存入口：整体替换条目并立即落盘。返回是否成功落盘。
+
+        **落盘成功才提交内存态**（失败返回 False，内存保持原样）：``_items`` 是
+        提醒调度的真值源，留一份"没落盘却被当成已保存"的副本会出两层问题——提醒
+        会为下次重读就消失的条目按时冒泡，且面板仍停在新建态（编辑器不关），用户
+        再点一次保存就往内存里追加第二条。调用方（面板）据返回值保住草稿并提示。
+        """
+        cleaned = clean_todo_items(items)
+        if save and not self._store.save(cleaned):
+            return False
+        self._items = cleaned
+        return True
+
+    def store_path(self):
+        """条目文件路径（保存失败提示要告诉用户改哪里）。"""
+        return self._store.path
 
     def _on_tick(self, now: datetime | None = None) -> None:
         if not self._prefs.get("enabled"):

@@ -610,6 +610,79 @@ def test_panel_edit_updates_item_and_clears_slots(tmp_path):
     assert TodoStore(todo_items_path(app.config.dir)).load()[0]["time"] == "11:00"
 
 
+def _block_item_writes(config_dir: Path) -> Path:
+    """让条目落盘真实失败：把 todo_items.json 做成**目录**（原子替换必报错）。
+
+    不打桩 ``TodoStore.save``——失败必须来自真实文件系统（Windows 上
+    ``os.replace`` 撞目录是 WinError 5，POSIX 是 IsADirectoryError，两者都是
+    产品代码捕获的那类 OSError）。
+    """
+    path = todo_items_path(config_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _capture_warnings(monkeypatch) -> list[tuple[str, str]]:
+    """捕获 QMessageBox.warning（conftest 已全局置 no-op，这里要断言内容）。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    calls: list[tuple[str, str]] = []
+
+    def _warning(parent, title, text, *args, **kwargs):
+        calls.append((str(title), str(text)))
+        return None
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(_warning))
+    return calls
+
+
+def test_panel_save_failure_keeps_editor_and_draft(tmp_path, monkeypatch):
+    """条目落盘失败：编辑器不关、草稿还在、明确提示未保存。
+
+    旧行为：``set_items`` 不检查 ``TodoStore.save`` 的 False，面板照常
+    ``close_editor()`` + ``reload_items()``，用户看到的是"保存成功"的样子；
+    下一次 ``apply_config()``（设置保存/重启）用磁盘覆盖内存，条目凭空消失。
+    契约对齐设置保存失败（modern_settings_dialog：不关窗 + 明确告知未落盘）。
+    """
+    calls = _capture_warnings(monkeypatch)
+    app, panel = _make_panel(tmp_path)
+    blocked = _block_item_writes(app.config.dir)
+
+    panel.begin_add()
+    panel._title_edit.setText("买奶")
+    panel._save_btn.click()
+
+    assert not panel._editor_card.isHidden(), "保存失败时编辑器必须留在原地（草稿不丢）"
+    assert panel._title_edit.text() == "买奶", "草稿不得被清掉"
+    assert calls and calls[-1][0] == "保存失败", f"必须给出可见失败提示，实际 {calls}"
+    assert str(blocked) in calls[-1][1], "提示要告诉用户条目文件在哪"
+    # 内存态与磁盘同真值：不留"看着已保存、下次重读就消失"的幽灵条目
+    assert app.todo_service.items() == []
+    app.todo_service.apply_config()
+    assert app.todo_service.items() == []
+
+
+def test_panel_save_retry_after_failure_writes_once(tmp_path, monkeypatch):
+    """障碍解除后重试：草稿一键落盘，且只落一条（失败未提交不留残留）。"""
+    calls = _capture_warnings(monkeypatch)
+    app, panel = _make_panel(tmp_path)
+    blocked = _block_item_writes(app.config.dir)
+
+    panel.begin_add()
+    panel._title_edit.setText("买奶")
+    panel._save_btn.click()
+    assert app.todo_service.items() == []
+    failed_calls = len(calls)
+
+    blocked.rmdir()  # 修好磁盘侧（换成可写文件路径）
+    panel._save_btn.click()
+
+    assert len(calls) == failed_calls, "落盘成功不该再提示失败"
+    assert panel._editor_card.isHidden(), "保存成功后编辑器照常收起"
+    assert [i["title"] for i in app.todo_service.items()] == ["买奶"]
+    assert [i["title"] for i in TodoStore(todo_items_path(app.config.dir)).load()] == ["买奶"]
+
+
 # ------------------------------------------------------------ 设置页偏好
 
 def test_settings_roundtrip_todo_prefs(tmp_path):

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """待办管理面板：右键菜单「待办提醒」打开的非模态对话框。
 
 视觉上沿用 Shared UX Contract 令牌（references/visual-system.md）：卡片
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QTimeEdit,
@@ -272,8 +273,24 @@ class TodoPanelDialog(QDialog):
     def _items(self) -> list[dict]:
         return self._app.todo_service.items()
 
-    def _save_items(self, items: list[dict]) -> None:
-        self._app.todo_service.set_items(items)
+    def _save_items(self, items: list[dict]) -> bool:
+        return bool(self._app.todo_service.set_items(items))
+
+    def _persist_or_warn(self, items: list[dict]) -> bool:
+        """落盘条目；失败给出可见提示并返回 False（同设置保存失败的契约）。
+
+        提示里带上条目文件路径：写不进去的原因九成在磁盘侧（目录被占、只读、
+        同名目录、空间不足），用户知道去哪看才修得动。
+        """
+        if self._save_items(items):
+            return True
+        QMessageBox.warning(
+            self,
+            "保存失败",
+            "待办未能写入磁盘，这次改动没有保存。\n\n条目文件："
+            + str(self._app.todo_service.store_path()),
+        )
+        return False
 
     def reload_items(self) -> None:
         """重建条目行并刷新空态/下一条摘要（增删改与外部变化统一入口）。"""
@@ -371,11 +388,14 @@ class TodoPanelDialog(QDialog):
                 item = dict(item)
                 item["enabled"] = checked
             items.append(item)
-        self._save_items(items)
+        self._persist_or_warn(items)
         self.reload_items()
 
     def delete_item(self, item_id: str) -> None:
-        self._save_items([i for i in self._items() if i["id"] != item_id])
+        if not self._persist_or_warn([i for i in self._items() if i["id"] != item_id]):
+            # 没删掉：别收编辑器（它还在编辑这条，收起等于让用户以为删成功了）
+            self.reload_items()
+            return
         if self._editing_id == item_id:
             self.close_editor()
         self.reload_items()
@@ -444,9 +464,15 @@ class TodoPanelDialog(QDialog):
                     "fired_due_slot": None,
                 })
                 merged.append(item)
-            self._save_items(merged)
+            saved = self._persist_or_warn(merged)
         else:
-            self._save_items(items + [new_todo_item(title, kind, time_text, date_text)])
+            saved = self._persist_or_warn(
+                items + [new_todo_item(title, kind, time_text, date_text)]
+            )
+        if not saved:
+            # 没落盘就不收编辑器：用户输入原样留在控件里，可以原地改路径后重试
+            # （同设置对话框"保存失败不关窗、草稿留在控件里"的契约）。
+            return
         self.close_editor()
         self.reload_items()
 
