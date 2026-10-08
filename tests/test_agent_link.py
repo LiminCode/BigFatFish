@@ -1422,6 +1422,41 @@ class TestAgentLinkBubbles:
         assert "claude" not in mgr._done_pending
         assert any("确认一下" in b for b in bubbles)
 
+    def test_fired_done_timer_is_recycled(self, tmp_path):
+        """9b. 自然到期的确认定时器必须回收（上游 dce895ff：每轮泄漏一个已停表 QObject）。
+
+        ``_schedule_done_check`` 每轮新建 ``QTimer(self)``；取消路径（``_cancel_done_check``）
+        有 stop + deleteLater，而自然到期路径（``_fire_done``）此前只从 ``_done_pending``
+        里 pop——定时器对象留在 manager 的子对象表里，长跑进程按回合数线性增长。
+        """
+        from PySide6.QtCore import QTimer
+
+        app = QApplication.instance()
+        mgr, win, bubbles, clock = self._make_mgr(tmp_path)
+
+        def run_round():
+            clock[0] += 10.0                        # 越过冷却，每轮真的走到弹泡
+            mgr._on_agent_state("claude", "working")
+            mgr._on_agent_state("claude", "idle")
+            assert "claude" in mgr._done_pending
+            deadline = time.monotonic() + 5.0       # 等它自然到期（不手动 _fire_done）
+            while "claude" in mgr._done_pending and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.01)
+            assert "claude" not in mgr._done_pending, "确认必须真的自然到期（否则本条只能证明取消路径）"
+
+        try:
+            run_round()                             # 预热：懒建对象先建出来
+            app.processEvents()
+            baseline = len(mgr.findChildren(QTimer))
+            for _ in range(5):
+                run_round()
+            app.processEvents()                     # 让 deleteLater 落账
+            assert len(mgr.findChildren(QTimer)) <= baseline, \
+                f"自然到期路径每轮泄漏一个 QTimer：{baseline} → {len(mgr.findChildren(QTimer))}"
+        finally:
+            mgr.shutdown()
+
     def test_done_restores_idle_anim_unless_others_busy(self, tmp_path):
         """10. 完成确认后恢复待机动画（Claude 没有 idle 事件，靠这步回待机）；
         另有 Agent 在忙时不恢复（避免顶掉对方的工作动画）。done 门开 1.0：
