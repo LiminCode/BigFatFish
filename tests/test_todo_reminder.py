@@ -162,6 +162,50 @@ def test_daily_rolls_over_next_day():
     assert stamped2[0]["fired_due_slot"] == "2026-09-05T10:00#due"
 
 
+def test_daily_lead_window_crosses_midnight():
+    """daily 00:02 + lead 5：当天 23:57 就该发提前提醒，不等到 00:00 补发。
+
+    旧行为：daily 无条件用 ``now.date()`` 组 due，23:57 算到的是**当天已过**的
+    00:02（提前档 23:57 也在昨天），两档都走"出窗静默盖戳" → 真正该提醒的次日
+    00:02 提前档要等过了午夜才补发，迟了整整 3 分钟（用户看到的提醒已经贴着正点）。
+    """
+    item = _daily("00:02")
+    fires, stamped = advance_todo_state(
+        [item], _prefs(lead=5), datetime(2026, 9, 4, 23, 57)
+    )
+    assert [f["phase"] for f in fires] == ["lead"], "23:57 必须发次日 00:02 的提前提醒"
+    # 提前档的盖戳键按触发时刻（23:57）落在当天，午夜后重算仍是同一个键
+    assert stamped[0]["fired_lead_slot"] == "2026-09-04T00:02#lead"
+    assert stamped[0]["fired_due_slot"] is None, "正点档还早，不得提前盖戳"
+
+    # 00:00 不重复发（同一个提前档只盖一次戳）
+    midnight_fires, _ = advance_todo_state(stamped, _prefs(lead=5), datetime(2026, 9, 5, 0, 0))
+    assert midnight_fires == []
+    # due 正点照常
+    due_fires, due_stamped = advance_todo_state(
+        stamped, _prefs(lead=5), datetime(2026, 9, 5, 0, 2)
+    )
+    assert [f["phase"] for f in due_fires] == ["due"]
+    assert due_stamped[0]["fired_due_slot"] == "2026-09-05T00:02#due"
+
+
+def test_daily_lead_zero_does_not_use_next_day():
+    """lead=0 的 daily 不受跨午夜取次日影响：当天正点档过期仍按原语义静默盖戳。"""
+    fires, stamped = advance_todo_state([_daily("00:02")], _prefs(lead=0), datetime(2026, 9, 4, 23, 57))
+    assert fires == []
+    assert stamped[0]["fired_due_slot"] == "2026-09-04T00:02#due"
+
+
+def test_once_cross_midnight_behavior_unchanged():
+    """once 不受跨午夜改动影响：用条目自己的日期，过期即静默盖戳。"""
+    fires, stamped = advance_todo_state(
+        [_once("2026-09-04", "00:02")], _prefs(lead=5), datetime(2026, 9, 4, 23, 57)
+    )
+    assert fires == []
+    assert stamped[0]["fired_lead_slot"] == "2026-09-03T00:02#lead"
+    assert stamped[0]["fired_due_slot"] == "2026-09-04T00:02#due"
+
+
 def test_once_archives_after_due_plus_grace():
     fires, stamped = advance_todo_state(
         [_once()], _prefs(lead=0), datetime(2026, 9, 4, 10, DEFAULT_GRACE_MINUTES + 1)
@@ -214,6 +258,22 @@ def test_summarize_next_once_and_empty():
     text = summarize_next([_once(date_text="2026-09-06")], NOW)
     assert "9月6日" in text
     assert summarize_next([], NOW) == ""
+
+
+def test_summarize_next_daily_cross_midnight_shows_tomorrow():
+    """跨午夜的每日待办：「下一条」必须指向次日那次，不能整段空着。
+
+    23:57 看每日 00:02：当天那次凌晨就过了（戳可能已落盘、也可能还没），旧实现
+    只认 fired_due_slot，两种情形下都 continue 掉，面板"下一条"空白——而这正是
+    次日那次提前提醒刚发出的时刻，用户最需要看到它。
+    """
+    assert "明天" in summarize_next([_daily(time="00:02")], datetime(2026, 9, 4, 23, 57))
+    # 当天那次的 due 戳已落盘：同样指向次日
+    stamped = _daily(time="00:02")
+    stamped["fired_due_slot"] = "2026-09-04T00:02#due"
+    assert "明天" in summarize_next([stamped], datetime(2026, 9, 4, 23, 57))
+    # 当天那次还没到点：照常显示今天（"每天"前缀）
+    assert summarize_next([_daily(time="23:00")], datetime(2026, 9, 4, 22, 0)).startswith("每天")
 
 
 # ------------------------------------------------------------ TodoStore
@@ -349,6 +409,35 @@ def test_service_tick_notifies_when_settings_open(tmp_path):
     service._on_tick(now=datetime(2026, 9, 4, 10, 6))
     assert app.win.bubbles == []
     assert len(app.notifies) == 1
+
+
+def test_service_daily_cross_midnight_lead_fires_before_midnight(tmp_path):
+    """服务级（真调度服务 + 真条目存储 + 真气泡路径）：23:57 就该冒提前提醒。
+
+    纯函数用例钉的是判定，这条钉的是它落到用户眼前的那一步：23:57 的 tick 冒泡、
+    盖戳落盘，过午夜后重启也不重复（提前档只发一次），正点档照常。
+    """
+    _qapp()
+    app = _FakeApp(tmp_path, visible=True)
+    store = TodoStore(todo_items_path(app.config.dir))
+    store.save([new_todo_item("吃药", "daily", "00:02")])
+    app.config.set("todo_reminder_lead_minutes", 5)
+    service = TodoReminderService(app)
+    service.apply_config()
+
+    service._on_tick(now=datetime(2026, 9, 4, 23, 57))
+    assert len(app.win.bubbles) == 1, "当天 23:57 必须冒提前提醒（不是等到 00:00）"
+    assert "吃药" in app.win.bubbles[0]
+    assert store.load()[0]["fired_lead_slot"] == "2026-09-04T00:02#lead", "盖戳需落盘"
+
+    # 过午夜重启：同一个提前档不得补发第二次
+    service2 = TodoReminderService(app)
+    service2.apply_config()
+    service2._on_tick(now=datetime(2026, 9, 5, 0, 0))
+    assert len(app.win.bubbles) == 1
+    # 正点照常提醒
+    service2._on_tick(now=datetime(2026, 9, 5, 0, 2))
+    assert len(app.win.bubbles) == 2
 
 
 def test_service_notify_gated_by_system_notifications(tmp_path):
