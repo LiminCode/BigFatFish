@@ -171,8 +171,9 @@ unlink 而不是一整趟编码。成本对比见 PR 报告的性能分析。
   摘出库（``setParent(None)`` + 模块级强引用）持有到跑完——QThread 带着活线程被
   销毁是 Qt 的 abort，绝不允许；
 - 无 ffmpeg exe：编码静默 no-op，但世代清扫照做（纯本地 I/O，不依赖 ffmpeg）；
-- Windows 下 ffmpeg 子进程 ``creationflags=BELOW_NORMAL_PRIORITY_CLASS``
-  （POSIX 忽略），一次性重编码的 CPU 让给交互；
+- Windows 下 ffmpeg 子进程 ``creationflags=BELOW_NORMAL_PRIORITY_CLASS |
+  CREATE_NO_WINDOW``（POSIX 忽略）：一次性重编码的 CPU 让给交互；无控制台宿主
+  （pythonw / 打包 GUI exe）下不弹空白控制台窗口；
 - ``PET_FRAMESEQ=0`` 整体禁用供给（dev 逃生门，不进 Config/设置页/schema）。
 
 线程模型：``FrameseqProvisionWorker`` 是 library 拥有的 QThread（QObject
@@ -1181,10 +1182,16 @@ def ffmpeg_exe() -> str | None:
 
 
 def _creation_flags() -> int:
-    """Windows：ffmpeg 低于正常优先级（POSIX 忽略，返回 0）。"""
+    """Windows：ffmpeg 低于正常优先级、且不新开控制台窗口（POSIX 忽略，返回 0）。
+
+    ``CREATE_NO_WINDOW``：宿主没有控制台（``pythonw -m pet`` / 打包 GUI exe）时，
+    不带它 Windows 会给这条 ffmpeg 新开一个可见控制台——每转一段 clip 弹一个空白
+    终端窗口。输出本来就全走管道，窗口里什么都没有。
+    """
     if os.name != "nt":
         return 0
-    return int(getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+    return (int(getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
+            | int(getattr(subprocess, "CREATE_NO_WINDOW", 0)))
 
 
 def _ffmpeg_argv(exe: str, webm: Path, tmp_dir: Path) -> list[str]:
