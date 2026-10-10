@@ -56,6 +56,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -1974,6 +1975,37 @@ def test_convert_clip_rechecks_caller_cancel_after_probe_before_spawn(tmp_path, 
     assert spawned == [], "探针之后必须复查取消位：取消后不得再派生转换进程"
     assert (converted, err) == (False, "")
     assert not tmp_dir.exists()
+
+
+def test_convert_clip_spawns_ffmpeg_without_console_window(tmp_path, monkeypatch):
+    """无控制台宿主（``pythonw -m pet`` / 打包 GUI exe）派生转换 ffmpeg 不得弹窗。
+
+    宿主自己没有控制台时，Windows 会给控制台子进程新开一个；这条 ffmpeg 带
+    ``-v error -nostdin`` 且输出走管道，于是用户每转一段 clip 就看到一个空白终端
+    窗口闪出来（实机：pythonw 启动、约 30s 一次）。从带控制台的 ``python -m pet``
+    启动时子进程继承控制台，所以看不到。桩 ``_popen`` 只取派生参数，不真起进程。
+    """
+    videos, frameseq = _make_pack(tmp_path, {"idle": ["x.webm"]})
+    webm = videos / "idle" / "x.webm"
+    out_dir = fp.clip_out_dir(webm, videos, frameseq)
+    seen: list = []
+
+    def _capture(argv, **kwargs):
+        seen.append(kwargs)
+        raise OSError("桩：只看派生参数")
+
+    monkeypatch.setattr(fp, "_popen", _capture)
+
+    converted, _err = fp.convert_clip(webm, out_dir, exe="fake-ffmpeg",
+                                      fps_probe=lambda _webm: 24.0)
+
+    assert converted is False and len(seen) == 1
+    flags = seen[0]["creationflags"]
+    if os.name == "nt":
+        assert flags & subprocess.CREATE_NO_WINDOW, "转换 ffmpeg 必须带 CREATE_NO_WINDOW"
+        assert flags & subprocess.BELOW_NORMAL_PRIORITY_CLASS, "低优先级不许被顺手改掉"
+    else:
+        assert flags == 0
 
 
 class _GatedConvertProc:
