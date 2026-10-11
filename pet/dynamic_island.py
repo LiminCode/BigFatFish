@@ -23,7 +23,8 @@ from PySide6.QtCore import (
     QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QColor, QGuiApplication, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QTextLayout, QTextOption,
 )
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -41,6 +42,10 @@ _STRIP_THICKNESS = 16
 _STRIP_SIDE = 64  # 左右停靠时竖条的长度
 _CARD_WIDTH = 340
 _CARD_HEIGHT = 148
+_CARD_MARGIN_X = 16          # 卡片内容的左右内边距
+_CARD_HEADLINE_LINES = 2     # 标题行最多折几行
+_CARD_DETAIL_LINES = 3       # 详情行最多折几行（再多就省略，悬停看全文）
+_CARD_MESSAGE_LINES = 2      # 最近消息最多折几行
 _CARD_AUTO_COLLAPSE_MS = 15_000
 _DOCK_BACK_MS = 800
 _BREATHE_AFTER_EVENT_S = 5.0
@@ -160,6 +165,39 @@ def strip_rect_for(rect: QRect, edge: str, available: QRect) -> QRect:
                                      available.bottom() - length + 1))
         return QRect(x, y, _STRIP_THICKNESS, length)
     return QRect(rect)
+
+
+def wrap_elided(text: str, font: QFont, width: int, max_lines: int) -> list[str]:
+    """把文本按宽度折成至多 ``max_lines`` 行，每一行都不超过 ``width``；
+    还放不下的部分在最后一行用省略号收尾。
+
+    QLabel 自带的换行只在词边界断（一长串英文 / 路径照样溢出），也不会省略，
+    所以逐行排版后把结果交给它原样显示。
+    """
+    width = max(1, int(width))
+    option = QTextOption()
+    option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    segments: list[str] = []
+    for paragraph in str(text or "").split("\n"):
+        layout = QTextLayout(paragraph, font)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(width)
+            segment = paragraph[line.textStart():line.textStart() + line.textLength()]
+            if segment.strip():
+                segments.append(segment)
+        layout.endLayout()
+        if segments:
+            segments[-1] += " "      # 段落之间：省略时接成一行要留个空
+    max_lines = max(1, int(max_lines))
+    if len(segments) > max_lines:
+        tail = "".join(segments[max_lines - 1:]).strip()
+        segments[max_lines - 1:] = [QFontMetrics(font).elidedText(tail, Qt.TextElideMode.ElideRight, width)]
+    return [segment.strip() for segment in segments]
 
 
 def _cfg_dict(config) -> dict:
@@ -438,6 +476,7 @@ class DynamicIsland(QWidget):
         counts = [(str(tone), str(text)) for tone, text in (counts or []) if str(text)]
         if counts != self._session_counts:
             self._session_counts = counts
+            self._sync_card_labels()    # 胶囊宽度变了：卡片文字按新宽度重排
             self._refresh()
 
     def set_agent_active(self, active: bool) -> None:
@@ -567,20 +606,23 @@ class DynamicIsland(QWidget):
 
     # ------------------------------------------------------------ 卡片
     def _build_card(self) -> None:
-        """展开卡片：余额/峰谷两行 + 最近消息 + 三个快捷按钮。默认隐藏。"""
+        """展开卡片：标题行 + 详情行（会话汇总或余额/峰谷）+ 最近消息 + 三个快捷按钮。默认隐藏。"""
         self._card_box = QWidget(self)
         self._card_box.setObjectName("dynamic-island-card")
         # 卡片底板由窗口 paintEvent 统一绘制（圆角连续），控件容器自身透明
         self._card_box.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._card_box.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(self._card_box)
-        layout.setContentsMargins(16, 6, 16, 12)
+        layout.setContentsMargins(_CARD_MARGIN_X, 6, _CARD_MARGIN_X, 12)
         layout.setSpacing(4)
         self._card_balance_label = QLabel(self._card_box)
         self._card_tier_label = QLabel(self._card_box)
         self._card_message_label = QLabel(self._card_box)
-        self._card_message_label.setWordWrap(True)
-        self._card_message_label.setMaximumHeight(34)
+        # 三行文字都是外来内容（会话标题 / 余额文案 / AI 回复）：按纯文本原样显示
+        # （带尖括号不当富文本），折行由 wrap_elided 排好（见 _sync_card_labels）
+        for label in (self._card_balance_label, self._card_tier_label,
+                      self._card_message_label):
+            label.setTextFormat(Qt.TextFormat.PlainText)
         for label in (self._card_balance_label, self._card_tier_label,
                       self._card_message_label):
             layout.addWidget(label)
@@ -622,14 +664,18 @@ class DynamicIsland(QWidget):
         for btn in (self._card_toggle_btn, self._card_chat_btn,
                     self._card_settings_btn):
             btn.setStyleSheet(button_style)
-        self._card_balance_label.setText(self._balance_text)
-        self._card_tier_label.setText(self._balance_tier_text)
-        message = self._last_message or "（暂无最近消息）"
-        # 摘要最多两行，超出省略（标签限高 34px 配合 wordWrap）
-        metrics = self._card_message_label.fontMetrics()
-        elided = metrics.elidedText(
-            message, Qt.TextElideMode.ElideRight, max(40, (_CARD_WIDTH - 32) * 2))
-        self._card_message_label.setText(elided)
+        # 标题行 / 详情行：放不下就折行（卡片随之长高，见 _card_height），绝不让文字
+        # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
+        text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2
+        for label, text, max_lines in (
+                (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
+                (self._card_tier_label, self._balance_tier_text, _CARD_DETAIL_LINES),
+                (self._card_message_label, self._last_message or "（暂无最近消息）", _CARD_MESSAGE_LINES)):
+            label.ensurePolished()      # 字号来自样式表：排版前要先落到 font() 上
+            lines = wrap_elided(text, label.font(), text_width, max_lines)
+            label.setText("\n".join(lines))
+            if label is not self._card_message_label:   # 最近消息在聊天窗里看全文，不挂提示
+                label.setToolTip(text if lines and lines[-1].endswith("…") else "")
         self._card_toggle_btn.setText("隐藏桌宠" if self._pet_visible else "显示桌宠")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -993,8 +1039,17 @@ class DynamicIsland(QWidget):
     def _rest_size(self) -> QSize:
         width = self._capsule_width()
         if self._mode == "expanded":
-            return QSize(max(width, _CARD_WIDTH), _CAPSULE_HEIGHT + _CARD_HEIGHT)
+            return QSize(max(width, _CARD_WIDTH), _CAPSULE_HEIGHT + self._card_height())
         return QSize(width, _CAPSULE_HEIGHT)
+
+    def _card_width(self) -> int:
+        """展开后的窗口宽度：卡片最窄 ``_CARD_WIDTH``，胶囊更宽时跟胶囊走。"""
+        return max(self._capsule_width(), _CARD_WIDTH)
+
+    def _card_height(self) -> int:
+        """卡片高度：默认 ``_CARD_HEIGHT``；标题 / 详情折成多行时按内容长高。"""
+        # 三行文字都是排好的显式多行（不靠 QLabel 自动换行），布局的 sizeHint 就是真实所需
+        return max(_CARD_HEIGHT, self._card_box.layout().sizeHint().height())
 
     def _apply_fixed_size(self) -> None:
         size = self._rest_size()
