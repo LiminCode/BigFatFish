@@ -502,6 +502,18 @@ class SpriteMenuFacade:
     def on_clear_spawned_pets(self) -> None:
         self._shell.clear_spawned_pets()
 
+    @property
+    def on_rally_pets(self):
+        """「护驾」：把所有小肥鱼叫到主肥鱼身边。只有主肥鱼的菜单有（返回 None =
+        该入口不出现，见 registry 的 ``_callback_available``）。"""
+        rally = getattr(self._shell, "rally_pets", None)
+        return rally if self._is_main_sprite and callable(rally) else None
+
+    @property
+    def has_small_pets(self) -> bool:
+        """场上有没有小肥鱼（手动生的 / 会话小鱼）：没有时「护驾」置灰。"""
+        return bool(getattr(self._shell, "_spawned", None))
+
     def on_open_settings(self) -> None:
         """打开设置页（D13：按被点 sprite 的 config 身份传给独立设置进程）。"""
         opener = getattr(self._shell, "open_settings_for", None)

@@ -30,6 +30,7 @@ from .shared import (
     add_no_move,
     add_on_top,
     add_quit,
+    add_rally_pets,
     add_return_corner,
     add_spawn_pet,
     add_template_switch,
@@ -64,6 +65,7 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     add_no_move(menu, pet, icons=False)
     add_autostart(menu, icons=False)
     add_spawn_pet(menu, pet)
+    add_rally_pets(menu, pet, icons=False)
     add_clear_spawned_pets(menu, pet, icons=False)
     add_golden_spin(menu, pet, icons=False)
     add_agent_cost(menu, pet, icons=False)
