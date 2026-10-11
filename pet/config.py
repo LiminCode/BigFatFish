@@ -82,7 +82,9 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 # 用户旧布局里残留的该节点在此一次性剔除——否则菜单编辑器会把它一直回存成「此平台
 # 不可用」，旧入口就没有干净去向（docs/SETTINGS-CHANGE-GATES.md「旧 key/旧入口有去向」）。
 # 同名 action id 若将来重新引入，删掉这里即可。
-_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through"})
+# 2026-10-11：在线更新整个移除（从源码运行的 fork，查的是上游发布版、装的是上游
+# 安装包），「检查更新」「夸克网盘下载」同样在此剔除。
+_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"})
 
 
 def _drop_removed_menu_actions(nodes):

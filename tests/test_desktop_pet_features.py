@@ -821,7 +821,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         on_open_chat = lambda self: None
         on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
-        on_check_update = lambda self, parent=None: None
         on_open_chat_settings = lambda self: None
         on_open_legacy_settings = lambda self: None
         on_open_modern_settings = lambda self: None
@@ -1384,7 +1383,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert isinstance(dialog.sidebar, QListWidget)
     assert isinstance(dialog.pages, QStackedWidget)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别", "更新"]
+    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_pages
     assert dialog.pages.count() == len(expected_pages)
     assert dialog.search_edit.placeholderText() == "搜索设置…"
@@ -3059,65 +3058,6 @@ def test_cleanup_old_pet_logs(tmp_path):
     assert _cleanup_old_pet_logs(tmp_path) == 2
     assert not old.exists() and not old_backup.exists()
     assert fresh.exists() and other.exists()
-
-
-def test_check_update_failure_reports_and_reentry_guard(tmp_path, monkeypatch):
-    """审查 P1-01/GLM-L3 回归：更新检查线程异常收口回 GUI + 重入防护。
-
-    （修复批复审 P2：payload 不再带重复前缀；重入必须在请求进行中验证，
-    且完成后必须能再次发起。）
-    """
-    import threading
-    import time
-
-    from PySide6.QtWidgets import QApplication
-
-    from pet import app as app_mod
-    from pet.app import AppShell
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    owner = AppShell(app, Config(tmp_path))
-
-    gate = threading.Event()
-
-    def boom():
-        gate.wait(5)
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(app_mod.updater, "latest_release", boom)
-    owner.check_update(parent=None)
-    first_bridge = owner._update_bridge
-    results = []
-    first_bridge.done.connect(lambda ok, payload: results.append((bool(ok), str(payload))))
-
-    # 请求进行中再次调用 → 闸门拦截，不换 bridge、不起新线程
-    owner.check_update(parent=None)
-    assert owner._update_bridge is first_bridge
-    assert owner._update_checking is True
-
-    gate.set()
-    deadline = time.monotonic() + 5
-    while not results and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
-    assert results == [(False, "boom")]  # 前缀由 UI 层统一加，payload 不带
-
-    # 完成后闸门放行，可再次发起
-    deadline = time.monotonic() + 5
-    while owner._update_checking and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
-    assert owner._update_checking is False
-    gate.clear()
-    owner.check_update(parent=None)
-    assert owner._update_bridge is not first_bridge
-    # 收尾：放行第二个线程，避免泄漏到后续测试
-    gate.set()
-    deadline = time.monotonic() + 5
-    while owner._update_checking and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
 
 
 def test_modern_settings_reject_saves_config(tmp_path):

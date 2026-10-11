@@ -387,7 +387,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self.on_open_modern_chat = None
         self.on_open_chat_settings = None
         self.on_show_balance = None
-        self.on_check_update = None
         self.on_look_synced = None
         self.on_look_screen = None
         self.on_open_legacy_settings = None

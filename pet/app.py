@@ -41,7 +41,6 @@ from . import click_sound
 from . import overlay_instance_gate as overlay_gate_mod
 from . import self_talk_voice
 from . import slot_manager as slot_manager_mod
-from . import updater
 from . import webm_clip as webm_clip_mod
 from .config import APP_DIR_NAME, Config, _default_base
 from .context_menus.icons import vector_menu_icon
@@ -248,39 +247,6 @@ class _OverlayChatHost:
         sprite = getattr(self._shell, "sprite", None)
         if overlay is not None and sprite is not None:
             overlay.remove_position_listener(sprite, listener)
-
-
-class _UpdateBridge(_BackgroundResult):
-    def __init__(self, parent, owner=None):
-        super().__init__()
-        self.parent = parent
-        self.owner = owner
-        self.done.connect(self._show)
-
-    def _show(self, ok: bool, payload) -> None:
-        # 异步回调可能晚于窗口销毁，先探活再触碰 Qt 对象
-        alive = self.parent is not None and shiboken6.isValid(self.parent)
-        if not ok:
-            if alive:
-                self.parent.show_bubble(f"检查更新失败：{payload}", duration_ms=7000)
-            return
-        release = payload
-        tag = str(release.get("version", ""))
-        if not updater.is_newer(tag):
-            if alive:
-                self.parent.show_bubble(f"已经是最新版本（{updater.APP_VERSION}）啦")
-            return
-        if alive:
-            self.parent.show_bubble(
-                f"发现新版本 v{tag}（当前 {updater.APP_VERSION}）。"
-                "正在打开“更新”页，可直接下载并安装。",
-                duration_ms=9000,
-            )
-            owner = self.owner
-            instance = getattr(owner, "instance", None) if owner is not None else None
-            open_settings = getattr(instance, "open_modern_settings", None)
-            if callable(open_settings):
-                QTimer.singleShot(0, lambda: open_settings(initial_page="更新"))
 
 
 # 批5.2 §③.7：多窗日志用 [slot-N] 前缀区分。单进程多窗共享一份日志文件，
@@ -516,7 +482,6 @@ class PetInstance:
         win.on_open_quick_chat = self._slot_wrap(self.open_quick_chat) if self.enable_chat else None
         win.on_open_chat_settings = self._slot_wrap(self.open_chat_settings) if self.enable_chat else None
         win.on_show_balance = self._slot_wrap(self.shell.show_balance) if self.enable_chat else None
-        win.on_check_update = self._slot_wrap(self.shell.check_update)
         win.on_look_synced = self._slot_wrap(self.sync_look_to_chat) if self.enable_chat else None
         win.on_look_screen = win.look_at_screen if self.enable_chat and hasattr(win, "look_at_screen") else None
         win.on_open_legacy_settings = None
@@ -3127,33 +3092,6 @@ class AppShell:
         except OSError:
             pass
 
-    # ------------------------------------------------------------ 更新
-    def check_update(self, parent=None) -> None:
-        # 重入防护（审查 GLM-L3）：连点不应起多个检查线程/叠气泡
-        if getattr(self, "_update_checking", False):
-            return
-        self._update_checking = True
-        target = parent or (self.instance.win if self.instance is not None else None)
-        if target is not None:
-            target.show_bubble("正在检查更新…", duration_ms=6000)
-        bridge = _UpdateBridge(target, owner=self)
-        self._update_bridge = bridge
-        # 完成后放行下一次检查（无论成败）
-        bridge.done.connect(lambda *_: setattr(self, "_update_checking", False))
-
-        def worker() -> None:
-            try:
-                release = updater.latest_release()
-            except Exception as exc:
-                # 后台线程异常必须收口回 GUI，否则更新提示永远停在
-                # 「正在检查更新」（审查 P1-01）
-                logging.debug("检查更新失败", exc_info=True)
-                bridge.done.emit(False, str(exc))  # 前缀由 _UpdateBridge._show 统一加
-                return
-            bridge.done.emit(bool(release), release or "无法连接更新服务，请稍后重试。")
-
-        threading.Thread(target=worker, daemon=True, name="pet-update-check").start()
-
     # ------------------------------------------------------------ 生小肥鱼 / 多窗
     def spawn_pet(self) -> None:
         """生小肥鱼：统一走进程内新窗，不再拉起独立桌宠进程。
@@ -3694,7 +3632,6 @@ class AppShell:
         else:
             # 纯桌宠版本不提供本地 DSH 启动入口，只保留网页版入口
             menu.addAction('打开网页版 DeepSeek', open_deepseek_web)
-        menu.addAction('检查更新', lambda: self.check_update(win))
 
         # 批5.2a §③.3：多窗时单托盘 + 每窗一个子菜单（显示/隐藏、切换角色、退出这只），
         # 替代 spike 的平铺菜单项；图标仍单托盘，逐窗动作经子菜单路由。
