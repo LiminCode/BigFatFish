@@ -229,3 +229,56 @@ def test_atomic_writers_clean_temp_on_persistent_conflict(tmp_path, monkeypatch)
     assert ovs.write_slot_setting(tmp_path, 1, "scale", 1.5) is False
     assert ovs.write_slot_geometry(tmp_path, 1, {"rx": 0.5, "ry": 0.5}) is False
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+# ---------------------------------------------------------------- 生成落点：不压住现有的鱼
+
+def _overlaps(a, b) -> bool:
+    return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+
+BOUNDS = (0, 0, 1000, 600)          # 左、上、右、下（右 / 下不含）
+
+
+def test_free_spot_sits_beside_the_anchor_on_the_same_baseline():
+    anchor = (400, 400, 100, 120)
+    spot = ovs.free_spawn_spot((50, 60), anchor, [anchor], BOUNDS, gap=10)
+    assert spot == (510, 460), "紧贴主肥鱼右侧，脚底对齐"
+
+
+def test_free_spot_skips_occupied_places():
+    anchor = (400, 400, 100, 120)
+    taken = [anchor, (510, 460, 50, 60), (570, 460, 50, 60)]
+    spot = ovs.free_spawn_spot((50, 60), anchor, taken, BOUNDS, gap=10)
+    assert spot == (630, 460)
+    assert not any(_overlaps((*spot, 50, 60), rect) for rect in taken)
+
+
+def test_free_spot_goes_left_when_the_anchor_hugs_the_right_edge():
+    """主肥鱼默认就在右下角：右边没地方，往左排。"""
+    anchor = (900, 480, 100, 120)
+    spot = ovs.free_spawn_spot((50, 60), anchor, [anchor], BOUNDS, gap=10)
+    assert spot == (840, 540)
+
+
+def test_free_spot_wraps_to_another_row_when_the_row_is_full():
+    anchor = (0, 480, 1000, 120)                 # 这一行被主肥鱼占满
+    spot = ovs.free_spawn_spot((50, 60), anchor, [anchor], BOUNDS, gap=10)
+    assert spot is not None and spot[1] + 60 <= 480, "换到上一行"
+    assert not _overlaps((*spot, 50, 60), anchor)
+
+
+def test_many_spawns_never_overlap_and_stay_inside():
+    anchor = (900, 480, 100, 120)
+    taken = [anchor]
+    for _ in range(40):
+        spot = ovs.free_spawn_spot((50, 60), anchor, taken, BOUNDS, gap=10)
+        assert spot is not None
+        rect = (*spot, 50, 60)
+        assert not any(_overlaps(rect, other) for other in taken)
+        assert 0 <= rect[0] and rect[0] + 50 <= 1000 and 0 <= rect[1] and rect[1] + 60 <= 600
+        taken.append(rect)
+
+
+def test_free_spot_gives_up_when_the_screen_is_full():
+    assert ovs.free_spawn_spot((50, 60), (0, 0, 1000, 600), [(0, 0, 1000, 600)], BOUNDS) is None

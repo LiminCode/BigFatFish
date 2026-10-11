@@ -332,3 +332,62 @@ def write_slot_geometry(config_dir: Path | str, slot_id: int, geometry) -> bool:
         logging.warning("overlay: 写 slot 几何失败: %s", path, exc_info=True)
         return False
     return True
+
+
+# ---------------------------------------------------------------- 生成落点
+
+def free_spawn_spot(size, anchor, occupied, bounds, gap: int = 12):
+    """给新生成的鱼找一个不压住任何现有鱼的落点，返回身体框左上角 ``(x, y)``。
+
+    全部按**身体框**算（``(x, y, w, h)``，overlay 局部坐标）：``size`` 是新鱼的
+    ``(w, h)``，``anchor`` 是主肥鱼，``occupied`` 是所有现有鱼，``bounds`` 是可用区
+    ``(左, 上, 右, 下)``（右 / 下不含）。
+
+    先在主肥鱼这一行找（脚底对齐）：右侧由近到远，再左侧由近到远；这一行放不下
+    就换行——上一行、下一行、再上一行……步长是「新鱼身体框 + 间隙」，所以相邻
+    两条新鱼之间也不会重叠。整块可用区都满了返回 None，由调用方决定怎么办。
+
+    旧算法是「主肥鱼右侧 + 24px × 第几只」：不看现有的鱼，步长比鱼身窄，必然
+    叠在一起；靠近屏幕右边时还会被边界钳回来叠成一堆。
+    """
+    width, height = int(size[0]), int(size[1])
+    left, top, right, bottom = (int(v) for v in bounds)
+    ax, ay, aw, ah = (int(v) for v in anchor)
+    if width <= 0 or height <= 0 or width > right - left or height > bottom - top:
+        return None
+    taken = [tuple(int(v) for v in rect) for rect in occupied]
+
+    def _free(x: int, y: int) -> bool:
+        if x < left or y < top or x + width > right or y + height > bottom:
+            return False
+        return not any(x < ox + ow and ox < x + width and y < oy + oh and oy < y + height
+                       for ox, oy, ow, oh in taken)
+
+    step_x, step_y = width + gap, height + gap
+    base_y = ay + ah - height                      # 脚底与主肥鱼对齐
+    max_rows = (bottom - top) // step_y + 1
+    max_cols = (right - left) // step_x + 1
+    for row in range(2 * max_rows + 1):
+        offset = (row + 1) // 2 * (-1 if row % 2 else 1)      # 0, -1, +1, -2, +2 …
+        y = base_y + offset * step_y
+        if y < top or y + height > bottom:
+            continue
+        for col in range(max_cols):                           # 右侧，由近到远
+            x = ax + aw + gap + col * step_x
+            if x + width > right:
+                break
+            if _free(x, y):
+                return x, y
+        for col in range(max_cols):                           # 左侧，由近到远
+            x = ax - gap - width - col * step_x
+            if x < left:
+                break
+            if _free(x, y):
+                return x, y
+        # 主肥鱼正上方 / 正下方那一段（上面两趟只看它的左右两侧）：从它的左缘起，
+        # 向两边铺开找——换行后先落在离主肥鱼最近的地方。
+        for col in range(2 * max_cols + 1):
+            x = ax + (col + 1) // 2 * (-1 if col % 2 else 1) * step_x
+            if _free(x, y):
+                return x, y
+    return None
