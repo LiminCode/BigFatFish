@@ -199,25 +199,33 @@ def test_instance_refreshes_only_the_window_that_should_follow():
 
 
 # ---------------------------------------------------------------- 尺寸
-def test_bubble_is_twice_its_old_size(config, widgets):
-    assert QUICK_CHAT_BASE_SCALE == 2.0 and quick_chat_scale(config) == 2.0
+def test_bubble_is_a_quarter_larger_and_its_reply_area_twice_as_tall(config, widgets):
+    """要的是文字窗口加大：整体只放大 1.25 倍，回复区高度单独放大到 2 倍。"""
+    assert QUICK_CHAT_BASE_SCALE == 1.25 and quick_chat_scale(config) == 1.25
     bubble = _bubble(config, widgets)
     room = app.primaryScreen().availableGeometry().width() - 16   # 不许比屏幕宽
-    assert (bubble.minimumWidth(), bubble.maximumWidth()) == (min(640, room), min(920, room))
-    assert bubble.output_scroll.maximumHeight() == 440
-    assert bubble.close_btn.size().width() == 48
-    assert bubble.input.font().pointSizeF() == pytest.approx(app.font().pointSizeF() * 2)
+    assert (bubble.minimumWidth(), bubble.maximumWidth()) == (min(400, room), min(575, room))
+    assert bubble.close_btn.size().width() == 30
+    assert bubble.input.font().pointSizeF() == pytest.approx(app.font().pointSizeF() * 1.25)
     margins = bubble.layout().contentsMargins()
-    assert (margins.left(), margins.top()) == (28, 24)
+    assert (margins.left(), margins.top()) == (18, 15)
+    scroll = bubble.output_scroll
+    assert (scroll.minimumHeight(), scroll.maximumHeight()) == (120, 440)
+
+
+def test_reply_preview_holds_twice_as_much_text_as_before():
+    from pet import quick_chat
+
+    assert quick_chat._REPLY_PREVIEW_LIMIT == 300
 
 
 def test_bubble_follows_the_bubble_text_size_setting(config):
-    config.set("bubble_text_scale", 150)
-    assert quick_chat_scale(config) == 3.0
+    config.set("bubble_text_scale", 200)
+    assert quick_chat_scale(config) == 2.5
     config.set("bubble_text_scale", 50)
-    assert quick_chat_scale(config) == 1.0
+    assert quick_chat_scale(config) == 1.0, "不小于原始尺寸"
     config.set("bubble_text_scale", 300)
-    assert quick_chat_scale(config) == 4.0, "封顶 4 倍"
+    assert quick_chat_scale(config) == 3.75
 
 
 def test_island_bubble_is_enlarged_too(config, widgets):
@@ -225,5 +233,6 @@ def test_island_bubble_is_enlarged_too(config, widgets):
 
     bubble = IslandChatBubble(config)
     widgets.append(bubble)
-    assert bubble.minimumWidth() == min(640, app.primaryScreen().availableGeometry().width() - 16)
-    assert bubble.show_pet_btn.font().pointSizeF() == pytest.approx(app.font().pointSizeF() * 2)
+    assert bubble.minimumWidth() == min(400, app.primaryScreen().availableGeometry().width() - 16)
+    assert bubble.show_pet_btn.font().pointSizeF() == pytest.approx(app.font().pointSizeF() * 1.25)
+    assert bubble.output_scroll.maximumHeight() == 440
