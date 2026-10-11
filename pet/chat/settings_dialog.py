@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 from .models import ChatSettings, ProviderConfig, SecretStore
-from .providers import test_connection
+from .anthropic_provider import test_connection
 from .themes import CHAT_UI_STYLE_LABELS, CHAT_UI_VIEW_ASPECT, theme_names
 from .utils import _safe_emit
 

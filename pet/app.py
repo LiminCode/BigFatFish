@@ -2887,6 +2887,11 @@ class AppShell:
         import hashlib
         settings = self.config.chat_settings()
         provider = settings.active_config
+        from .chat import anthropic_provider
+        if anthropic_provider.uses_anthropic(provider):
+            # Claude API 没有余额查询接口，DeepSeek 的峰谷提示对它也不适用
+            island.set_balance_info("用量与余额请到 Anthropic 控制台查看", "Claude API")
+            return
         provider.api_key = self.config.resolve_api_key(provider)
         if not provider.api_key:
             island.set_balance_info(

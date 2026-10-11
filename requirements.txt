@@ -21,6 +21,12 @@ lunar-python>=1.4.8
 # 存在动态导入，PyInstaller 静态分析收不全）。
 edge-tts>=6.1.10
 
+# Claude 通道（pet/chat/anthropic_provider.py）：AI 对话与识屏走 Anthropic Messages API
+# 时用的官方 SDK。按需导入——没装它时其它服务商照常可用，只有选了 Claude 才报错。
+# 1.x 起基于 httpx2（不是 httpx）。**打包尚未验证**：三个构建脚本还没有为它
+# （及 pydantic / httpx2 / jiter）配收集项，打包版在验证前不保证 Claude 通道可用。
+anthropic>=1.0
+
 # —— 歌词显示（可选）——
 # 「显示歌词」功能靠 Windows 系统媒体控制（SMTC）读取当前播放的曲目。
 # 不装不影响桌宠本体：歌词能力探测返回不可用，

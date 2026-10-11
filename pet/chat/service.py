@@ -4,7 +4,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import QApplication
 from .models import ProviderConfig
-from .providers import OpenAICompatibleProvider
+from .anthropic_provider import RoutingProvider
 class _Worker(QThread):
     delta_received=Signal(str); completed=Signal(str); failed=Signal(str); stopped_by_user=Signal()
     def __init__(self,provider,messages,config,cancel):
@@ -52,7 +52,7 @@ class ChatService(QObject):
             cls._global_finished_listeners.remove(callback)
 
     def __init__(self,provider=None,parent=None):
-        super().__init__(parent); self.provider=provider or OpenAICompatibleProvider(); self._request_id=None; self._cancel=None; self._worker=None; self._workers=set()
+        super().__init__(parent); self.provider=provider or RoutingProvider(); self._request_id=None; self._cancel=None; self._worker=None; self._workers=set()
         # 退出时先取消并短等在飞 worker，避免 QThread 运行中被销毁导致崩溃
         app = QApplication.instance()
         if app is not None:
