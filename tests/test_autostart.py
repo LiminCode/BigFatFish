@@ -99,6 +99,64 @@ def test_cleanup_stale_entries_removes_only_missing_paths(monkeypatch, tmp_path)
     assert "dsh-pet-standalone-webm-chat" not in fake.values
 
 
+def _source_checkout(monkeypatch, tmp_path: Path, *, launcher: bool) -> Path:
+    """伪造一个源码检出：``<root>/.venv/Scripts/python.exe``，可选带 BigFish.exe。"""
+    root = tmp_path / "checkout"
+    scripts = root / ".venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    for name in ("python.exe", "pythonw.exe") + (("BigFish.exe",) if launcher else ()):
+        (scripts / name).write_bytes(b"MZ")
+    monkeypatch.setattr(autostart_mod.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(autostart_mod.sys, "executable", str(scripts / "python.exe"))
+    monkeypatch.setattr(autostart_mod, "_project_root", lambda: root)
+    return scripts
+
+
+def test_windows_source_autostart_prefers_the_bigfish_launcher(monkeypatch, tmp_path):
+    fake = _force_win(monkeypatch)
+    scripts = _source_checkout(monkeypatch, tmp_path, launcher=True)
+
+    assert autostart_mod.enable() is True
+
+    command = fake.values[autostart_mod.VALUE_NAME]
+    assert f'"{scripts / "BigFish.exe"}" -m pet --slot 0' in command
+    assert "pythonw.exe" not in command
+
+
+def test_windows_source_autostart_falls_back_to_pythonw_without_launcher(monkeypatch, tmp_path):
+    fake = _force_win(monkeypatch)
+    scripts = _source_checkout(monkeypatch, tmp_path, launcher=False)
+
+    assert autostart_mod.enable() is True
+
+    assert f'"{scripts / "pythonw.exe"}" -m pet --slot 0' in fake.values[autostart_mod.VALUE_NAME]
+
+
+def test_windows_source_autostart_upgrades_this_checkouts_pythonw_entry(monkeypatch, tmp_path):
+    fake = _force_win(monkeypatch)
+    scripts = _source_checkout(monkeypatch, tmp_path, launcher=True)
+    root = scripts.parent.parent
+    fake.values[autostart_mod.VALUE_NAME] = (
+        f'cmd /c start "" /D "{root}" "{scripts / "pythonw.exe"}" -m pet --slot 0'
+    )
+
+    assert autostart_mod.is_enabled() is True
+
+    assert f'"{scripts / "BigFish.exe"}"' in fake.values[autostart_mod.VALUE_NAME]
+
+
+def test_windows_source_autostart_leaves_another_checkouts_entry_alone(monkeypatch, tmp_path):
+    fake = _force_win(monkeypatch)
+    _source_checkout(monkeypatch, tmp_path, launcher=True)
+    other = tmp_path / "other"
+    foreign = f'cmd /c start "" /D "{other}" "{other / "pythonw.exe"}" -m pet --slot 0'
+    fake.values[autostart_mod.VALUE_NAME] = foreign
+
+    assert autostart_mod.is_enabled() is True
+
+    assert fake.values[autostart_mod.VALUE_NAME] == foreign
+
+
 def _force_linux(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(autostart_mod, "_IS_WIN", False)
     monkeypatch.setattr(autostart_mod, "_IS_MAC", False)
