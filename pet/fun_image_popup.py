@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import random
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import shuffle_bag
 from .animated_image import open_movie
 
 
@@ -232,8 +232,9 @@ class OjingjingWindowManager:
             raise FileNotFoundError(f"没有可读取的彩蛋图片: {oijingjing_image_path().parent}")
         if show:
             self.restore_all()
+        # 洗牌式：目录里的图全部出过一轮才重复（见 shuffle_bag）
         window = OjingjingWindow(
-            random.choice(paths), self.close_all, self._forget,
+            shuffle_bag.draw(shuffle_bag.POPUP, paths), self.close_all, self._forget,
             title=str(config.get("title") or "厉害了我的鲸"),
         )
         offset = (len(self.windows) % 7) * 24

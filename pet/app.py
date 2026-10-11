@@ -3936,7 +3936,11 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
     # 身份；缺省或 D4 门保证的单实例即主身份（slot 0）。
     slot_id = preferred_slot if preferred_slot is not None else 0
 
+    from . import shuffle_bag
     try:
+        # 洗牌式抽取（彩蛋弹窗的图 / 自言自语的配图与台词）的进度记在配置目录里：
+        # 重启后接着上一轮往下出。过了单实例门才接上——被拒的第二实例不碰它。
+        shuffle_bag.STORE.attach(config_dir / shuffle_bag.STATE_FILE_NAME)
         instance_id = slot_manager_mod.slot_to_instance_id(slot_id)
         os.environ["DSH_PET_INSTANCE"] = instance_id
 
@@ -3971,6 +3975,7 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
         logging.info("进入事件循环")
         return app.exec()
     finally:
+        shuffle_bag.STORE.detach()   # 进度每出一张就已落盘；这里只是不再往那个文件写
         # D4：正常退出（app.exec() 返回前 aboutToQuit 已跑完，各窗位置已落盘）
         # 才释放 overlay 进程门——比 _on_about_to_quit 内更晚，避免"本地还在收尾、
         # 第二实例已能起来"的位置回写竞态。会话结束路径另见 _on_session_end。

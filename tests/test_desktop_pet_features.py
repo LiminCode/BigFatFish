@@ -1253,8 +1253,7 @@ def test_ojingjing_uses_popup_directory_random_images_and_drag_helpers(monkeypat
     paths = popup_mod.popup_image_paths()
     assert len(paths) >= 2
     assert popup_mod.oijingjing_image_path() == Path("assets/big_blue_fat_fish/ojingjing.jpg").resolve()
-    picks = iter((paths[0], paths[1]))
-    monkeypatch.setattr(popup_mod.random, "choice", lambda _paths: next(picks))
+    # 洗牌式抽取：同一轮里不会连着出同一张（见 pet/shuffle_bag.py）
     manager = popup_mod.OjingjingWindowManager()
     first = manager.open_window(show=False)
     second = manager.open_window(show=False)
