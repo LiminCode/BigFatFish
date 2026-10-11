@@ -334,6 +334,8 @@ PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "resting": "休
 _PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
 #: 汇总时的排序：最需要人管的排最前
 _PHASE_ORDER = ("waiting", "working", "resting")
+#: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
+_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("waiting", "等待中"))
 #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
 CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
 
@@ -343,6 +345,15 @@ def session_label(agent: str, info: dict) -> str:
     name = str(info.get("title") or info.get("project") or str(info.get("sessionId") or "")[:8]
                or "Claude Code")
     return f"{name}{CHANNEL_SUFFIX.get(str(agent), '')}"
+
+
+def session_counts(sessions: list[dict]) -> list[tuple[str, str]]:
+    """在用的会话按阶段计数：``[("working", "2 工作中"), ...]``；没有的阶段不出现。
+
+    灵动岛胶囊用：一眼看出几个在干活、几个歇着、几个在等你。
+    """
+    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase, _ in _CAPSULE_PHASES}
+    return [(phase, f"{counts[phase]} {text}") for phase, text in _CAPSULE_PHASES if counts[phase]]
 
 
 def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[str, str]:

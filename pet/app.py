@@ -2507,6 +2507,9 @@ class AppShell:
         if not enabled:
             if getattr(self, "island", None) is not None:
                 self.island.hide()
+            monitor = self._live_api_key_monitor()
+            if monitor is not None:
+                monitor.stop()  # 岛不显示就不体检：不白发请求
             # 4.3：overlay 拓扑摘岛桥（岛停用即撤墙）
             overlay_shell = getattr(self, "_overlay_shell", None)
             if overlay_shell is not None:
@@ -2551,7 +2554,18 @@ class AppShell:
                     raise
             if ChatService is not None:
                 ChatService.register_global_finished(self._on_global_chat_finished)
+            # 连接图标的数据来源：当前对话服务商的 API 体检（挂在岛下面，随岛销毁）
+            from .api_key_monitor import ApiKeyMonitor
+
+            self._api_key_monitor = ApiKeyMonitor(
+                self.config, chat_enabled=bool(getattr(self, "enable_chat", True)), parent=self.island)
+            self._api_key_monitor.status_changed.connect(self.island.set_api_status)
         self.island.refresh_from_config()
+        monitor = self._live_api_key_monitor()
+        if monitor is not None:
+            monitor.start()
+            monitor.refresh()  # 本方法也是配置应用路径：服务商 / Key 变了就重查
+        self._push_island_session_counts()
         # 批5.2a：灵动岛按**聚合**可见态同步（任一窗可见 = 可见），替代只看主窗。
         self.island.set_pet_visible(self._aggregate_pet_visible())
         self.island.show()
@@ -2753,6 +2767,9 @@ class AppShell:
             return
         island.set_last_message(text)
         island.notify_event("reply")
+        monitor = self._live_api_key_monitor()
+        if monitor is not None:
+            monitor.note_success()  # 回复都到了：API 肯定是通的
         # 桌宠隐藏时岛是唯一常驻交互面：回复到达在岛上弹预览气泡（不抢焦点，
         # 超时自动收回）。岛气泡在场时跳过——多半是气泡自己刚回完话，别再弹。
         if not self._aggregate_pet_visible() and self._island_chat_available():
@@ -2886,8 +2903,24 @@ class AppShell:
         island.set_balance_info(detail, headline)
 
     def _on_claude_sessions_changed(self) -> None:
+        self._push_island_session_counts()
         if self._island_card_source() == "claude":
             self._show_island_claude_sessions()
+
+    def _push_island_session_counts(self) -> None:
+        """胶囊上的会话计数（「2 工作中 1 休息中 2 等待中」）。与卡片显示什么无关。"""
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        registry = self._claude_session_registry()
+        from . import claude_hooks
+
+        island.set_session_counts(claude_hooks.session_counts(registry.sessions()) if registry is not None else [])
+
+    def _live_api_key_monitor(self):
+        """API 体检器；没建过或已随岛销毁返回 None。"""
+        monitor = getattr(self, "_api_key_monitor", None)
+        return monitor if monitor is not None and shiboken6.isValid(monitor) else None
 
     def _update_island_balance(self, payload, *, animate: bool = True) -> None:
         """把余额文本/峰谷提示同步给灵动岛（若有）。

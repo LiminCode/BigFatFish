@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """独立灵动岛胶囊窗口。
 
-- 常驻顶层小窗，可显示图标、名称、信息槽、状态灯；
+- 常驻顶层小窗，可显示图标、名称、信息槽、状态区（Claude Code 会话计数 + API 连接图标：
+  绿 = 对话 API 可用，红 = 不可用）；
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
 - 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
   桌宠隐藏时（``hidden_chat`` 开启）单击改为弹岛对话气泡（island_chat.py）；
 - 事件动效（``event_effects``）：AI 回复/余额刷新/峰谷切换时位移弹跳 +
-  表面轻压 + 短暂呼吸，静止时完全无定时器开销；dsh 工作时状态灯变蓝；
+  表面轻压 + 短暂呼吸，静止时完全无定时器开销；
 - ``bump()`` 供碰撞系统调用：被撞时表面压扁回弹（史莱姆果冻形变只作用于
   胶囊外形，文字图标保持锐利）+ 按撞击方向轻微踢动；
 - 外观：黑/白/玻璃质感自绘 + 背景不透明度 + 主题色（五级）。
@@ -22,7 +23,7 @@ from PySide6.QtCore import (
     QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QColor, QGuiApplication, QLinearGradient, QPainter, QPen, QPixmap,
+    QColor, QGuiApplication, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -91,6 +92,17 @@ _ICON_AUTO = "auto"
 _ICON_IMG_PREFIX = "img:"
 _ICON_PIXMAP_PX = 22  # 头像画进 26px 底圈内的尺寸
 _ICON_STRIP_PX = 16  # 左右停靠细条里的头像尺寸
+
+# 状态区：API 连接图标（自绘「链接」，不走 emoji 字体栈）+ 会话计数
+_LINK_ICON_W = 18
+_LINK_ICON_H = 10
+_API_STATUS_COLORS = {
+    "ok": QColor(80, 220, 120),        # 对话 API 可用
+    "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
+    "unknown": QColor(130, 140, 155),  # 还没查过，或此版本没有 AI 对话
+}
+# 会话计数的字色：工作中绿、等待中橙（最需要人管），其余用次文字色
+_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24"}
 
 
 def spring_step(
@@ -210,6 +222,8 @@ class DynamicIsland(QWidget):
         # 维持现状；纯桌宠版置 False 时 hidden_chat 单击路由回退展开卡片）
         self._chat_available = True
         self._agent_active = False
+        self._api_state = "unknown"
+        self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
         self.on_geometry_changed = None
@@ -409,8 +423,25 @@ class DynamicIsland(QWidget):
         """
         self._chat_available = bool(available)
 
+    def set_api_status(self, state: str, detail: str = "") -> None:
+        """对话 API 的体检结论（``api_key_monitor``）：ok 绿色连通 / bad 红色断开 /
+        unknown 灰色。``detail`` 是悬停提示——红了得说得出为什么。"""
+        state = state if state in _API_STATUS_COLORS else "unknown"
+        self.setToolTip(str(detail or ""))
+        if state != self._api_state:
+            self._api_state = state
+            self.update()
+
+    def set_session_counts(self, counts) -> None:
+        """Claude Code 会话计数（``[(阶段, "2 工作中"), ...]``），画在连接图标左边；
+        空 = 不显示、不占宽度。"""
+        counts = [(str(tone), str(text)) for tone, text in (counts or []) if str(text)]
+        if counts != self._session_counts:
+            self._session_counts = counts
+            self._refresh()
+
     def set_agent_active(self, active: bool) -> None:
-        """dsh/agent 工作状态：点亮蓝色状态灯；上升沿弹一下提示开工。"""
+        """dsh/agent 工作状态：上升沿弹一下提示开工（谁在忙看会话计数）。"""
         active = bool(active)
         rising = active and not self._agent_active
         self._agent_active = active
@@ -941,7 +972,7 @@ class DynamicIsland(QWidget):
     def _capsule_width(self) -> int:
         icon, name, info, status = self._visible_parts()
         fm = self.fontMetrics()
-        # 左右边距各 16px，让状态灯到右边界的距离与图标到左边界的距离一致。
+        # 左右边距各 16px，让连接图标到右边界的距离与图标到左边界的距离一致。
         width = 32
         if icon:
             width += 28 + 8
@@ -950,7 +981,9 @@ class DynamicIsland(QWidget):
         if info:
             width += fm.horizontalAdvance(self._info_text()) + 8
         if status:
-            width += 10
+            for _tone, text in self._session_counts:
+                width += fm.horizontalAdvance(text) + 8
+            width += _LINK_ICON_W
         return max(120, width + _CAPSULE_INSET * 2)
 
     def _update_size(self) -> None:
@@ -1123,12 +1156,37 @@ class DynamicIsland(QWidget):
         c.setAlpha(max(c.alpha(), 215))
         return c
 
-    def _status_dot_color(self) -> QColor:
-        if self._agent_active:
-            return QColor(64, 150, 255)
-        if self._pet_visible:
-            return QColor(80, 220, 120)
-        return QColor(130, 140, 155)
+    def _status_color(self) -> QColor:
+        """连接图标（停靠细条里是圆点）的颜色：只表达对话 API 的状态。"""
+        return QColor(_API_STATUS_COLORS[self._api_state])
+
+    def _paint_link_icon(self, painter: QPainter, x: float, y: float) -> None:
+        """「链接」图标：两个半环；连通时中间一横，断开时换成一道斜杠。
+
+        形状也跟着状态变——红绿色弱的人不靠颜色也分得清。
+        """
+        w, h, stroke = float(_LINK_ICON_W), float(_LINK_ICON_H), 1.8
+        top, bottom, mid = y + stroke / 2, y + h - stroke / 2, y + h / 2
+        diameter = h - stroke
+        path = QPainterPath()
+        path.moveTo(x + w * 0.40, top)
+        path.arcTo(QRectF(x + stroke / 2, top, diameter, diameter), 90, 180)
+        path.lineTo(x + w * 0.40, bottom)
+        path.moveTo(x + w * 0.60, top)
+        path.arcTo(QRectF(x + w - stroke / 2 - diameter, top, diameter, diameter), 90, -180)
+        path.lineTo(x + w * 0.60, bottom)
+        if self._api_state == "ok":
+            path.moveTo(x + w * 0.32, mid)
+            path.lineTo(x + w * 0.68, mid)
+        elif self._api_state == "bad":
+            path.moveTo(x + w * 0.62, y - 2)
+            path.lineTo(x + w * 0.38, y + h + 2)
+        pen = QPen(self._status_color(), stroke)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -1214,7 +1272,7 @@ class DynamicIsland(QWidget):
             painter.drawRoundedRect(QRectF(rect.width() - 2, 6, 2, rect.height() - 12), 1, 1)
 
         dot_size = 8
-        painter.setBrush(self._status_dot_color())
+        painter.setBrush(self._status_color())
         if edge in ("left", "right"):
             # 竖条：上方角色图标、下方状态点。头像走 drawPixmap（不碰文字栈）；
             # emoji 文字模式维持原小字号（11px）防裁切；auto 模式 provider 没
@@ -1233,7 +1291,7 @@ class DynamicIsland(QWidget):
                     QRectF(0, 8, rect.width(), fm.height()),
                     Qt.AlignmentFlag.AlignCenter, self._icon_text())
                 painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._status_dot_color())
+            painter.setBrush(self._status_color())
             painter.drawEllipse(QRectF(
                 (rect.width() - dot_size) / 2, rect.height() - dot_size - 8,
                 dot_size, dot_size))
@@ -1243,7 +1301,7 @@ class DynamicIsland(QWidget):
                 dot_size, dot_size))
 
     def _content_cache(self) -> QPixmap:
-        """内容层（图标/名称/信息/状态灯）的缓存位图。
+        """内容层（图标/名称/信息/状态区）的缓存位图。
 
         为什么缓存（拖岛扫鱼实测定案）：paintEvent 均值 6.2ms，大头是 CJK
         文字的 shaping/回退字体解析；而内容只在刷新（时间跳变/余额刷新/
@@ -1265,7 +1323,7 @@ class DynamicIsland(QWidget):
             self._accent_color().name() if icon else "",
             primary_color.name() if name else "",
             info_color.name() if info else "",
-            self._status_dot_color().name() if status else "",
+            (self._api_state, tuple(self._session_counts), secondary_color.name()) if status else (),
             self.font().toString(), dpr, self.width(),
         )
         if self._content_pixmap is not None and self._content_cache_key == key:
@@ -1327,11 +1385,17 @@ class DynamicIsland(QWidget):
             )
             x += self.fontMetrics().horizontalAdvance(info_text) + 8
         if status:
-            dot_size = 10
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._status_dot_color())
-            painter.drawEllipse(QRectF(x, (_CAPSULE_HEIGHT - dot_size) / 2, dot_size, dot_size))
-            x += dot_size + 12
+            for tone, text in self._session_counts:
+                painter.setPen(QColor(_SESSION_COUNT_COLORS[tone]) if tone in _SESSION_COUNT_COLORS
+                               else secondary_color)
+                advance = self.fontMetrics().horizontalAdvance(text)
+                painter.drawText(
+                    QRectF(x, 0, advance, _CAPSULE_HEIGHT),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    text,
+                )
+                x += advance + 8
+            self._paint_link_icon(painter, x, (_CAPSULE_HEIGHT - _LINK_ICON_H) / 2)
         painter.end()
         self._content_pixmap = pm
         self._content_cache_key = key
@@ -1381,7 +1445,7 @@ class DynamicIsland(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)
 
-        # 内容层（图标/名称/信息/状态灯）：缓存位图 blit——文字逐帧重画是
+        # 内容层（图标/名称/信息/状态区）：缓存位图 blit——文字逐帧重画是
         # 实测大头（见 _content_cache）；内容绝不参与形变，口径与原"按未
         # 形变静止位绘制"一致
         painter.drawPixmap(0, 0, self._content_cache())

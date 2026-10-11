@@ -107,6 +107,21 @@ def _no_real_dsh_profile_write(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_api_key_probe(monkeypatch):
+    """灵动岛的 API 体检（pet/api_key_monitor.py）在测试里绝不真的联网。
+
+    建岛就会排一次体检；默认 probe 走设置页「测试连接」那条路径，会向配置里的
+    对话端点发请求。这里把默认 probe 换成不联网的替身，要测体检语义的用例自行注入
+    probe（test_api_key_monitor.py）。
+    """
+    try:
+        from pet import api_key_monitor
+    except Exception:
+        return
+    monkeypatch.setattr(api_key_monitor, "_default_probe", lambda provider: (True, "测试替身：不联网"))
+
+
+@pytest.fixture(autouse=True)
 def _close_session_writers():
     """会话异步写盘（B8）：每个测试结束后关闭所有后台 writer，
     避免守护线程在 tmp_path 已清理后继续写盘（WinError 145 之类的 teardown 竞态）。"""

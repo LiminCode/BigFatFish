@@ -506,6 +506,55 @@ def test_card_follows_session_changes(tmp_path, monkeypatch):
         _teardown_shell(shell)
 
 
+def test_capsule_counts_follow_session_changes_whatever_the_card_shows(tmp_path, monkeypatch):
+    """胶囊上的会话计数与卡片内容来源无关：卡片钉成余额也照样计数。"""
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=True, sessions=[_WORKING])
+    try:
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == [("working", "1 工作中")]
+
+        shell._overlay_shell.session_pets._sessions = [
+            dict(_WORKING, phase="waiting"), dict(_WORKING, sessionId="def", phase="resting")]
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == [("resting", "1 休息中"), ("waiting", "1 等待中")]
+
+        shell._overlay_shell.session_pets._sessions = []
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == []
+    finally:
+        _teardown_shell(shell)
+
+
+def test_island_shows_the_api_key_verdict(tmp_path, monkeypatch):
+    """体检结论 → 岛上的连接图标；一次成功的对话也算体检通过。"""
+    from types import SimpleNamespace
+
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=False)
+    try:
+        monitor = shell._api_key_monitor
+        assert monitor is not None and monitor._running, "岛开着就体检"
+        assert shell.island._api_state == "unknown"
+
+        monitor.status_changed.emit("bad", "认证失败")
+        assert (shell.island._api_state, shell.island.toolTip()) == ("bad", "认证失败")
+
+        # 桌宠在场（不走「桌宠隐藏 → 岛上弹回复预览」那条支线）
+        shell._overlay_shell = None
+        shell._instances = [SimpleNamespace(win=SimpleNamespace(isVisible=lambda: True))]
+        shell._on_global_chat_finished("你好")
+        assert shell.island._api_state == "ok"
+
+        data = dict(shell.config.get("dynamic_island"))
+        data["enabled"] = False
+        shell.config.set("dynamic_island", data)
+        shell._sync_dynamic_island()
+        assert not monitor._running, "岛关了就不再体检（不白发请求）"
+    finally:
+        _teardown_shell(shell)
+
+
 def test_legacy_topology_has_no_session_registry_and_falls_back_to_balance(tmp_path, monkeypatch):
     _qapp()
     shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True)

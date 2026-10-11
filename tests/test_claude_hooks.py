@@ -610,6 +610,18 @@ def test_summary_lists_every_session_when_they_fit():
     assert detail == "Fix login loop · 工作中"
 
 
+def test_capsule_counts_follow_working_resting_waiting_and_skip_empty_phases():
+    """灵动岛胶囊上的计数：「2 工作中 1 休息中 2 等待中」，没有的阶段不占地方。"""
+    sessions = [
+        _s("claude", "waiting"), _s("claude", "working"), _s("claude_wsl", "resting"),
+        _s("claude", "working"), _s("claude_wsl", "waiting"), _s("claude", "gone"),
+    ]
+    assert ch.session_counts(sessions) == [
+        ("working", "2 工作中"), ("resting", "1 休息中"), ("waiting", "2 等待中")]
+    assert ch.session_counts([_s("claude", "resting")]) == [("resting", "1 休息中")]
+    assert ch.session_counts([]) == []
+
+
 def test_session_label_prefers_title_then_project_then_short_id():
     assert ch.session_label("claude", {"title": "T", "project": "P", "sessionId": "abc"}) == "T"
     assert ch.session_label("claude", {"title": "", "project": "P", "sessionId": "abc"}) == "P"

@@ -564,7 +564,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_icon", "显示图标", "在胶囊左侧显示角色图标。", self.island_icon_check),
                     SettingRow("dynamic_island_name", "显示名称", "显示当前角色名称。", self.island_name_check),
                     SettingRow("dynamic_island_info", "显示信息槽", "显示时间/余额/自定义短文本等信息。", self.island_info_check),
-                    SettingRow("dynamic_island_status", "显示状态灯", "显示右侧状态圆点。", self.island_status_check),
+                    SettingRow("dynamic_island_status", "显示状态灯", "显示右侧的 Claude Code 会话计数与 API 连接图标（绿 = 对话 API 可用，红 = 不可用）。", self.island_status_check),
                     SettingRow("dynamic_island_info_mode", "信息槽内容", "选择信息槽显示的内容；自定义文本在下方填写。", self.island_info_mode_select),
                     SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示 DeepSeek 余额与峰谷。", self.island_card_source_select),
                     SettingRow(
@@ -596,7 +596,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow(
                         "dynamic_island_event_effects",
                         "事件动效",
-                        "AI 回复到达、余额刷新、峰谷切换时果冻弹跳提示；dsh 工作时状态灯变蓝。静止时零额外开销。",
+                        "AI 回复到达、余额刷新、峰谷切换时果冻弹跳提示。静止时零额外开销。",
                         self.island_event_effects_check,
                     ),
                     SettingRow(
