@@ -3299,8 +3299,8 @@ class OverlayShell(QObject):
         # 桌宠大小（scale）：旧机 refresh_pet_settings 即时 change_scale
         # （window.py:3937-3938），改完即改气泡画布/锚点。
         scale = self._config_scale(cfg)
-        if sprite in self._session_pets:      # 会话小鱼：跟主肥鱼走，再小一号
-            scale = catalog.smaller_scale_step(scale)
+        if sprite in self._session_pets:      # 会话小鱼：主肥鱼的一半大
+            scale = catalog.half_scale(scale)
         if abs(float(getattr(sprite, "scale", scale)) - scale) > 1e-9:
             try:
                 sprite.scale = scale
@@ -3668,12 +3668,12 @@ class OverlayShell(QObject):
 
         与 ``_spawn_slot`` 的区别只有身份：不分配 slot（身份永不回收，自动生成会
         把 128 个名额耗光）、不落种配置、不进活跃清单，重启不复活。角色跟主配置，
-        大小是主肥鱼的小一号；不自言自语。
+        大小是主肥鱼的一半；不自言自语。
         """
         if len(self._session_pets) >= self.SESSION_PET_MAX:
             return None
         lib = self._create_main_library()
-        scale = catalog.smaller_scale_step(self._config_scale())
+        scale = catalog.half_scale(self._config_scale())
         sprite = self._sprite_factory(lib, QPointF(0, 0), scale)
         sprite.home_screen = self._screen
         sprite.set_bounds(QRect(self._bounds))

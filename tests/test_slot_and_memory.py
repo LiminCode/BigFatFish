@@ -152,7 +152,7 @@ def test_spawn_seed_respects_inherit_size_switch(tmp_path):
 @pytest.mark.parametrize("main_scale, expected", [
     (1.0, 0.85),     # 档位表 (0.5, 0.72, 0.85, 1.0) 里往下一档
     (0.72, 0.5),     # 默认大小的主肥鱼 → 最小档
-    (0.5, 0.5),      # 已经是最小档：没有更小的，保持不变
+    (0.5, 0.25),     # 已经是最小档：没有更小的档可退 → 取一半（否则主、小一样大）
     (0.6, 0.5),      # 主肥鱼不在档位上（手改配置）：取比它小的最大一档
 ])
 def test_spawned_fish_defaults_to_one_size_smaller_than_main(tmp_path, main_scale, expected):
