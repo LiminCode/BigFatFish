@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .animated_image import open_movie
+
 
 def oijingjing_image_path() -> Path:
     return Path(__file__).resolve().parents[1] / "assets" / "big_blue_fat_fish" / "ojingjing.jpg"
@@ -130,17 +132,26 @@ class OjingjingWindow(QWidget):
         image = QLabel(card)
         image.setObjectName("ojingjingFullImage")
         image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        source = QPixmap(str(image_path))
-        if source.isNull():
-            raise ValueError(f"无法读取彩蛋图片: {image_path}")
-        image.setPixmap(
-            source.scaled(
-                side,
-                side,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+        # 动图（GIF / 动态 WebP）交给 QMovie 播；静态图照旧一次缩放好。
+        self._movie = open_movie(image_path, self)
+        if self._movie is not None:
+            size = self._movie.currentPixmap().size()
+            size.scale(side, side, Qt.AspectRatioMode.KeepAspectRatio)
+            self._movie.setScaledSize(size)
+            image.setMovie(self._movie)
+            self._movie.start()
+        else:
+            source = QPixmap(str(image_path))
+            if source.isNull():
+                raise ValueError(f"无法读取彩蛋图片: {image_path}")
+            image.setPixmap(
+                source.scaled(
+                    side,
+                    side,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
             )
-        )
         image.setFixedSize(side, side)
         image.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         card_layout.addWidget(image)
@@ -201,6 +212,8 @@ class OjingjingWindow(QWidget):
         super().mouseReleaseEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API
+        if self._movie is not None:
+            self._movie.stop()      # 窗口关了就别再解码
         self._on_closed(self)
         super().closeEvent(event)
 
