@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 # 批6-2 拆分后纯函数区 re-export（维持既有 import 兼容；外部调用点本批不改）
+from .ui_fonts import apply_family, font_css
 from .speech_bubble_text import (
     BUBBLE_BODY_FONT_PX,
     BUBBLE_SUBTITLE_FONT_PX,
@@ -263,6 +264,7 @@ class PetSpeechBubble(QFrame):
 
     def __init__(self, parent=None, style_id: str = "classic_top"):
         super().__init__(parent)
+        apply_family(self)   # 气泡里的字统一用等线（子控件继承；样式表里也各点一次名）
         self._interactive = False
         self._capture_compat = False
         self._capture_host: QWidget | None = None
@@ -454,17 +456,17 @@ class PetSpeechBubble(QFrame):
         self.label.setStyleSheet(
             "QLabel#pet-speech-label { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
         )
         self._subtitle_label.setStyleSheet(
             "QLabel#pet-speech-subtitle { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
         )
         self._page_indicator.setStyleSheet(
             "QLabel#pet-page-indicator { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
         )
         self.update()
 
@@ -665,12 +667,12 @@ class PetSpeechBubble(QFrame):
                 self.label.setStyleSheet(
                     "QLabel#pet-speech-label { background: transparent; border: none; "
                     f"padding: 0; color: {self._preset['foreground']}; "
-                    f"font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
+                    f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
                 )
                 self._subtitle_label.setStyleSheet(
                     "QLabel#pet-speech-subtitle { background: transparent; border: none; "
                     f"padding: 0; color: {self._preset['foreground']}; "
-                    f"font-size: {scale_bubble_font_px(BUBBLE_TITLE_FONT_PX, self._text_scale)}px; }}"
+                    f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_TITLE_FONT_PX, self._text_scale)}px; }}"
                 )
                 # 短标题不换行：气泡宽度会被歌词带窄，若标题跟着折行就会断成
                 # 两行、很难看。先按实际字体量宽度——放得下就关掉换行（宁可让
@@ -815,7 +817,7 @@ class PetSpeechBubble(QFrame):
                 header.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 header.setStyleSheet(
                     "QLabel { background: transparent; border: none;"
-                    " font-weight:600; font-size:11px; color:#2b3a4a;"
+                    f" font-weight:600; {font_css()}font-size:11px; color:#2b3a4a;"
                     " padding:2px 0 0 0; }"
                 )
                 self._button_layout.addWidget(header)
@@ -828,7 +830,7 @@ class PetSpeechBubble(QFrame):
                 hint.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 hint.setStyleSheet(
                     "QLabel { background: transparent; border: none;"
-                    " font-size:10px; color:#7a8a9a; padding:1px 0 0 0; }"
+                    f" {font_css()}font-size:10px; color:#7a8a9a; padding:1px 0 0 0; }}"
                 )
                 self._button_layout.addWidget(hint)
                 continue
@@ -852,7 +854,7 @@ class PetSpeechBubble(QFrame):
             btn.setStyleSheet(
                 "QPushButton {"
                 " background:#ffffff; border:1px solid #c9d4e0; border-radius:11px;"
-                " padding:4px 12px; font-size:11px; color:#2b3a4a;"
+                f" padding:4px 12px; {font_css()}font-size:11px; color:#2b3a4a;"
                 "}"
                 "QPushButton:hover { background:#eef6ff; border-color:#8ab8e8; }"
                 "QPushButton:pressed { background:#dcebfa; }"

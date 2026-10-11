@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from .speech_bubble import BUBBLE_STYLE_PRESETS
 from .speech_bubble_text import truncate_bubble_text
+from .ui_fonts import apply_family
 
 from .chat.models import ChatMessage
 from .chat.prompt import PromptBuilder
@@ -86,6 +87,7 @@ class QuickChatBubble(QFrame):
         self._capture_compat = False
         self._capture_host: QWidget | None = None
         self._scale = quick_chat_scale(config)
+        apply_family(self)   # 与桌宠气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)
