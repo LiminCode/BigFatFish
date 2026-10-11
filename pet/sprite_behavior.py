@@ -208,9 +208,11 @@ class _SpriteState:
                  "move_clip_finished", "move_loops_done", "click_tail_grace",
                  "click_final_seen", "click_clip_finished", "turn_tail_grace",
                  "turn_final_seen", "turn_clip_finished", "landing_pinned",
-                 "was_flying", "warm_landing_submitted")
+                 "was_flying", "warm_landing_submitted", "hold", "hold_index")
 
     def __init__(self) -> None:
+        self.hold: tuple[str, ...] = ()   # 保持轮播的一组 clip（空 = 走掷骰链）
+        self.hold_index = 0               # 下一段取 hold 里的第几个
         self.state = STATE_IDLE
         self.anim: str | None = None      # 当前绑定的 clip 名（None = 尚未起播）
         self.elapsed = 0.0                # 当前状态已流逝（tick 累加的 dt）
@@ -487,6 +489,44 @@ class BehaviorController:
         sprite.bind_clip(name)
         return True
 
+    def hold(self, sprite, names) -> bool:
+        """让 sprite 保持在一组动画上轮播，直到再次调用（空 = 解除，回掷骰链）。
+
+        会话小鱼的「忙 / 休息」：``play_once`` 播一遍就回随机行为，这里是「一直
+        这样，直到另行通知」。保持期间不掷骰，所以也不会走开；点击、菜单播放这类
+        一次性动作照常可用，播完回到保持的这组。
+
+        素材库里没有的名字跳过（换了角色）；一个可用的都没有就不保持，也不打断
+        正在播的动画。返回是否处于保持状态。
+        """
+        st = self._states.setdefault(sprite, _SpriteState())
+        known = None
+        lister = getattr(sprite.library, "names", None)
+        if callable(lister):
+            try:
+                known = set(lister())
+            except Exception:
+                known = None
+        st.hold = tuple(n for n in (names or ()) if known is None or n in known)
+        st.hold_index = 0
+        if st.hold and self.play_once(sprite, st.hold[0]):
+            st.hold_index = 1
+        return bool(st.hold)
+
+    def held(self, sprite) -> tuple[str, ...]:
+        """当前保持的那组 clip 名（空元组 = 没有保持）。"""
+        st = self._states.get(sprite)
+        return st.hold if st is not None else ()
+
+    def _continue_hold(self, sprite, st: _SpriteState) -> bool:
+        """处于保持状态 → 接着播这组里的下一段。返回 True = 已接管，调用方不再掷骰。"""
+        if not st.hold:
+            return False
+        name = st.hold[st.hold_index % len(st.hold)]
+        st.hold_index += 1
+        self._enter_acts(sprite, st, self._categories(sprite.library), forced_name=name)
+        return True
+
     def play_move_once(self, sprite, name: str) -> bool:
         """以指定移动素材触发一次移动（菜单「移动」类入口；无可达空间
         回退动作池，window.py trigger_move 语义）。"""
@@ -747,7 +787,7 @@ class BehaviorController:
                 if self._acts_tail_done(sprite, st, dt):
                     # 唱歌素材刚播完且音乐仍在放 → 原地续播，绝不走 gap/掷骰
                     # （旧机 `_on_anim_ended` 的第一条分支，window.py:2595-2601）
-                    if not self._continue_sing(sprite, st):
+                    if not self._continue_hold(sprite, st) and not self._continue_sing(sprite, st):
                         if not self._start_animation_gap(sprite, st):
                             self._roll_next(sprite, st)
             else:
@@ -1362,6 +1402,8 @@ class BehaviorController:
         待机——「只允许待机/转向」的位移语义由此保证；动作池 clip 只播原地动画，
         不改位置。
         """
+        if self._continue_hold(sprite, st):   # 被保持住的 sprite 不掷骰（见 hold）
+            return
         cats = self._categories(sprite.library)
         # 批10-A1：先消费预测（context/gen 校验单规则，不符即弃 → 现场掷骰）
         if st.predictor is not None and self.predict_enabled:
