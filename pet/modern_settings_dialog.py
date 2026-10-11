@@ -683,7 +683,7 @@ class ModernSettingsDialog(QDialog):
                         "开启后生成的小肥鱼跟随主肥鱼的大小；关闭后使用下方为小肥鱼单独选择的大小。",
                         self.spawn_inherit_size_check,
                     ),
-                    SettingRow("spawn_smaller_than_main", "比主肥鱼小一号", "继承大小时，新生成的小肥鱼比主肥鱼小一档；主肥鱼已是最小档时保持一样大。", self.spawn_smaller_check),
+                    SettingRow("spawn_smaller_than_main", "比主肥鱼小一号", "继承大小时，新生成的小肥鱼比主肥鱼小一档；主肥鱼已是最小档时取一半大小。", self.spawn_smaller_check),
                     SettingRow("spawn_scale", "小肥鱼大小", "关闭“继承大小”时，新生成小肥鱼使用的桌面尺寸。", self.spawn_scale_combo, stacked=True),
                     SettingRow(
                         "spawn_inherit_dynamic_island",

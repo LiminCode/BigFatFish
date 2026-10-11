@@ -109,6 +109,7 @@ class PetSprite(QObject):
         # 常驻标签（会话小鱼的「标题 · 状态」）：空串 = 不画，零成本。
         self.caption = ""
         self.caption_below = False       # False = 身体框上方；True = 下方
+        self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
         self.pos = QPointF(0, 0)
         self.set_pos(pos if pos is not None else QPointF(0, 0))
         self._clip = None
@@ -1014,13 +1015,23 @@ class PetSprite(QObject):
         if not self.caption:
             return QRect(), ""
         rect, body = self.rect(), self.body_rect()
-        font = QFont()
-        font.setPixelSize(self._CAPTION_FONT_PX)
-        metrics = QFontMetrics(font)
-        text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideRight,
-                                  max(1, rect.width() - 2 * self._CAPTION_PAD_X - 2))
-        width = min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X)
-        height = min(rect.height(), metrics.height() + 2 * self._CAPTION_PAD_Y)
+        # 标签每帧都画：字体度量（建 QFont / QFontMetrics、省略、量宽）只在文本或
+        # 画布宽度变了才重算；位置是下面几行整数运算，移动时照常跟着走。
+        key = (self.caption, rect.width())
+        cached = self._caption_text_cache
+        if cached is None or cached[0] != key:
+            font = QFont()
+            font.setPixelSize(self._CAPTION_FONT_PX)
+            metrics = QFontMetrics(font)
+            # 中间省略：开头是会话名、结尾是状态，两头都得看得见
+            text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideMiddle,
+                                      max(1, rect.width() - 2 * self._CAPTION_PAD_X - 2))
+            cached = (key, text, font,
+                      min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X),
+                      metrics.height() + 2 * self._CAPTION_PAD_Y)
+            self._caption_text_cache = cached
+        _key, text, _font, width, text_height = cached
+        height = min(rect.height(), text_height)
         x = body.center().x() - width // 2
         x = max(rect.left(), min(x, rect.right() - width + 1))
         if self.caption_below:
@@ -1044,9 +1055,7 @@ class PetSprite(QObject):
             painter.setBrush(QColor(24, 28, 36, 200))
             radius = pill.height() / 2
             painter.drawRoundedRect(pill, radius, radius)
-            font = QFont()
-            font.setPixelSize(self._CAPTION_FONT_PX)
-            painter.setFont(font)
+            painter.setFont(self._caption_text_cache[2])
             painter.setPen(QColor(255, 255, 255))
             painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
         finally:

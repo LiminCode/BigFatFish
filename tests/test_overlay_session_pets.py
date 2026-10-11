@@ -49,12 +49,22 @@ def test_session_pet_is_ephemeral(shell, tmp_path):
     assert ovs.load_active_slots(config_dir) == [1]
 
 
-def test_session_pet_is_one_size_smaller_and_stays_that_way(shell):
+def test_session_pet_is_half_the_main_size_and_stays_that_way(shell):
+    """会话小鱼是主肥鱼的一半大：一眼分得清，多只在场也不占地方。"""
     sprite = shell.spawn_session_pet()
-    assert sprite.scale == pytest.approx(catalog.smaller_scale_step(0.85))
+    assert sprite.scale == pytest.approx(0.85 / 2)
 
     shell._sync_sprite_settings()           # 设置重下发（任意设置变更都会触发）
-    assert sprite.scale == pytest.approx(catalog.smaller_scale_step(0.85))
+    assert sprite.scale == pytest.approx(0.85 / 2)
+
+
+def test_session_pet_of_the_smallest_main_fish_is_still_half(tmp_path):
+    """主肥鱼已是最小档（0.5）时，「小一号」无档可退——实机上就是这个配置。"""
+    small_shell, _ = _make_persistent_shell(tmp_path, {"scale": 0.5})
+    try:
+        assert small_shell.spawn_session_pet().scale == pytest.approx(0.25)
+    finally:
+        small_shell._delete_runtime_marker()
 
 
 def test_removing_a_session_pet_releases_its_library(shell):

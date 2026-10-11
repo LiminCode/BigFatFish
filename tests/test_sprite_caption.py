@@ -81,6 +81,33 @@ def test_long_caption_is_elided_to_the_canvas_width():
     assert sprite.caption_rect().width() <= sprite.rect().width()
 
 
+def test_caption_text_layout_is_measured_once_per_text(monkeypatch):
+    """标签每帧都画（144Hz）：字体度量只在文本或画布宽度变化时重算。
+
+    实机 py-spy（5 只会话小鱼）：每帧新建 QFont + QFontMetrics 占了 GUI 线程约 9%。
+    """
+    from pet import pet_sprite as pet_sprite_mod
+
+    calls = []
+    real = pet_sprite_mod.QFontMetrics
+
+    def _counting(font):
+        calls.append(1)
+        return real(font)
+
+    monkeypatch.setattr(pet_sprite_mod, "QFontMetrics", _counting)
+    sprite = _sprite("dsh-pet · 写代码中")
+    for _ in range(5):
+        _painted(sprite)
+    sprite.set_pos(sprite.pos + type(sprite.pos)(40, 0))      # 移动不改变文本排版
+    _painted(sprite)
+    assert len(calls) == 1
+
+    sprite.caption = "dsh-pet · 休息中"
+    _painted(sprite)
+    assert len(calls) == 2
+
+
 def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():
     assert _sprite("").caption_rect() == QRect()
     sprite = _sprite("x")
