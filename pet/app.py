@@ -923,6 +923,7 @@ class PetInstance:
                 initial_page=initial_page,
             )
             dialog.finished.connect(self._modern_settings_finished)
+            dialog.saved.connect(self._modern_settings_saved)
             self.modern_settings_dialog = dialog
         elif initial_page:
             selector = getattr(self.modern_settings_dialog, "select_page", None)
@@ -951,9 +952,23 @@ class PetInstance:
             logging.exception("独立设置进程链路异常，回退进程内设置页")
             return False
 
+    def _modern_settings_saved(self) -> None:
+        """设置页点了「保存」（窗口还开着）：与关窗走同一条应用链。"""
+        PetInstance._apply_modern_settings(self)
+
     def _modern_settings_finished(self, result: int) -> None:
         self.modern_settings_dialog = None
         self._update_bubble_suppression_for_settings()
+        # 按类调用：既有测试拿鸭子类型的 owner 直接调本方法，owner 上没有这个方法
+        PetInstance._apply_modern_settings(self)
+        if (
+            getattr(self, "_dock_icon_before_settings", None) is True
+            and not bool(self.config.get("show_dock_icon", True))
+        ):
+            self._hint_dock_hidden_recovery()
+
+    def _apply_modern_settings(self) -> None:
+        """把设置页刚落盘的改动应用到运行中的桌宠（「保存」与关窗共用）。"""
         # 新版设置在关闭时一律落盘（closeEvent 自动保存，「保存并退出」同样走
         # _write_config），因此无论 Accepted/Rejected 都把改动应用到桌宠。
         # 此前只有 Accepted 才刷新：直接 X 关闭时保存生效但桌宠不更新。
@@ -980,11 +995,6 @@ class PetInstance:
         # 台词可能刚被改动：把还没有本地音频的句子交给后台补齐（开关默认关闭，
         # 关着时这里是 no-op；点了「编辑点击动画绑定」后直接 Esc 关设置也能一起收）
         self.shell.precache_self_talk_voice("设置保存后")
-        if (
-            getattr(self, "_dock_icon_before_settings", None) is True
-            and not bool(self.config.get("show_dock_icon", True))
-        ):
-            self._hint_dock_hidden_recovery()
 
 
     def _dock_hidden_recovery_message(self) -> str:
