@@ -34,6 +34,14 @@ log = logging.getLogger(__name__)
 AGENT_KEYS = ("claude", "claude_wsl")
 
 
+def _default_scan_local(**kwargs) -> list:
+    return history_mod.scan_local(**kwargs)
+
+
+def _default_scan_wsl(**kwargs) -> list:
+    return history_mod.scan_wsl(**kwargs)
+
+
 def _spawn_thread(target: Callable[[], None]) -> None:
     threading.Thread(target=target, daemon=True, name="pet-session-history-scan").start()
 
@@ -46,9 +54,11 @@ class SessionHistoryService(QObject):
 
     SAVE_DELAY_MS = 3_000
     RESCAN_MIN_INTERVAL_S = 60.0
+    STARTUP_SCAN_DELAY_MS = 5_000
 
     def __init__(self, store: SessionHistory, *, enabled: Callable[[], bool] = lambda: True,
                  wsl_enabled: Callable[[], bool] = lambda: False,
+                 limits: Callable[[], tuple] | None = None,
                  scan_local: Callable | None = None, scan_wsl: Callable | None = None,
                  spawn: Callable | None = None, clock: Callable[[], float] = time.monotonic,
                  parent: QObject | None = None) -> None:
@@ -56,6 +66,7 @@ class SessionHistoryService(QObject):
         self._store = store
         self._enabled = enabled
         self._wsl_enabled = wsl_enabled
+        self._limits = limits
         self._scan_local = scan_local
         self._scan_wsl = scan_wsl
         self._spawn = spawn or _spawn_thread
@@ -66,7 +77,24 @@ class SessionHistoryService(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(self.SAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._save)
+        self._startup_timer = QTimer(self)
+        self._startup_timer.setSingleShot(True)
+        self._startup_timer.setInterval(self.STARTUP_SCAN_DELAY_MS)
+        self._startup_timer.timeout.connect(self.rescan)
         self._scanned.connect(self._on_scanned)
+
+    def start(self) -> None:
+        """读入上次的记录，稍后做第一次回填（不和启动抢时间）。"""
+        self._store.load()
+        self._startup_timer.start()
+
+    def _apply_limits(self) -> None:
+        if self._limits is not None:
+            self._store.configure(*self._limits())
+
+    def refresh(self) -> None:
+        """开关 / 上限变了：让界面重新取一次。"""
+        self.changed.emit()
 
     @property
     def store(self) -> SessionHistory:
@@ -78,6 +106,7 @@ class SessionHistoryService(QObject):
 
     # ---------------------------------------------------------------- 读取
     def entries(self) -> list[HistoryEntry]:
+        self._apply_limits()
         return self._store.entries() if self._enabled() else []
 
     def find(self, key) -> HistoryEntry | None:
@@ -111,10 +140,11 @@ class SessionHistoryService(QObject):
             return False
         self._last_scan = now
         self._scanning = True
+        self._apply_limits()
         days = self._store.max_age_days
         with_wsl = bool(self._wsl_enabled())
-        scan_local = self._scan_local or history_mod.scan_local
-        scan_wsl = self._scan_wsl or history_mod.scan_wsl
+        scan_local = self._scan_local or _default_scan_local
+        scan_wsl = self._scan_wsl or _default_scan_wsl
 
         def run() -> None:
             found: list = []
@@ -167,6 +197,7 @@ class SessionHistoryService(QObject):
 
     def flush(self) -> None:
         """有没写的就立刻写（退出时）。"""
+        self._startup_timer.stop()
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._store.save()

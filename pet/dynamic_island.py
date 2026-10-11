@@ -231,6 +231,11 @@ class DynamicIsland(QWidget):
     open_chat_requested = Signal()
     open_settings_requested = Signal()
     card_expanded = Signal()  # 卡片展开（AppShell 借此静默刷新余额）
+    # 卡片里的「最近的对话」折叠框（island_history_panel）：点了一行 / 右键菜单选了一项 /
+    # 用户折叠或展开了
+    history_activated = Signal(object)
+    history_action = Signal(str, object)
+    history_toggled = Signal(bool)
     chat_requested = Signal()  # 桌宠隐藏时单击胶囊（hidden_chat 开启）：弹岛对话气泡
 
     def __init__(self, config, parent=None):
@@ -626,6 +631,15 @@ class DynamicIsland(QWidget):
         for label in (self._card_balance_label, self._card_tier_label,
                       self._card_message_label):
             layout.addWidget(label)
+        # 「最近的对话」：没有记录时整个不出现，卡片与原来一模一样
+        from .island_history_panel import SessionHistoryPanel
+
+        self._history_panel = SessionHistoryPanel(self._card_box)
+        self._history_panel.hide()
+        self._history_panel.toggled.connect(self._on_history_toggled)
+        self._history_panel.activated.connect(self.history_activated)
+        self._history_panel.action_requested.connect(self.history_action)
+        layout.addWidget(self._history_panel)
         layout.addSpacing(2)
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
@@ -666,6 +680,8 @@ class DynamicIsland(QWidget):
             btn.setStyleSheet(button_style)
         # 标题行 / 详情行：放不下就折行（卡片随之长高，见 _card_height），绝不让文字
         # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
+        self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
+                                     width=self._card_width() - 2 * _CARD_MARGIN_X)
         text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2
         for label, text, max_lines in (
                 (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
@@ -711,8 +727,40 @@ class DynamicIsland(QWidget):
         self._card_box.show()
         self._sync_card_labels()
         self._animate_to(self._target_rect())
-        self._card_collapse_timer.start()
+        self._sync_collapse_timer()
         self.card_expanded.emit()
+
+    # ------------------------------------------------------------ 最近的对话
+    def set_session_history(self, rows, *, is_open: bool | None = None) -> None:
+        """卡片里的「最近的对话」：``rows`` 见 ``island_history_panel``；空 = 不显示。
+
+        ``is_open`` 给了就把折叠状态设成它（恢复上次的状态，不回发 ``history_toggled``）。
+        """
+        panel = self._history_panel
+        panel.set_rows(rows)
+        if is_open is not None:
+            panel.set_open(is_open)
+        panel.setVisible(bool(rows))
+        self._sync_collapse_timer()
+        self._refresh()
+
+    def show_history_status(self, text: str) -> None:
+        self._history_panel.show_status(text)
+
+    def _on_history_toggled(self, is_open: bool) -> None:
+        self._sync_collapse_timer()
+        self._refresh()                      # 卡片高度跟着列表长 / 缩
+        self.history_toggled.emit(bool(is_open))
+
+    def _sync_collapse_timer(self) -> None:
+        """卡片的自动收起计时：「最近的对话」开着时不计（用户正在列表里找）。"""
+        if self._mode != "expanded":
+            return
+        panel = self._history_panel
+        if panel.is_open() and not panel.isHidden():
+            self._card_collapse_timer.stop()
+        else:
+            self._card_collapse_timer.start()
 
     def collapse_card(self, *, animate: bool = True) -> None:
         """收起卡片；配置为停靠边时收回细条。拖拽起手时 animate=False

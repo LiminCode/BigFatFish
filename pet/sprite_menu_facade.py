@@ -590,6 +590,18 @@ class SpriteMenuFacade:
         if not on and controller is not None:
             controller.clear()
 
+    def toggle_session_history(self, on: bool) -> None:
+        """「记录最近的对话」开关：落盘；岛上的列表立刻跟着出现 / 收走。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_history"] = bool(on)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        service = getattr(self._shell, "session_history", None)
+        if service is not None:
+            service.refresh()
+            if on:
+                service.rescan(force=True)
+
     def set_session_pets_max(self, limit: int) -> None:
         """会话小鱼上限：落盘即生效（下一只生成时按新上限判）。"""
         ag_data = dict(self.cfg.get("agent_link", {}) or {})

@@ -244,6 +244,11 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
+        # 最多留几天（1~30）、几条（1~200）。见 pet/claude_session_history.py
+        "session_history": True,
+        "session_history_days": 7,
+        "session_history_max": 30,
         # 音效配置
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
@@ -348,6 +353,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
         "cursor",
         "opencode",
         "session_pets",
+        "session_history",
         "sound_enabled",
         "sound_start_enabled",
         "sound_done_enabled",
@@ -359,6 +365,11 @@ def _clean_agent_link_data(raw: Any) -> dict:
         result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
+    for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200)):
+        try:
+            result[key] = max(low, min(high, int(raw.get(key, defaults[key]))))
+        except (TypeError, ValueError):
+            result[key] = defaults[key]
     for key in ("sound_start_path", "sound_done_path", "sound_error_path"):
         if key in raw:
             val = str(raw[key] or "").strip()[:500]
