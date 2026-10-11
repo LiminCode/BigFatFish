@@ -2542,6 +2542,9 @@ class OverlayShell(QObject):
             if bubble is None:
                 bubble = cls(self._config, pet_window=anchor)
                 bubble.open_chat_callback = self.open_full_chat
+                # 完整聊天窗归实例管（隐藏后复用）：气泡写了会话就让它重读
+                bubble.chat_sync_callback = getattr(
+                    self._instance, "sync_chat_windows", None)
                 self._quick_chat = bubble
             else:
                 bubble.settings = self._config.chat_settings()
