@@ -170,6 +170,8 @@ def build_pet_controls(host) -> None:
     # 生小肥鱼尺寸策略：默认继承主肥鱼大小；关闭后使用 spawn_scale 独立选择。
     host.spawn_inherit_size_check = ToggleSwitch(host)
     host.spawn_inherit_size_check.setChecked(bool(host.config.get("spawn_inherit_size", True)))
+    host.spawn_smaller_check = ToggleSwitch(host)
+    host.spawn_smaller_check.setChecked(bool(host.config.get("spawn_smaller_than_main", True)))
     host.spawn_scale_combo = ModernSelect(host, width=132)
     current_spawn_scale = float(host.config.get("spawn_scale", catalog.DEFAULT_SCALE))
     spawn_scales = list(catalog.SCALE_STEPS)

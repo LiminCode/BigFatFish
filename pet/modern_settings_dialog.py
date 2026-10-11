@@ -680,9 +680,10 @@ class ModernSettingsDialog(QDialog):
                     SettingRow(
                         "spawn_inherit_size",
                         "生小肥鱼继承大小",
-                        "开启后生成的小肥鱼与主肥鱼大小一致；关闭后使用下方为小肥鱼单独选择的大小。",
+                        "开启后生成的小肥鱼跟随主肥鱼的大小；关闭后使用下方为小肥鱼单独选择的大小。",
                         self.spawn_inherit_size_check,
                     ),
+                    SettingRow("spawn_smaller_than_main", "比主肥鱼小一号", "继承大小时，新生成的小肥鱼比主肥鱼小一档；主肥鱼已是最小档时保持一样大。", self.spawn_smaller_check),
                     SettingRow("spawn_scale", "小肥鱼大小", "关闭“继承大小”时，新生成小肥鱼使用的桌面尺寸。", self.spawn_scale_combo, stacked=True),
                     SettingRow(
                         "spawn_inherit_dynamic_island",
@@ -1556,6 +1557,7 @@ class ModernSettingsDialog(QDialog):
             not bool(inherit_size),
             dependency="spawn_inherit_size",
         )
+        self._set_setting_rows_visible(("spawn_smaller_than_main",), bool(inherit_size), dependency="spawn_inherit_size")
 
     def _on_clear_spawned_pets(self) -> None:
         """一键静默退出所有小肥鱼（slot-N）；它们的设置与数据保留。
@@ -1759,7 +1761,7 @@ class ModernSettingsDialog(QDialog):
                  + settings_music.build_music_player_rows(self)),
                 ("拖拽与弹射", claim("drag_physics", "throw_strength", "slingshot_enabled", "lock_position", "shift_drag")),
                 ("边缘探头", claim("edge_probe")),
-                ("生小肥鱼", claim("spawn_inherit_size", "spawn_scale", "spawn_inherit_dynamic_island", "clear_spawned_pets")),
+                ("生小肥鱼", claim("spawn_inherit_size", "spawn_smaller_than_main", "spawn_scale", "spawn_inherit_dynamic_island", "clear_spawned_pets")),
                 ("多开碰撞", collision_primary),
                 ("碰撞参数（高级）", collision_advanced, True),
             ]
@@ -2098,6 +2100,7 @@ class ModernSettingsDialog(QDialog):
         texts = [line.strip()[:120] for line in self.texts_edit.toPlainText().splitlines() if line.strip()]
         self.config.set("scale", float(self.scale_combo.currentData()))
         self.config.set("spawn_inherit_size", self.spawn_inherit_size_check.isChecked())
+        self.config.set("spawn_smaller_than_main", self.spawn_smaller_check.isChecked())
         self.config.set("spawn_scale", float(self.spawn_scale_combo.currentData()))
         self.config.set("spawn_inherit_dynamic_island", self.spawn_inherit_dynamic_island_check.isChecked())
         self.config.set("on_top", self.on_top_check.isChecked())

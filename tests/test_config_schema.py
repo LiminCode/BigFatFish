@@ -126,6 +126,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "spawn_inherit_dynamic_island",
         "spawn_inherit_size",
         "spawn_scale",
+        "spawn_smaller_than_main",
         "stream_capture_mode",
         "system_notifications_enabled",
         "throw_strength",
