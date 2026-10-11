@@ -496,3 +496,15 @@ def test_status_and_elapsed_wording():
     waiting = si.SessionDetail(phase="waiting", tool="Bash")
     assert status_line(waiting, 1000.0, now=1300.0) == "在等你批准：Bash · 已 5 分钟"
     assert status_line(si.SessionDetail(phase="resting"), None) == ch.PHASE_TEXT["resting"]
+
+
+def test_transcript_is_found_by_session_id_when_the_hook_has_not_sent_its_path_yet(tmp_path):
+    """桌宠刚启动、会话正在回合中途：路径要到下一个回合边界才来，详情不能因此是空的。"""
+    project = tmp_path / ".claude" / "projects" / "C--code-proj"
+    project.mkdir(parents=True)
+    (project / f"{SID}.jsonl").write_text(_transcript_text("路径还没送到时的问题"), encoding="utf-8")
+
+    detail = si.load_local(si.from_session("claude", {"sessionId": SID}), home=tmp_path)
+
+    assert detail.last_prompt == "路径还没送到时的问题"
+    assert si.find_transcript("../../etc", tmp_path) == "", "只按合法的会话 ID 找"

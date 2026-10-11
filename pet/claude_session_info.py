@@ -191,6 +191,20 @@ def read_tail(path: Path | str, limit: int = TAIL_BYTES) -> str:
         return ""
 
 
+def find_transcript(session_id: str, home: Path | None = None) -> str:
+    """按会话 ID 找 transcript（``~/.claude/projects/<项目>/<id>.jsonl``）。
+
+    hook 只在回合边界送路径；桌宠刚启动、会话还在回合中途时路径还没到，先这样找。
+    """
+    if not _safe_session_id(session_id):
+        return ""
+    projects = (home or Path.home()) / ".claude" / "projects"
+    try:
+        return next((str(p) for p in projects.glob(f"*/{session_id}.jsonl")), "")
+    except OSError:
+        return ""
+
+
 def registry_dir(home: Path | None = None) -> Path:
     return (home or Path.home()) / ".claude" / "sessions"
 
@@ -252,6 +266,8 @@ def load_local(detail: SessionDetail, *, home: Path | None = None,
     apply_registry(detail, entry)
     if entry is not None:
         detail.alive = alive(entry)
+    if not detail.transcript:
+        detail.transcript = find_transcript(detail.session_id, home)
     if detail.transcript:
         apply_transcript(detail, parse_transcript_tail(read_tail(detail.transcript)))
     return detail
@@ -287,8 +303,11 @@ for f in "$HOME"/.claude/sessions/*.json; do
         tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -E '^(TERM_PROGRAM|WT_SESSION)=' | sed 's/^/@@env /'
     fi
 done
+t=${1:-}
+# hook 只在回合边界送 transcript 路径：还没送到时按会话 ID 找
+[ -z "$t" ] && [ -n "${2:-}" ] && t=$(ls "$HOME"/.claude/projects/*/"$2".jsonl 2>/dev/null | head -n 1)
 echo "@@tail"
-[ -n "${1:-}" ] && tail -c ''' + str(TAIL_BYTES) + r''' "$1" 2>/dev/null
+[ -n "$t" ] && tail -c ''' + str(TAIL_BYTES) + r''' "$t" 2>/dev/null
 :
 '''
 
