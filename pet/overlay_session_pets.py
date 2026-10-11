@@ -105,7 +105,8 @@ class SessionPetController(QObject):
             self._pets[key] = sprite
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
-            sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}")
+            sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}",
+            tone=phase)
         previous = self._phases.get(key)
         if previous == phase:
             return  # 只是标签变了：不重启正在播的动画

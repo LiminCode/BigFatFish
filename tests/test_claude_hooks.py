@@ -602,12 +602,12 @@ def test_summary_counts_by_phase_and_puts_what_needs_you_first():
         _s("claude", "working", sid="abcdef0123"),
     ])
     assert headline == "Claude Code · 1 个等你批准 · 2 个在干活 · 1 个休息中"
-    assert detail == "work (WSL) · 等你批准 ｜ dsh-pet · 写代码中 等 4 个"
+    assert detail == "work (WSL) · 等你批准 ｜ dsh-pet · 工作中 等 4 个"
 
 
 def test_summary_lists_every_session_when_they_fit():
     _headline, detail = ch.summarize_sessions([_s("claude", "working", title="Fix login loop")])
-    assert detail == "Fix login loop · 写代码中"
+    assert detail == "Fix login loop · 工作中"
 
 
 def test_session_label_prefers_title_then_project_then_short_id():

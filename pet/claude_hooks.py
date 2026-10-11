@@ -330,7 +330,7 @@ class WslSettingsStore:
 # ---------------------------------------------------------------- 会话呈现文案
 
 #: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）
-PHASE_TEXT = {"working": "写代码中", "waiting": "等你批准", "resting": "休息中"}
+PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "resting": "休息中"}
 _PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
 #: 汇总时的排序：最需要人管的排最前
 _PHASE_ORDER = ("waiting", "working", "resting")

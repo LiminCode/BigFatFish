@@ -446,7 +446,7 @@ def test_card_shows_claude_sessions_when_the_claude_link_is_on(tmp_path, monkeyp
     try:
         shell.island.expand_card()
         assert shell.island._balance_text == "Claude Code · 1 个在干活"
-        assert shell.island._balance_tier_text == "Fix login loop · 写代码中"
+        assert shell.island._balance_tier_text == "Fix login loop · 工作中"
         assert asked == [], "Claude 模式不碰 API Key"
     finally:
         _teardown_shell(shell)

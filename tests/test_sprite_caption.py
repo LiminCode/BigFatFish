@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import sys
+
+import pytest
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
@@ -16,6 +19,8 @@ from pet import catalog
 from tests.test_pet_sprite import FakeClip, _make_sprite
 
 app = QApplication.instance() or QApplication([])
+
+_SOFT_FONT = {"win32": "Microsoft YaHei UI", "darwin": "PingFang SC"}
 
 
 def _sprite(caption: str = "", *, below: bool = False):
@@ -53,7 +58,7 @@ def test_no_caption_paints_nothing_extra():
 
 
 def test_caption_is_painted_above_the_body_inside_the_canvas():
-    sprite = _sprite("dsh-pet · 写代码中")
+    sprite = _sprite("dsh-pet · 工作中")
     rows = _inked_rows(_painted(sprite))
     body_top = sprite.body_rect().top() - sprite.rect().top()
 
@@ -73,7 +78,7 @@ def test_caption_can_sit_below_the_body():
 
 
 def test_long_caption_is_elided_to_the_canvas_width():
-    sprite = _sprite("一个特别特别特别特别特别特别特别特别特别特别特别特别长的会话标题 · 写代码中")
+    sprite = _sprite("一个特别特别特别特别特别特别特别特别特别特别特别特别长的会话标题 · 工作中")
     image = _painted(sprite)
     row = _inked_rows(image)[len(_inked_rows(image)) // 2]
     inked = [x for x in range(image.width()) if image.pixelColor(x, row).alpha() > 0]
@@ -96,7 +101,7 @@ def test_caption_text_layout_is_measured_once_per_text(monkeypatch):
         return real(font)
 
     monkeypatch.setattr(pet_sprite_mod, "QFontMetrics", _counting)
-    sprite = _sprite("dsh-pet · 写代码中")
+    sprite = _sprite("dsh-pet · 工作中")
     for _ in range(5):
         _painted(sprite)
     sprite.set_pos(sprite.pos + type(sprite.pos)(40, 0))      # 移动不改变文本排版
@@ -114,7 +119,7 @@ def test_caption_is_rendered_once_and_blitted_afterwards():
     实机 py-spy（6 只会话小鱼，144Hz）：每帧 drawRoundedRect + drawText 约占 GUI
     线程 11%，即每只约 1.8% 的单核。
     """
-    sprite = _sprite("dsh-pet · 写代码中")
+    sprite = _sprite("dsh-pet · 工作中")
     _painted(sprite)
     first = sprite.caption_pixmap()
     assert first is not None and not first.isNull()
@@ -129,6 +134,55 @@ def test_caption_is_rendered_once_and_blitted_afterwards():
     assert sprite.caption_pixmap().cacheKey() != first.cacheKey()
     sprite.caption = ""
     assert sprite.caption_pixmap() is None
+
+
+def _pill_color(sprite):
+    """胶囊底色：左端圆角内侧、垂直居中的一点（文字从左内边距之后才开始）。"""
+    image = sprite.caption_pixmap().toImage()
+    dpr = image.devicePixelRatio()
+    return image.pixelColor(int(4 * dpr), image.height() // 2)
+
+
+def test_caption_pill_is_grey_by_default_and_green_while_working():
+    """「工作中」一眼看得出：淡绿底；其余状态保持原来的深灰底。"""
+    sprite = _sprite("dsh-pet · 休息中")
+    grey = _pill_color(sprite)
+    assert grey.alpha() > 0
+    assert abs(grey.green() - grey.red()) < 20 and abs(grey.green() - grey.blue()) < 20
+
+    sprite.caption_tone = "working"
+    green = _pill_color(sprite)
+    assert green.green() > green.red() + 40 and green.green() > green.blue() + 40
+
+    sprite.caption_tone = "没登记过的色调"
+    assert _pill_color(sprite) == grey, "不认识的色调退回默认底色"
+
+
+def test_changing_the_tone_alone_rerenders_the_pill():
+    sprite = _sprite("dsh-pet · 工作中")
+    first = sprite.caption_pixmap().cacheKey()
+    sprite.caption_tone = "working"
+    assert sprite.caption_pixmap().cacheKey() != first
+    assert sprite.caption_pixmap().cacheKey() == sprite.caption_pixmap().cacheKey()
+
+
+@pytest.mark.skipif(sys.platform not in _SOFT_FONT, reason="该平台沿用 Qt 默认字体")
+def test_caption_uses_the_soft_system_cjk_font(monkeypatch):
+    """Qt 默认 UI 字体不含中文，回退到的字形发硬：直接点名系统的中文 UI 字体。"""
+    from pet import pet_sprite as pet_sprite_mod
+
+    fonts = []
+    real = pet_sprite_mod.QFontMetrics
+
+    def _recording(font):
+        fonts.append(font)
+        return real(font)
+
+    monkeypatch.setattr(pet_sprite_mod, "QFontMetrics", _recording)
+    _painted(_sprite("dsh-pet · 工作中"))
+
+    # 单族：Windows 上多族列表会让 Qt 枚举整个字体库（见 menu_styles/common.py）
+    assert fonts[0].families() == [_SOFT_FONT[sys.platform]]
 
 
 def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():

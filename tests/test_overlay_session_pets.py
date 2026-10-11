@@ -109,8 +109,12 @@ def test_clearing_spawned_pets_also_dismisses_session_pets(shell):
 
 def test_caption_setter_updates_the_sprite(shell):
     sprite = shell.spawn_session_pet()
-    shell.set_session_pet_caption(sprite, "dsh-pet · 写代码中")
-    assert sprite.caption == "dsh-pet · 写代码中"
+    shell.set_session_pet_caption(sprite, "dsh-pet · 工作中")
+    assert sprite.caption == "dsh-pet · 工作中"
+    assert sprite.caption_tone == ""
+
+    shell.set_session_pet_caption(sprite, "dsh-pet · 工作中", tone="working")
+    assert sprite.caption_tone == "working", "文字没变、只换色调也要生效"
 
 
 # ---------------------------------------------------------------- 控制器
@@ -136,15 +140,18 @@ def _session_pets(shell) -> list:
 def test_session_gets_a_fish_that_follows_its_phase(shell, controller):
     controller.on_session_update("claude", _update(project="dsh-pet"))
     (fish,) = _session_pets(shell)
-    assert fish.caption == "dsh-pet · 写代码中"
+    assert fish.caption == "dsh-pet · 工作中"
+    assert fish.caption_tone == "working", "标签底色跟着阶段走"
     assert shell.behavior.held(fish) == ("act1",)
 
     controller.on_session_update("claude", _update(phase="waiting", project="dsh-pet"))
     assert fish.caption == "dsh-pet · 等你批准"
+    assert fish.caption_tone == "waiting"
     assert shell.behavior.held(fish) == ("act1",), "等批准时姿势不变，只换标签"
 
     controller.on_session_update("claude", _update(phase="resting", title="Fix login loop", project="dsh-pet"))
     assert fish.caption == "Fix login loop · 休息中", "有标题用标题，没有才用项目名"
+    assert fish.caption_tone == "resting"
     assert shell.behavior.held(fish) == ("idle1",)
 
     controller.on_session_update("claude", _update(phase="gone"))
@@ -157,12 +164,12 @@ def test_sessions_and_channels_get_separate_fish(shell, controller):
     controller.on_session_update("claude_wsl", _update("A", project="work-proj"))
 
     assert sorted(f.caption for f in _session_pets(shell)) == [
-        "other · 写代码中", "win-proj · 写代码中", "work-proj (WSL) · 写代码中"]
+        "other · 工作中", "win-proj · 工作中", "work-proj (WSL) · 工作中"]
 
 
 def test_label_falls_back_to_a_short_session_id(shell, controller):
     controller.on_session_update("claude", _update("0123456789abcdef"))
-    assert _session_pets(shell)[0].caption == "01234567 · 写代码中"
+    assert _session_pets(shell)[0].caption == "01234567 · 工作中"
 
 
 def test_repeated_updates_do_not_restart_the_animation(shell, controller):
@@ -172,7 +179,7 @@ def test_repeated_updates_do_not_restart_the_animation(shell, controller):
 
     controller.on_session_update("claude", _update(title="New title", project="p"))
 
-    assert fish.caption == "New title · 写代码中"
+    assert fish.caption == "New title · 工作中"
     assert shell.behavior.anim_of(fish) == "click1", "阶段没变：只换标签，不打断正在播的动画"
 
 

@@ -21,6 +21,7 @@ Phase 4.1a 硬化（PHASE4_DESIGN.md D2/D3）：
 from __future__ import annotations
 
 import math
+import sys
 import time
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt
@@ -112,8 +113,9 @@ class PetSprite(QObject):
         # 常驻标签（会话小鱼的「标题 · 状态」）：空串 = 不画，零成本。
         self.caption = ""
         self.caption_below = False       # False = 身体框上方；True = 下方
+        self.caption_tone = ""           # 胶囊配色（_CAPTION_TONES 的键）；不认识的用默认
         self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
-        self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr) → 胶囊贴图
+        self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr, 配色) → 胶囊贴图
         self.pos = QPointF(0, 0)
         self.set_pos(pos if pos is not None else QPointF(0, 0))
         self._clip = None
@@ -1008,6 +1010,12 @@ class PetSprite(QObject):
     _CAPTION_FONT_PX = 12
     _CAPTION_PAD_X = 8
     _CAPTION_PAD_Y = 3
+    # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名系统的中文 UI 字体。必须是
+    # **单族**——Windows 上多族列表会让 Qt 枚举整个字体库（见 menu_styles/common.py）。
+    _CAPTION_FONT_FAMILY = {"win32": "Microsoft YaHei UI", "darwin": "PingFang SC"}.get(sys.platform, "")
+    #: 配色 → (底色, 字色)
+    _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
+    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36))}
 
     def _caption_layout(self) -> tuple[QRect, str]:
         """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。
@@ -1024,7 +1032,7 @@ class PetSprite(QObject):
         key = (self.caption, rect.width())
         cached = self._caption_text_cache
         if cached is None or cached[0] != key:
-            font = QFont()
+            font = QFont(self._CAPTION_FONT_FAMILY) if self._CAPTION_FONT_FAMILY else QFont()
             font.setPixelSize(self._CAPTION_FONT_PX)
             metrics = QFontMetrics(font)
             # 中间省略：开头是会话名、结尾是状态，两头都得看得见
@@ -1057,7 +1065,8 @@ class PetSprite(QObject):
         pill, text = self._caption_layout()
         if pill.isEmpty():
             return None
-        key = (text, pill.width(), pill.height(), self._dpr)
+        fill, ink = self._CAPTION_TONES.get(self.caption_tone, self._CAPTION_DEFAULT_TONE)
+        key = (text, pill.width(), pill.height(), self._dpr, fill, ink)
         cached = self._caption_pixmap_cache
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -1070,10 +1079,10 @@ class PetSprite(QObject):
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(24, 28, 36, 200))
+            painter.setBrush(QColor(*fill))
             painter.drawRoundedRect(QRectF(0, 0, width, height), height / 2, height / 2)
             painter.setFont(self._caption_text_cache[2])
-            painter.setPen(QColor(255, 255, 255))
+            painter.setPen(QColor(*ink))
             painter.drawText(QRect(0, 0, width, height), int(Qt.AlignmentFlag.AlignCenter), text)
         finally:
             painter.end()
