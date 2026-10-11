@@ -122,6 +122,20 @@ def _no_real_api_key_probe(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_usage_measurement(monkeypatch):
+    """灵动岛「今日用量」在测试里绝不真的去读 ``~/.claude`` 下的对话记录。
+
+    默认的统计读的是开发者 / CI 机器上真实的 Claude Code 记录；这里换成恒为 0 的替身，
+    要测统计本身的用例直接用 ``claude_usage.UsageMeter``（test_claude_usage.py，喂临时目录）。
+    """
+    try:
+        from pet import claude_usage, claude_usage_monitor
+    except Exception:
+        return
+    monkeypatch.setattr(claude_usage_monitor, "_default_measure", claude_usage.UsageTotals)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_session_history_scan(monkeypatch):
     """「最近的对话」的回填在测试里绝不真的去读 ``~/.claude`` 或起 wsl.exe。
 

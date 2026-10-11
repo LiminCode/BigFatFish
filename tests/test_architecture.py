@@ -222,7 +222,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # saved 信号 2 行、装按钮 2 行、_save_only 4 行、import 1 行，外加开机自启基线
 # 随写入更新 3 行（否则保存后再改回去不生效）。实测 2413。
 # 同日回调到 2406：在线更新整个移除，这里少了更新页的 import / 构造 / 域登记共 7 行。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2406
+# 同日再回调到 2395：信息槽只留「当前时间 / 今日用量」，去掉「自定义短文本」那一行
+# 设置及其联动（输入框、设置行、信号接线、转发方法、保存回写共 11 行）。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2395
 
 
 def _read(name: str) -> str:

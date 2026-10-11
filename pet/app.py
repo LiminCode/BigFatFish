@@ -2486,6 +2486,9 @@ class AppShell:
             monitor = self._live_api_key_monitor()
             if monitor is not None:
                 monitor.stop()  # 岛不显示就不体检：不白发请求
+            usage = self._live_usage_monitor()
+            if usage is not None:
+                usage.set_active(False)
             # 4.3：overlay 拓扑摘岛桥（岛停用即撤墙）
             overlay_shell = getattr(self, "_overlay_shell", None)
             if overlay_shell is not None:
@@ -2540,7 +2543,17 @@ class AppShell:
             self._api_key_monitor = ApiKeyMonitor(
                 self.config, chat_enabled=bool(getattr(self, "enable_chat", True)), parent=self.island)
             self._api_key_monitor.status_changed.connect(self.island.set_api_status)
+            # 信息槽「今日用量」的数据来源（同样挂在岛下面）
+            from .claude_usage_monitor import ClaudeUsageMonitor
+
+            self._usage_monitor = ClaudeUsageMonitor(parent=self.island)
+            self._usage_monitor.usage_changed.connect(self.island.set_usage_info)
         self.island.refresh_from_config()
+        usage = self._live_usage_monitor()
+        if usage is not None:
+            # 只有信息槽真的在显示用量时才去读对话记录
+            usage.set_active(bool(island_cfg.get("show_info", True))
+                             and str(island_cfg.get("info_mode") or "") == "usage_today")
         monitor = self._live_api_key_monitor()
         if monitor is not None:
             monitor.start()
@@ -2987,6 +3000,11 @@ class AppShell:
         history = self._session_history()
         if history is not None:
             history.set_ui_open(is_open)
+
+    def _live_usage_monitor(self):
+        """今日用量的定时刷新；没建过或已随岛销毁返回 None。"""
+        monitor = getattr(self, "_usage_monitor", None)
+        return monitor if monitor is not None and shiboken6.isValid(monitor) else None
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""

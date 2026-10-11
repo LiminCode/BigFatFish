@@ -1621,7 +1621,7 @@ def test_modern_settings_toggle_dependencies_hide_complete_setting_groups(tmp_pa
             "dynamic_island_status", "dynamic_island_info_mode",
             "dynamic_island_style", "dynamic_island_opacity",
             "dynamic_island_accent", "dynamic_island_icon_value",
-            "dynamic_island_custom_text", "dynamic_island_click_action",
+            "dynamic_island_click_action",
             "dynamic_island_event_effects", "dynamic_island_edge_dock",
             "dynamic_island_collision",
         )
@@ -1630,15 +1630,12 @@ def test_modern_settings_toggle_dependencies_hide_complete_setting_groups(tmp_pa
     assert all(child.isHidden() for child in island_children)
     dialog.island_enabled_check.setChecked(True)
     assert not row("dynamic_island_icon_value").isHidden()
-    assert row("dynamic_island_custom_text").isHidden()
     dialog.island_icon_check.setChecked(False)
     assert row("dynamic_island_icon_value").isHidden()
     dialog.island_info_check.setChecked(False)
     assert row("dynamic_island_info_mode").isHidden()
-    dialog.island_info_mode_select.setCurrentData("custom")
-    assert row("dynamic_island_custom_text").isHidden()
     dialog.island_info_check.setChecked(True)
-    assert not row("dynamic_island_custom_text").isHidden()
+    assert not row("dynamic_island_info_mode").isHidden()
 
     egg_children = [row(key) for key in ("egg_title", "egg_hint", "egg_avatar", "egg_image_dir")]
     dialog.egg_enabled_check.setChecked(False)

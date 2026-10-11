@@ -6,7 +6,8 @@
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
 - 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
   桌宠隐藏时（``hidden_chat`` 开启）单击改为弹岛对话气泡（island_chat.py）；
-- 事件动效（``event_effects``）：AI 回复/余额刷新/峰谷切换时位移弹跳 +
+- 信息槽二选一：当前时间，或今日用量（Claude Code 今天用掉的 token，见 claude_usage）；
+- 事件动效（``event_effects``）：AI 回复/余额刷新时位移弹跳 +
   表面轻压 + 短暂呼吸，静止时完全无定时器开销；
 - ``bump()`` 供碰撞系统调用：被撞时表面压扁回弹（史莱姆果冻形变只作用于
   胶囊外形，文字图标保持锐利）+ 按撞击方向轻微踢动；
@@ -266,6 +267,10 @@ class DynamicIsland(QWidget):
         self._chat_available = True
         self._agent_active = False
         self._api_state = "unknown"
+        self._api_detail = ""
+        # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
+        self._usage_text = "今日 --"
+        self._usage_detail = ""
         self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
@@ -325,12 +330,6 @@ class DynamicIsland(QWidget):
         self._info_timer.setInterval(30_000)
         self._info_timer.timeout.connect(self._refresh)
         self._info_timer.start()
-
-        # 余额峰谷档位切换的准点刷新：单次定时到下一切换边界，刷新后再排下一次。
-        self._tier_tick_timer = QTimer(self)
-        self._tier_tick_timer.setSingleShot(True)
-        self._tier_tick_timer.timeout.connect(self._on_balance_tier_tick)
-        self._schedule_next_balance_tier_refresh()
 
         # 置顶保活接线（见 reassert_topmost）：本进程窗口被激活 = 某个 topmost
         # 窗（聊天窗/设置窗/岛气泡/托盘菜单 popup）刚插到岛上面，这是零轮询里
@@ -470,10 +469,27 @@ class DynamicIsland(QWidget):
         """对话 API 的体检结论（``api_key_monitor``）：ok 绿色连通 / bad 红色断开 /
         unknown 灰色。``detail`` 是悬停提示——红了得说得出为什么。"""
         state = state if state in _API_STATUS_COLORS else "unknown"
-        self.setToolTip(str(detail or ""))
+        self._api_detail = str(detail or "")
+        self._sync_tooltip()
         if state != self._api_state:
             self._api_state = state
             self.update()
+
+    def set_usage_info(self, text: str, detail: str = "") -> None:
+        """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
+        text = str(text or "今日 --")
+        changed = text != self._usage_text
+        self._usage_text, self._usage_detail = text, str(detail or "")
+        self._sync_tooltip()
+        if changed and self._info_mode() == "usage_today":
+            self._refresh()
+
+    def _sync_tooltip(self) -> None:
+        """悬停提示：API 体检结论；信息槽显示用量时再加一行用量明细。"""
+        lines = [self._api_detail]
+        if self._info_mode() == "usage_today":
+            lines.append(self._usage_detail)
+        self.setToolTip("\n".join(line for line in lines if line))
 
     def set_session_counts(self, counts) -> None:
         """Claude Code 会话计数（``[(阶段, "2 工作中"), ...]``），画在连接图标左边；
@@ -499,10 +515,10 @@ class DynamicIsland(QWidget):
         self._sync_card_labels()
 
     def notify_event(self, kind: str = "generic") -> None:
-        """事件动效入口：reply / balance / tier / generic。尊重 event_effects 开关。"""
+        """事件动效入口：reply / balance / generic。尊重 event_effects 开关。"""
         if not self._event_effects_enabled():
             return
-        impulse = {"reply": 5.0, "balance": 3.5, "tier": 4.0}.get(kind, 3.0)
+        impulse = {"reply": 5.0, "balance": 3.5}.get(kind, 3.0)
         self._bounce(impulse=impulse)
         if kind == "reply":
             self._breathe_until = time.monotonic() + _BREATHE_AFTER_EVENT_S
@@ -534,7 +550,7 @@ class DynamicIsland(QWidget):
         old_edge = self.dock_edge
         old_icon = self._icon_spec()
         self._cfg = _cfg_dict(self.config)
-        self._schedule_next_balance_tier_refresh()
+        self._sync_tooltip()             # 信息槽换了内容：提示里要不要带用量跟着变
         self._sync_card_labels()
         # 头像必须跟着刷新作废：provider 取的是**当前形象**的帧，而角色热切换
         # 只调 refresh_from_config（不动 island 配置），不换缓存就一直挂旧头像
@@ -550,51 +566,6 @@ class DynamicIsland(QWidget):
             self._apply_fixed_size()
             self._apply_position()
         self._refresh()
-
-    # ------------------------------------------------------------ 余额峰谷
-    def _balance_tier_display_text(self) -> str:
-        """按系统时间直接生成余额峰谷文案：当前档位标签 + 下一档切换时间。
-
-        不依赖余额查询；档位标签使用设置里的高峰/空闲（或梁文峰/梁文谷/自定义）。
-        """
-        from . import balance as balance_mod
-
-        now = balance_mod.beijing_now()
-        peak_label, idle_label = balance_mod.resolve_tier_labels(
-            str(self.config.get("balance_tier_labels_mode", "default") or "default"),
-            str(self.config.get("balance_tier_label_peak", "") or ""),
-            str(self.config.get("balance_tier_label_idle", "") or ""),
-        )
-        # 保持无参调用以兼容现有测试/调用面（函数内部使用同一北京时间）。
-        tier = balance_mod.deepseek_pricing_tier()
-        label = peak_label if tier == "peak" else idle_label
-        try:
-            _next_tier, next_time = balance_mod.next_pricing_switch(now)
-            time_text = balance_mod.format_switch_time(now, next_time)
-            return f"{label} → {time_text}"
-        except Exception:
-            return label
-
-    def _on_balance_tier_tick(self) -> None:
-        """到达预设档位切换点：刷新显示、播事件动效，并排下一次准点刷新。"""
-        self._refresh()
-        self.notify_event("tier")
-        self._schedule_next_balance_tier_refresh()
-
-    def _schedule_next_balance_tier_refresh(self) -> None:
-        """在下一个峰谷切换边界安排一次单发刷新（只在余额峰谷模式启用）。"""
-        if str(self._cfg.get("info_mode") or "time") != "balance_tier":
-            self._tier_tick_timer.stop()
-            return
-        try:
-            from . import balance as balance_mod
-
-            _next_tier, next_time = balance_mod.next_pricing_switch()
-            now = balance_mod.beijing_now()
-            delay_ms = max(250, int((next_time - now).total_seconds() * 1000) + 250)
-            self._tier_tick_timer.start(delay_ms)
-        except Exception:
-            self._tier_tick_timer.stop()
 
     def _refresh(self) -> None:
         """内容变化后立即重算尺寸、夹回屏幕并重绘。"""
@@ -954,38 +925,19 @@ class DynamicIsland(QWidget):
             info = True
         return icon, name, info, status
 
+    def _info_mode(self) -> str:
+        """信息槽显示什么：``usage_today``（今日用量）或 ``time``（当前时间）。
+
+        旧配置里的 ``balance_tier`` / ``balance`` / ``custom`` 已去掉，一律按时间。
+        """
+        return "usage_today" if str(self._cfg.get("info_mode") or "") == "usage_today" else "time"
+
     def _info_text(self) -> str:
-        mode = str(self._cfg.get("info_mode") or "time")
-        if mode == "custom":
-            return str(self._cfg.get("custom_text") or "").strip() or "自定义"
-        if mode == "balance_tier":
-            return self._balance_tier_display_text()
-        if mode == "balance":
-            return self._balance_text
+        if self._info_mode() == "usage_today":
+            return self._usage_text
         from PySide6.QtCore import QTime
 
         return QTime.currentTime().toString("HH:mm")
-
-    def _info_color(self, fallback: QColor) -> QColor:
-        """余额峰谷信息槽跟随设置的峰谷提示颜色开关。
-
-        开启后高峰显示红色、低谷显示绿色；关闭或非余额峰谷模式使用普通次文字色。
-        """
-        if str(self._cfg.get("info_mode") or "time") != "balance_tier":
-            return fallback
-        if not bool(self.config.get("balance_tier_color_enabled", True)):
-            return fallback
-        try:
-            from . import balance as balance_mod
-
-            tier = balance_mod.deepseek_pricing_tier()
-        except Exception:
-            return fallback
-        if tier == "peak":
-            return QColor("#e5484d")
-        if tier == "idle":
-            return QColor("#30a46c")
-        return fallback
 
     def _character_name(self) -> str:
         character_id = str(self.config.get("character", catalog.DEFAULT_CHARACTER))
@@ -1420,7 +1372,7 @@ class DynamicIsland(QWidget):
         """
         icon, name, info, status = self._visible_parts()
         _background, primary_color, secondary_color = self._style_palette()
-        info_color = self._info_color(secondary_color)
+        info_color = secondary_color
         dpr = self.devicePixelRatioF()
         key = (
             icon, name, info, status,
@@ -1563,7 +1515,6 @@ class DynamicIsland(QWidget):
         隐藏态零定时器空转。"""
         super().hideEvent(event)
         self._info_timer.stop()
-        self._tier_tick_timer.stop()
         self._anim_timer.stop()
         self._dock_back_timer.stop()
         self._card_collapse_timer.stop()
@@ -1574,7 +1525,6 @@ class DynamicIsland(QWidget):
         super().showEvent(event)
         self._finish_animations()
         self._info_timer.start()
-        self._schedule_next_balance_tier_refresh()
         self._refresh()
         # 原生窗口此刻已就绪；再延迟一拍重申一次 topmost——show 期间 Qt 还在
         # 收尾窗口排序，它可能覆盖同步那次（口径同 legacy window.py showEvent）

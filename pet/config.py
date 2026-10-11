@@ -557,11 +557,12 @@ def _default_dynamic_island_data() -> dict:
         "show_icon": True,
         "show_name": True,
         "show_info": True,
-        "info_mode": "time",  # time / balance_tier / balance / custom
+        # 信息槽：time（当前时间）/ usage_today（Claude Code 今日用量）。旧的
+        # balance_tier / balance / custom 已去掉，存着这些值的配置回落成 time
+        "info_mode": "time",
         # 展开卡片显示什么：auto（开着 Claude Code 联动就显示会话，否则余额）/
         # balance（DeepSeek 余额与峰谷）/ claude（Claude Code 会话汇总）
         "card_source": "auto",
-        "custom_text": "",
         "show_status": True,
         "style": "dark",  # dark / light / glass
         "opacity": 1.0,  # 背景不透明度 0.4~1.0
@@ -571,7 +572,7 @@ def _default_dynamic_island_data() -> dict:
         "icon": "auto",
         "click_action": "expand",  # expand（展开卡片）/ toggle_pet（切换显隐，旧行为）
         "hidden_chat": True,  # 桌宠隐藏时：单击岛弹对话气泡；AI 回复到达时岛上弹预览
-        "event_effects": True,  # 事件动效：AI 回复/余额刷新/峰谷切换弹跳
+        "event_effects": True,  # 事件动效：AI 回复/余额刷新弹跳
         "edge_dock": True,  # 拖到屏幕边缘收成细条，鼠标靠近滑出
         "dock_edge": "none",  # none / top / bottom / left / right（拖拽落点写入）
         "collision_enabled": True,  # 果冻墙：岛注册为静态碰撞体，肥鱼撞到会弹开
@@ -592,8 +593,7 @@ def _clean_dynamic_island_data(value) -> dict:
     result["show_info"] = bool(result["show_info"])
     result["show_status"] = bool(result["show_status"])
     mode = str(result.get("info_mode") or "time").strip()
-    result["info_mode"] = mode if mode in {"time", "balance_tier", "balance", "custom"} else "time"
-    result["custom_text"] = str(result.get("custom_text") or "")[:80]
+    result["info_mode"] = mode if mode in {"time", "usage_today"} else "time"
     card_source = str(result.get("card_source") or "auto").strip()
     result["card_source"] = card_source if card_source in {"auto", "balance", "claude"} else "auto"
     style = str(result.get("style") or "dark").strip()
