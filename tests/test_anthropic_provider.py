@@ -433,3 +433,70 @@ def test_claude_errors_surface_as_vision_errors(monkeypatch):
     monkeypatch.setattr(ap, "describe_image", _boom)
     with pytest.raises(vision.VisionError, match="认证失败"):
         vision._post_vision_request(b"jpeg", "", "s", _claude())
+
+
+# ---------------------------------------------------------------- 实机事故回归（2026-10-10）
+# 设置页点「测试连接」后按钮永远停在「测试中…」：Key 为空时 SDK 抛的是 TypeError
+# （不是它自己的 AnthropicError），一路逃出 test_connection，测试线程直接死掉，
+# 没有人把按钮恢复回来。
+
+@pytest.fixture
+def no_env_credentials(monkeypatch):
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_missing_key_fails_the_connection_test_instead_of_raising(no_env_credentials):
+    pytest.importorskip("anthropic")
+    ok, message = ap.test_connection(_claude(api_key=""), timeout=3)      # 真 SDK：凭据缺失在发请求前就报
+    assert ok is False and "API Key" in message
+
+
+def test_missing_key_fails_a_chat_with_a_provider_error(no_env_credentials):
+    pytest.importorskip("anthropic")
+    with pytest.raises(ProviderError, match="API Key"):
+        _run([{"role": "user", "content": "嗨"}], _claude(api_key=""))
+
+
+def test_pasted_key_whitespace_is_trimmed():
+    """粘贴带进来的空格 / 换行会让请求头非法，SDK 只报一句 Connection error。"""
+    pytest.importorskip("anthropic")
+    assert ap._client("  sk-ant-x \n", "", 5.0, True).api_key == "sk-ant-x"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("something odd"), TypeError("bad arg"), ValueError("nope")])
+def test_unexpected_sdk_exceptions_never_escape(fake, error):
+    fake.client = _FakeClient(_FakeStream([], error=error))
+    with pytest.raises(ProviderError, match="Claude 请求失败"):
+        _run([{"role": "user", "content": "嗨"}], _claude())
+    with pytest.raises(ProviderError, match="Claude 请求失败"):
+        ap.describe_image(b"x", "t", "s", _claude(), model="m", base_url="", api_key="k")
+    fake.client.count_error = error
+    assert ap.test_connection(_claude())[0] is False
+
+
+def test_settings_page_recovers_when_the_connection_test_blows_up(tmp_path):
+    """测试线程里无论抛什么，按钮都得恢复——否则只能关掉设置窗口重开。"""
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    from pet.chat.ai_settings_page import _AiSettingsPage
+    from pet.config import Config
+
+    app = QApplication.instance() or QApplication([])
+    page = _AiSettingsPage(Config(base=tmp_path))
+    try:
+        def _boom(provider, timeout=10.0):
+            raise TypeError("Could not resolve authentication method")
+
+        page._test_connection = _boom
+        page._run_test()
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline and page.test_button.text() != "测试连接":
+            app.processEvents()
+            time.sleep(0.01)
+        assert page.test_button.text() == "测试连接" and page.test_button.isEnabled()
+        assert "Could not resolve authentication method" in page.test_result.text()
+    finally:
+        page.deleteLater()
