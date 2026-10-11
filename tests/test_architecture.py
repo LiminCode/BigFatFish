@@ -221,7 +221,8 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-10-11 设置页「保存」（不关窗）：本体在 settings_save.py，这里只有接线——
 # saved 信号 2 行、装按钮 2 行、_save_only 4 行、import 1 行，外加开机自启基线
 # 随写入更新 3 行（否则保存后再改回去不生效）。实测 2413。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2413
+# 同日回调到 2406：在线更新整个移除，这里少了更新页的 import / 构造 / 域登记共 7 行。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2406
 
 
 def _read(name: str) -> str:

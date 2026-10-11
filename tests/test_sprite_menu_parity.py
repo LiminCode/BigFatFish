@@ -111,9 +111,6 @@ class _StubAppShell:
     def show_balance(self, parent=None):
         self._record("show_balance", parent)
 
-    def check_update(self, parent=None):
-        self._record("check_update", parent)
-
     def open_todo_panel(self):
         self._record("open_todo_panel")
 
@@ -199,7 +196,6 @@ def _reference_window(config, *, chat=True):
     win.on_open_legacy_settings = None          # app.py:457 恒注入 None
     win.on_spawn_pet = lambda: None
     win.on_clear_spawned_pets = lambda: None
-    win.on_check_update = lambda parent=None: None
     win.on_open_todo_panel = lambda: None
     win.on_voice_chime_now = lambda text="": None
     win.on_toggle_voice_chime = lambda: None

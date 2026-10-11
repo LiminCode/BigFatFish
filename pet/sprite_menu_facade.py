@@ -20,7 +20,7 @@ OverlayShell + 被点 sprite + 行为控制器，使**两套建造器原样复�
     cfg/scale/change_scale/playback_speed/set_playback_speed  → 被点 sprite + 各自那份 config
     on_open_chat / on_open_chat_settings                      → PetInstance.open_chat*
     on_open_modern_settings                                   → OverlayShell.open_settings_for
-    on_show_balance / on_check_update / on_open_todo_panel /
+    on_show_balance / on_open_todo_panel /
     on_voice_chime_* / on_festival_*                          → AppShell（进程级服务）
     toggle_agent_link                                         → agent_link_manager（共享 manager）
     toggle_proactive_enabled / set_proactive_option           → proactive_watcher（共享监视器）
@@ -344,22 +344,6 @@ class SpriteMenuFacade:
         if not self._chat_enabled():
             return None
         fn = _first_callable(self._hosts(), ("show_balance",))
-        if fn is None:
-            return None
-        shell = self._shell
-        return lambda *_ignored: fn(shell)
-
-    @property
-    def on_check_update(self):
-        """「检查更新」：``AppShell.check_update``（窗口版是 ``_slot_wrap`` 包装，
-        这里壳本身即唯一窗，无需槽位前缀）。
-
-        父窗同 ``on_show_balance`` 传壳：传 OverlayWindow 会在
-        ``target.show_bubble`` 抛 AttributeError——而那句在
-        ``self._update_checking = True`` 之后、复位 connect 之前，异常会让
-        本次会话永久不再检查更新。
-        """
-        fn = _first_callable(self._hosts(), ("check_update",))
         if fn is None:
             return None
         shell = self._shell

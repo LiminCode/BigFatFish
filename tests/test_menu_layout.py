@@ -194,7 +194,6 @@ def test_runtime_feature_state_does_not_filter_menu_layout_actions():
         on_open_chat = lambda self: None
         on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
-        on_check_update = lambda self, parent=None: None
         on_open_modern_settings = lambda self: None
         on_spawn_pet = lambda self: None
 
@@ -333,9 +332,7 @@ def test_missing_user_layout_resolves_versioned_default():
         "balance",
         "harness",
         "deepseek_web",
-        "check_update",
         "github_project",
-        "quark_download",
         "agent_link",
         "proactive_screen",
         "todo_panel",
@@ -494,7 +491,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         on_open_chat = lambda self: None
         on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
-        on_check_update = lambda self, parent=None: None
         on_open_modern_settings = lambda self: None
         on_spawn_pet = lambda self: None
         idles = ["待机"]
@@ -576,11 +572,8 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "DeepSeek 余额",
         "DeepSeek Harness",
         "打开网页版 DeepSeek",
-        "检查更新",
         "GitHub 项目页",
     ]
-    if sys.platform == "win32":
-        expected_tools.append("夸克网盘下载")
     assert [action.text() for action in tools.actions() if not action.isSeparator()] == expected_tools
     # Harness 现在是子菜单（挂在既有 harness id 上，用户老布局无需迁移）：
     # 启动（双目标：dsh web 界面 / 桌面端界面）+ 重启 / 停止必须齐全——
@@ -876,7 +869,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别", "更新"]
+    expected = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected
 
     def owner(setting_id):
@@ -1248,7 +1241,7 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    expected_sidebar = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别", "更新"]
+    expected_sidebar = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
@@ -1618,7 +1611,6 @@ def test_settings_domains_use_semantic_sidebar_icons():
         ("自动化与联动", "automation"),
         ("语音", "sound"),
         ("文件识别", "file"),
-        ("更新", "update"),
     )
 
 

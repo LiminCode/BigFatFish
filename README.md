@@ -1054,7 +1054,7 @@ pet/
 │   ├── ai_settings_page.py   # AI 设置页（PR #76 从 modern_settings_dialog 拆出）
 │   ├── modern_styles.qss / legacy_styles.qss
 │   └── ...
-└── updater.py                # 检查更新与发布资产解析
+└── ...                       # （在线更新 updater.py 已从本分支移除：源码运行，同步上游走 git）
 
 integrations/dsh-pet-bridge/  # DSH 桥接插件（Agent 联动）
 packaging/

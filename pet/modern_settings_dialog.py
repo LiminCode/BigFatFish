@@ -98,7 +98,6 @@ from .menu_layout import (
     resolve_menu_layout,
 )
 from .speech_bubble import BUBBLE_STYLE_PRESETS
-from .update_settings import UpdatePage
 
 
 def _chat_feature_available() -> bool:
@@ -970,11 +969,6 @@ class ModernSettingsDialog(QDialog):
 
         self.festival_page = FestivalSettingsPage(self.config, self)
 
-        # 更新页是命令/状态面板，不写入 Config；它与常规域同级，便于从菜单
-        # 和设置窗口进入同一套检查、下载、校验、安装流程。
-        self.update_page = UpdatePage(
-            self.config, include_chat=self.include_ai, parent=self
-        )
         self._rebuild_domain_navigation()
         self.sidebar.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.sidebar.setCurrentRow(0)
@@ -1973,7 +1967,6 @@ class ModernSettingsDialog(QDialog):
             "自动化与联动": automation,
             "语音": voice,
             "文件识别": file_interpret,
-            "更新": self.update_page,
         }
         for label, icon in SETTINGS_DOMAIN_NAV:
             content = domain_content.get(label)
