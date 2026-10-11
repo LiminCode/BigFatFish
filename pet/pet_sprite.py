@@ -152,6 +152,9 @@ class PetSprite(QObject):
         self.drag_physics = True
         # 见模块顶部 INTERACTION_* 常量：跨模块协调协议的唯一权威字段
         self.interaction_state = INTERACTION_NORMAL
+        # 暂时整只退出碰撞世界（护驾飞行段，见 sprite_rally）：不撞鱼、不撞岛，
+        # 也不被撞；与 collision_enabled（用户的宠-宠碰撞开关）无关。
+        self.collision_suspended = False
         # 逐只显隐（M14 / PHASE4_DESIGN 4.1b）：False = 不绘制、不命中、不进
         # 位置 fanout（隐藏是"整只退出合成与交互面"，不是"变透明"）。默认 True。
         self._visible = True

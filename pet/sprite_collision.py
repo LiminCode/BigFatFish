@@ -230,6 +230,10 @@ class SpriteCollisionWorld:
             self._static_member_circles.pop(str(member_id), None)
         self._static_dirty = True
 
+    def static_member_rects(self) -> list[tuple[float, float, float, float]]:
+        """全部静态成员的矩形 ``(left, top, width, height)``（给落点算法避让用）。"""
+        return list(self._static_members.values())
+
     def remove_static_member(self, member_id: str) -> None:
         """注销静态成员；未注册过是 no-op。"""
         self._static_members.pop(str(member_id), None)
@@ -284,6 +288,11 @@ class SpriteCollisionWorld:
             # 宠、照样触发碰撞反馈。退出快照即自动退出 _prev_circles（帧末按
             # 成员重建）与连续重叠记账（求解器按当前 pair 重建 history）。
             if not getattr(sprite, "visible", True):
+                continue
+            # 护驾飞行段（sprite_rally）同样整只退出：飞行中的鱼是拖拽态 = 无限质量，
+            # 留在世界里会一路把别的鱼和主肥鱼撞开。回来时没有上一帧的圆链，
+            # 扫掠不会拿穿越那一段补撞。
+            if getattr(sprite, "collision_suspended", False):
                 continue
             member = self._member_from_sprite(sprite)
             members.append(member)
@@ -343,7 +352,7 @@ class SpriteCollisionWorld:
         多进程层对同一件事是 ``update_policy`` 里置 membership_dirty + 清求解
         历史，见 collision_ipc._clear_solver_history）。``visible`` 同理：隐藏
         让成员整只退出快照（成员集合变了），不入签名时"全静止 + 切可见性"会被
-        当成结果不变跳过。
+        当成结果不变跳过。``collision_suspended``（护驾飞行段）与 ``visible`` 同理。
         """
         items = []
         for sprite in sprites:
@@ -358,6 +367,7 @@ class SpriteCollisionWorld:
                 float(getattr(sprite, "scale", 0.0) or 0.0),
                 bool(getattr(sprite, "collision_enabled", True)),
                 bool(getattr(sprite, "visible", True)),
+                bool(getattr(sprite, "collision_suspended", False)),
             ))
         return tuple(items)
 

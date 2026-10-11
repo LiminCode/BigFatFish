@@ -41,6 +41,7 @@ from .shared import (
     add_on_top,
     add_proactive_menu,
     add_quit,
+    add_rally_pets,
     add_return_corner,
     add_spawn_pet,
     add_submenu,
@@ -58,6 +59,7 @@ ACTION_LABELS = {
     "on_top": "窗口置顶", "autostart": "开机自启",
     "return_corner": "回到右下角", "hide_pet": "隐藏桌宠",
     "spawn_pet": "生小肥鱼", "clear_spawned_pets": "退出子肥鱼",
+    "rally_pets": "护驾",
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
     "music": "音乐", "music_pause": "暂停 / 播放", "music_next": "切歌",
     "music_prev": "上一首",
@@ -86,6 +88,7 @@ ACTION_ICONS = {
     "on_top": "pin", "autostart": "autostart",
     "return_corner": "corner", "hide_pet": "hide",
     "spawn_pet": "spawn", "clear_spawned_pets": "clear",
+    "rally_pets": "interaction",
     "golden_spin": "play", "edge_probe": "corner",
     "music_next": "play", "music_prev": "play", "music_quit": "stop", "agent_cost": "balance",
     "music": "play", "music_pause": "pause", "music_open_netease": "play",
@@ -258,6 +261,12 @@ class MenuActionRegistry:
             "clear_spawned_pets": MenuActionSpec(
                 add_clear_spawned_pets,
                 _callback_available("on_clear_spawned_pets"),
+            ),
+            "rally_pets": MenuActionSpec(
+                add_rally_pets,
+                _callback_available("on_rally_pets"),
+                enabled=lambda pet: bool(getattr(pet, "has_small_pets", False)),
+                disabled_reason="还没有小肥鱼",
             ),
             # 始终可用：消费统计与歌词无关，不该被歌词开关卡住。
             "agent_cost": MenuActionSpec(add_agent_cost),

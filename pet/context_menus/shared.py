@@ -533,6 +533,20 @@ def add_clear_spawned_pets(menu: QMenu, pet, *, icons: bool = True):
     )
 
 
+def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
+    """右键菜单：护驾——所有小肥鱼围到主肥鱼身边（只有主肥鱼有这个入口）。"""
+    callback = getattr(pet, "on_rally_pets", None)
+    if callback is None:
+        return None
+    return add_action(
+        menu,
+        "护驾",
+        "interaction" if icons else None,
+        callback,
+        close_on_trigger=True,
+    )
+
+
 def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
     """右键菜单快捷入口：让桌宠原地逆时针旋转一圈。"""
     callback = getattr(pet, "trigger_golden_spin", None)

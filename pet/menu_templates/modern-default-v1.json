@@ -22,6 +22,7 @@
       {"type": "action", "id": "music_open_qqmusic", "visible": true}
     ]},
     {"type": "separator", "id": "default.separator-playback", "visible": true},
+    {"type": "action", "id": "rally_pets", "visible": true, "section": "pet"},
     {
       "type": "submenu",
       "id": "pet_controls",

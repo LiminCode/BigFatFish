@@ -1099,6 +1099,11 @@ class OverlayShell(QObject):
         self._throw_egg = create_throw_egg_world(
             QRect(self._bounds), probe=self._probe)
         self.driver.add_extra_controller(self._throw_egg)
+        # 护驾（右键菜单）：小肥鱼围到主肥鱼身边的飞行段。挂在 extras 尾段——
+        # 飞行中的鱼是拖拽态，行为 / 碰撞 / 物理都不动它的位置，这里最后写。
+        from .sprite_rally import SpriteRallyWorld
+        self._rally = SpriteRallyWorld(on_arrived=self._on_rally_arrived)
+        self.driver.add_extra_controller(self._rally)
         self.overlay = ShellOverlayWindow(self._screen, driver=self.driver)
         self.overlay.behavior = self.behavior
         self.overlay.edge_probe = self._probe
@@ -1175,6 +1180,7 @@ class OverlayShell(QObject):
         overlay.add_sprite_removed_listener(self.behavior.forget)
         overlay.add_sprite_removed_listener(self._probe.forget)
         overlay.add_sprite_removed_listener(self._throw_egg.forget)
+        overlay.add_sprite_removed_listener(self._rally.forget)
 
     def _build_menu_for(self, target):
         """右键菜单：会话小鱼用它自己的精简菜单，其余走全量菜单。"""
@@ -3878,6 +3884,57 @@ class OverlayShell(QObject):
                 shutdown()
             except Exception:
                 logging.exception("overlay: 子肥鱼素材库收尾失败")
+
+    # ---------------------------------------------------------------- 护驾
+    def rally_pets(self) -> int:
+        """护驾：所有小肥鱼（手动生的 + 会话小鱼）围到主肥鱼身边。返回出发的只数。
+
+        落点互不重叠、也不压主肥鱼和灵动岛（``sprite_rally.escort_spots``）；途中
+        播拖拽悬空动画、不参与碰撞（``SpriteRallyWorld``）。住在别的屏上的先搬到
+        主肥鱼那块屏（边界 / DPR 跟着换）。被用户拖着的那只不抢。
+        """
+        from . import sprite_rally
+
+        main = self.sprite
+        fish = [s for s in self._spawned if not getattr(s, "dragging", False)]
+        if not fish:
+            return 0
+        screen = self._screens.screen_of(main)
+        for sprite in fish:
+            if self._screens.screen_of(sprite) is not screen:
+                self._screens.rehome(sprite, screen)
+        self._screens.schedule_prune()          # 别的屏可能因此空了
+        main_body, bounds = main.body_rect(), self._bounds_of(main)
+        centre = main_body.center()
+        # 近的先挑：近处的落点给近处的鱼，飞行路线少交叉
+        fish.sort(key=lambda s: (s.body_rect().center() - centre).manhattanLength())
+        bodies = [s.body_rect() for s in fish]
+        spots = sprite_rally.escort_spots(
+            [(b.width(), b.height()) for b in bodies],
+            (main_body.x(), main_body.y(), main_body.width(), main_body.height()),
+            (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1),
+            obstacles=self.collision.static_member_rects())
+        moves = []
+        for sprite, body, spot in zip(fish, bodies, spots):
+            if spot is None:
+                continue                         # 屏幕站满了：这只留在原地
+            # 落点是身体框左上角；sprite.pos 是画布左上角，差一个身体框在画布内的偏移
+            rect = sprite.rect()
+            target = QPointF(spot[0] - (body.x() - rect.x()), spot[1] - (body.y() - rect.y()))
+            moves.append((sprite, target - QPointF(main.pos)))
+        self._rally.start(main, moves)
+        for sprite, _offset in moves:
+            self.behavior.on_drag_started(sprite)    # 立刻切拖拽悬空动画，不等下一 tick
+        if moves:
+            self.driver.note_kinetic()           # 桌宠静止时 tick 已降档：飞行要满速
+        return len(moves)
+
+    def _on_rally_arrived(self, sprite) -> None:
+        """护驾落地：收掉悬空动画；会话小鱼接着播它那一组（忙 / 休息）。"""
+        self.behavior.on_drag_released(sprite)
+        held = self.behavior.held(sprite)
+        if held:
+            self.behavior.hold(sprite, held)
 
     def clear_spawned_pets(self) -> None:
         """退出全部子肥鱼（app.py clear_spawned_pets 语义）：逐只出活跃清单
