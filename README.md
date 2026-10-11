@@ -463,10 +463,15 @@ python -m pip install -r requirements.txt
 python -m pet
 ```
 
-Windows 也可以直接双击 `run.bat`。它实际执行的是：
+Windows 也可以直接双击 `run.bat`。它用项目的 `.venv` 启动桌宠，并且让程序在系统里叫 **BigFish**：
+
+- 第一次运行时由 `tools/make_launcher.py` 在 `.venv\Scripts\` 下生成 `BigFish.exe`——它是这个虚拟环境的 Python 解释器（`pythonw.exe`）的一份副本，只把名字和图标换成了桌宠的。任务管理器的进程名取自 exe 本身，直接用 `pythonw` 启动时只会显示成「Python」。Python 升级或图标变化后会自动重新生成；生成不了就照旧用 `pythonw`。
+- 窗口图标与任务栏分组由程序自己声明（`pet/app_identity.py`），设置窗、聊天窗在任务栏上显示鱼的图标，不再和别的 Python 程序归成一组。
+
+等价的手动命令：
 
 ```text
-pythonw -m pet
+.venv\Scripts\BigFish.exe -m pet      （或 pythonw -m pet）
 ```
 
 源码入口默认包含 Chat 能力；如果只想验证桌宠核心功能，可使用无 Chat 的打包入口或在本地配置中关闭聊天。

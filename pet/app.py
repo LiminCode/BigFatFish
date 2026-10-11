@@ -3790,8 +3790,12 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
             logging.error("缺少 --slot 参数值")
             return 1
 
+    # 系统里的身份（任务栏分组与图标）：要在创建任何窗口之前声明
+    from . import app_identity
+    app_identity.set_process_identity()
     app = QApplication(argv)
     app.setApplicationName(APP_DIR_NAME)
+    app_identity.apply_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
 
     # 确定配置根目录

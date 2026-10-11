@@ -87,7 +87,12 @@ def _run_settings(config=None) -> int:
     """
     from PySide6.QtWidgets import QApplication
 
+    from . import app_identity
+
+    # 与主进程同一个身份：设置窗在任务栏上归到 BigFish 名下、用鱼的图标
+    app_identity.set_process_identity()
     app = QApplication.instance() or QApplication(sys.argv)
+    app_identity.apply_app_icon(app)
     # 设置进程只有设置窗一个窗口：关窗即退出，OS 立刻回收全部内存
     #（进程内设置页首开留下的字体/样式/模块高水位没有卸载 API，只能靠进程退出）。
     app.setQuitOnLastWindowClosed(True)
