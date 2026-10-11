@@ -1856,6 +1856,7 @@ class ModernSettingsDialog(QDialog):
                             "timeout",
                             "temperature",
                             "max_tokens",
+                            "effort",
                             "skip_ssl",
                         ),
                         True,
