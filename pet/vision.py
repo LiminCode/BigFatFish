@@ -299,6 +299,24 @@ def _safe_detail(raw: str) -> str:
     return ' '.join(raw.split())[:300] or 'Provider 请求失败'
 
 
+def _vision_api_key(p) -> str:
+    """识屏请求用哪把 Key。
+
+    安全（高优先）：独立视觉端点（vision_same_as_chat=False）绝不能把聊天 Key
+    一起发过去。只有与聊天同模型时才允许复用聊天 Key；独立端点只认视觉自己的
+    Key（含钥匙串解析），缺失时直接报错，绝不回退到聊天 Key。
+    """
+    if p.vision_same_as_chat:
+        return p.api_key
+    vkey = p.vision_api_key
+    if not vkey and p.vision_api_key_ref:
+        from .chat.models import SecretStore
+        vkey = SecretStore().get(p.vision_api_key_ref)
+    if not vkey:
+        raise VisionError('独立视觉服务未配置 API Key')
+    return vkey
+
+
 def _post_vision_request(
     jpeg_bytes: bytes,
     app_info: str,
@@ -341,6 +359,18 @@ def _post_vision_request(
         f'那就是你自己{name_part}——你在主人桌面上的化身。请以第一人称自然看待它'
         '（比如"我在你桌面上呢"），不要说成陌生软件或与己无关的角色。）'
     )
+    # Claude 通道（地址是 Anthropic，或聊天端点显式标了 anthropic）：换成 Messages API
+    # 的形状走官方 SDK。Key 的取法与下面同一口径（独立视觉端点绝不复用聊天 Key）。
+    from .chat import anthropic_provider
+    if anthropic_provider.uses_anthropic(p, base_url):
+        if consume_budget is not None and not consume_budget():
+            raise VisionError('每日请求上限已到，今天先陪你到这儿了')
+        try:
+            return anthropic_provider.describe_image(
+                jpeg_bytes, user_text, system_prompt, p,
+                model=resolve_vision_model(p), base_url=base_url, api_key=_vision_api_key(p))
+        except anthropic_provider.ProviderError as exc:
+            raise VisionError(str(exc)) from exc
     payload = {
         'model': resolve_vision_model(p),
         'messages': [
@@ -364,16 +394,7 @@ def _post_vision_request(
     # 安全（高优先）：独立视觉端点（vision_same_as_chat=False）绝不能把聊天 Key
     # 一起发过去。只有与聊天同模型时才允许复用聊天 Key；独立端点只认视觉自己的
     # Key（含钥匙串解析），缺失时直接报错，绝不回退到聊天 Key。
-    if p.vision_same_as_chat:
-        api_key = p.api_key
-    else:
-        vkey = p.vision_api_key
-        if not vkey and p.vision_api_key_ref:
-            from .chat.models import SecretStore
-            vkey = SecretStore().get(p.vision_api_key_ref)
-        api_key = vkey
-        if not api_key:
-            raise VisionError('独立视觉服务未配置 API Key')
+    api_key = _vision_api_key(p)
     if api_key:
         headers['Authorization'] = f'Bearer {api_key}'
     req = urllib.request.Request(

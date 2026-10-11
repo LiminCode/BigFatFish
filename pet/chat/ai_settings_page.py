@@ -44,7 +44,7 @@ class _AiSettingsPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         # No-chat bundles exclude pet.chat and never construct this optional page.
         from .models import ProviderConfig, SecretStore
-        from .providers import test_connection
+        from .anthropic_provider import test_connection
 
         self.config = config
         self._provider_config_type = ProviderConfig

@@ -526,3 +526,21 @@ def test_card_source_is_normalised(tmp_path):
         cfg.set("dynamic_island", data)
         cfg.save()
         assert Config(base=tmp_path).get("dynamic_island")["card_source"] == expected
+
+
+def test_balance_card_does_not_query_a_claude_provider(tmp_path, monkeypatch):
+    """聊天服务商换成 Claude 后：没有余额接口可查，不发请求、不显示 DeepSeek 峰谷。"""
+    from types import SimpleNamespace
+
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=False)
+    provider = SimpleNamespace(id="c", base_url="https://api.anthropic.com", api_format="auto",
+                               api_key="", verify_ssl=True)
+    monkeypatch.setattr(shell.config, "chat_settings", lambda: SimpleNamespace(active_config=provider))
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude API"
+        assert "DeepSeek" not in shell.island._balance_tier_text
+        assert asked == []
+    finally:
+        _teardown_shell(shell)
