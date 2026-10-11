@@ -249,6 +249,8 @@ def _default_agent_link_data() -> dict:
         "session_history": True,
         "session_history_days": 7,
         "session_history_max": 30,
+        # 列表展开后最多露几行（3~20），超出的在框里滚动
+        "session_history_rows": 10,
         # 音效配置
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
@@ -365,7 +367,8 @@ def _clean_agent_link_data(raw: Any) -> dict:
         result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
-    for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200)):
+    for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
+                           ("session_history_rows", 3, 20)):
         try:
             result[key] = max(low, min(high, int(raw.get(key, defaults[key]))))
         except (TypeError, ValueError):

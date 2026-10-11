@@ -2934,7 +2934,8 @@ class AppShell:
         island.set_session_history([
             {"key": entry.key, "label": entry.label, "where": entry.where, "path": entry.cwd,
              "ago": ago_text(now - entry.last_seen), "live": entry.key in live}
-            for entry in history.entries()], is_open=history.ui_open)
+            for entry in history.entries()], is_open=history.ui_open,
+            max_rows=(self.config.get("agent_link") or {}).get("session_history_rows", 10))
 
     def _history_actions(self):
         actions = getattr(self, "_session_history_actions", None)

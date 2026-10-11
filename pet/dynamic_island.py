@@ -731,12 +731,16 @@ class DynamicIsland(QWidget):
         self.card_expanded.emit()
 
     # ------------------------------------------------------------ 最近的对话
-    def set_session_history(self, rows, *, is_open: bool | None = None) -> None:
+    def set_session_history(self, rows, *, is_open: bool | None = None,
+                            max_rows: int | None = None) -> None:
         """卡片里的「最近的对话」：``rows`` 见 ``island_history_panel``；空 = 不显示。
 
-        ``is_open`` 给了就把折叠状态设成它（恢复上次的状态，不回发 ``history_toggled``）。
+        ``is_open`` 给了就把折叠状态设成它（恢复上次的状态，不回发 ``history_toggled``）；
+        ``max_rows`` 给了就改列表最多露几行。
         """
         panel = self._history_panel
+        if max_rows is not None:
+            panel.set_max_visible(max_rows)
         panel.set_rows(rows)
         if is_open is not None:
             panel.set_open(is_open)

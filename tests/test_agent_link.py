@@ -502,6 +502,7 @@ class TestAgentLinkManager:
             "session_history": True,
             "session_history_days": 7,
             "session_history_max": 30,
+            "session_history_rows": 10,
             "sound_enabled": False,
             "sound_start_path": "builtin:agent-start",
             "sound_done_path": "builtin:agent-done",

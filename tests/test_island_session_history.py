@@ -336,3 +336,65 @@ def test_facade_toggle_persists_and_refreshes_the_island(overlay_shell):
     SpriteMenuFacade(overlay_shell).toggle_session_history(False)
     assert overlay_shell._config.get("agent_link")["session_history"] is False
     assert seen == [1], "关掉后岛上的列表要立刻收走"
+
+
+# ---------------------------------------------------------------- 列表露几行
+
+def _many_rows(count: int) -> list[dict]:
+    return [{"key": ("claude", f"sid-{i}"), "label": f"对话 {i}", "where": "终端", "path": f"C:\p{i}",
+             "ago": "昨天", "live": False} for i in range(count)]
+
+
+def test_island_passes_the_visible_row_cap_to_the_list(island):
+    island.set_session_history(_many_rows(14), is_open=True, max_rows=6)
+    _expand(island)
+    assert island._history_panel.body.height() == 6 * ROW_HEIGHT
+    island.set_session_history(_many_rows(14), is_open=True)
+    assert island._history_panel.body.height() == 6 * ROW_HEIGHT, "没给就保持原样"
+
+
+def test_visible_rows_follow_the_config(app_shell):
+    for index in range(14):
+        _live(app_shell, f"{index:08d}-aaaa-4bbb-8ccc-000000000000", cwd=f"C:\p{index}")
+    app_shell.island.history_toggled.emit(True)
+    app_shell._push_island_history()
+    assert app_shell.island._history_panel.body.height() == 10 * ROW_HEIGHT, "默认露 10 行"
+
+    data = dict(app_shell.config.get("agent_link"))
+    data["session_history_rows"] = 12
+    app_shell.config.set("agent_link", data)
+    app_shell._push_island_history()
+    assert app_shell.island._history_panel.body.height() == 12 * ROW_HEIGHT
+
+
+@pytest.mark.parametrize("raw, expected", [(None, 10), (6, 6), ("15", 15), (1, 3), (99, 20), ("x", 10)])
+def test_visible_row_setting_is_normalised(tmp_path, raw, expected):
+    cfg = Config(base=tmp_path)
+    assert cfg.get("agent_link")["session_history_rows"] == 10
+    if raw is not None:
+        data = dict(cfg.get("agent_link"))
+        data["session_history_rows"] = raw
+        cfg.set("agent_link", data)
+        cfg.save()
+    assert Config(base=tmp_path).get("agent_link")["session_history_rows"] == expected
+
+
+def test_agent_link_menu_lets_the_user_pick_how_many_rows_show(tmp_path):
+    pet = _MenuPet(Config(base=tmp_path), with_toggle=True)
+    picked: list = []
+    pet.set_session_history_rows = picked.append
+
+    rows_menu = _menu_actions(pet)["最近的对话显示行数"].menu()
+    assert [a.text() for a in rows_menu.actions() if a.isChecked()] == ["10 行"]
+    {a.text(): a for a in rows_menu.actions()}["15 行"].trigger()
+    assert picked == [15]
+
+
+def test_facade_persists_the_row_count_and_refreshes_the_island(overlay_shell):
+    from pet.sprite_menu_facade import SpriteMenuFacade
+
+    seen = []
+    overlay_shell.session_history.changed.connect(lambda: seen.append(1))
+    SpriteMenuFacade(overlay_shell).set_session_history_rows(8)
+    assert overlay_shell._config.get("agent_link")["session_history_rows"] == 8
+    assert seen == [1]
