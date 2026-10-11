@@ -47,7 +47,7 @@ def test_quick_chat_long_reply_uses_pagination(tmp_path: Path):
 
 
 def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
-    """AI 回答超 150 字：气泡内截断 + 「…（全文见聊天窗）」，并露出直达按钮。
+    """AI 回答超上限（300 字）：气泡内截断 + 「…（全文见聊天窗）」，并露出直达按钮。
 
     全文仍写进会话历史（聊天窗可看全），气泡只展示开头一段——头顶气泡只有
     几百像素，长回答直接铺进去会撑成一堵墙。
@@ -79,7 +79,7 @@ def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
         # 流式增量用同一口径：越过上限的那一刻开始截断
         bubble._set_reply_text("")  # 等价于 _send() 里的新一轮重置
         bubble._active_request_id = "req-stream"
-        bubble._delta("req-stream", "长" * 100)
+        bubble._delta("req-stream", "长" * (limit - 50))
         assert bubble._reply_truncated is False
         bubble._delta("req-stream", "长" * 100)
         assert bubble._reply_truncated is True

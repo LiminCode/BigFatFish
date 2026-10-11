@@ -35,13 +35,16 @@ _PAGE_SIZE = 500
 
 # 气泡内 AI 回答的展示上限：超长回答不进气泡（头顶气泡只有几百像素），
 # 截断到 _REPLY_PREVIEW_LIMIT 字并提示全文在聊天窗（气泡内提供直达按钮）。
-_REPLY_PREVIEW_LIMIT = 150
+# 回复区加高到两倍后上限随之翻倍（原 150）：不然加高的部分只是空白。
+_REPLY_PREVIEW_LIMIT = 300
 _REPLY_PREVIEW_SUFFIX = "…（全文见聊天窗）"
 
-# 气泡整体放大倍数（宽高、留白、圆角、字号一起放大）。原始尺寸（320~460 宽、
-# 系统默认字号）在高分屏上偏小；再乘「气泡文字大小」设置（bubble_text_scale，
-# 100 = 不额外缩放），所以用户调那一项时聊天气泡跟着变。
-QUICK_CHAT_BASE_SCALE = 2.0
+# 气泡整体放大倍数（宽度、留白、圆角、按钮、字号）。原始尺寸（320~460 宽、系统
+# 默认字号）在高分屏上偏小；再乘「气泡文字大小」设置（bubble_text_scale，100 =
+# 不额外缩放），所以用户调那一项时聊天气泡跟着变。
+QUICK_CHAT_BASE_SCALE = 1.25
+# 回复区（文字窗口）的高度单独放大：要的是多看几行字，不是整个气泡变大。
+QUICK_CHAT_REPLY_HEIGHT_SCALE = 2.0
 _SCALE_MIN, _SCALE_MAX = 1.0, 4.0
 
 
@@ -126,6 +129,11 @@ class QuickChatBubble(QFrame):
         """按气泡缩放倍数换算一个像素尺寸。"""
         return int(round(value * self._scale))
 
+    def _reply_px(self, value: float) -> int:
+        """回复区高度：按它自己的倍数放大（同样跟随「气泡文字大小」设置）。"""
+        factor = QUICK_CHAT_REPLY_HEIGHT_SCALE * self._scale / QUICK_CHAT_BASE_SCALE
+        return int(round(value * factor))
+
     def _build(self) -> None:
         px = self._px
         layout = QVBoxLayout(self)
@@ -150,15 +158,15 @@ class QuickChatBubble(QFrame):
         self.output = QLabel("")
         self.output.setObjectName("quick-chat-output")
         self.output.setWordWrap(True)
-        self.output.setMinimumHeight(px(60))
+        self.output.setMinimumHeight(self._reply_px(60))
         self.output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.output_scroll = QScrollArea()
         self.output_scroll.setObjectName("quick-chat-output-scroll")
         self.output_scroll.setWidgetResizable(True)
         self.output_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.output_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.output_scroll.setMinimumHeight(px(60))
-        self.output_scroll.setMaximumHeight(px(220))
+        self.output_scroll.setMinimumHeight(self._reply_px(60))
+        self.output_scroll.setMaximumHeight(self._reply_px(220))
         self.output_scroll.setWidget(self.output)
         layout.addWidget(self.output_scroll)
 
