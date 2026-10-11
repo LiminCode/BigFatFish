@@ -386,9 +386,7 @@ class ModernSettingsDialog(QDialog):
         self.island_info_mode_select = ModernSelect(self, width=160)
         for label, value in (
             ("当前时间", "time"),
-            ("余额峰谷", "balance_tier"),
-            ("余额数值", "balance"),
-            ("自定义短文本", "custom"),
+            ("今日用量", "usage_today"),
         ):
             self.island_info_mode_select.addItem(label, value)
         self.island_info_mode_select.setCurrentData(str(island_cfg.get("info_mode") or "time"))
@@ -438,7 +436,6 @@ class ModernSettingsDialog(QDialog):
         ):
             self.island_icon_select.addItem(label, emoji)
         self.island_icon_select.setCurrentData(str(island_cfg.get("icon") or "auto"))
-        self.island_custom_text_edit = _line_edit(str(island_cfg.get("custom_text") or ""), width=220)
         self.island_click_action_select = ModernSelect(self, width=160)
         for label, value in (
             ("展开快捷卡片", "expand"),
@@ -567,9 +564,9 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_enabled", "启用灵动岛", "显示独立胶囊小窗；桌宠隐藏后仍可常驻。", self.island_enabled_check),
                     SettingRow("dynamic_island_icon", "显示图标", "在胶囊左侧显示角色图标。", self.island_icon_check),
                     SettingRow("dynamic_island_name", "显示名称", "显示当前角色名称。", self.island_name_check),
-                    SettingRow("dynamic_island_info", "显示信息槽", "显示时间/余额/自定义短文本等信息。", self.island_info_check),
+                    SettingRow("dynamic_island_info", "显示信息槽", "显示当前时间或 Claude Code 今日用量。", self.island_info_check),
                     SettingRow("dynamic_island_status", "显示状态灯", "显示右侧的 Claude Code 会话计数与 API 连接图标（绿 = 对话 API 可用，红 = 不可用）。", self.island_status_check),
-                    SettingRow("dynamic_island_info_mode", "信息槽内容", "选择信息槽显示的内容；自定义文本在下方填写。", self.island_info_mode_select),
+                    SettingRow("dynamic_island_info_mode", "信息槽内容", "当前时间，或今日用量：今天所有 Claude Code 对话用掉的 token（输入 + 输出 + 缓存写入；悬停灵动岛看明细）。", self.island_info_mode_select),
                     SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示 DeepSeek 余额与峰谷。", self.island_card_source_select),
                     SettingRow(
                         "dynamic_island_style",
@@ -580,9 +577,6 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_opacity", "背景不透明度", "越低越透（0.4~1.0）；配合深色底在低占用下做出半透明质感。", self.island_opacity_spin),
                     SettingRow("dynamic_island_accent", "主题色", "图标底圈、事件闪光、停靠描边共用的点缀色。", self.island_accent_select),
                     SettingRow("dynamic_island_icon_value", "图标", "默认显示鱼本体头像；可选 emoji 图标，首次绘制会多占约 30MB 内存。", self.island_icon_select),
-                    SettingRow(
-                        "dynamic_island_custom_text", "自定义短文本", "信息槽选择“自定义短文本”时显示的内容。", self.island_custom_text_edit, stacked=True
-                    ),
                     SettingRow(
                         "dynamic_island_click_action",
                         "单击行为",
@@ -600,7 +594,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow(
                         "dynamic_island_event_effects",
                         "事件动效",
-                        "AI 回复到达、余额刷新、峰谷切换时果冻弹跳提示。静止时零额外开销。",
+                        "AI 回复到达、余额刷新时果冻弹跳提示。静止时零额外开销。",
                         self.island_event_effects_check,
                     ),
                     SettingRow(
@@ -984,7 +978,6 @@ class ModernSettingsDialog(QDialog):
         self.island_enabled_check.toggled.connect(self._update_island_controls)
         self.island_icon_check.toggled.connect(self._update_island_icon_controls)
         self.island_info_check.toggled.connect(self._update_island_info_controls)
-        self.island_info_mode_select.currentIndexChanged.connect(self._update_island_custom_text)
         self.egg_enabled_check.toggled.connect(self._update_egg_controls)
         self.egg_enabled_check.toggled.connect(self._sync_menu_action_states)
         self.quick_launch_editor.changed.connect(self._sync_menu_action_states)
@@ -1328,9 +1321,6 @@ class ModernSettingsDialog(QDialog):
 
     def _update_island_info_controls(self, enabled: bool) -> None:
         settings_pet_controls._update_island_info_controls(self, enabled)
-
-    def _update_island_custom_text(self, _index: int | None = None) -> None:
-        settings_pet_controls._update_island_custom_text(self, _index)
 
     def _update_egg_controls(self, enabled: bool) -> None:
         self._set_setting_rows_visible(
@@ -2157,7 +2147,6 @@ class ModernSettingsDialog(QDialog):
                 "show_info": self.island_info_check.isChecked(),
                 "info_mode": str(self.island_info_mode_select.currentData() or "time"),
                 "card_source": str(self.island_card_source_select.currentData() or "auto"),
-                "custom_text": self.island_custom_text_edit.text().strip(),
                 "show_status": self.island_status_check.isChecked(),
                 "style": str(self.island_style_select.currentData() or "dark"),
                 "opacity": float(self.island_opacity_spin.value()),

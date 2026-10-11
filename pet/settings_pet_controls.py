@@ -666,7 +666,7 @@ def _update_island_controls(host, enabled: bool) -> None:
         "dynamic_island_status", "dynamic_island_info_mode",
         "dynamic_island_style", "dynamic_island_opacity", "dynamic_island_accent",
         "dynamic_island_icon_value",
-        "dynamic_island_custom_text", "dynamic_island_click_action",
+        "dynamic_island_click_action",
         "dynamic_island_event_effects", "dynamic_island_edge_dock",
         "dynamic_island_collision", "dynamic_island_hidden_chat",
     ), enabled, dependency="island_enabled")
@@ -693,18 +693,9 @@ def build_island_card_source_select(host, island_cfg: dict):
 
 def _update_island_info_controls(host, enabled: bool) -> None:
     host._set_setting_rows_visible(
-        ("dynamic_island_info_mode", "dynamic_island_custom_text"),
+        ("dynamic_island_info_mode",),
         enabled,
         dependency="island_show_info",
-    )
-    _update_island_custom_text(host)
-
-
-def _update_island_custom_text(host, _index: int | None = None) -> None:
-    host._set_setting_rows_visible(
-        ("dynamic_island_custom_text",),
-        host.island_info_mode_select.currentData() == "custom",
-        dependency="island_info_mode",
     )
 
 
