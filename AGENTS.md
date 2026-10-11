@@ -206,6 +206,12 @@ exact breakpoint there; see `docs/agents/handoff.md`.
   (all three sources timed out) on 2026-09-22, while jsdelivr update checks only
   work *through* the proxy. Lyric requests deliberately bypass the proxy
   (`pet/music_lyric.py::_build_opener`); other features keep following it.
+- Read `tools/asset_pipeline/README.md` when changing the asset pipeline
+  (green-screen video → transparent WebM → character package) or the package
+  geometry it targets (640×360 canvas, feet at y=330, `body_box` measured at
+  alpha≥128). The generation prompts live in `prompts/`; both come from the
+  upstream project under terms recorded in `THIRD_PARTY_NOTICES.md` §2a
+  (prompts are non-commercial, attribution required).
 - Treat `assets/characters/<id>/videos/` plus its manifest as one character
   package; preserve relative paths and case because packaged platforms differ.
   The manifest may declare `body_box` (`[x1, y1, x2, y2]` in source pixels,

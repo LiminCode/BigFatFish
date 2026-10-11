@@ -1,0 +1,5 @@
+# 素材生成链（tools/asset_pipeline）的额外依赖。不是桌宠的运行时依赖，
+# 只有自己做动画素材时才需要：pip install -r tools/asset_pipeline/requirements.txt
+# ffmpeg 用主 requirements.txt 里 imageio-ffmpeg 自带的那份。
+numpy>=1.26
+scipy>=1.11
