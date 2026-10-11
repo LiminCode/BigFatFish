@@ -31,6 +31,12 @@ Phase 4 M-2：仿真推进（行为/碰撞/抛掷物理）与 tick 时钟、M-1 
 右键在拖拽中被弹弓消费时**不**合成 release——瞄准有明确退出路径
 （松左键发射 / Esc / 再点右键取消 / 左键丢失看门狗），不会卡 drag 态；
 其余非左键（中键等）与 ``slingshot_enabled`` 关闭时维持 V-13 原语义。
+
+多屏（副屏视口，见 pet/overlay_viewport.py）：sprite 仍然全部住在本窗的
+``sprites`` 里、由本窗推进；别的屏上各有一个视口窗把落在它那块屏上的 sprite
+画出来，并把鼠标事件换算成本窗坐标后转交给本窗的处理器。本窗的局部坐标因此
+是一张延伸到本窗矩形之外的平面（= 全局逻辑坐标 − 本窗原点）；``update`` 同步
+刷新全部视口，跨屏拖拽时事件位置改按全局坐标取（``_event_pos``）。
 """
 
 from __future__ import annotations
@@ -116,6 +122,11 @@ class OverlayWindow(QWidget):
         # 与 geometryChanged 一起重喂 sprite。showEvent 接线，closeEvent 摘线。
         self._dpr_watch_window = None
         self._dpr_watch_screen = None
+        # 副屏视口（overlay_viewport.OverlayViewport）：把本窗的 sprite 画到别的
+        # 屏上。cross_screen 由壳在多屏环境下置真：拖拽越出本窗矩形时事件位置
+        # 改按全局坐标取（单屏下恒 False，事件路径与改造前逐位相同）。
+        self._viewports: list = []
+        self.cross_screen = False
 
         # M-2 统一 tick 驱动器（T2）：仿真段 + tick 时钟 + M-1 档位全归驱动器
         # （tick_driver.TickDriver），overlay 只提供推进+重绘段（tick_advance）。
@@ -184,6 +195,8 @@ class OverlayWindow(QWidget):
         self._note_kinetic()           # M-1：可见即回 T0（从 T3 唤醒）
         # O2：可见性上报（隐藏期停掉的光标探测在这里恢复，且立即补一次探测）
         overlay_peripherals.note_overlay_visibility(self, True)
+        for view in list(self._viewports):
+            view.show()                # 视口跟随本窗显隐（全屏避让 / 托盘隐藏同语义）
         if sys.platform == "win32":
             if self._input_controller is None:
                 # 逐像素穿透：未命中任何 sprite 的屏幕区域点击直达下层应用——
@@ -213,6 +226,8 @@ class OverlayWindow(QWidget):
         if self._input_controller is not None:
             self._input_controller.stop()
         overlay_peripherals.note_overlay_visibility(self, False)
+        for view in list(self._viewports):
+            view.hide()
 
     def closeEvent(self, event) -> None:
         # V-12：关窗即停 tick（M-2：从驱动器摘除本 overlay；最后一个摘除时
@@ -222,7 +237,60 @@ class OverlayWindow(QWidget):
         if self._input_controller is not None:
             self._input_controller.stop()
             self._input_controller = None
+        for view in list(self._viewports):
+            view.close()  # 视口不独立存活：宿主关了它就没有可画的东西
         super().closeEvent(event)
+
+    # ---------------------------------------------------------------- 副屏视口
+    @property
+    def viewports(self) -> list:
+        """已挂载的副屏视口快照（只读；生灭经 add_viewport / remove_viewport）。"""
+        return list(self._viewports)
+
+    def add_viewport(self, view) -> None:
+        """挂载副屏视口：此后本窗的每次刷新都同步到它；显隐跟随本窗。幂等。"""
+        if view in self._viewports:
+            return
+        self._viewports.append(view)
+        opacity = self._applied_opacity
+        if opacity is not None:
+            view.setWindowOpacity(opacity)
+
+    def remove_viewport(self, view) -> None:
+        if view in self._viewports:
+            self._viewports.remove(view)
+
+    def update(self, *args) -> None:
+        """刷新合成面 = 本窗 + 全部副屏视口。
+
+        参数是本窗局部坐标的脏区（``QRegion`` / ``QRect``；无参 = 整面）。没有
+        视口时只多一次空列表判断；有视口时各视口按自己的原点平移后刷新，落在
+        它矩形之外的部分由 Qt 裁掉。
+        """
+        super().update(*args)
+        if self._viewports:
+            for view in self._viewports:
+                view.update_from_host(*args)
+
+    def _event_pos(self, event) -> QPointF:
+        """鼠标事件位置（本窗局部坐标）。
+
+        光标在本窗矩形内（或未开跨屏）= ``event.position()``。跨屏拖拽时光标会
+        离开本窗所在屏，而鼠标捕获仍留在本窗：此时 ``event.position()`` 是按
+        本窗缩放线性外推的值，与别的屏的逻辑坐标对不上（屏与屏的逻辑坐标是
+        分段的），必须改用全局逻辑坐标减本窗原点。
+        """
+        pos = event.position()
+        if not self.cross_screen or self.rect().contains(pos.toPoint()):
+            return pos
+        return event.globalPosition() - QPointF(self.geometry().topLeft())
+
+    def _dpr_of(self, sprite) -> float:
+        """该 sprite 的渲染 DPR：住在别的屏上的取它那块屏的，否则取本窗所在屏的。"""
+        screen = self._screen
+        if getattr(sprite, "home_bounds", None) is not None:
+            screen = getattr(sprite, "home_screen", None) or screen
+        return float(screen.devicePixelRatio())
 
     # ---------------------------------------------------------------- 存活守卫
     def _alive(self) -> bool:
@@ -292,7 +360,7 @@ class OverlayWindow(QWidget):
         # realize 前后者不可信（offscreen/壳层构建期恒 1.0）
         set_dpr = getattr(sprite, "set_dpr", None)
         if callable(set_dpr):
-            set_dpr(float(self._screen.devicePixelRatio()))
+            set_dpr(self._dpr_of(sprite))
         if self.isVisible():
             self.update(QRegion(sprite.rect()))
         # M12c：sprite 数从 0 恢复 → 驱动器重新起表
@@ -307,14 +375,13 @@ class OverlayWindow(QWidget):
         全窗重绘（同值零开销——屏幕信号会重复上报）；变化时 sprite 内部已
         按新 DPR 重建 pixmap 与命中图（PetSprite.set_dpr → _invalidate_frames）。
         """
-        dpr = float(self._screen.devicePixelRatio())
         changed = False
         for sprite in self.sprites:
             set_dpr = getattr(sprite, "set_dpr", None)
             if not callable(set_dpr):
                 continue
             before = getattr(sprite, "dpr", None)
-            set_dpr(dpr)
+            set_dpr(self._dpr_of(sprite))
             if getattr(sprite, "dpr", None) != before:
                 changed = True
         if changed:
@@ -597,6 +664,8 @@ class OverlayWindow(QWidget):
         if self._applied_opacity is None or abs(self._applied_opacity - opacity) >= 0.005:
             self.setWindowOpacity(opacity)
             self._applied_opacity = opacity
+            for view in self._viewports:
+                view.setWindowOpacity(opacity)
 
     def set_mouse_through(self, on: bool) -> None:
         """用户手动穿透开关的统一直写点（菜单/集成层）；shell 可挂
@@ -759,7 +828,7 @@ class OverlayWindow(QWidget):
         if self.slingshot.aiming:
             # 瞄准中：move 只更新拉拽矢量，sprite 定锚不动（不走 on_move）
             self._note_kinetic()  # M-1：瞄准移动保持 T0
-            self.slingshot.update_pull(event.position())
+            self.slingshot.update_pull(self._event_pos(event))
             self._refresh_slingshot_visual()
             event.accept()
             return
@@ -774,15 +843,21 @@ class OverlayWindow(QWidget):
         self._note_kinetic()  # M-1：拖拽移动保持 T0
         # 先判升级再喂移动：on_move 在 begin_drag 之前是 no-op（点击候选不挪窝）
         self._commit_drag_if_threshold_crossed(event.globalPosition().toPoint())
+        if self._drag_committed:
+            # 跨屏交接挂点（壳注入）：光标到了别的屏上，先把 sprite 的活动边界换
+            # 过去，下面的 on_move 才不会被原来那块屏的边界钳住
+            moved = getattr(self, "_drag_moved_cb", None)
+            if callable(moved):
+                moved(self._mouse_grab, event.globalPosition().toPoint())
         # grab 期间事件直达被按住的 sprite（光标移出/落到别的 sprite 上不换手）
-        self._mouse_grab.on_move(event.position())
+        self._mouse_grab.on_move(self._event_pos(event))
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
         self._note_kinetic()  # M-1：松手（甩出判定）同步升档
         if self.slingshot.aiming:
             if event.button() == Qt.MouseButton.LeftButton:
-                self._fire_slingshot(event.position())
+                self._fire_slingshot(self._event_pos(event))
                 event.accept()
                 return
             # 右键/其它键松手：瞄准继续（左键仍按住）。右键的取消手势在
@@ -790,7 +865,7 @@ class OverlayWindow(QWidget):
             event.accept()
             return
         grab = self._mouse_grab
-        self._finish_grab(event.position())
+        self._finish_grab(self._event_pos(event))
         if grab is None:
             event.ignore()
             return
@@ -928,7 +1003,10 @@ class OverlayWindow(QWidget):
         的像素）。取消/发射后当前区域为空，旧区域这一笔负责把残留的带/点
         擦干净。
         """
-        current = self.slingshot.visual_region(self.rect())
+        # 有副屏视口时不按本窗矩形裁：被瞄准的 sprite 可能在别的屏上（update 会
+        # 把脏区同步给视口，各自裁到自己的矩形）
+        current = self.slingshot.visual_region(
+            None if self._viewports else self.rect())
         dirty = current | self._slingshot_dirty
         self._slingshot_dirty = current
         if not dirty.isEmpty():

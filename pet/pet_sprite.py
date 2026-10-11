@@ -83,8 +83,11 @@ class PetSprite(QObject):
         self._dpr = 1.0
         # D3：钳制域（overlay 局部逻辑坐标的工作区，None = 不钳制）。
         self._bounds: QRectF | None = None
-        # T2 多屏占位：sprite 的归属屏（多屏钳制用，本刀只留字段）。
+        # sprite 的归属屏。home_bounds 非 None = 被拖到了 overlay 所在屏以外的屏上：
+        # 值是那块屏的可用区（同一坐标系），控制器据此取边界（sprite_bounds），
+        # overlay 据 home_screen 取它的 DPR。住在 overlay 所在屏时恒为 None。
         self.home_screen = None
+        self.home_bounds: QRect | None = None
         # pos 为 overlay 局部逻辑坐标（Phase 1a 单屏：overlay 铺满主屏，
         # 局部坐标 = 屏幕逻辑坐标）；多屏几何见 spec 开放问题 Q1。
         # 位置变化由外部行为（wander 速度/抛掷物理）写 velocity 或 set_pos；
@@ -1162,6 +1165,14 @@ class PetSprite(QObject):
         self._drag_trail.append((now, pos.x(), pos.y()))
         cutoff = now - physics_mod.TRAIL_KEEP_SEC
         self._drag_trail = [s for s in self._drag_trail if s[0] >= cutoff]
+
+    def rebase_drag(self) -> None:
+        """拖拽途中换了屏：作废已采的轨迹样本，从下一次移动重新采。
+
+        屏与屏之间的逻辑坐标不连续（中间可以隔着不存在的空隙），跨过去的那一步
+        在轨迹里是一次几百像素的瞬移——留着它，紧接着松手会被估成一次高速甩出。
+        """
+        self._drag_trail = []
 
     def on_release(self, pos: QPointF) -> None:
         """松手：落在光标处，按拖拽末段轨迹决定去向（语义对齐 window.py:3352-3366）。

@@ -117,6 +117,7 @@ from PySide6.QtCore import QPointF, QRect
 from . import catalog, movement
 from .pet_sprite import INTERACTION_DRAG, INTERACTION_NORMAL, INTERACTION_THROWN
 from .predictive_prewarm import PredictivePrewarm
+from .sprite_bounds import bounds_for
 
 logger = logging.getLogger(__name__)
 
@@ -1391,8 +1392,9 @@ class BehaviorController:
         掷骰链与 gap 氛围步共用这一处判据，两条链的口径不允许分叉。
         """
         off_x, _off_y, bw, _bh = self._body_geometry(sprite)
+        bounds = bounds_for(sprite, self.bounds)
         cx, left, right = movement.body_reach(
-            self.bounds.left(), self.bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
+            bounds.left(), bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
         return movement.inward_facing(cx, left, right)
 
     def _roll_next(self, sprite, st: _SpriteState) -> None:
@@ -1592,8 +1594,10 @@ class BehaviorController:
         if not moves:
             return False
         off_x, off_y, bw, bh = self._body_geometry(sprite)
+        # 住在别的屏上的 sprite 在它自己那块屏里游走（sprite_bounds）
+        bounds = bounds_for(sprite, self.bounds)
         cx, left, right = movement.body_reach(
-            self.bounds.left(), self.bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
+            bounds.left(), bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
         dir_sign = movement.choose_move_direction(cx, left, right, self.min_distance, self.rng)
         if dir_sign is None:
             return False  # 两侧空间都不足：不建立计划
@@ -1616,7 +1620,7 @@ class BehaviorController:
         target_cx = cx + dir_sign * distance
         target_x = target_cx - bw / 2 - off_x
         target_y = movement.wander_target_y(
-            sprite.pos.y() + off_y, self.bounds.top(), self.bounds.bottom(),
+            sprite.pos.y() + off_y, bounds.top(), bounds.bottom(),
             bh, self.margin, self.rng) - off_y
         curve = (getattr(lib, "move_curves", None) or {}).get(name)
         plan = {
@@ -1727,10 +1731,11 @@ class BehaviorController:
         r = sprite.rect()
         body = sprite.body_rect() if hasattr(sprite, "body_rect") else r
         off_x, off_y = body.x() - r.x(), body.y() - r.y()
-        lo_x = float(self.bounds.x()) - off_x
-        lo_y = float(self.bounds.y()) - off_y
-        max_x = lo_x + self.bounds.width() - body.width()
-        max_y = lo_y + self.bounds.height() - body.height()
+        bounds = bounds_for(sprite, self.bounds)
+        lo_x = float(bounds.x()) - off_x
+        lo_y = float(bounds.y()) - off_y
+        max_x = lo_x + bounds.width() - body.width()
+        max_y = lo_y + bounds.height() - body.height()
         x = min(max(sprite.pos.x(), lo_x), float(max(lo_x, max_x)))
         y = min(max(sprite.pos.y(), lo_y), float(max(lo_y, max_y)))
         if x != sprite.pos.x() or y != sprite.pos.y():

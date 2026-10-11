@@ -55,6 +55,18 @@ flag, read only in `pet/overlay_shell.is_overlay_topology`) renders every pet as
 `pet/overlay_spawn_state.py`). `PetWindow` is kept permanently for the capture-mode
 (streaming) surface and single-pet legacy runs — **fix crashes there only**.
 
+**Multi-screen.** The `OverlayWindow` covers one screen. Every sprite still lives in
+its `sprites` list and is advanced by it; other screens get an
+`OverlayViewport` (`pet/overlay_viewport.py`) that paints the same sprites and
+forwards mouse events back to the overlay's handlers. Sprite coordinates are
+overlay coordinates (global logical − overlay origin) and may lie outside the
+overlay's rect. `pet/overlay_screens.ScreenRouter` records which screen a sprite
+lives on (`PetSprite.home_bounds`, `None` = the overlay's own screen) and re-homes
+it while it is being dragged; the four controllers read per-sprite bounds through
+`sprite_bounds.bounds_for`. Never derive a position on another screen from
+`event.position()` — logical coordinates are piecewise across screens, use
+`OverlayWindow._event_pos`.
+
 The multi-process multi-pet layer (cross-process collision IPC, slot file locks,
 instance launcher, child-pet taskkill cleanup, runtime-marker live consumers) was
 deleted in Phase 4.4b; `tests/test_architecture.py` guards that the retired modules

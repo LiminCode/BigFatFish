@@ -1108,6 +1108,10 @@ class OverlayShell(QObject):
         from .sprite_menu_facade import build_sprite_full_menu
         self.overlay._full_menu_builder = (
             lambda target: build_sprite_full_menu(self, target))
+        # 跨屏：sprite ↔ 屏幕归属表 + 副屏视口（拖到哪块屏就住哪块屏）
+        from .overlay_screens import ScreenRouter
+        self._screens = ScreenRouter(self)
+        self._screens.bind(self.overlay)
         self.lib = self._create_main_library()
         # 首跑帧序列自动供给（B 档）：口径同 app._create_library，库内幂等
         getattr(self.lib, 'maybe_provision_frameseq', lambda: None)()
@@ -2244,18 +2248,27 @@ class OverlayShell(QObject):
         pet_name = self._config.character_display_name(str(
             self._sprite_config(self._look_sprite).get(
                 "character", catalog.DEFAULT_CHARACTER)))
+        # 看的是**发起者所在的那块屏**（把鱼拖到哪块屏，它就看哪块屏）。整个虚拟
+        # 桌面缩到一张小图里，多屏下每块屏都糊得看不清。屏幕矩形在主线程取。
+        from .overlay_screens import native_rect
+        try:
+            screen_rect = native_rect(self._screens.screen_of(self._look_sprite))
+        except Exception:
+            logging.debug("overlay: 取识屏屏幕矩形失败，退回整个桌面", exc_info=True)
+            screen_rect = None
         threading.Thread(
             target=self._look_worker,
-            args=(provider, system_prompt, pet_name),
+            args=(provider, system_prompt, pet_name, screen_rect),
             daemon=True,
             name="overlay-look-screen",
         ).start()
 
-    def _look_worker(self, provider, system_prompt, pet_name: str = "") -> None:
+    def _look_worker(self, provider, system_prompt, pet_name: str = "",
+                     screen_rect=None) -> None:
         from . import vision as vision_mod
 
         try:
-            shot = vision_mod.capture_screen_bytes()
+            shot = vision_mod.capture_screen_bytes(screen_rect)
             app_info = vision_mod.foreground_app_info()
             reply = vision_mod.ask_about_screen(
                 shot, app_info, system_prompt, provider, pet_name=pet_name)
@@ -3044,7 +3057,7 @@ class OverlayShell(QObject):
 
     def _go_default_corner(self, sprite) -> None:
         """把指定 sprite 送回右下角（window.go_default_corner 等价）。"""
-        sprite.set_pos(self._default_corner_pos(self._bounds, sprite.rect()))
+        sprite.set_pos(self._default_corner_pos(self._bounds_of(sprite), sprite.rect()))
 
     def _hide_bubble_for_menu(self) -> None:
         """托盘菜单弹出前隐藏气泡（legacy menu.aboutToShow → hide_speech_bubble）。
@@ -3234,6 +3247,7 @@ class OverlayShell(QObject):
         self.overlay.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
         if was_visible:
             self.overlay.show()  # setWindowFlag 重建原生窗口会先隐藏
+        self._screens.set_on_top(on)
         # 原生窗口重建后旧 HWND 的锁屏通知注册随之失效，按新句柄补注册
         self._register_session_notifications()
         if persist:
@@ -3490,6 +3504,8 @@ class OverlayShell(QObject):
 
     def _on_grab_finished(self) -> None:
         """拖拽收尾（overlay._finish_grab 钩子）：冲刷光标恢复滞留。"""
+        # 拖拽期间不关视口（按下的那个握着鼠标捕获），收尾后补一次清理
+        self._screens.schedule_prune()
         if self._cursor_restore_pending:
             self._cursor_restore_pending = False
             self._auto_cursor_hidden = False
@@ -3506,8 +3522,9 @@ class OverlayShell(QObject):
         body = (sprite.body_rect() if hasattr(sprite, "body_rect")
                 else sprite.rect())
         bw, bh = body.width(), body.height()
-        cx = self._bounds.left() + rx * self._bounds.width()
-        cy = self._bounds.top() + ry * self._bounds.height()
+        bounds = self._bounds_of(sprite)
+        cx = bounds.left() + rx * bounds.width()
+        cy = bounds.top() + ry * bounds.height()
         off_x = body.x() - sprite.rect().x()
         off_y = body.y() - sprite.rect().y()
         return QPointF(cx - bw / 2 - off_x, cy - bh / 2 - off_y)
@@ -3532,7 +3549,14 @@ class OverlayShell(QObject):
         facing = getattr(sprite, "facing", None)
         if facing in ("left", "right"):
             geometry["facing"] = facing
+        # 屏幕身份：比例是相对**它所在那块屏**的可用区算的，重启要回同一块屏
+        # （None = 主屏，跟着主屏走）
+        geometry["screen_name"] = self._screens.name_of(sprite)
         return geometry
+
+    def _bounds_of(self, sprite) -> QRect:
+        """该 sprite 的活动边界：住在主屏 = ``_bounds``，否则是它那块屏的可用区。"""
+        return self._screens.bounds_of(sprite)
 
     def _restore_position(self) -> None:
         """按"身体中心相对可用区比例"恢复位置（window_placement.restore_position
@@ -3542,6 +3566,10 @@ class OverlayShell(QObject):
             self.sprite.set_pos(self._default_corner_pos(
                 self._bounds, self.sprite.rect()))
         else:
+            saved_screen = self._screens.find(self._config.get("screen_name"))
+            if saved_screen is not None:
+                # 上次停在别的屏上且那块屏还在：先住回去，比例按它的可用区反解
+                self._screens.rehome(self.sprite, saved_screen)
             self.sprite.set_pos(self._pos_from_ratios(float(rx), float(ry)))
         facing = str(self._config.get("facing", "") or "")
         if facing in ("left", "right"):
@@ -3549,7 +3577,7 @@ class OverlayShell(QObject):
 
     def save_position(self) -> None:
         """身体中心相对可用区比例持久化（window_placement.save_position 语义）。"""
-        geometry = self._sprite_geometry(self.sprite, self._bounds)
+        geometry = self._sprite_geometry(self.sprite, self._bounds_of(self.sprite))
         if not geometry:
             return
         for key, value in geometry.items():
@@ -3646,7 +3674,7 @@ class OverlayShell(QObject):
             host.schedule()
         if config_dir:
             # 生成/复活即落一次几何：未及优雅退出（崩溃/断电）也能按清单复活
-            geometry = self._sprite_geometry(sprite, self._bounds)
+            geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
             if geometry:
                 overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
             # 刚写过该 slot 文件 → 签名缓存同步刷新：否则下一次目录事件会把这次
@@ -3745,10 +3773,16 @@ class OverlayShell(QObject):
         """子肥鱼落位：有持久化比例按 rx/ry 恢复，否则自主宠向右逐级错开。"""
         rx, ry = state.get("rx"), state.get("ry")
         if rx is not None and ry is not None:
+            saved_screen = self._screens.find(state.get("screen_name"))
+            if saved_screen is not None:
+                self._screens.rehome(sprite, saved_screen)  # 回上次那块屏
             return self._pos_from_ratios(float(rx), float(ry), sprite=sprite)
+        if self._screens.is_foreign(self.sprite):
+            # 主肥鱼在别的屏上：新鱼跟着生在它旁边（同一块屏）
+            self._screens.rehome(sprite, self._screens.screen_of(self.sprite))
         main_body = self.sprite.body_rect()
         body, rect = sprite.body_rect(), sprite.rect()
-        bounds = self._bounds
+        bounds = self._bounds_of(sprite)
         others = [s.body_rect() for s in (self.sprite, *self._spawned) if s is not sprite]
         spot = overlay_spawn_state.free_spawn_spot(
             (body.width(), body.height()),
@@ -3800,7 +3834,8 @@ class OverlayShell(QObject):
         config_dir = self._spawn_config_dir()
         self._session_pets.discard(sprite)
         slot = self._spawned_slots.pop(sprite, None)
-        geometry = self._sprite_geometry(sprite, self._bounds)
+        geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
+        self._screens.schedule_prune()  # 它可能是那块副屏上的最后一只
         if config_dir and slot and geometry:
             overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
         lib = self._spawned_libs.pop(sprite, None)
@@ -3834,7 +3869,7 @@ class OverlayShell(QObject):
             return
         for sprite in list(self._spawned):
             slot = self._spawned_slots.get(sprite)
-            geometry = self._sprite_geometry(sprite, self._bounds)
+            geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
             if slot and geometry:
                 overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
 
@@ -3873,7 +3908,7 @@ class OverlayShell(QObject):
         promoted_slot = self._spawned_slots.pop(promoted, None)
         old_main, old_lib = self.sprite, self.lib
         config_dir = self._spawn_config_dir()
-        geometry = self._sprite_geometry(promoted, self._bounds)
+        geometry = self._sprite_geometry(promoted, self._bounds_of(promoted))
         if config_dir and promoted_slot and geometry:
             overlay_spawn_state.write_slot_geometry(
                 config_dir, promoted_slot, geometry)
@@ -4597,13 +4632,15 @@ class OverlayShell(QObject):
     def handle_geometry_changed(self, *args) -> None:
         """geometryChanged/availableGeometryChanged → 几何同步 + DPR 重喂。"""
         self._sync_geometry()
-        self.sprite.set_dpr(float(self._screen.devicePixelRatio()))
+        if not self._screens.is_foreign(self.sprite):
+            self.sprite.set_dpr(float(self._screen.devicePixelRatio()))
         self._refresh_self_talk_image_cache_for_dpr()
 
     def handle_screen_added(self, screen) -> None:
         """屏插入：主屏切换由 primaryScreenChanged 负责；4.2a 位置持久化后
         才有"回保存屏"语义，本刀只观测记录。"""
         logging.info("overlay: screen added (%s)", _screen_name(screen))
+        self._screens.reconcile()  # 多了一块屏：开启跨屏拖拽
 
     def handle_screen_removed(self, screen) -> None:
         """屏拔出：被拔的是当前屏 → 先收尾拖拽再按比例迁移到新主屏重建；
@@ -4612,6 +4649,12 @@ class OverlayShell(QObject):
         if screen is self._screen:
             self._end_drag()  # 拖拽中拔屏处置（v1.1 §10）
             self._migrate_to_screen(self.app.primaryScreen())
+        else:
+            # 拔的是副屏：住在上面的 sprite 按比例回主屏，视口关掉。screenRemoved
+            # 发出时这块屏还在在线清单里，所以显式把它当作已经没了。
+            if screen in self._screens.viewports:
+                self._end_drag()
+            self._screens.forget_screen(screen)
 
     def handle_primary_screen_changed(self, screen) -> None:
         logging.info("overlay: primary screen changed -> %s", _screen_name(screen))
@@ -4634,8 +4677,11 @@ class OverlayShell(QObject):
         self.overlay.setGeometry(self._screen.geometry())
         new_bounds = self._local_bounds(self._screen)
         for sprite in [self.sprite, *self._spawned]:
-            self._migrate_sprite_position(old_bounds, new_bounds, sprite)
+            if not self._screens.is_foreign(sprite):
+                self._migrate_sprite_position(old_bounds, new_bounds, sprite)
         self._apply_bounds(new_bounds)
+        # 住在别的屏上的 sprite：它们的坐标是相对本窗原点的，原点动了要重算
+        self._screens.reconcile()
         self._sync_bubble_origin(old_origin)
 
     def _sync_bubble_origin(self, old_origin: QPoint) -> None:
@@ -4675,7 +4721,8 @@ class OverlayShell(QObject):
         # 主 sprite 与全部子肥鱼共用同一钳制域（4.2b：漏掉子肥鱼会让它们
         # 在几何变化后仍被旧屏边界钳制）
         for sprite in [self.sprite, *self._spawned]:
-            sprite.set_bounds(QRect(new_bounds))
+            if not self._screens.is_foreign(sprite):
+                sprite.set_bounds(QRect(new_bounds))
         probe = getattr(self, "_probe", None)
         if probe is not None:
             probe.set_bounds(QRect(new_bounds))
@@ -4763,6 +4810,8 @@ class OverlayShell(QObject):
         for sprite in [self.sprite, *self._spawned]:
             old_overlay.remove_sprite(sprite, release_clip=False)  # 迁移保留 clip
             self.overlay.add_sprite(sprite)
+            if self._screens.is_foreign(sprite):
+                continue  # 住在别的屏上：下面 rebind 按新原点重新安置
             sprite.home_screen = new_screen
             sprite.set_dpr(float(new_screen.devicePixelRatio()))
             self._migrate_sprite_position(old_bounds, new_bounds, sprite)
@@ -4770,6 +4819,8 @@ class OverlayShell(QObject):
         # 否则迁移后退出任意一只宠不再注销行为/探头/彩蛋状态（F2）。
         self._wire_sprite_removed_hooks(self.overlay)
         self._apply_bounds(new_bounds)
+        # 副屏视口挂在旧 overlay 上、坐标相对旧原点：全部重建到新 overlay
+        self._screens.rebind(self.overlay)
         self._apply_window_capabilities()  # on_top/穿透复合/监视器门重挂
         self._connect_screen(new_screen)
         was_started = self._started
