@@ -15,7 +15,6 @@ from .fun_entry import add_ojingjing_entry
 from .icons import custom_file_menu_icon, vector_menu_icon
 from .quick_launch import add_quick_launch_menu, configured_quick_apps
 from .shared import (
-    QUARK_PAN_URL,
     REPO_URL,
     add_action,
     add_agent_link_menu,
@@ -41,6 +40,7 @@ from .shared import (
     add_on_top,
     add_proactive_menu,
     add_quit,
+    add_rally_pets,
     add_return_corner,
     add_spawn_pet,
     add_submenu,
@@ -58,6 +58,7 @@ ACTION_LABELS = {
     "on_top": "窗口置顶", "autostart": "开机自启",
     "return_corner": "回到右下角", "hide_pet": "隐藏桌宠",
     "spawn_pet": "生小肥鱼", "clear_spawned_pets": "退出子肥鱼",
+    "rally_pets": "护驾",
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
     "music": "音乐", "music_pause": "暂停 / 播放", "music_next": "切歌",
     "music_prev": "上一首",
@@ -67,8 +68,7 @@ ACTION_LABELS = {
     "agent_cost": "显示本轮消费",
     "quick_launch": "快捷启动", "balance": "DeepSeek 余额",
     "harness": "启动 DeepSeek Harness", "deepseek_web": "打开网页版 DeepSeek",
-    "check_update": "检查更新", "github_project": "GitHub 项目页",
-    "quark_download": "夸克网盘下载", "agent_link": "Agent 联动",
+    "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
     "proactive_screen": "主动识屏", "todo_panel": "待办提醒",
     "modern_settings": "桌宠设置", "quit": "退出",
 }
@@ -86,13 +86,13 @@ ACTION_ICONS = {
     "on_top": "pin", "autostart": "autostart",
     "return_corner": "corner", "hide_pet": "hide",
     "spawn_pet": "spawn", "clear_spawned_pets": "clear",
+    "rally_pets": "interaction",
     "golden_spin": "play", "edge_probe": "corner",
     "music_next": "play", "music_prev": "play", "music_quit": "stop", "agent_cost": "balance",
     "music": "play", "music_pause": "pause", "music_open_netease": "play",
     "music_open_qqmusic": "play", "music_lyric_align": "play",
     "quick_launch": "application", "balance": "balance", "harness": "harness",
-    "deepseek_web": "web", "check_update": "update", "github_project": "web",
-    "quark_download": "download", "agent_link": "automation",
+    "deepseek_web": "web", "github_project": "web", "agent_link": "automation",
     "proactive_screen": "screen", "todo_panel": "todo",
     "modern_settings": "settings", "quit": "quit",
     "voice_chime_now": "chat", "voice_chime_toggle": "chat",
@@ -204,26 +204,12 @@ def _build_festival_now(menu, pet):
     return add_action(menu, "今日节日", "todo", pet.on_festival_now, close_on_trigger=True)
 
 
-def _build_check_update(menu, pet):
-    return add_action(menu, "检查更新", "update", lambda: pet.on_check_update(pet), close_on_trigger=True)
-
-
 def _build_github(menu, _pet):
     return add_action(
         menu,
         "GitHub 项目页",
         "web",
         lambda: QDesktopServices.openUrl(QUrl(REPO_URL)),
-        close_on_trigger=True,
-    )
-
-
-def _build_quark(menu, _pet):
-    return add_action(
-        menu,
-        "夸克网盘下载",
-        "download",
-        lambda: QDesktopServices.openUrl(QUrl(QUARK_PAN_URL)),
         close_on_trigger=True,
     )
 
@@ -259,6 +245,12 @@ class MenuActionRegistry:
                 add_clear_spawned_pets,
                 _callback_available("on_clear_spawned_pets"),
             ),
+            "rally_pets": MenuActionSpec(
+                add_rally_pets,
+                _callback_available("on_rally_pets"),
+                enabled=lambda pet: bool(getattr(pet, "has_small_pets", False)),
+                disabled_reason="还没有小肥鱼",
+            ),
             # 始终可用：消费统计与歌词无关，不该被歌词开关卡住。
             "agent_cost": MenuActionSpec(add_agent_cost),
             "music_pause": MenuActionSpec(add_music_pause, _music_lyric_configured),
@@ -286,9 +278,7 @@ class MenuActionRegistry:
             "balance": MenuActionSpec(add_balance, _callback_available("on_show_balance")),
             "harness": MenuActionSpec(add_harness, _callback_available("on_open_chat")),
             "deepseek_web": MenuActionSpec(lambda menu, pet: add_deepseek_web(menu)),
-            "check_update": MenuActionSpec(_build_check_update, _callback_available("on_check_update")),
             "github_project": MenuActionSpec(_build_github),
-            "quark_download": MenuActionSpec(_build_quark, lambda _pet: sys.platform == "win32"),
             "agent_link": MenuActionSpec(add_agent_link_menu),
             "proactive_screen": MenuActionSpec(
                 add_proactive_menu,

@@ -275,11 +275,52 @@ def foreground_app_info() -> str:
     return ' | '.join(parts)
 
 
-def capture_screen_bytes() -> bytes:
-    """截全屏（含多显示器）→ 缩到最长边 MAX_EDGE → 内存 JPEG bytes，全程不落盘。"""
+def _monitor_rect_at(rect) -> tuple[int, int, int, int]:
+    """把 ``rect`` 对齐到它中心所在那块显示器的真实像素矩形（Windows）。
+
+    调用方给的矩形是由逻辑几何 × 缩放反推的，可能差一两个像素；截屏要的是
+    显示器自己报的矩形。查不到（非 Windows / API 失败）原样返回。
+    """
+    left, top, right, bottom = (int(v) for v in rect)
+    if sys.platform != "win32":
+        return left, top, right, bottom
+
+    class _MonitorInfo(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.wintypes.DWORD),
+                    ("rcMonitor", ctypes.wintypes.RECT),
+                    ("rcWork", ctypes.wintypes.RECT),
+                    ("dwFlags", ctypes.wintypes.DWORD)]
+
+    try:
+        user32 = ctypes.windll.user32
+        user32.MonitorFromPoint.argtypes = [ctypes.wintypes.POINT, ctypes.wintypes.DWORD]
+        user32.MonitorFromPoint.restype = ctypes.wintypes.HANDLE
+        user32.GetMonitorInfoW.argtypes = [ctypes.wintypes.HANDLE, ctypes.c_void_p]
+        center = ctypes.wintypes.POINT((left + right) // 2, (top + bottom) // 2)
+        monitor = user32.MonitorFromPoint(center, 2)  # MONITOR_DEFAULTTONEAREST
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        if not monitor or not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return left, top, right, bottom
+        found = info.rcMonitor
+        return int(found.left), int(found.top), int(found.right), int(found.bottom)
+    except (AttributeError, OSError, ValueError):
+        return left, top, right, bottom
+
+
+def capture_screen_bytes(rect=None) -> bytes:
+    """截屏 → 缩到最长边 MAX_EDGE → 内存 JPEG bytes，全程不落盘。
+
+    ``rect`` = 只截这一块（虚拟桌面物理像素 ``(左, 上, 右, 下)``，通常是一块
+    显示器）；``None`` = 整个虚拟桌面（全部显示器拼在一起）。多屏下整个桌面缩到
+    MAX_EDGE 后每块屏只剩几百像素宽，所以「看看屏幕」只截发起者所在的那一块。
+    """
     import io
     from PIL import Image, ImageGrab  # 懒导入：PIL 不随模块加载常驻（见模块头注释）
-    img = ImageGrab.grab(all_screens=True)
+    if rect is None:
+        img = ImageGrab.grab(all_screens=True)
+    else:
+        img = ImageGrab.grab(bbox=_monitor_rect_at(rect), all_screens=True)
     w, h = img.size
     scale = MAX_EDGE / max(w, h, 1)
     if scale < 1.0:
@@ -297,6 +338,24 @@ def _safe_detail(raw: str) -> str:
     except Exception:
         pass
     return ' '.join(raw.split())[:300] or 'Provider 请求失败'
+
+
+def _vision_api_key(p) -> str:
+    """识屏请求用哪把 Key。
+
+    安全（高优先）：独立视觉端点（vision_same_as_chat=False）绝不能把聊天 Key
+    一起发过去。只有与聊天同模型时才允许复用聊天 Key；独立端点只认视觉自己的
+    Key（含钥匙串解析），缺失时直接报错，绝不回退到聊天 Key。
+    """
+    if p.vision_same_as_chat:
+        return p.api_key
+    vkey = p.vision_api_key
+    if not vkey and p.vision_api_key_ref:
+        from .chat.models import SecretStore
+        vkey = SecretStore().get(p.vision_api_key_ref)
+    if not vkey:
+        raise VisionError('独立视觉服务未配置 API Key')
+    return vkey
 
 
 def _post_vision_request(
@@ -341,6 +400,18 @@ def _post_vision_request(
         f'那就是你自己{name_part}——你在主人桌面上的化身。请以第一人称自然看待它'
         '（比如"我在你桌面上呢"），不要说成陌生软件或与己无关的角色。）'
     )
+    # Claude 通道（地址是 Anthropic，或聊天端点显式标了 anthropic）：换成 Messages API
+    # 的形状走官方 SDK。Key 的取法与下面同一口径（独立视觉端点绝不复用聊天 Key）。
+    from .chat import anthropic_provider
+    if anthropic_provider.uses_anthropic(p, base_url):
+        if consume_budget is not None and not consume_budget():
+            raise VisionError('每日请求上限已到，今天先陪你到这儿了')
+        try:
+            return anthropic_provider.describe_image(
+                jpeg_bytes, user_text, system_prompt, p,
+                model=resolve_vision_model(p), base_url=base_url, api_key=_vision_api_key(p))
+        except anthropic_provider.ProviderError as exc:
+            raise VisionError(str(exc)) from exc
     payload = {
         'model': resolve_vision_model(p),
         'messages': [
@@ -364,16 +435,7 @@ def _post_vision_request(
     # 安全（高优先）：独立视觉端点（vision_same_as_chat=False）绝不能把聊天 Key
     # 一起发过去。只有与聊天同模型时才允许复用聊天 Key；独立端点只认视觉自己的
     # Key（含钥匙串解析），缺失时直接报错，绝不回退到聊天 Key。
-    if p.vision_same_as_chat:
-        api_key = p.api_key
-    else:
-        vkey = p.vision_api_key
-        if not vkey and p.vision_api_key_ref:
-            from .chat.models import SecretStore
-            vkey = SecretStore().get(p.vision_api_key_ref)
-        api_key = vkey
-        if not api_key:
-            raise VisionError('独立视觉服务未配置 API Key')
+    api_key = _vision_api_key(p)
     if api_key:
         headers['Authorization'] = f'Bearer {api_key}'
     req = urllib.request.Request(

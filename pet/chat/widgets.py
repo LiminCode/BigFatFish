@@ -1697,6 +1697,27 @@ class ChatWindow(QDialog):
         self._refresh_sessions()
         self._reset()
 
+    def sync_from_store(self, session_id: str | None = None) -> None:
+        """与存档对齐：本窗隐藏 / 开着期间，别的入口（快速对话气泡、灵动岛气泡）
+        可能往会话里追加了消息，而本窗手里还是旧快照。
+
+        ``session_id`` = 要切过去的会话（发起方正在聊的那个）；缺省留在当前会话。
+        存档没有更新就什么都不做。自己正在生成时不动——流式输出还挂在现有气泡上。
+        """
+        if self.service.busy or self._typewriter_timer.isActive():
+            return
+        fresh = self.store.load(session_id or self.session.session_id, self.character_id)
+        if fresh is None:
+            return
+        if (fresh.session_id == self.session.session_id
+                and str(fresh.updated_at) <= str(self.session.updated_at)
+                and len(fresh.messages) == len(self.session.messages)):
+            return
+        self.session = fresh
+        self._load()
+        self._refresh_sessions()
+        self._reset()
+
     def delete_current_session(self) -> None:
         self._delete_sessions((self.session.session_id,))
 

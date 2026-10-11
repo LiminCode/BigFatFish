@@ -122,6 +122,9 @@ class _FakeIsland:
     def refresh_from_config(self):
         pass
 
+    def set_session_counts(self, counts):
+        pass
+
 
 def _make_shared_shell(tmp_path):
     config = Config(tmp_path)

@@ -102,10 +102,13 @@ class ChatTitleBar(QFrame):
 class MessageBubble(QFrame):
     retry_requested = Signal()
 
-    def __init__(self, role: str, content: str = "", character_id: str = "", parent=None):
+    def __init__(self, role: str, content: str = "", character_id: str = "", parent=None,
+                 display_name: str = ""):
         super().__init__(parent)
         self.role = role
         self.character_id = character_id
+        # 展示名（用户给角色起的名字）：头像首字与署名用它；没给就退回角色 id / 「桌宠」
+        self.display_name = str(display_name or "").strip()
         self.state = "normal"
         self.setObjectName("message-bubble")
         self.setProperty("role", role)
@@ -116,7 +119,7 @@ class MessageBubble(QFrame):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
 
-        self.avatar = QLabel("你" if role == "user" else _initial(character_id))
+        self.avatar = QLabel("你" if role == "user" else _initial(self.display_name or character_id))
         self.avatar.setObjectName("bubble-avatar")
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar.setFixedSize(34, 34)
@@ -126,7 +129,7 @@ class MessageBubble(QFrame):
         panel = QVBoxLayout()
         panel.setContentsMargins(0, 0, 0, 0)
         panel.setSpacing(5)
-        self.meta = QLabel("你" if role == "user" else "桌宠")
+        self.meta = QLabel("你" if role == "user" else (self.display_name or "桌宠"))
         self.meta.setObjectName("bubble-meta")
         panel.addWidget(self.meta)
 
@@ -676,11 +679,14 @@ class ChatWindow(QDialog):
         self._character_manifest = load_character_manifest(root, self.character_id)
         chat = self._character_manifest.get("chat", {})
         chat = chat if isinstance(chat, dict) else {}
-        self.character_name = str(self._character_manifest.get("name") or chat.get("name") or self.character_id)
+        # 用户给角色起的名字优先（与新版聊天窗 widgets.py、灵动岛同一口径）
+        alias = self.config.character_alias(self.character_id)
+        self._character_alias = alias
+        self.character_name = alias or str(self._character_manifest.get("name") or chat.get("name") or self.character_id)
         self.accent_color = _safe_color(chat.get("theme_color"))
         self._base_accent = self.accent_color
         self.title_label.setText(f"{self.character_name} · AI 对话")
-        self.avatar_label.setText(_initial(self.character_id))
+        self.avatar_label.setText(_initial(self.character_name))
         self._apply_avatar_style(self.avatar_label, self.accent_color)
 
     def _load(self) -> None:
@@ -721,7 +727,8 @@ class ChatWindow(QDialog):
     def _add(self, role: str, text: str) -> MessageBubble:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        bubble = MessageBubble(role, text, self.character_id)
+        bubble = MessageBubble(role, text, self.character_id,
+                               display_name=getattr(self, "_character_alias", ""))
         self._apply_avatar_style(bubble.avatar, self.accent_color if role == "assistant" else "#2b75d6")
         if role == "user":
             row.addStretch(1)
@@ -816,6 +823,27 @@ class ChatWindow(QDialog):
             self._refresh_sessions()
             return
         self.session = session
+        self._load()
+        self._refresh_sessions()
+        self._reset()
+
+    def sync_from_store(self, session_id: str | None = None) -> None:
+        """与存档对齐：本窗隐藏 / 开着期间，别的入口（快速对话气泡、灵动岛气泡）
+        可能往会话里追加了消息，而本窗手里还是旧快照。
+
+        ``session_id`` = 要切过去的会话（发起方正在聊的那个）；缺省留在当前会话。
+        存档没有更新就什么都不做。自己正在生成时不动——流式输出还挂在现有气泡上。
+        """
+        if self.service.busy:
+            return
+        fresh = self.store.load(session_id or self.session.session_id, self.character_id)
+        if fresh is None:
+            return
+        if (fresh.session_id == self.session.session_id
+                and str(fresh.updated_at) <= str(self.session.updated_at)
+                and len(fresh.messages) == len(self.session.messages)):
+            return
+        self.session = fresh
         self._load()
         self._refresh_sessions()
         self._reset()

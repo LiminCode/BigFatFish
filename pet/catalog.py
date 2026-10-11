@@ -59,6 +59,22 @@ HEAD_FALLBACK_RATIO = 0.45
 # 可选的显示缩放档位（相对 640 宽：320px / 462px / 544px / 640px）
 SCALE_STEPS = (0.5, 0.72, 0.85, 1.0)
 
+
+def smaller_scale_step(scale: float) -> float:
+    """比 ``scale`` 小一号的档位：档位表里小于它的最大一档。
+
+    已经是最小档（或比最小档还小）时没有更小的档可退：取一半——否则主肥鱼调到
+    最小档的用户，生出来的小肥鱼就和主肥鱼一样大了。``scale`` 不在档位上
+    （手改配置）时同样取比它小的最大一档。
+    """
+    below = [step for step in SCALE_STEPS if step < float(scale) - 1e-6]
+    return max(below) if below else half_scale(scale)
+
+
+def half_scale(scale: float) -> float:
+    """``scale`` 的一半（会话小鱼的大小），不低于配置允许的下限 0.1。"""
+    return max(0.1, float(scale) / 2.0)
+
 # ---------------------------------------------------------------- 多形象
 # 当前内置形象与未来扩展形象 ID（目录名建议使用稳定 ASCII）
 DEFAULT_CHARACTER = 'shenshen'

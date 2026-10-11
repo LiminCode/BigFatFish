@@ -20,7 +20,7 @@ OverlayShell + 被点 sprite + 行为控制器，使**两套建造器原样复�
     cfg/scale/change_scale/playback_speed/set_playback_speed  → 被点 sprite + 各自那份 config
     on_open_chat / on_open_chat_settings                      → PetInstance.open_chat*
     on_open_modern_settings                                   → OverlayShell.open_settings_for
-    on_show_balance / on_check_update / on_open_todo_panel /
+    on_show_balance / on_open_todo_panel /
     on_voice_chime_* / on_festival_*                          → AppShell（进程级服务）
     toggle_agent_link                                         → agent_link_manager（共享 manager）
     toggle_proactive_enabled / set_proactive_option           → proactive_watcher（共享监视器）
@@ -350,22 +350,6 @@ class SpriteMenuFacade:
         return lambda *_ignored: fn(shell)
 
     @property
-    def on_check_update(self):
-        """「检查更新」：``AppShell.check_update``（窗口版是 ``_slot_wrap`` 包装，
-        这里壳本身即唯一窗，无需槽位前缀）。
-
-        父窗同 ``on_show_balance`` 传壳：传 OverlayWindow 会在
-        ``target.show_bubble`` 抛 AttributeError——而那句在
-        ``self._update_checking = True`` 之后、复位 connect 之前，异常会让
-        本次会话永久不再检查更新。
-        """
-        fn = _first_callable(self._hosts(), ("check_update",))
-        if fn is None:
-            return None
-        shell = self._shell
-        return lambda *_ignored: fn(shell)
-
-    @property
     def on_open_todo_panel(self):
         return _first_callable(self._hosts(), ("open_todo_panel",))
 
@@ -502,6 +486,18 @@ class SpriteMenuFacade:
     def on_clear_spawned_pets(self) -> None:
         self._shell.clear_spawned_pets()
 
+    @property
+    def on_rally_pets(self):
+        """「护驾」：把所有小肥鱼叫到主肥鱼身边。只有主肥鱼的菜单有（返回 None =
+        该入口不出现，见 registry 的 ``_callback_available``）。"""
+        rally = getattr(self._shell, "rally_pets", None)
+        return rally if self._is_main_sprite and callable(rally) else None
+
+    @property
+    def has_small_pets(self) -> bool:
+        """场上有没有小肥鱼（手动生的 / 会话小鱼）：没有时「护驾」置灰。"""
+        return bool(getattr(self._shell, "_spawned", None))
+
     def on_open_settings(self) -> None:
         """打开设置页（D13：按被点 sprite 的 config 身份传给独立设置进程）。"""
         opener = getattr(self._shell, "open_settings_for", None)
@@ -583,6 +579,45 @@ class SpriteMenuFacade:
                 except Exception:
                     log.debug("overlay: 回填联动管理器失败", exc_info=True)
         return manager
+
+    def toggle_session_pets(self, on: bool) -> None:
+        """「每个会话一只小鱼」开关：落盘；关掉时在场的会话小鱼立即离场。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_pets"] = bool(on)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        controller = getattr(self._shell, "session_pets", None)
+        if not on and controller is not None:
+            controller.clear()
+
+    def toggle_session_history(self, on: bool) -> None:
+        """「记录最近的对话」开关：落盘；岛上的列表立刻跟着出现 / 收走。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_history"] = bool(on)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        service = getattr(self._shell, "session_history", None)
+        if service is not None:
+            service.refresh()
+            if on:
+                service.rescan(force=True)
+
+    def set_session_history_rows(self, rows: int) -> None:
+        """「最近的对话」列表展开后露几行：落盘，岛上立刻跟着变。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_history_rows"] = int(rows)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        service = getattr(self._shell, "session_history", None)
+        if service is not None:
+            service.refresh()
+
+    def set_session_pets_max(self, limit: int) -> None:
+        """会话小鱼上限：落盘即生效（下一只生成时按新上限判）。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_pets_max"] = int(limit)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
 
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """Agent 联动子项（window.py ``_toggle_agent_link`` 等价，含拒绝回滚）。

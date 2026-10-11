@@ -19,13 +19,14 @@ from .. import autostart as autostart_mod
 from .. import catalog
 from .. import claude_hooks
 from ..harness_launcher import launch_harness_gui
-from ..updater import QUARK_PAN_URL as QUARK_PAN_URL, REPO_URL as REPO_URL
 from .icons import fitted_pet_pixmap_icon, pet_avatar_menu_icon, vector_menu_icon
 from .menu_styles.common import inherit_menu_style
 
 log = logging.getLogger(__name__)
 
 DEEPSEEK_WEB_URL = "https://chat.deepseek.com/"
+#: 「GitHub 项目页」打开的地址（上游仓库）
+REPO_URL = "https://github.com/MerZlin/dsh-pet-indesktop"
 
 
 class _AnimationIconSignals(QObject):
@@ -394,6 +395,45 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get(agent_key, False)))
         act.toggled.connect(lambda on, k=agent_key, a=act: pet.toggle_agent_link(k, on, a))
+    # 每个 Claude Code 会话一只小鱼：只有 overlay 拓扑有这个能力（旧 PetWindow 没有）
+    toggle_session_pets = getattr(pet, "toggle_session_pets", None)
+    if callable(toggle_session_pets):
+        sub.addSeparator()
+        act = sub.addAction("每个会话一只小鱼")
+        act.setCheckable(True)
+        act.setChecked(bool(agent_cfg.get("session_pets", True)))
+        act.toggled.connect(lambda on: toggle_session_pets(on))
+        set_limit = getattr(pet, "set_session_pets_max", None)
+        if callable(set_limit):
+            limit_menu = add_submenu(sub, "会话小鱼上限", None)
+            current = int(agent_cfg.get("session_pets_max", 6) or 6)
+            group = QActionGroup(limit_menu)
+            group.setExclusive(True)
+            for limit in sorted({3, 6, 9, 12, 16, 24, current}):
+                choice = limit_menu.addAction(f"{limit} 只")
+                choice.setCheckable(True)
+                choice.setChecked(limit == current)
+                group.addAction(choice)
+                connect_action(choice, lambda limit=limit: set_limit(limit))
+    # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
+    toggle_session_history = getattr(pet, "toggle_session_history", None)
+    if callable(toggle_session_history):
+        act = sub.addAction("记录最近的对话")
+        act.setCheckable(True)
+        act.setChecked(bool(agent_cfg.get("session_history", True)))
+        act.toggled.connect(lambda on: toggle_session_history(on))
+        set_rows = getattr(pet, "set_session_history_rows", None)
+        if callable(set_rows):
+            rows_menu = add_submenu(sub, "最近的对话显示行数", None)
+            current_rows = int(agent_cfg.get("session_history_rows", 10) or 10)
+            rows_group = QActionGroup(rows_menu)
+            rows_group.setExclusive(True)
+            for rows in sorted({5, 8, 10, 12, 15, 20, current_rows}):
+                choice = rows_menu.addAction(f"{rows} 行")
+                choice.setCheckable(True)
+                choice.setChecked(rows == current_rows)
+                rows_group.addAction(choice)
+                connect_action(choice, lambda rows=rows: set_rows(rows))
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
@@ -508,6 +548,20 @@ def add_clear_spawned_pets(menu: QMenu, pet, *, icons: bool = True):
         menu,
         "退出子肥鱼",
         "clear" if icons else None,
+        callback,
+        close_on_trigger=True,
+    )
+
+
+def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
+    """右键菜单：护驾——所有小肥鱼围到主肥鱼身边（只有主肥鱼有这个入口）。"""
+    callback = getattr(pet, "on_rally_pets", None)
+    if callback is None:
+        return None
+    return add_action(
+        menu,
+        "护驾",
+        "interaction" if icons else None,
         callback,
         close_on_trigger=True,
     )

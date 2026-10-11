@@ -115,7 +115,8 @@ def seed_slot_config_from_main(config_dir: Path | str, slot_id: int) -> bool:
     # 副槽不继承主桌宠的位置/屏幕，避免新鱼叠在旧鱼身上；自启仍仅主槽。
     seed["autostart_wanted"] = False
     seed["harness_autostart"] = False
-    # 生小肥鱼大小策略：开启继承 → 保留主配置 scale；
+    # 生小肥鱼大小策略：开启继承 → 跟主配置 scale 走，默认再小一号
+    # （spawn_smaller_than_main，主、小一眼可分）；
     # 关闭继承 → 用主配置里给“小肥鱼”单独选择的 spawn_scale。
     inherit_size = _bool_or_default(seed.get("spawn_inherit_size"), True)
     seed["spawn_inherit_size"] = inherit_size
@@ -124,6 +125,11 @@ def seed_slot_config_from_main(config_dir: Path | str, slot_id: int) -> bool:
             seed["scale"] = float(seed.get("spawn_scale", catalog.DEFAULT_SCALE))
         except (TypeError, ValueError):
             seed["scale"] = catalog.DEFAULT_SCALE
+    elif _bool_or_default(seed.get("spawn_smaller_than_main"), True):
+        try:
+            seed["scale"] = catalog.smaller_scale_step(float(seed.get("scale") or catalog.DEFAULT_SCALE))
+        except (TypeError, ValueError):
+            seed["scale"] = catalog.smaller_scale_step(catalog.DEFAULT_SCALE)
     # 生小肥鱼灵动岛策略：默认不继承 → 小肥鱼不开启自己的灵动岛；
     # 开启继承 → 保留主配置的 dynamic_island（含是否启用）。
     inherit_island = _bool_or_default(seed.get("spawn_inherit_dynamic_island"), False)

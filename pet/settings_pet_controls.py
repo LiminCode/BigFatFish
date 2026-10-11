@@ -170,6 +170,8 @@ def build_pet_controls(host) -> None:
     # 生小肥鱼尺寸策略：默认继承主肥鱼大小；关闭后使用 spawn_scale 独立选择。
     host.spawn_inherit_size_check = ToggleSwitch(host)
     host.spawn_inherit_size_check.setChecked(bool(host.config.get("spawn_inherit_size", True)))
+    host.spawn_smaller_check = ToggleSwitch(host)
+    host.spawn_smaller_check.setChecked(bool(host.config.get("spawn_smaller_than_main", True)))
     host.spawn_scale_combo = ModernSelect(host, width=132)
     current_spawn_scale = float(host.config.get("spawn_scale", catalog.DEFAULT_SCALE))
     spawn_scales = list(catalog.SCALE_STEPS)
@@ -664,7 +666,7 @@ def _update_island_controls(host, enabled: bool) -> None:
         "dynamic_island_status", "dynamic_island_info_mode",
         "dynamic_island_style", "dynamic_island_opacity", "dynamic_island_accent",
         "dynamic_island_icon_value",
-        "dynamic_island_custom_text", "dynamic_island_click_action",
+        "dynamic_island_click_action",
         "dynamic_island_event_effects", "dynamic_island_edge_dock",
         "dynamic_island_collision", "dynamic_island_hidden_chat",
     ), enabled, dependency="island_enabled")
@@ -680,20 +682,20 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
     )
 
 
+def build_island_card_source_select(host, island_cfg: dict):
+    """灵动岛「卡片内容」下拉：自动 / DeepSeek 余额 / Claude Code 会话。"""
+    select = ModernSelect(host, width=160)
+    for label, value in (("自动", "auto"), ("DeepSeek 余额", "balance"), ("Claude Code 会话", "claude")):
+        select.addItem(label, value)
+    select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
+    return select
+
+
 def _update_island_info_controls(host, enabled: bool) -> None:
     host._set_setting_rows_visible(
-        ("dynamic_island_info_mode", "dynamic_island_custom_text"),
+        ("dynamic_island_info_mode",),
         enabled,
         dependency="island_show_info",
-    )
-    _update_island_custom_text(host)
-
-
-def _update_island_custom_text(host, _index: int | None = None) -> None:
-    host._set_setting_rows_visible(
-        ("dynamic_island_custom_text",),
-        host.island_info_mode_select.currentData() == "custom",
-        dependency="island_info_mode",
     )
 
 

@@ -84,6 +84,7 @@ from . import catalog
 from . import click_sound
 from . import overlay_settings_command
 from . import overlay_spawn_state
+from .overlay_session_pets import SessionPetController
 from . import slot_manager
 from . import window_alerts
 from .context_menus.shared import release_menu_tree
@@ -619,10 +620,12 @@ class _SpriteSelfTalkHost:
             image = cache.get(str(value))
             if image is None or image.isNull():
                 self._shell._warm_shared_self_talk_images([str(value)])
-                if not self._self_talk_texts:
+                text = window_alerts.fallback_self_talk_text(
+                    self._self_talk_texts, self._self_talk_images, value)
+                if text is None:
                     return False
-                self._last_self_talk_text = self._self_talk_texts[0]
-                return self._show_self_talk_text(self._last_self_talk_text)
+                self._last_self_talk_text = text
+                return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
                 pixmap=QPixmap.fromImage(image))
@@ -991,6 +994,9 @@ class OverlayShell(QObject):
         self._spawned: list = []
         self._spawned_libs: dict = {}
         self._spawned_slots: dict = {}
+        # 会话小鱼（每个 Claude Code 会话一只）：也在 _spawned 里（碰撞 / 绘制 /
+        # 隐藏等全部复用），但没有 slot 身份——不进活跃清单、不接管主身份。
+        self._session_pets: set = set()
         # B7b per-slot 取源：逐 sprite 的配置视图（配置同步边界重建）与子 sprite
         # 的各自主气泡跟随器/自言自语宿主/ pet 形宿主。
         self._sprite_cfg_cache: dict = {}
@@ -1018,6 +1024,30 @@ class OverlayShell(QObject):
         # 4.3 后半：共享子系统注入（等价 PetWindow 的构造参数；None = 惰性空转）
         self.agent_link_manager = agent_link_manager
         self.proactive_watcher = proactive_watcher
+        self.session_pets = SessionPetController(self, enabled=self._session_pets_enabled)
+        # 会话小鱼的交互面（详情卡 / 专属右键菜单 / 跳转）
+        from .session_pet_ui import SessionPetActions
+        self.session_actions = SessionPetActions(
+            self, self.session_pets,
+            anchor_factory=lambda sprite: _SpriteChatAnchor(self, sprite), parent=self)
+        self.session_pets.session_gone.connect(self.session_actions.forget)
+        if agent_link_manager is not None:
+            self.session_pets.attach(agent_link_manager)
+        # 最近的对话（灵动岛卡片里的折叠框）：记下每个会话在哪打开的。与会话小鱼
+        # 订阅同一个信号，但各记各的——小鱼关着、超出上限的会话照样记。
+        from .claude_session_history import HISTORY_FILE, SessionHistory
+        from .session_history_service import SessionHistoryService
+        history_dir = self._spawn_config_dir()
+        self.session_history = SessionHistoryService(
+            SessionHistory(Path(history_dir) / HISTORY_FILE if history_dir else None),
+            enabled=lambda: bool(self._agent_link_value("session_history", True)),
+            wsl_enabled=lambda: bool(self._agent_link_value("claude_wsl", False)),
+            limits=lambda: (self._agent_link_value("session_history_days", 7),
+                            self._agent_link_value("session_history_max", 30)),
+            parent=self)
+        if agent_link_manager is not None:
+            self.session_history.attach(agent_link_manager)
+        self.session_history.start()
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
         # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()
@@ -1086,6 +1116,11 @@ class OverlayShell(QObject):
         self._throw_egg = create_throw_egg_world(
             QRect(self._bounds), probe=self._probe)
         self.driver.add_extra_controller(self._throw_egg)
+        # 护驾（右键菜单）：小肥鱼围到主肥鱼身边的飞行段。挂在 extras 尾段——
+        # 飞行中的鱼是拖拽态，行为 / 碰撞 / 物理都不动它的位置，这里最后写。
+        from .sprite_rally import SpriteRallyWorld
+        self._rally = SpriteRallyWorld(on_arrived=self._on_rally_arrived)
+        self.driver.add_extra_controller(self._rally)
         self.overlay = ShellOverlayWindow(self._screen, driver=self.driver)
         self.overlay.behavior = self.behavior
         self.overlay.edge_probe = self._probe
@@ -1098,9 +1133,11 @@ class OverlayShell(QObject):
         # （slingshot_enabled 热读，设置页即改即生效）
         self.overlay.slingshot.config = self._config
         # 4.1c 全量右键菜单（facade 适配旧 context_menus 建造器）
-        from .sprite_menu_facade import build_sprite_full_menu
-        self.overlay._full_menu_builder = (
-            lambda target: build_sprite_full_menu(self, target))
+        self.overlay._full_menu_builder = self._build_menu_for
+        # 跨屏：sprite ↔ 屏幕归属表 + 副屏视口（拖到哪块屏就住哪块屏）
+        from .overlay_screens import ScreenRouter
+        self._screens = ScreenRouter(self)
+        self._screens.bind(self.overlay)
         self.lib = self._create_main_library()
         # 首跑帧序列自动供给（B 档）：口径同 app._create_library，库内幂等
         getattr(self.lib, 'maybe_provision_frameseq', lambda: None)()
@@ -1160,6 +1197,17 @@ class OverlayShell(QObject):
         overlay.add_sprite_removed_listener(self.behavior.forget)
         overlay.add_sprite_removed_listener(self._probe.forget)
         overlay.add_sprite_removed_listener(self._throw_egg.forget)
+        overlay.add_sprite_removed_listener(self._rally.forget)
+
+    def _build_menu_for(self, target):
+        """右键菜单：会话小鱼用它自己的精简菜单，其余走全量菜单。"""
+        from .sprite_menu_facade import build_sprite_full_menu
+
+        actions = getattr(self, "session_actions", None)
+        if actions is not None and self.is_session_pet(target):
+            from .session_pet_ui import build_session_pet_menu
+            return build_session_pet_menu(self, target, actions)
+        return build_sprite_full_menu(self, target)
 
     def _create_main_library(self):
         """per-pet MovieLibrary（T3）；角色素材缺失回退默认角色（口径同
@@ -1926,10 +1974,12 @@ class OverlayShell(QObject):
             image = cache.get(str(value))
             if image is None or image.isNull():
                 self._warm_self_talk_images()
-                if not self._self_talk_texts:
+                text = window_alerts.fallback_self_talk_text(
+                    self._self_talk_texts, self._self_talk_images, value)
+                if text is None:
                     return False
-                self._last_self_talk_text = self._self_talk_texts[0]
-                return self._show_self_talk_text(self._last_self_talk_text)
+                self._last_self_talk_text = text
+                return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
                 pixmap=QPixmap.fromImage(image))
@@ -2079,6 +2129,13 @@ class OverlayShell(QObject):
         ``after_display`` 重排**它的**周期定时器（避免与刚弹出的点击气泡叠一起）。
         """
         target = self.sprite if sprite is None else sprite
+        actions = getattr(self, "session_actions", None)
+        if actions is not None and self.is_session_pet(target):
+            # 会话小鱼是状态指示：单击看这个会话的详情，不走余额 / 自言自语气泡
+            if callable(getattr(self.overlay, "click_feedback", None)):
+                self._sound.on_click(target)
+            actions.show_card(target)
+            return
         # 点击音效：overlay 的 click_feedback 通道不带 sprite 身份（播放器对
         # "无 sprite"的调用已按契约静音，见 SpriteSoundPlayer.on_click），真正的
         # 播放落在这一句——门/音量/音源都取被点的那一只自己的配置。通道被置 None
@@ -2237,18 +2294,27 @@ class OverlayShell(QObject):
         pet_name = self._config.character_display_name(str(
             self._sprite_config(self._look_sprite).get(
                 "character", catalog.DEFAULT_CHARACTER)))
+        # 看的是**发起者所在的那块屏**（把鱼拖到哪块屏，它就看哪块屏）。整个虚拟
+        # 桌面缩到一张小图里，多屏下每块屏都糊得看不清。屏幕矩形在主线程取。
+        from .overlay_screens import native_rect
+        try:
+            screen_rect = native_rect(self._screens.screen_of(self._look_sprite))
+        except Exception:
+            logging.debug("overlay: 取识屏屏幕矩形失败，退回整个桌面", exc_info=True)
+            screen_rect = None
         threading.Thread(
             target=self._look_worker,
-            args=(provider, system_prompt, pet_name),
+            args=(provider, system_prompt, pet_name, screen_rect),
             daemon=True,
             name="overlay-look-screen",
         ).start()
 
-    def _look_worker(self, provider, system_prompt, pet_name: str = "") -> None:
+    def _look_worker(self, provider, system_prompt, pet_name: str = "",
+                     screen_rect=None) -> None:
         from . import vision as vision_mod
 
         try:
-            shot = vision_mod.capture_screen_bytes()
+            shot = vision_mod.capture_screen_bytes(screen_rect)
             app_info = vision_mod.foreground_app_info()
             reply = vision_mod.ask_about_screen(
                 shot, app_info, system_prompt, provider, pet_name=pet_name)
@@ -2522,6 +2588,9 @@ class OverlayShell(QObject):
             if bubble is None:
                 bubble = cls(self._config, pet_window=anchor)
                 bubble.open_chat_callback = self.open_full_chat
+                # 完整聊天窗归实例管（隐藏后复用）：气泡写了会话就让它重读
+                bubble.chat_sync_callback = getattr(
+                    self._instance, "sync_chat_windows", None)
                 self._quick_chat = bubble
             else:
                 bubble.settings = self._config.chat_settings()
@@ -2812,6 +2881,8 @@ class OverlayShell(QObject):
         self._run_exit_step('停止可见性监视器', self._watcher.stop)
         self._run_exit_step('删除运行标记', self._delete_runtime_marker)
         self._run_exit_step('关闭快速对话', self._close_quick_chat)
+        self._run_exit_step('关闭会话详情卡', self.session_actions.close)
+        self._run_exit_step('保存最近的对话', self._flush_session_history)
         self._run_exit_step('收掉气泡跟随器', self._close_bubble_followers)
         self._run_exit_step('停 overlay 驱动', self.overlay.stop)
         self._run_exit_step('关闭 overlay 窗口', self.overlay.close)
@@ -3030,12 +3101,14 @@ class OverlayShell(QObject):
         for sprite in self._spawned:
             slot = self._spawned_slots.get(sprite)
             label = f"小肥鱼 [slot-{slot}]" if slot is not None else "小肥鱼"
+            if sprite in self._session_pets:
+                label = f"会话：{sprite.caption}" if sprite.caption else "会话小鱼"
             entries.append((sprite, label))
         return entries
 
     def _go_default_corner(self, sprite) -> None:
         """把指定 sprite 送回右下角（window.go_default_corner 等价）。"""
-        sprite.set_pos(self._default_corner_pos(self._bounds, sprite.rect()))
+        sprite.set_pos(self._default_corner_pos(self._bounds_of(sprite), sprite.rect()))
 
     def _hide_bubble_for_menu(self) -> None:
         """托盘菜单弹出前隐藏气泡（legacy menu.aboutToShow → hide_speech_bubble）。
@@ -3225,6 +3298,7 @@ class OverlayShell(QObject):
         self.overlay.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
         if was_visible:
             self.overlay.show()  # setWindowFlag 重建原生窗口会先隐藏
+        self._screens.set_on_top(on)
         # 原生窗口重建后旧 HWND 的锁屏通知注册随之失效，按新句柄补注册
         self._register_session_notifications()
         if persist:
@@ -3290,6 +3364,8 @@ class OverlayShell(QObject):
         # 桌宠大小（scale）：旧机 refresh_pet_settings 即时 change_scale
         # （window.py:3937-3938），改完即改气泡画布/锚点。
         scale = self._config_scale(cfg)
+        if sprite in self._session_pets:      # 会话小鱼：主肥鱼的一半大
+            scale = catalog.half_scale(scale)
         if abs(float(getattr(sprite, "scale", scale)) - scale) > 1e-9:
             try:
                 sprite.scale = scale
@@ -3479,6 +3555,8 @@ class OverlayShell(QObject):
 
     def _on_grab_finished(self) -> None:
         """拖拽收尾（overlay._finish_grab 钩子）：冲刷光标恢复滞留。"""
+        # 拖拽期间不关视口（按下的那个握着鼠标捕获），收尾后补一次清理
+        self._screens.schedule_prune()
         if self._cursor_restore_pending:
             self._cursor_restore_pending = False
             self._auto_cursor_hidden = False
@@ -3495,8 +3573,9 @@ class OverlayShell(QObject):
         body = (sprite.body_rect() if hasattr(sprite, "body_rect")
                 else sprite.rect())
         bw, bh = body.width(), body.height()
-        cx = self._bounds.left() + rx * self._bounds.width()
-        cy = self._bounds.top() + ry * self._bounds.height()
+        bounds = self._bounds_of(sprite)
+        cx = bounds.left() + rx * bounds.width()
+        cy = bounds.top() + ry * bounds.height()
         off_x = body.x() - sprite.rect().x()
         off_y = body.y() - sprite.rect().y()
         return QPointF(cx - bw / 2 - off_x, cy - bh / 2 - off_y)
@@ -3521,7 +3600,14 @@ class OverlayShell(QObject):
         facing = getattr(sprite, "facing", None)
         if facing in ("left", "right"):
             geometry["facing"] = facing
+        # 屏幕身份：比例是相对**它所在那块屏**的可用区算的，重启要回同一块屏
+        # （None = 主屏，跟着主屏走）
+        geometry["screen_name"] = self._screens.name_of(sprite)
         return geometry
+
+    def _bounds_of(self, sprite) -> QRect:
+        """该 sprite 的活动边界：住在主屏 = ``_bounds``，否则是它那块屏的可用区。"""
+        return self._screens.bounds_of(sprite)
 
     def _restore_position(self) -> None:
         """按"身体中心相对可用区比例"恢复位置（window_placement.restore_position
@@ -3531,6 +3617,10 @@ class OverlayShell(QObject):
             self.sprite.set_pos(self._default_corner_pos(
                 self._bounds, self.sprite.rect()))
         else:
+            saved_screen = self._screens.find(self._config.get("screen_name"))
+            if saved_screen is not None:
+                # 上次停在别的屏上且那块屏还在：先住回去，比例按它的可用区反解
+                self._screens.rehome(self.sprite, saved_screen)
             self.sprite.set_pos(self._pos_from_ratios(float(rx), float(ry)))
         facing = str(self._config.get("facing", "") or "")
         if facing in ("left", "right"):
@@ -3538,7 +3628,7 @@ class OverlayShell(QObject):
 
     def save_position(self) -> None:
         """身体中心相对可用区比例持久化（window_placement.save_position 语义）。"""
-        geometry = self._sprite_geometry(self.sprite, self._bounds)
+        geometry = self._sprite_geometry(self.sprite, self._bounds_of(self.sprite))
         if not geometry:
             return
         for key, value in geometry.items():
@@ -3635,12 +3725,77 @@ class OverlayShell(QObject):
             host.schedule()
         if config_dir:
             # 生成/复活即落一次几何：未及优雅退出（崩溃/断电）也能按清单复活
-            geometry = self._sprite_geometry(sprite, self._bounds)
+            geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
             if geometry:
                 overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
             # 刚写过该 slot 文件 → 签名缓存同步刷新：否则下一次目录事件会把这次
             # 自写当成"外部变更"，把**别的**子宠的运行态一起重下发（窄契约破了）。
             self._slot_signature_cache = self._slot_config_signatures()
+
+    # ------------------------------------------------------------ 会话小鱼（临时 sprite）
+    SESSION_PET_MAX = 6      # 缺省上限；实际取 agent_link.session_pets_max
+
+    def _session_pet_limit(self) -> int:
+        agent_cfg = self._config.get("agent_link") or {}
+        try:
+            limit = int(agent_cfg.get("session_pets_max", self.SESSION_PET_MAX))
+        except (AttributeError, TypeError, ValueError):
+            limit = self.SESSION_PET_MAX
+        return max(0, min(24, limit))
+
+    def _agent_link_value(self, key: str, default):
+        agent_cfg = self._config.get("agent_link") or {}
+        return agent_cfg.get(key, default) if isinstance(agent_cfg, dict) else default
+
+    def _flush_session_history(self) -> None:
+        """退出步骤：「最近的对话」有没写的立刻落盘。"""
+        self.session_history.flush()
+
+    def _session_pets_enabled(self) -> bool:
+        agent_cfg = self._config.get("agent_link") or {}
+        return bool(agent_cfg.get("session_pets", True)) if isinstance(agent_cfg, dict) else True
+
+    def is_session_pet(self, sprite) -> bool:
+        return sprite in self._session_pets
+
+    def spawn_session_pet(self):
+        """生一只会话小鱼，返回 sprite；到上限返回 None。
+
+        与 ``_spawn_slot`` 的区别只有身份：不分配 slot（身份永不回收，自动生成会
+        把 128 个名额耗光）、不落种配置、不进活跃清单，重启不复活。角色跟主配置，
+        大小是主肥鱼的一半；不自言自语。
+        """
+        if len(self._session_pets) >= self._session_pet_limit():
+            return None
+        lib = self._create_main_library()
+        scale = catalog.half_scale(self._config_scale())
+        sprite = self._sprite_factory(lib, QPointF(0, 0), scale)
+        sprite.home_screen = self._screen
+        sprite.set_bounds(QRect(self._bounds))
+        sprite.set_pos(self._spawn_sprite_pos(sprite, {}))
+        self.overlay.add_sprite(sprite)
+        if not self._clips_playable():
+            self._set_sprite_clip_paused(sprite, True)
+        self._spawned.append(sprite)
+        self._spawned_libs[sprite] = lib
+        self._session_pets.add(sprite)
+        self._sync_sprite_settings()
+        self._ensure_sprite_bubble(sprite)
+        self._refresh_tray_menu()
+        return sprite
+
+    def remove_session_pet(self, sprite) -> None:
+        if sprite not in self._session_pets:
+            return
+        self._remove_spawned_sprite(sprite)
+        self._refresh_tray_menu()
+
+    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "") -> None:
+        if sprite.caption == text and sprite.caption_tone == tone:
+            return
+        sprite.caption = text
+        sprite.caption_tone = tone
+        self.overlay.update(QRegion(sprite.rect()))
 
     def _slot_writer(self, slot: int):
         """该 slot 的设置写入器（键/值 → ``config-slot-N.json``，原子写）。
@@ -3678,11 +3833,28 @@ class OverlayShell(QObject):
         """子肥鱼落位：有持久化比例按 rx/ry 恢复，否则自主宠向右逐级错开。"""
         rx, ry = state.get("rx"), state.get("ry")
         if rx is not None and ry is not None:
+            saved_screen = self._screens.find(state.get("screen_name"))
+            if saved_screen is not None:
+                self._screens.rehome(sprite, saved_screen)  # 回上次那块屏
             return self._pos_from_ratios(float(rx), float(ry), sprite=sprite)
-        index = len(self._spawned) + 1
+        if self._screens.is_foreign(self.sprite):
+            # 主肥鱼在别的屏上：新鱼跟着生在它旁边（同一块屏）
+            self._screens.rehome(sprite, self._screens.screen_of(self.sprite))
         main_body = self.sprite.body_rect()
-        return QPointF(main_body.x() + main_body.width() + 24 * index,
-                       main_body.y())
+        body, rect = sprite.body_rect(), sprite.rect()
+        bounds = self._bounds_of(sprite)
+        others = [s.body_rect() for s in (self.sprite, *self._spawned) if s is not sprite]
+        spot = overlay_spawn_state.free_spawn_spot(
+            (body.width(), body.height()),
+            (main_body.x(), main_body.y(), main_body.width(), main_body.height()),
+            [(r.x(), r.y(), r.width(), r.height()) for r in others],
+            (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1))
+        if spot is None:
+            # 可用区全满（鱼太多 / 屏幕太小）：退回旧的逐级错开，至少不完全重合
+            index = len(self._spawned) + 1
+            return QPointF(main_body.x() + main_body.width() + 24 * index, main_body.y())
+        # 落点是身体框左上角；sprite.pos 是画布左上角，差一个身体框在画布内的偏移
+        return QPointF(spot[0] - (body.x() - rect.x()), spot[1] - (body.y() - rect.y()))
 
     def _restore_spawned_pets(self) -> None:
         """D5：启动恢复依据 = 活跃宠清单（**不是** slot 配置存在）。
@@ -3720,8 +3892,10 @@ class OverlayShell(QObject):
         （旧架构进程退出即整套资源释放；留着就是孤儿顶层气泡 + 空转定时器）。
         """
         config_dir = self._spawn_config_dir()
+        self._session_pets.discard(sprite)
         slot = self._spawned_slots.pop(sprite, None)
-        geometry = self._sprite_geometry(sprite, self._bounds)
+        geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
+        self._screens.schedule_prune()  # 它可能是那块副屏上的最后一只
         if config_dir and slot and geometry:
             overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
         lib = self._spawned_libs.pop(sprite, None)
@@ -3739,6 +3913,57 @@ class OverlayShell(QObject):
             except Exception:
                 logging.exception("overlay: 子肥鱼素材库收尾失败")
 
+    # ---------------------------------------------------------------- 护驾
+    def rally_pets(self) -> int:
+        """护驾：所有小肥鱼（手动生的 + 会话小鱼）围到主肥鱼身边。返回出发的只数。
+
+        落点互不重叠、也不压主肥鱼和灵动岛（``sprite_rally.escort_spots``）；途中
+        播拖拽悬空动画、不参与碰撞（``SpriteRallyWorld``）。住在别的屏上的先搬到
+        主肥鱼那块屏（边界 / DPR 跟着换）。被用户拖着的那只不抢。
+        """
+        from . import sprite_rally
+
+        main = self.sprite
+        fish = [s for s in self._spawned if not getattr(s, "dragging", False)]
+        if not fish:
+            return 0
+        screen = self._screens.screen_of(main)
+        for sprite in fish:
+            if self._screens.screen_of(sprite) is not screen:
+                self._screens.rehome(sprite, screen)
+        self._screens.schedule_prune()          # 别的屏可能因此空了
+        main_body, bounds = main.body_rect(), self._bounds_of(main)
+        centre = main_body.center()
+        # 近的先挑：近处的落点给近处的鱼，飞行路线少交叉
+        fish.sort(key=lambda s: (s.body_rect().center() - centre).manhattanLength())
+        bodies = [s.body_rect() for s in fish]
+        spots = sprite_rally.escort_spots(
+            [(b.width(), b.height()) for b in bodies],
+            (main_body.x(), main_body.y(), main_body.width(), main_body.height()),
+            (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1),
+            obstacles=self.collision.static_member_rects())
+        moves = []
+        for sprite, body, spot in zip(fish, bodies, spots):
+            if spot is None:
+                continue                         # 屏幕站满了：这只留在原地
+            # 落点是身体框左上角；sprite.pos 是画布左上角，差一个身体框在画布内的偏移
+            rect = sprite.rect()
+            target = QPointF(spot[0] - (body.x() - rect.x()), spot[1] - (body.y() - rect.y()))
+            moves.append((sprite, target - QPointF(main.pos)))
+        self._rally.start(main, moves)
+        for sprite, _offset in moves:
+            self.behavior.on_drag_started(sprite)    # 立刻切拖拽悬空动画，不等下一 tick
+        if moves:
+            self.driver.note_kinetic()           # 桌宠静止时 tick 已降档：飞行要满速
+        return len(moves)
+
+    def _on_rally_arrived(self, sprite) -> None:
+        """护驾落地：收掉悬空动画；会话小鱼接着播它那一组（忙 / 休息）。"""
+        self.behavior.on_drag_released(sprite)
+        held = self.behavior.held(sprite)
+        if held:
+            self.behavior.hold(sprite, held)
+
     def clear_spawned_pets(self) -> None:
         """退出全部子肥鱼（app.py clear_spawned_pets 语义）：逐只出活跃清单
         （slot 配置保留），最后清单落盘为空——退出即不再复活（D5）。"""
@@ -3755,7 +3980,7 @@ class OverlayShell(QObject):
             return
         for sprite in list(self._spawned):
             slot = self._spawned_slots.get(sprite)
-            geometry = self._sprite_geometry(sprite, self._bounds)
+            geometry = self._sprite_geometry(sprite, self._bounds_of(sprite))
             if slot and geometry:
                 overlay_spawn_state.write_slot_geometry(config_dir, slot, geometry)
 
@@ -3780,19 +4005,21 @@ class OverlayShell(QObject):
         """主宠退出（app.py:2944-2956 等价）：无子宠 → 全部退出语义；
         有子宠 → 活跃清单列表头提升为主（接管主身份/持久化身份）。"""
         self.save_position()
-        if not self._spawned:
+        # 会话小鱼没有持久身份，不接管主身份：只在手动生的小肥鱼里挑提升者
+        heirs = [s for s in self._spawned if s not in self._session_pets]
+        if not heirs:
             self._persist_active_slots()
             self._refresh_tray_menu()
             quit_fn = getattr(self.app, "quit", None)
             if callable(quit_fn):
                 quit_fn()  # 最后一窗关闭 → 走全部退出语义
             return True
-        promoted = self._spawned[0]
+        promoted = heirs[0]
         promoted_lib = self._spawned_libs.pop(promoted, None)
         promoted_slot = self._spawned_slots.pop(promoted, None)
         old_main, old_lib = self.sprite, self.lib
         config_dir = self._spawn_config_dir()
-        geometry = self._sprite_geometry(promoted, self._bounds)
+        geometry = self._sprite_geometry(promoted, self._bounds_of(promoted))
         if config_dir and promoted_slot and geometry:
             overlay_spawn_state.write_slot_geometry(
                 config_dir, promoted_slot, geometry)
@@ -4516,13 +4743,15 @@ class OverlayShell(QObject):
     def handle_geometry_changed(self, *args) -> None:
         """geometryChanged/availableGeometryChanged → 几何同步 + DPR 重喂。"""
         self._sync_geometry()
-        self.sprite.set_dpr(float(self._screen.devicePixelRatio()))
+        if not self._screens.is_foreign(self.sprite):
+            self.sprite.set_dpr(float(self._screen.devicePixelRatio()))
         self._refresh_self_talk_image_cache_for_dpr()
 
     def handle_screen_added(self, screen) -> None:
         """屏插入：主屏切换由 primaryScreenChanged 负责；4.2a 位置持久化后
         才有"回保存屏"语义，本刀只观测记录。"""
         logging.info("overlay: screen added (%s)", _screen_name(screen))
+        self._screens.reconcile()  # 多了一块屏：开启跨屏拖拽
 
     def handle_screen_removed(self, screen) -> None:
         """屏拔出：被拔的是当前屏 → 先收尾拖拽再按比例迁移到新主屏重建；
@@ -4531,6 +4760,12 @@ class OverlayShell(QObject):
         if screen is self._screen:
             self._end_drag()  # 拖拽中拔屏处置（v1.1 §10）
             self._migrate_to_screen(self.app.primaryScreen())
+        else:
+            # 拔的是副屏：住在上面的 sprite 按比例回主屏，视口关掉。screenRemoved
+            # 发出时这块屏还在在线清单里，所以显式把它当作已经没了。
+            if screen in self._screens.viewports:
+                self._end_drag()
+            self._screens.forget_screen(screen)
 
     def handle_primary_screen_changed(self, screen) -> None:
         logging.info("overlay: primary screen changed -> %s", _screen_name(screen))
@@ -4553,8 +4788,11 @@ class OverlayShell(QObject):
         self.overlay.setGeometry(self._screen.geometry())
         new_bounds = self._local_bounds(self._screen)
         for sprite in [self.sprite, *self._spawned]:
-            self._migrate_sprite_position(old_bounds, new_bounds, sprite)
+            if not self._screens.is_foreign(sprite):
+                self._migrate_sprite_position(old_bounds, new_bounds, sprite)
         self._apply_bounds(new_bounds)
+        # 住在别的屏上的 sprite：它们的坐标是相对本窗原点的，原点动了要重算
+        self._screens.reconcile()
         self._sync_bubble_origin(old_origin)
 
     def _sync_bubble_origin(self, old_origin: QPoint) -> None:
@@ -4594,7 +4832,8 @@ class OverlayShell(QObject):
         # 主 sprite 与全部子肥鱼共用同一钳制域（4.2b：漏掉子肥鱼会让它们
         # 在几何变化后仍被旧屏边界钳制）
         for sprite in [self.sprite, *self._spawned]:
-            sprite.set_bounds(QRect(new_bounds))
+            if not self._screens.is_foreign(sprite):
+                sprite.set_bounds(QRect(new_bounds))
         probe = getattr(self, "_probe", None)
         if probe is not None:
             probe.set_bounds(QRect(new_bounds))
@@ -4667,13 +4906,11 @@ class OverlayShell(QObject):
         # 4.1c 弹弓：controller 由 OverlayWindow 自持，这里只接 config
         # （slingshot_enabled 热读，设置页即改即生效）
         self.overlay.slingshot.config = self._config
-        from .sprite_menu_facade import build_sprite_full_menu
         # 点击气泡族（余额/点击自言自语）：新 overlay 上必须重挂，否则屏迁移后
         # 点击静默丢失（与 click_feedback 同位置）
         self.overlay._on_sprite_click = self._on_sprite_click
         self.overlay._click_route_spin = self._route_click_golden_spin
-        self.overlay._full_menu_builder = (
-            lambda target: build_sprite_full_menu(self, target))
+        self.overlay._full_menu_builder = self._build_menu_for
         self.overlay._through_changed = self._on_user_through_changed
         self.overlay._grab_finished_cb = self._on_grab_finished
         self.overlay.add_position_listener(self.sprite, self._on_main_sprite_moved)
@@ -4682,6 +4919,8 @@ class OverlayShell(QObject):
         for sprite in [self.sprite, *self._spawned]:
             old_overlay.remove_sprite(sprite, release_clip=False)  # 迁移保留 clip
             self.overlay.add_sprite(sprite)
+            if self._screens.is_foreign(sprite):
+                continue  # 住在别的屏上：下面 rebind 按新原点重新安置
             sprite.home_screen = new_screen
             sprite.set_dpr(float(new_screen.devicePixelRatio()))
             self._migrate_sprite_position(old_bounds, new_bounds, sprite)
@@ -4689,6 +4928,8 @@ class OverlayShell(QObject):
         # 否则迁移后退出任意一只宠不再注销行为/探头/彩蛋状态（F2）。
         self._wire_sprite_removed_hooks(self.overlay)
         self._apply_bounds(new_bounds)
+        # 副屏视口挂在旧 overlay 上、坐标相对旧原点：全部重建到新 overlay
+        self._screens.rebind(self.overlay)
         self._apply_window_capabilities()  # on_top/穿透复合/监视器门重挂
         self._connect_screen(new_screen)
         was_started = self._started

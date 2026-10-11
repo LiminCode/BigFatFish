@@ -25,7 +25,7 @@ def _island(tmp_path: Path, **overrides) -> DynamicIsland:
     cfg = Config(base=tmp_path)
     data = {
         "enabled": True, "show_icon": True, "show_name": True,
-        "show_info": True, "info_mode": "custom", "custom_text": "测试文本",
+        "show_info": True, "info_mode": "usage_today",
         "show_status": True, "style": "dark", "x": 400, "y": 300,
     }
     data.update(overrides)
@@ -41,11 +41,8 @@ def test_content_cache_hit_and_auto_invalidate(tmp_path):
     assert not first.isNull()
     assert island._content_cache() is first, "同 key 必须命中缓存（同一位图对象）"
 
-    # 内容变化（走生产路径：改配置 + refresh_from_config）→ 自动重建
-    data = dict(island._cfg)
-    data["custom_text"] = "变了"
-    island.config.set("dynamic_island", data)
-    island.refresh_from_config()
+    # 内容变化（信息槽的今日用量换了数字）→ 自动重建
+    island.set_usage_info("今日 9.9M")
     second = island._content_cache()
     assert second is not first, "内容变化后必须重建缓存"
 
@@ -90,7 +87,7 @@ def test_paint_uses_cache_without_error(tmp_path):
     island.deleteLater()
 
 
-def test_content_cache_key_covers_colors_and_style(tmp_path, monkeypatch):
+def test_content_cache_key_covers_colors_and_style(tmp_path):
     """key 必须覆盖所有影响像素的颜色输入；每一步只让一个 key 项在动。
 
     突变判别：删掉对应 key 项，该步会拿到陈旧位图（同一对象）→ 判红。
@@ -118,31 +115,7 @@ def test_content_cache_key_covers_colors_and_style(tmp_path, monkeypatch):
     assert island.width() == width, "前提：主题色不改胶囊宽度"
     assert accent is not light, "主题色变化必须重建缓存"
 
-    island.set_pet_visible(False)  # 状态灯 绿 → 灰
-    assert island.width() == width, "前提：可见性不改胶囊宽度"
-    assert island._content_cache() is not accent, "状态灯颜色变化必须重建缓存"
+    island.set_api_status("ok")  # 状态图标 灰 → 绿
+    assert island.width() == width, "前提：API 状态不改胶囊宽度"
+    assert island._content_cache() is not accent, "状态图标变化必须重建缓存"
     island.deleteLater()
-
-    # 信息色项：自定义峰谷标签同名 + 固定切换时间 → 文案两侧相同，
-    # 只有 _info_color 在动（隔离出 info_color.name() 这一项）
-    from pet import balance as balance_mod
-
-    island2 = _island(tmp_path, info_mode="balance_tier")
-    # 峰谷标签/颜色开关读的是顶层 config（不是 dynamic_island 子字典）
-    island2.config.set("balance_tier_labels_mode", "custom")
-    island2.config.set("balance_tier_label_peak", "峰")
-    island2.config.set("balance_tier_label_idle", "峰")
-    island2.show()
-    monkeypatch.setattr(balance_mod, "next_pricing_switch",
-                        lambda *a, **k: ("idle", None))
-    monkeypatch.setattr(balance_mod, "format_switch_time",
-                        lambda *a, **k: "12:00")
-    monkeypatch.setattr(balance_mod, "deepseek_pricing_tier",
-                        lambda *a, **k: "peak")
-    peak = island2._content_cache()
-    text_peak = island2._info_text()
-    monkeypatch.setattr(balance_mod, "deepseek_pricing_tier",
-                        lambda *a, **k: "idle")
-    assert island2._info_text() == text_peak, "前提：文案不随档位变化"
-    assert island2._content_cache() is not peak, "峰谷信息色变化必须重建缓存"
-    island2.deleteLater()

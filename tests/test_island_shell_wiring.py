@@ -404,3 +404,267 @@ def test_overlay_island_drag_wakes_tick_tier(tmp_path):
         driver.stop()
         _teardown_overlay_shell(shell, host)
         app.processEvents()
+
+
+# ---------------------------------------------------------------- 卡片内容来源
+
+class _FakeSessionRegistry:
+    def __init__(self, sessions) -> None:
+        self._sessions = sessions
+
+    def sessions(self):
+        return list(self._sessions)
+
+
+def _card_shell(tmp_path, monkeypatch, *, source: str, claude_on: bool, sessions=()):
+    from types import SimpleNamespace
+
+    shell = _make_shell(tmp_path, card_source=source)
+    shell._balance_busy = False
+    shell._balance_cache = None
+    shell._balance_cache_path = Path(shell.config.dir) / "balance_cache.json"
+    agent_cfg = dict(shell.config.get("agent_link"))
+    agent_cfg["claude"] = claude_on
+    shell.config.set("agent_link", agent_cfg)
+    provider = SimpleNamespace(id="p", base_url="http://x", api_key="", verify_ssl=True)
+    monkeypatch.setattr(shell.config, "chat_settings", lambda: SimpleNamespace(active_config=provider))
+    asked: list = []
+    monkeypatch.setattr(shell.config, "resolve_api_key", lambda _p: (asked.append(1), "")[1])
+    shell._sync_dynamic_island()
+    # 建岛之后再挂：这里只要 AppShell 读会话登记表的那一面，不要整只 overlay 壳
+    shell._overlay_shell = SimpleNamespace(session_pets=_FakeSessionRegistry(sessions))
+    return shell, asked
+
+
+_WORKING = {"agent": "claude", "sessionId": "abc", "phase": "working", "title": "Fix login loop", "project": "p"}
+
+
+def test_card_shows_claude_sessions_when_the_claude_link_is_on(tmp_path, monkeypatch):
+    """开着 Claude Code 联动的人看的是会话，不是 DeepSeek 余额——也就不再去要 API Key。"""
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude Code · 1 个在干活"
+        assert shell.island._balance_tier_text == "Fix login loop · 工作中"
+        assert asked == [], "Claude 模式不碰 API Key"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_keeps_the_balance_when_the_claude_link_is_off(tmp_path, monkeypatch):
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=False)
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+        assert asked == [1]
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_source_can_be_pinned_either_way(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+    finally:
+        _teardown_shell(shell)
+
+    other = tmp_path / "other"
+    other.mkdir()
+    shell, _ = _card_shell(other, monkeypatch, source="claude", claude_on=False)
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude Code · 没有在用的会话"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_balance_updates_do_not_overwrite_the_claude_card(tmp_path, monkeypatch):
+    """余额自动刷新的结果回来时，卡片正在显示 Claude 会话：不许被顶成余额。"""
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        shell._update_island_balance({"text": "余额 ¥9.9"}, animate=False)
+        assert shell.island._balance_text == "Claude Code · 1 个在干活"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_follows_session_changes(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        shell._overlay_shell.session_pets._sessions = [dict(_WORKING, phase="waiting")]
+        shell._on_claude_sessions_changed()
+        assert shell.island._balance_text == "Claude Code · 1 个等你批准"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_capsule_counts_follow_session_changes_whatever_the_card_shows(tmp_path, monkeypatch):
+    """胶囊上的会话计数与卡片内容来源无关：卡片钉成余额也照样计数。"""
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=True, sessions=[_WORKING])
+    try:
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == [("working", "1 工作中")]
+
+        shell._overlay_shell.session_pets._sessions = [
+            dict(_WORKING, phase="waiting"), dict(_WORKING, sessionId="def", phase="resting")]
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == [("resting", "1 休息中"), ("waiting", "1 等待中")]
+
+        shell._overlay_shell.session_pets._sessions = []
+        shell._on_claude_sessions_changed()
+        assert shell.island._session_counts == []
+    finally:
+        _teardown_shell(shell)
+
+
+def test_island_shows_the_api_key_verdict(tmp_path, monkeypatch):
+    """体检结论 → 岛上的连接图标；一次成功的对话也算体检通过。"""
+    from types import SimpleNamespace
+
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=False)
+    try:
+        monitor = shell._api_key_monitor
+        assert monitor is not None and monitor._running, "岛开着就体检"
+        assert shell.island._api_state == "unknown"
+
+        monitor.status_changed.emit("bad", "认证失败")
+        assert (shell.island._api_state, shell.island.toolTip()) == ("bad", "认证失败")
+
+        # 桌宠在场（不走「桌宠隐藏 → 岛上弹回复预览」那条支线）
+        shell._overlay_shell = None
+        shell._instances = [SimpleNamespace(win=SimpleNamespace(isVisible=lambda: True))]
+        shell._on_global_chat_finished("你好")
+        assert shell.island._api_state == "ok"
+
+        data = dict(shell.config.get("dynamic_island"))
+        data["enabled"] = False
+        shell.config.set("dynamic_island", data)
+        shell._sync_dynamic_island()
+        assert not monitor._running, "岛关了就不再体检（不白发请求）"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_legacy_topology_has_no_session_registry_and_falls_back_to_balance(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True)
+    shell._overlay_shell = None
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_source_is_normalised(tmp_path):
+    cfg = Config(base=tmp_path)
+    assert cfg.get("dynamic_island")["card_source"] == "auto"
+    for raw, expected in (("claude", "claude"), ("balance", "balance"), ("nonsense", "auto"), (None, "auto")):
+        data = dict(cfg.get("dynamic_island"))
+        data["card_source"] = raw
+        cfg.set("dynamic_island", data)
+        cfg.save()
+        assert Config(base=tmp_path).get("dynamic_island")["card_source"] == expected
+
+
+def test_balance_card_does_not_query_a_claude_provider(tmp_path, monkeypatch):
+    """聊天服务商换成 Claude 后：没有余额接口可查，不发请求、不显示 DeepSeek 峰谷。"""
+    from types import SimpleNamespace
+
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=False)
+    provider = SimpleNamespace(id="c", base_url="https://api.anthropic.com", api_format="auto",
+                               api_key="", verify_ssl=True)
+    monkeypatch.setattr(shell.config, "chat_settings", lambda: SimpleNamespace(active_config=provider))
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude API"
+        assert "DeepSeek" not in shell.island._balance_tier_text
+        assert asked == []
+    finally:
+        _teardown_shell(shell)
+
+
+# ---------------------------------------------------------------- 岛卡片「聊天」按钮（overlay 拓扑）
+
+class _FakeOverlayForChat:
+    """只有 AppShell 这条路径用到的那一面：合成窗可见性 + 快速对话入口。"""
+
+    def __init__(self, *, opens: bool = True) -> None:
+        from types import SimpleNamespace
+
+        self.overlay = SimpleNamespace(isVisible=lambda: True)
+        self.session_pets = None
+        self.quick_chat_calls = 0
+        self._opens = opens
+
+    def open_quick_chat(self, sprite=None) -> bool:
+        self.quick_chat_calls += 1
+        return self._opens
+
+
+class _FakeInstanceForChat:
+    """overlay 拓扑下的 PetInstance：win 恒为 None，所以它的 open_quick_chat 进门就返回。"""
+
+    win = None
+
+    def __init__(self) -> None:
+        self.full_chat_calls = 0
+        self.quick_chat_calls = 0
+
+    def open_quick_chat(self) -> None:
+        self.quick_chat_calls += 1          # 真实实现在 win is None 时什么都不做
+
+    def open_chat(self) -> None:
+        self.full_chat_calls += 1
+
+
+def test_island_chat_button_opens_quick_chat_on_the_overlay(tmp_path):
+    """实机：点岛卡片的「聊天」没有任何反应。
+
+    overlay 拓扑不构造 PetWindow，``instance.win`` 恒为 None；旧代码把请求交给
+    ``PetInstance.open_quick_chat``，它第一行就是 ``if self.win is None: return``。
+    """
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell._overlay_shell = _FakeOverlayForChat()
+
+    shell._open_chat_from_island()
+
+    assert shell._overlay_shell.quick_chat_calls == 1
+    assert shell.instance.full_chat_calls == 0
+
+
+def test_island_chat_button_falls_back_to_the_full_chat_window(tmp_path):
+    """快速对话气泡开不出来时（构造失败等）：退到完整聊天窗，不能再是没反应。"""
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell._overlay_shell = _FakeOverlayForChat(opens=False)
+
+    shell._open_chat_from_island()
+
+    assert shell.instance.full_chat_calls == 1
+
+
+def test_island_chat_button_keeps_the_legacy_route_without_an_overlay(tmp_path):
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell.instance.win = object()
+    shell._instances = [shell.instance]
+
+    shell._open_chat_from_island()
+
+    assert shell.instance.quick_chat_calls == 1

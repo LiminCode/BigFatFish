@@ -144,6 +144,87 @@ def test_hook_command_quotes_awkward_paths(tmp_path):
     assert records and records[0]["event"] == "Stop"
 
 
+# ---------------------------------------------------------------- 会话标签字段（SessionMeta）
+
+def _transcript(tmp_path: Path, *titles: str, filler: int = 0) -> Path:
+    """仿 Claude Code transcript：正文行之间夹着反复追加的 ``ai-title`` 条目。"""
+    path = tmp_path / "transcript dir" / "session.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps({"type": "user", "message": {"content": "secret prompt body"}})]
+    for title in titles:
+        lines.append(json.dumps({"type": "ai-title", "aiTitle": title, "sessionId": "s"},
+                                ensure_ascii=False, separators=(",", ":")))
+        lines.append(json.dumps({"type": "assistant", "message": {"content": "x" * filler}}))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _meta_payload(event: str, transcript: Path | None, cwd: str) -> str:
+    return json.dumps({
+        "session_id": "e0a4f9a8-e0da-4be1-8b25-839ee25b8372",
+        "transcript_path": str(transcript) if transcript else "",
+        "cwd": cwd,
+        "hook_event_name": event,
+        "prompt": "do the secret thing",
+    }, separators=(",", ":")) + "\n"
+
+
+def test_turn_boundaries_record_project_and_latest_session_title(tmp_path):
+    """会话小鱼的标签要用：项目文件夹名 + transcript 里**最后**一个 ai-title。"""
+    transcript = _transcript(tmp_path, "旧标题", "Fix login redirect loop")
+    cwd = str(tmp_path / "my project")
+
+    records = _run_hook(tmp_path, "Stop", _meta_payload("Stop", transcript, cwd))
+
+    assert [r["event"] for r in records] == ["Stop", "SessionMeta"], "元数据单独成行，排在事件之后"
+    meta = records[1]
+    assert meta["sessionId"] == "e0a4f9a8-e0da-4be1-8b25-839ee25b8372"
+    assert meta["project"] == "my project"
+    assert meta["title"] == "Fix login redirect loop"
+    raw = (tmp_path / "claude.jsonl").read_text(encoding="utf-8")
+    assert "secret" not in raw, "对话正文不许落盘"
+
+
+def test_session_title_survives_non_ascii_and_a_large_transcript(tmp_path):
+    transcript = _transcript(tmp_path, "修复登录跳转", filler=50_000)
+    meta = _run_hook(tmp_path, "UserPromptSubmit",
+                     _meta_payload("UserPromptSubmit", transcript, "/home/u/proj"))[1]
+    assert meta["title"] == "修复登录跳转" and meta["project"] == "proj"
+
+
+def test_meta_falls_back_to_project_only_without_a_title(tmp_path):
+    """首次提问时 transcript 里还没有标题（甚至文件都还没有）：只给项目名。"""
+    for transcript in (None, tmp_path / "missing.jsonl", _transcript(tmp_path)):
+        out = tmp_path / "claude.jsonl"
+        if out.exists():
+            out.unlink()
+        records = _run_hook(tmp_path, "UserPromptSubmit",
+                            _meta_payload("UserPromptSubmit", transcript, "/home/u/proj"))
+        assert records[0]["event"] == "UserPromptSubmit"
+        assert records[1]["project"] == "proj" and records[1]["title"] == ""
+
+
+def test_title_with_escapes_never_breaks_the_event_line(tmp_path):
+    """标题里有引号 / 反斜杠：宁可截短，也不能拼出坏行——更不能连累 Stop 本身。"""
+    transcript = _transcript(tmp_path, 'Rename "foo" to bar\\baz')
+    records = _run_hook(tmp_path, "Stop", _meta_payload("Stop", transcript, "/home/u/proj"))
+    assert records[0]["event"] == "Stop"
+    assert records[1]["title"] == "Rename "
+
+
+def test_tool_events_do_not_touch_the_transcript(tmp_path):
+    """高频事件保持零额外开销：不读 transcript，不写 SessionMeta。"""
+    transcript = _transcript(tmp_path, "Some title")
+    stdin = json.dumps({"session_id": "s1", "transcript_path": str(transcript), "cwd": "/p",
+                        "hook_event_name": "PreToolUse", "tool_name": "Bash"},
+                       separators=(",", ":")) + "\n"
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Notification"):
+        out = tmp_path / "claude.jsonl"
+        if out.exists():
+            out.unlink()
+        assert [r["event"] for r in _run_hook(tmp_path, event, stdin)] == [event]
+
+
 # ---------------------------------------------------------------- settings.json 合并
 
 def _entries(marker: str = "new") -> dict:
@@ -396,6 +477,95 @@ def test_reset_forgets_everything():
     assert tracker.feed(_ev("Stop")) == []
 
 
+# ---------------------------------------------------------------- 逐会话更新（会话小鱼的数据源）
+
+def _updates(tracker: ClaudeSessionTracker, *records: dict) -> list[dict]:
+    for record in records:
+        tracker.feed(record)
+    return tracker.take_session_updates()
+
+
+def _meta(sid: str = "A", **fields) -> dict:
+    return {"event": "SessionMeta", "sessionId": sid, **fields}
+
+
+def test_session_appears_on_first_prompt_and_follows_the_turn():
+    tracker = ClaudeSessionTracker()
+    assert _updates(tracker, _ev("SessionStart")) == [], "只开着没提问的会话不出场"
+
+    assert _updates(tracker, _ev("UserPromptSubmit"), _meta(project="dsh-pet", title="")) == [
+        {"sessionId": "A", "phase": "working", "title": "", "project": ""},
+        {"sessionId": "A", "phase": "working", "title": "", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("PreToolUse"), _ev("PostToolUse")) == [], "状态没变不重复上报"
+    assert _updates(tracker, _ev("Stop"), _meta(project="dsh-pet", title="Fix login loop")) == [
+        {"sessionId": "A", "phase": "resting", "title": "", "project": "dsh-pet"},
+        {"sessionId": "A", "phase": "resting", "title": "Fix login loop", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("UserPromptSubmit"), _meta(project="dsh-pet", title="")) == [
+        {"sessionId": "A", "phase": "working", "title": "Fix login loop", "project": "dsh-pet"},
+    ], "这次没读到标题（transcript 窗口里没有）：保留已知的，不清空"
+    assert _updates(tracker, _ev("SessionEnd")) == [
+        {"sessionId": "A", "phase": "gone", "title": "Fix login loop", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("Stop"), _meta(title="late")) == [], "离场后的迟到记录不复活它"
+
+
+def test_sessions_report_independently():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("UserPromptSubmit", "A"), _ev("UserPromptSubmit", "B"), _ev("Stop", "A"))
+    assert [(u["sessionId"], u["phase"]) for u in updates] == [
+        ("A", "working"), ("B", "working"), ("A", "resting")]
+
+
+def test_waiting_for_approval_is_its_own_phase():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("PreToolUse"), _ev("Notification", ntype="permission_prompt"),
+                       _ev("PostToolUse"))
+    assert [u["phase"] for u in updates] == ["working", "waiting", "working"]
+
+    updates = _updates(tracker, _ev("Notification", ntype="permission_prompt"), _ev("Stop"))
+    assert [u["phase"] for u in updates] == ["waiting", "resting"], "被拒绝后直接收工"
+
+
+def test_session_first_seen_mid_turn_still_appears():
+    """桌宠在回合中途才启动：没见到提问，第一眼就是工具事件或权限确认。"""
+    tracker = ClaudeSessionTracker()
+    assert [u["phase"] for u in _updates(tracker, _ev("PostToolUse", "A"))] == ["working"]
+    assert [u["phase"] for u in _updates(tracker, _ev("Notification", "B", ntype="permission_prompt"))] == ["waiting"]
+
+
+def test_interrupted_session_rests_after_the_idle_notice():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("UserPromptSubmit"), _ev("Notification", ntype="idle_prompt"))
+    assert [u["phase"] for u in updates] == ["working", "resting"]
+
+
+def test_session_labels_are_cleaned_and_capped():
+    tracker = ClaudeSessionTracker()
+    update = _updates(tracker, _ev("UserPromptSubmit"),
+                      _meta(project="  my   project ", title="T" * 100))[-1]
+    assert update["project"] == "my project"
+    assert len(update["title"]) == ClaudeSessionTracker._LABEL_MAX
+
+
+def test_session_updates_are_drained_and_reset_forgets_sessions():
+    tracker = ClaudeSessionTracker()
+    tracker.feed(_ev("UserPromptSubmit"))
+    assert len(tracker.take_session_updates()) == 1
+    assert tracker.take_session_updates() == []
+    tracker.reset()
+    assert _updates(tracker, _ev("Stop")) == []
+
+
+def test_evicted_session_leaves_the_stage():
+    tracker = ClaudeSessionTracker()
+    for i in range(ClaudeSessionTracker._MAX_SESSIONS + 1):
+        tracker.feed(_ev("UserPromptSubmit", f"s{i}"))
+    updates = tracker.take_session_updates()
+    assert {"sessionId": "s0", "phase": "gone", "title": "", "project": ""} in updates
+
+
 def test_git_bash_lookup_is_windows_only(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     assert ch.find_git_bash() is None
@@ -409,3 +579,51 @@ def test_git_bash_lookup_honours_the_claude_code_override(tmp_path, monkeypatch)
     monkeypatch.setenv("CLAUDE_CODE_GIT_BASH_PATH", str(bash))
     assert ch.find_git_bash() == str(bash)
     assert os.path.isfile(ch.find_git_bash())
+
+
+# ---------------------------------------------------------------- 会话汇总（灵动岛卡片）
+
+def _s(agent: str, phase: str, **fields) -> dict:
+    return {"agent": agent, "sessionId": fields.pop("sid", "0123456789abcdef"), "phase": phase,
+            "title": "", "project": "", **fields}
+
+
+def test_summary_without_sessions_says_so():
+    headline, detail = ch.summarize_sessions([])
+    assert headline == "Claude Code · 没有在用的会话"
+    assert detail
+
+
+def test_summary_counts_by_phase_and_puts_what_needs_you_first():
+    headline, detail = ch.summarize_sessions([
+        _s("claude", "resting", title="Old chat"),
+        _s("claude", "working", project="dsh-pet"),
+        _s("claude_wsl", "waiting", project="work"),
+        _s("claude", "working", sid="abcdef0123"),
+    ])
+    assert headline == "Claude Code · 1 个等你批准 · 2 个在干活 · 1 个休息中"
+    assert detail == "work (WSL) · 等你批准 ｜ dsh-pet · 工作中 等 4 个"
+
+
+def test_summary_lists_every_session_when_they_fit():
+    _headline, detail = ch.summarize_sessions([_s("claude", "working", title="Fix login loop")])
+    assert detail == "Fix login loop · 工作中"
+
+
+def test_capsule_counts_follow_working_resting_waiting_and_skip_empty_phases():
+    """灵动岛胶囊上的计数：「2 工作中 1 休息中 2 等待中」，没有的阶段不占地方。"""
+    sessions = [
+        _s("claude", "waiting"), _s("claude", "working"), _s("claude_wsl", "resting"),
+        _s("claude", "working"), _s("claude_wsl", "waiting"), _s("claude", "gone"),
+    ]
+    assert ch.session_counts(sessions) == [
+        ("working", "2 工作中"), ("resting", "1 休息中"), ("waiting", "2 等待中")]
+    assert ch.session_counts([_s("claude", "resting")]) == [("resting", "1 休息中")]
+    assert ch.session_counts([]) == []
+
+
+def test_session_label_prefers_title_then_project_then_short_id():
+    assert ch.session_label("claude", {"title": "T", "project": "P", "sessionId": "abc"}) == "T"
+    assert ch.session_label("claude", {"title": "", "project": "P", "sessionId": "abc"}) == "P"
+    assert ch.session_label("claude_wsl", {"sessionId": "0123456789"}) == "01234567 (WSL)"
+    assert ch.session_label("claude", {}) == "Claude Code"

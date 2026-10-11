@@ -117,6 +117,7 @@ from PySide6.QtCore import QPointF, QRect
 from . import catalog, movement
 from .pet_sprite import INTERACTION_DRAG, INTERACTION_NORMAL, INTERACTION_THROWN
 from .predictive_prewarm import PredictivePrewarm
+from .sprite_bounds import bounds_for
 
 logger = logging.getLogger(__name__)
 
@@ -208,9 +209,11 @@ class _SpriteState:
                  "move_clip_finished", "move_loops_done", "click_tail_grace",
                  "click_final_seen", "click_clip_finished", "turn_tail_grace",
                  "turn_final_seen", "turn_clip_finished", "landing_pinned",
-                 "was_flying", "warm_landing_submitted")
+                 "was_flying", "warm_landing_submitted", "hold", "hold_index")
 
     def __init__(self) -> None:
+        self.hold: tuple[str, ...] = ()   # 保持轮播的一组 clip（空 = 走掷骰链）
+        self.hold_index = 0               # 下一段取 hold 里的第几个
         self.state = STATE_IDLE
         self.anim: str | None = None      # 当前绑定的 clip 名（None = 尚未起播）
         self.elapsed = 0.0                # 当前状态已流逝（tick 累加的 dt）
@@ -487,6 +490,44 @@ class BehaviorController:
         sprite.bind_clip(name)
         return True
 
+    def hold(self, sprite, names) -> bool:
+        """让 sprite 保持在一组动画上轮播，直到再次调用（空 = 解除，回掷骰链）。
+
+        会话小鱼的「忙 / 休息」：``play_once`` 播一遍就回随机行为，这里是「一直
+        这样，直到另行通知」。保持期间不掷骰，所以也不会走开；点击、菜单播放这类
+        一次性动作照常可用，播完回到保持的这组。
+
+        素材库里没有的名字跳过（换了角色）；一个可用的都没有就不保持，也不打断
+        正在播的动画。返回是否处于保持状态。
+        """
+        st = self._states.setdefault(sprite, _SpriteState())
+        known = None
+        lister = getattr(sprite.library, "names", None)
+        if callable(lister):
+            try:
+                known = set(lister())
+            except Exception:
+                known = None
+        st.hold = tuple(n for n in (names or ()) if known is None or n in known)
+        st.hold_index = 0
+        if st.hold and self.play_once(sprite, st.hold[0]):
+            st.hold_index = 1
+        return bool(st.hold)
+
+    def held(self, sprite) -> tuple[str, ...]:
+        """当前保持的那组 clip 名（空元组 = 没有保持）。"""
+        st = self._states.get(sprite)
+        return st.hold if st is not None else ()
+
+    def _continue_hold(self, sprite, st: _SpriteState) -> bool:
+        """处于保持状态 → 接着播这组里的下一段。返回 True = 已接管，调用方不再掷骰。"""
+        if not st.hold:
+            return False
+        name = st.hold[st.hold_index % len(st.hold)]
+        st.hold_index += 1
+        self._enter_acts(sprite, st, self._categories(sprite.library), forced_name=name)
+        return True
+
     def play_move_once(self, sprite, name: str) -> bool:
         """以指定移动素材触发一次移动（菜单「移动」类入口；无可达空间
         回退动作池，window.py trigger_move 语义）。"""
@@ -747,7 +788,7 @@ class BehaviorController:
                 if self._acts_tail_done(sprite, st, dt):
                     # 唱歌素材刚播完且音乐仍在放 → 原地续播，绝不走 gap/掷骰
                     # （旧机 `_on_anim_ended` 的第一条分支，window.py:2595-2601）
-                    if not self._continue_sing(sprite, st):
+                    if not self._continue_hold(sprite, st) and not self._continue_sing(sprite, st):
                         if not self._start_animation_gap(sprite, st):
                             self._roll_next(sprite, st)
             else:
@@ -1351,8 +1392,9 @@ class BehaviorController:
         掷骰链与 gap 氛围步共用这一处判据，两条链的口径不允许分叉。
         """
         off_x, _off_y, bw, _bh = self._body_geometry(sprite)
+        bounds = bounds_for(sprite, self.bounds)
         cx, left, right = movement.body_reach(
-            self.bounds.left(), self.bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
+            bounds.left(), bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
         return movement.inward_facing(cx, left, right)
 
     def _roll_next(self, sprite, st: _SpriteState) -> None:
@@ -1362,6 +1404,8 @@ class BehaviorController:
         待机——「只允许待机/转向」的位移语义由此保证；动作池 clip 只播原地动画，
         不改位置。
         """
+        if self._continue_hold(sprite, st):   # 被保持住的 sprite 不掷骰（见 hold）
+            return
         cats = self._categories(sprite.library)
         # 批10-A1：先消费预测（context/gen 校验单规则，不符即弃 → 现场掷骰）
         if st.predictor is not None and self.predict_enabled:
@@ -1550,8 +1594,10 @@ class BehaviorController:
         if not moves:
             return False
         off_x, off_y, bw, bh = self._body_geometry(sprite)
+        # 住在别的屏上的 sprite 在它自己那块屏里游走（sprite_bounds）
+        bounds = bounds_for(sprite, self.bounds)
         cx, left, right = movement.body_reach(
-            self.bounds.left(), self.bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
+            bounds.left(), bounds.right(), sprite.pos.x() + off_x, bw, self.margin)
         dir_sign = movement.choose_move_direction(cx, left, right, self.min_distance, self.rng)
         if dir_sign is None:
             return False  # 两侧空间都不足：不建立计划
@@ -1574,7 +1620,7 @@ class BehaviorController:
         target_cx = cx + dir_sign * distance
         target_x = target_cx - bw / 2 - off_x
         target_y = movement.wander_target_y(
-            sprite.pos.y() + off_y, self.bounds.top(), self.bounds.bottom(),
+            sprite.pos.y() + off_y, bounds.top(), bounds.bottom(),
             bh, self.margin, self.rng) - off_y
         curve = (getattr(lib, "move_curves", None) or {}).get(name)
         plan = {
@@ -1685,10 +1731,11 @@ class BehaviorController:
         r = sprite.rect()
         body = sprite.body_rect() if hasattr(sprite, "body_rect") else r
         off_x, off_y = body.x() - r.x(), body.y() - r.y()
-        lo_x = float(self.bounds.x()) - off_x
-        lo_y = float(self.bounds.y()) - off_y
-        max_x = lo_x + self.bounds.width() - body.width()
-        max_y = lo_y + self.bounds.height() - body.height()
+        bounds = bounds_for(sprite, self.bounds)
+        lo_x = float(bounds.x()) - off_x
+        lo_y = float(bounds.y()) - off_y
+        max_x = lo_x + bounds.width() - body.width()
+        max_y = lo_y + bounds.height() - body.height()
         x = min(max(sprite.pos.x(), lo_x), float(max(lo_x, max_x)))
         y = min(max(sprite.pos.y(), lo_y), float(max(lo_y, max_y)))
         if x != sprite.pos.x() or y != sprite.pos.y():

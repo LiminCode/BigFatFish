@@ -57,8 +57,15 @@ _dp_pick() {
     esac
     case $_dp_v in *[!A-Za-z0-9_.:-]*) _dp_v= ;; esac
 }
+_dp_raw() {
+    case $_dp_in in
+        *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;
+        *) _dp_v= ;;
+    esac
+}
 _dp_pick session_id
-_dp_rec="\"sessionId\":\"$_dp_v\""
+_dp_sid=$_dp_v
+_dp_rec="\"sessionId\":\"$_dp_sid\""
 case ${DSH_PET_EVENT:-} in
     PreToolUse|PostToolUse|PostToolUseFailure)
         _dp_pick tool_name
@@ -72,6 +79,31 @@ _dp_ts=${EPOCHREALTIME:-}
 case $_dp_ts in *,*) _dp_ts="${_dp_ts%,*}.${_dp_ts#*,}" ;; esac
 { printf '{"ts":%s,"agent":"%s","event":"%s",%s}\n' \
     "$_dp_ts" "${DSH_PET_AGENT:-claude}" "${DSH_PET_EVENT:-unknown}" "$_dp_rec" >> "$DSH_PET_OUT"; } 2>/dev/null || :
+# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + transcript 里最后一个
+# ai-title。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
+# 不连累上面的事件行。截到第一个反斜杠为止，所以片段里不会剩转义序列。
+case ${DSH_PET_EVENT:-} in
+    UserPromptSubmit|Stop)
+        _dp_raw cwd
+        _dp_cwd=$_dp_v
+        _dp_proj=${_dp_v##*/}; _dp_proj=${_dp_proj##*\\}
+        _dp_raw transcript_path
+        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=
+        if [ -n "$_dp_path" ]; then
+            # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
+            [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
+            _dp_tail=$(tail -c 131072 "$_dp_path" 2>/dev/null)
+            case $_dp_tail in
+                *'"aiTitle":"'*)
+                    _dp_title=${_dp_tail##*\"aiTitle\":\"}
+                    _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
+            esac
+        fi
+        # cwd / transcript 是 stdin 里原样截出的 JSON 字符串片段（Windows 路径的反斜杠
+        # 已经是转义好的 \\），直接嵌回去；它们只是两条路径，不含对话内容。
+        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s"}\n' \
+            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
+esac
 """
 
 # Windows 上没有 Git Bash 时的回退（Claude Code 这时用 PowerShell 跑 hook）。
@@ -298,6 +330,55 @@ class WslSettingsStore:
         return code == 0
 
 
+# ---------------------------------------------------------------- 会话呈现文案
+
+#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）
+PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "resting": "休息中"}
+_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+#: 汇总时的排序：最需要人管的排最前
+_PHASE_ORDER = ("waiting", "working", "resting")
+#: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
+_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("waiting", "等待中"))
+#: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
+CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
+
+
+def session_label(agent: str, info: dict) -> str:
+    """一个会话的显示名：标题 > 项目文件夹名 > 会话 ID 前 8 位。"""
+    name = str(info.get("title") or info.get("project") or str(info.get("sessionId") or "")[:8]
+               or "Claude Code")
+    return f"{name}{CHANNEL_SUFFIX.get(str(agent), '')}"
+
+
+def session_counts(sessions: list[dict]) -> list[tuple[str, str]]:
+    """在用的会话按阶段计数：``[("working", "2 工作中"), ...]``；没有的阶段不出现。
+
+    灵动岛胶囊用：一眼看出几个在干活、几个歇着、几个在等你。
+    """
+    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase, _ in _CAPSULE_PHASES}
+    return [(phase, f"{counts[phase]} {text}") for phase, text in _CAPSULE_PHASES if counts[phase]]
+
+
+def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[str, str]:
+    """把在用的会话汇总成两行：(各阶段计数, 前几个会话的「名 · 状态」)。
+
+    灵动岛卡片用：第一行一眼看出有没有会话在等你，第二行点名最需要管的那几个。
+    """
+    live = [s for s in sessions if s.get("phase") in PHASE_TEXT]
+    if not live:
+        return "Claude Code · 没有在用的会话", "会话提问后会出现在这里"
+    counts = {phase: sum(1 for s in live if s["phase"] == phase) for phase in _PHASE_ORDER}
+    headline = "Claude Code · " + " · ".join(
+        _PHASE_COUNT_TEXT[phase].format(n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
+    ordered = sorted(live, key=lambda s: _PHASE_ORDER.index(s["phase"]))
+    detail = " ｜ ".join(
+        f"{session_label(str(s.get('agent') or ''), s)} · {PHASE_TEXT[s['phase']]}"
+        for s in ordered[:detail_max])
+    if len(ordered) > detail_max:
+        detail += f" 等 {len(ordered)} 个"
+    return headline, detail
+
+
 # ---------------------------------------------------------------- 会话收敛
 
 class ClaudeSessionTracker:
@@ -339,16 +420,95 @@ class ClaudeSessionTracker:
     #: 会话表上限：被 Esc 打断的会话不发 Stop，会一直占着「忙」直到它的下一个事件。
     _MAX_SESSIONS = 64
 
+    #: 标签文本（项目名 / 会话标题）的长度上限
+    _LABEL_MAX = 40
+    #: 路径（工作目录 / transcript）的长度上限
+    _PATH_MAX = 520
+    #: 随逐会话更新捎带的附加字段：有值才出现，值变了不单独触发一条更新
+    #: （``tool`` 每次工具调用都变，单独上报会把呈现层刷爆）。
+    _EXTRA_KEYS = ("cwd", "transcript", "tool")
+
     def __init__(self) -> None:
         self._busy: dict[str, str] = {}       # 会话 ID → thinking / working
         self._waiting: set[str] = set()       # 停在权限确认上的会话
+        # 已「出场」的会话（提过问 / 被看到在干活）→ {"phase", "title", "project"}。
+        # 逐会话呈现（会话小鱼）的数据源，与上面收敛成 Agent 级状态的记账互不影响。
+        self._sessions: dict[str, dict[str, str]] = {}
+        self._extras: dict[str, dict[str, str]] = {}   # 会话 ID → 附加字段（见 _EXTRA_KEYS）
+        self._updates: list[dict[str, str]] = []
 
     def reset(self) -> None:
         self._busy.clear()
         self._waiting.clear()
+        self._sessions.clear()
+        self._extras.clear()
+        self._updates.clear()
 
     def any_busy(self) -> bool:
         return bool(self._busy)
+
+    def session_ids(self) -> list[str]:
+        """记着的全部会话（已出场的 + 还占着「忙」的），存活核对用。"""
+        return list(dict.fromkeys([*self._sessions, *self._busy]))
+
+    def take_session_updates(self) -> list[dict[str, str]]:
+        """取走自上次以来的逐会话更新：``{"sessionId", "phase", "title", "project"}``。
+
+        ``phase``：``working``（在干活）/ ``waiting``（等用户批准）/ ``resting``
+        （回合结束）/ ``gone``（会话关闭或被淘汰）。只在内容变化时产生一条；
+        只开着没提过问的会话不出场。
+
+        已知时另带 ``cwd``（完整工作目录）、``transcript``（会话记录文件路径）、
+        ``tool``（最近一次调用的工具）——会话详情与跳转用。
+        """
+        updates, self._updates = self._updates, []
+        return updates
+
+    def _session_update(self, sid: str, *, phase: str = "", title: str = "", project: str = "",
+                        born: bool = False) -> None:
+        """改一个会话的呈现信息（空串 = 不改），有变化才记一条更新。"""
+        info = self._sessions.get(sid)
+        if info is None:
+            if not born:
+                return
+            info = {"phase": "", "title": "", "project": ""}
+            self._sessions[sid] = info
+            while len(self._sessions) > self._MAX_SESSIONS:
+                self._session_gone(next(iter(self._sessions)))
+        changed = False
+        for key, value in (("phase", phase), ("title", title), ("project", project)):
+            if value and info[key] != value:
+                info[key] = value
+                changed = True
+        if changed:
+            self._updates.append({"sessionId": sid, **info, **self._extras.get(sid, {})})
+
+    def _note_extra(self, sid: str, **fields: str) -> bool:
+        """记下附加字段（空值不覆盖已知值）；返回是否有路径类字段变了。"""
+        if sid not in self._sessions:
+            return False
+        extras = self._extras.setdefault(sid, {})
+        changed = False
+        for key, value in fields.items():
+            if value and extras.get(key) != value:
+                extras[key] = value
+                changed = changed or key != "tool"
+        return changed
+
+    def end_all(self) -> None:
+        """所有已出场的会话离场（通道被关掉时用）。"""
+        for sid in list(self._sessions):
+            self._session_gone(sid)
+
+    def _session_gone(self, sid: str) -> None:
+        info = self._sessions.pop(sid, None)
+        self._extras.pop(sid, None)
+        if info is not None:
+            self._updates.append({"sessionId": sid, **info, "phase": "gone"})
+
+    @classmethod
+    def _label(cls, value: Any) -> str:
+        return " ".join(str(value or "").split())[:cls._LABEL_MAX]
 
     @staticmethod
     def _approval(sid: str) -> dict:
@@ -358,13 +518,29 @@ class ClaudeSessionTracker:
         event = str(record.get("event") or "")
         sid = str(record.get("sessionId") or "")
         out: list[tuple[str, Any]] = []
+        resolved = False
 
+        if event == "SessionMeta":
+            paths_changed = self._note_extra(
+                sid, cwd=str(record.get("cwd") or "")[:self._PATH_MAX],
+                transcript=str(record.get("transcript") or "")[:self._PATH_MAX])
+            before = len(self._updates)
+            self._session_update(sid, title=self._label(record.get("title")),
+                                 project=self._label(record.get("project")))
+            if paths_changed and len(self._updates) == before:
+                # 标题 / 项目名没变但路径是新知道的：补一条，呈现层才拿得到路径
+                self._updates.append({"sessionId": sid, **self._sessions[sid],
+                                      **self._extras.get(sid, {})})
+            return out
+        if record.get("tool"):
+            self._note_extra(sid, tool=self._label(record.get("tool")))
         if event == "Notification":
             ntype = str(record.get("ntype") or "")
             if ntype in self._PROMPT_NTYPES:
                 if sid not in self._waiting:
                     self._waiting.add(sid)
                     out.append(("approval_request", self._approval(sid)))
+                self._session_update(sid, phase="waiting", born=True)
                 return out
             if ntype != "idle_prompt" or sid not in self._busy:
                 return out
@@ -377,10 +553,14 @@ class ClaudeSessionTracker:
                 # 停在确认上的会话又有动静：用户已经答复（没有专门的「已答复」事件）
                 self._waiting.discard(sid)
                 out.append(("approval_resolved", self._approval(sid)))
+                resolved = True
         if not state:
+            if resolved:    # 答复了但这条记录不带状态：按它此刻是否还在忙归位
+                self._session_update(sid, phase="working" if sid in self._busy else "resting")
             return out
 
         if state in self.BUSY:
+            self._session_update(sid, phase="working", born=True)
             self._busy.pop(sid, None)
             self._busy[sid] = state            # 重新插到末尾：淘汰时先丢最久没动的
             while len(self._busy) > self._MAX_SESSIONS:
@@ -388,6 +568,10 @@ class ClaudeSessionTracker:
             out.append(("state", state))
             return out
 
+        if event == "SessionEnd":
+            self._session_gone(sid)
+        else:
+            self._session_update(sid, phase="resting")
         was_busy = self._busy.pop(sid, None) is not None
         if not was_busy:
             return out

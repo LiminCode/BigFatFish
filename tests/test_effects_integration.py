@@ -44,7 +44,6 @@ class _Pet:
         self.on_open_chat = lambda self: None
         self.on_look_screen = lambda self: None
         self.on_show_balance = lambda self, parent=None: None
-        self.on_check_update = lambda self: None
         self.on_open_modern_settings = lambda self: None
         self.on_spawn_pet = lambda self: None
         self.idles = ["idle"]

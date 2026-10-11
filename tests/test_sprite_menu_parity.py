@@ -58,8 +58,13 @@ POOLS = {
     "acts": ["act1"],
 }
 
-# overlay 特有的额外条目（仅这三项允许出现在基准之外）
-ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠"})
+# overlay 特有的额外条目（仅这几项允许出现在基准之外）。
+# 「每个会话一只小鱼」：会话小鱼是 overlay 的多 sprite 能力，PetWindow 一窗一宠
+# 做不了（且已冻结为只修崩溃），所以该开关与它的「会话小鱼上限」只在 overlay 菜单里出现。
+# 「护驾」同理：把所有小肥鱼叫到主肥鱼身边，需要同一进程里的多只 sprite。
+# 「记录最近的对话」：灵动岛卡片里的那个列表由 overlay 壳的历史服务供数。
+ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼", "会话小鱼上限", "护驾",
+                            "记录最近的对话", "最近的对话显示行数"})
 
 # 用户点名的缺失条目（legacy 清单 → overlay 菜单必须逐项存在）
 REQUIRED_LABELS = (
@@ -107,9 +112,6 @@ class _StubAppShell:
 
     def show_balance(self, parent=None):
         self._record("show_balance", parent)
-
-    def check_update(self, parent=None):
-        self._record("check_update", parent)
 
     def open_todo_panel(self):
         self._record("open_todo_panel")
@@ -196,7 +198,6 @@ def _reference_window(config, *, chat=True):
     win.on_open_legacy_settings = None          # app.py:457 恒注入 None
     win.on_spawn_pet = lambda: None
     win.on_clear_spawned_pets = lambda: None
-    win.on_check_update = lambda parent=None: None
     win.on_open_todo_panel = lambda: None
     win.on_voice_chime_now = lambda text="": None
     win.on_toggle_voice_chime = lambda: None

@@ -41,7 +41,6 @@ from . import click_sound
 from . import overlay_instance_gate as overlay_gate_mod
 from . import self_talk_voice
 from . import slot_manager as slot_manager_mod
-from . import updater
 from . import webm_clip as webm_clip_mod
 from .config import APP_DIR_NAME, Config, _default_base
 from .context_menus.icons import vector_menu_icon
@@ -248,39 +247,6 @@ class _OverlayChatHost:
         sprite = getattr(self._shell, "sprite", None)
         if overlay is not None and sprite is not None:
             overlay.remove_position_listener(sprite, listener)
-
-
-class _UpdateBridge(_BackgroundResult):
-    def __init__(self, parent, owner=None):
-        super().__init__()
-        self.parent = parent
-        self.owner = owner
-        self.done.connect(self._show)
-
-    def _show(self, ok: bool, payload) -> None:
-        # 异步回调可能晚于窗口销毁，先探活再触碰 Qt 对象
-        alive = self.parent is not None and shiboken6.isValid(self.parent)
-        if not ok:
-            if alive:
-                self.parent.show_bubble(f"检查更新失败：{payload}", duration_ms=7000)
-            return
-        release = payload
-        tag = str(release.get("version", ""))
-        if not updater.is_newer(tag):
-            if alive:
-                self.parent.show_bubble(f"已经是最新版本（{updater.APP_VERSION}）啦")
-            return
-        if alive:
-            self.parent.show_bubble(
-                f"发现新版本 v{tag}（当前 {updater.APP_VERSION}）。"
-                "正在打开“更新”页，可直接下载并安装。",
-                duration_ms=9000,
-            )
-            owner = self.owner
-            instance = getattr(owner, "instance", None) if owner is not None else None
-            open_settings = getattr(instance, "open_modern_settings", None)
-            if callable(open_settings):
-                QTimer.singleShot(0, lambda: open_settings(initial_page="更新"))
 
 
 # 批5.2 §③.7：多窗日志用 [slot-N] 前缀区分。单进程多窗共享一份日志文件，
@@ -516,7 +482,6 @@ class PetInstance:
         win.on_open_quick_chat = self._slot_wrap(self.open_quick_chat) if self.enable_chat else None
         win.on_open_chat_settings = self._slot_wrap(self.open_chat_settings) if self.enable_chat else None
         win.on_show_balance = self._slot_wrap(self.shell.show_balance) if self.enable_chat else None
-        win.on_check_update = self._slot_wrap(self.shell.check_update)
         win.on_look_synced = self._slot_wrap(self.sync_look_to_chat) if self.enable_chat else None
         win.on_look_screen = win.look_at_screen if self.enable_chat and hasattr(win, "look_at_screen") else None
         win.on_open_legacy_settings = None
@@ -747,6 +712,7 @@ class PetInstance:
         if self.quick_chat is None:
             self.quick_chat = QuickChatBubble(self.config, pet_window=self.win)
             self.quick_chat.open_chat_callback = self.open_chat
+            self.quick_chat.chat_sync_callback = self.sync_chat_windows
         else:
             self.quick_chat.pet_window = self.win
             self.quick_chat.settings = self.config.chat_settings()
@@ -772,6 +738,7 @@ class PetInstance:
             )
         else:
             self.legacy_chat_window.set_pet_window(host)
+            self.legacy_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
         self.chat_window = self.legacy_chat_window
         self._present_dialog(self.legacy_chat_window, lambda: self.legacy_chat_window.position_near_pet(host))
 
@@ -792,8 +759,24 @@ class PetInstance:
             )
         else:
             self.modern_chat_window.set_pet_window(host)
+            self.modern_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
         self.chat_window = self.modern_chat_window
         self._present_dialog(self.modern_chat_window, lambda: self.modern_chat_window.position_near_pet(host))
+
+    def sync_chat_windows(self, session_id: str, *, focus: bool = False) -> None:
+        """快速对话 / 灵动岛气泡往会话里写了东西：让完整聊天窗跟上。
+
+        ``focus=True``（气泡里点了「去聊天窗」）：当前聊天窗切到这个会话并重读。
+        否则只刷新**开着且正停在这个会话上**的聊天窗——不把用户正在看的别的
+        会话换掉。
+        """
+        for window in (self.legacy_chat_window, self.modern_chat_window):
+            if window is None or not shiboken6.isValid(window):
+                continue
+            if focus and window is self.chat_window:
+                window.sync_from_store(session_id)
+            elif window.isVisible() and window.session.session_id == session_id:
+                window.sync_from_store()
 
     def _defer_while_popup_active(self, key: str, callback) -> bool:
         """Avoid constructing a heavy dialog inside QMenu.exec()."""
@@ -905,6 +888,7 @@ class PetInstance:
                 initial_page=initial_page,
             )
             dialog.finished.connect(self._modern_settings_finished)
+            dialog.saved.connect(self._modern_settings_saved)
             self.modern_settings_dialog = dialog
         elif initial_page:
             selector = getattr(self.modern_settings_dialog, "select_page", None)
@@ -933,9 +917,23 @@ class PetInstance:
             logging.exception("独立设置进程链路异常，回退进程内设置页")
             return False
 
+    def _modern_settings_saved(self) -> None:
+        """设置页点了「保存」（窗口还开着）：与关窗走同一条应用链。"""
+        PetInstance._apply_modern_settings(self)
+
     def _modern_settings_finished(self, result: int) -> None:
         self.modern_settings_dialog = None
         self._update_bubble_suppression_for_settings()
+        # 按类调用：既有测试拿鸭子类型的 owner 直接调本方法，owner 上没有这个方法
+        PetInstance._apply_modern_settings(self)
+        if (
+            getattr(self, "_dock_icon_before_settings", None) is True
+            and not bool(self.config.get("show_dock_icon", True))
+        ):
+            self._hint_dock_hidden_recovery()
+
+    def _apply_modern_settings(self) -> None:
+        """把设置页刚落盘的改动应用到运行中的桌宠（「保存」与关窗共用）。"""
         # 新版设置在关闭时一律落盘（closeEvent 自动保存，「保存并退出」同样走
         # _write_config），因此无论 Accepted/Rejected 都把改动应用到桌宠。
         # 此前只有 Accepted 才刷新：直接 X 关闭时保存生效但桌宠不更新。
@@ -962,11 +960,6 @@ class PetInstance:
         # 台词可能刚被改动：把还没有本地音频的句子交给后台补齐（开关默认关闭，
         # 关着时这里是 no-op；点了「编辑点击动画绑定」后直接 Esc 关设置也能一起收）
         self.shell.precache_self_talk_voice("设置保存后")
-        if (
-            getattr(self, "_dock_icon_before_settings", None) is True
-            and not bool(self.config.get("show_dock_icon", True))
-        ):
-            self._hint_dock_hidden_recovery()
 
 
     def _dock_hidden_recovery_message(self) -> str:
@@ -1929,6 +1922,12 @@ class AppShell:
                 self.app, self.instance,
                 agent_link_manager=getattr(shared, "agent_link", None),
                 proactive_watcher=getattr(shared, "proactive", None))
+            # 会话增减 / 换阶段 → 灵动岛卡片（显示 Claude 会话时）跟着刷新。
+            # 附加能力：壳没有会话登记表（替身 / 旧实现）时跳过，绝不阻断启动。
+            sessions_changed = getattr(self._claude_session_registry(), "sessions_changed", None)
+            if sessions_changed is not None:
+                sessions_changed.connect(self._on_claude_sessions_changed)
+            self._wire_session_history()
             # 点击自言自语的朗读走同一条音频通道（AppShell 持有，进程内唯一）；
             # overlay 拓扑没有 PetWindow 可注入（app.py:481 的 legacy 落点是
             # PetInstance._wire_window，那里用 self.shell），本类就是那个
@@ -2484,6 +2483,12 @@ class AppShell:
         if not enabled:
             if getattr(self, "island", None) is not None:
                 self.island.hide()
+            monitor = self._live_api_key_monitor()
+            if monitor is not None:
+                monitor.stop()  # 岛不显示就不体检：不白发请求
+            usage = self._live_usage_monitor()
+            if usage is not None:
+                usage.set_active(False)
             # 4.3：overlay 拓扑摘岛桥（岛停用即撤墙）
             overlay_shell = getattr(self, "_overlay_shell", None)
             if overlay_shell is not None:
@@ -2513,8 +2518,13 @@ class AppShell:
             self.island.open_settings_requested.connect(self._open_settings_from_island)
             # 桌宠隐藏时单击岛：弹/收锚定岛的对话气泡（hidden_chat 开启时）
             self.island.chat_requested.connect(self._chat_from_island)
-            # 卡片展开 → 静默刷新余额（不冒泡、不播动画，只更新岛卡片）
-            self.island.card_expanded.connect(self._quiet_balance_refresh)
+            # 卡片展开 → 按卡片内容来源刷新：Claude Code 会话汇总，或静默刷新余额
+            # （不冒泡、不播动画，只更新岛卡片）
+            self.island.card_expanded.connect(self._refresh_island_card)
+            # 卡片里的「最近的对话」：点一行 / 右键菜单 / 折叠
+            self.island.history_activated.connect(self._on_island_history_activated)
+            self.island.history_action.connect(self._on_island_history_action)
+            self.island.history_toggled.connect(self._on_island_history_toggled)
             # 进程级聊天完成订阅：AI 回复到达 → 岛播事件动效并记录最近消息。
             # 无聊天功能的打包变体会排除 pet.chat（参照 config.py 的同款守卫），
             # 那里跳过订阅即可，灵动岛本体照常可用。
@@ -2527,7 +2537,28 @@ class AppShell:
                     raise
             if ChatService is not None:
                 ChatService.register_global_finished(self._on_global_chat_finished)
+            # 连接图标的数据来源：当前对话服务商的 API 体检（挂在岛下面，随岛销毁）
+            from .api_key_monitor import ApiKeyMonitor
+
+            self._api_key_monitor = ApiKeyMonitor(
+                self.config, chat_enabled=bool(getattr(self, "enable_chat", True)), parent=self.island)
+            self._api_key_monitor.status_changed.connect(self.island.set_api_status)
+            # 信息槽「今日用量」的数据来源（同样挂在岛下面）
+            from .claude_usage_monitor import ClaudeUsageMonitor
+
+            self._usage_monitor = ClaudeUsageMonitor(parent=self.island)
+            self._usage_monitor.usage_changed.connect(self.island.set_usage_info)
         self.island.refresh_from_config()
+        usage = self._live_usage_monitor()
+        if usage is not None:
+            # 只有信息槽真的在显示用量时才去读对话记录
+            usage.set_active(bool(island_cfg.get("show_info", True))
+                             and str(island_cfg.get("info_mode") or "") == "usage_today")
+        monitor = self._live_api_key_monitor()
+        if monitor is not None:
+            monitor.start()
+            monitor.refresh()  # 本方法也是配置应用路径：服务商 / Key 变了就重查
+        self._push_island_session_counts()
         # 批5.2a：灵动岛按**聚合**可见态同步（任一窗可见 = 可见），替代只看主窗。
         self.island.set_pet_visible(self._aggregate_pet_visible())
         self.island.show()
@@ -2599,6 +2630,15 @@ class AppShell:
         if not self._aggregate_pet_visible() and self._island_chat_available():
             self._show_island_chat(activate=True)
             return
+        overlay = getattr(self, "_overlay_shell", None)
+        if overlay is not None:
+            # overlay 拓扑：不构造 PetWindow，instance.win 恒为 None，而
+            # PetInstance.open_quick_chat 第一行就是 `if self.win is None: return`
+            # ——点了没有任何反应。快速对话气泡由壳自己开（锚在主 sprite 上）；
+            # 开不出来就退到完整聊天窗，总之不能静默。
+            if not overlay.open_quick_chat():
+                self._open_full_chat_from_island_chat()
+            return
         inst = self.instance
         if inst is not None and callable(getattr(inst, "open_quick_chat", None)):
             inst.open_quick_chat()
@@ -2631,6 +2671,7 @@ class AppShell:
             self.island_chat.show_pet_requested.connect(self._show_pets_from_island_chat)
         bubble = self.island_chat
         bubble.open_chat_callback = self._open_full_chat_from_island_chat
+        bubble.chat_sync_callback = self._sync_chat_windows_from_island_chat
         bubble.settings = self.config.chat_settings()
         bubble.refresh_session()
         bubble.show_for_island(self.island, activate=activate, reply_text=reply_text)
@@ -2656,6 +2697,13 @@ class AppShell:
         inst = getattr(self, "instance", None)
         if inst is not None and callable(getattr(inst, "open_chat", None)):
             inst.open_chat()
+
+    def _sync_chat_windows_from_island_chat(self, session_id: str, *,
+                                            focus: bool = False) -> None:
+        inst = getattr(self, "instance", None)
+        sync = getattr(inst, "sync_chat_windows", None)
+        if callable(sync):
+            sync(session_id, focus=focus)
 
     def _island_feedback_available(self) -> bool:
         """桌宠隐藏期间灵动岛反馈面是否可用（window 的联动暂停决策探针）。
@@ -2712,6 +2760,9 @@ class AppShell:
             return
         island.set_last_message(text)
         island.notify_event("reply")
+        monitor = self._live_api_key_monitor()
+        if monitor is not None:
+            monitor.note_success()  # 回复都到了：API 肯定是通的
         # 桌宠隐藏时岛是唯一常驻交互面：回复到达在岛上弹预览气泡（不抢焦点，
         # 超时自动收回）。岛气泡在场时跳过——多半是气泡自己刚回完话，别再弹。
         if not self._aggregate_pet_visible() and self._island_chat_available():
@@ -2805,6 +2856,161 @@ class AppShell:
             peak_label=peak_label, idle_label=idle_label,
         )
 
+    # ------------------------------------------------------------ 岛卡片内容来源
+    def _claude_session_registry(self):
+        """在用的 Claude Code 会话登记表（overlay 拓扑才有；旧 PetWindow 为 None）。"""
+        return getattr(getattr(self, "_overlay_shell", None), "session_pets", None)
+
+    def _island_card_source(self) -> str:
+        """展开卡片显示什么：``claude``（会话汇总）或 ``balance``（DeepSeek 余额）。
+
+        ``dynamic_island.card_source``：auto = 开着 Claude Code 联动（本机或 WSL
+        任一通道）就显示会话，否则余额；也可钉死成其中一种。没有会话登记表的
+        拓扑一律退回余额。
+        """
+        if self._claude_session_registry() is None:
+            return "balance"
+        island_cfg = self.config.get("dynamic_island", {})
+        source = str(island_cfg.get("card_source") or "auto") if isinstance(island_cfg, dict) else "auto"
+        if source in ("balance", "claude"):
+            return source
+        agent_cfg = self.config.get("agent_link", {})
+        linked = isinstance(agent_cfg, dict) and (agent_cfg.get("claude") or agent_cfg.get("claude_wsl"))
+        return "claude" if linked else "balance"
+
+    def _refresh_island_card(self) -> None:
+        history = self._session_history()
+        if history is not None:
+            history.rescan()            # 桌宠没开着时打开过的对话：展开卡片时补一遍（节流在服务里）
+            self._push_island_history()  # 「多久以前」随手刷新
+        if self._island_card_source() == "claude":
+            self._show_island_claude_sessions()
+        else:
+            self._quiet_balance_refresh()
+
+    def _show_island_claude_sessions(self) -> None:
+        """卡片两行换成 Claude Code 会话汇总。纯本地数据：不查余额，不碰 API Key。"""
+        island = getattr(self, "island", None)
+        registry = self._claude_session_registry()
+        if island is None or registry is None:
+            return
+        from . import claude_hooks
+
+        headline, detail = claude_hooks.summarize_sessions(registry.sessions())
+        island.set_balance_info(detail, headline)
+
+    def _on_claude_sessions_changed(self) -> None:
+        self._push_island_session_counts()
+        self._push_island_history()     # 哪些对话「进行中」跟着变
+        if self._island_card_source() == "claude":
+            self._show_island_claude_sessions()
+
+    def _push_island_session_counts(self) -> None:
+        """胶囊上的会话计数（「2 工作中 1 休息中 2 等待中」）。与卡片显示什么无关。"""
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        registry = self._claude_session_registry()
+        from . import claude_hooks
+
+        island.set_session_counts(claude_hooks.session_counts(registry.sessions()) if registry is not None else [])
+
+    # ------------------------------------------------------------ 最近的对话
+    def _session_history(self):
+        """「最近的对话」服务（overlay 拓扑才有；旧 PetWindow 为 None）。"""
+        return getattr(getattr(self, "_overlay_shell", None), "session_history", None)
+
+    def _wire_session_history(self) -> None:
+        """记录有变化 → 岛上的列表跟着变（overlay 壳建好之后调一次）。"""
+        history = self._session_history()
+        if history is not None:
+            history.changed.connect(self._push_island_history)
+        self._push_island_history()
+
+    def _live_session_keys(self) -> set:
+        registry = self._claude_session_registry()
+        if registry is None:
+            return set()
+        return {(str(s.get("agent") or ""), str(s.get("sessionId") or "")) for s in registry.sessions()}
+
+    def _push_island_history(self) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        history = self._session_history()
+        if history is None:
+            island.set_session_history([])
+            return
+        from .claude_session_history import ago_text
+
+        now, live = time.time(), self._live_session_keys()
+        island.set_session_history([
+            {"key": entry.key, "label": entry.label, "where": entry.where, "path": entry.cwd,
+             "ago": ago_text(now - entry.last_seen), "live": entry.key in live}
+            for entry in history.entries()], is_open=history.ui_open,
+            max_rows=(self.config.get("agent_link") or {}).get("session_history_rows", 10))
+
+    def _history_actions(self):
+        actions = getattr(self, "_session_history_actions", None)
+        if actions is None:
+            from .session_history_service import SessionHistoryActions
+
+            clipboard = QApplication.clipboard()
+            actions = SessionHistoryActions(copy=clipboard.setText if clipboard is not None else None)
+            self._session_history_actions = actions
+        return actions
+
+    def _island_history_entry(self, key):
+        history = self._session_history()
+        return history.find(key) if history is not None else None
+
+    def _say_island_history(self, message: str) -> None:
+        island = getattr(self, "island", None)
+        if message and island is not None and shiboken6.isValid(island):
+            island.show_history_status(message)
+
+    def _on_island_history_activated(self, key) -> None:
+        """点了一行：还开着的切到它的窗口；关掉的按来源恢复（终端 / VS Code）。"""
+        entry = self._island_history_entry(key)
+        if entry is None:
+            return
+        if entry.key in self._live_session_keys():
+            jumper = getattr(getattr(self, "_overlay_shell", None), "session_actions", None)
+            jumped = jumper is not None and bool(jumper.jump_key(entry.key))
+            self._say_island_history("正在切到这个对话…" if jumped else "找不到这个对话的窗口")
+            return
+        self._say_island_history(self._history_actions().activate(entry))
+
+    def _on_island_history_action(self, action: str, key) -> None:
+        history = self._session_history()
+        if history is None:
+            return
+        if action == "clear":
+            history.clear()
+            return
+        entry = history.find(key)
+        if entry is None:
+            return
+        if action == "remove":
+            history.remove(entry.key)
+            return
+        self._say_island_history(self._history_actions().run(action, entry))
+
+    def _on_island_history_toggled(self, is_open: bool) -> None:
+        history = self._session_history()
+        if history is not None:
+            history.set_ui_open(is_open)
+
+    def _live_usage_monitor(self):
+        """今日用量的定时刷新；没建过或已随岛销毁返回 None。"""
+        monitor = getattr(self, "_usage_monitor", None)
+        return monitor if monitor is not None and shiboken6.isValid(monitor) else None
+
+    def _live_api_key_monitor(self):
+        """API 体检器；没建过或已随岛销毁返回 None。"""
+        monitor = getattr(self, "_api_key_monitor", None)
+        return monitor if monitor is not None and shiboken6.isValid(monitor) else None
+
     def _update_island_balance(self, payload, *, animate: bool = True) -> None:
         """把余额文本/峰谷提示同步给灵动岛（若有）。
 
@@ -2813,6 +3019,8 @@ class AppShell:
         """
         if getattr(self, "island", None) is None:
             return
+        if self._island_card_source() == "claude":
+            return  # 卡片正在显示 Claude 会话：余额自动刷新的结果不许把它顶掉
         text = "余额 --"
         if isinstance(payload, dict):
             text = str(payload.get("text") or "余额 --")
@@ -2836,6 +3044,11 @@ class AppShell:
         import hashlib
         settings = self.config.chat_settings()
         provider = settings.active_config
+        from .chat import anthropic_provider
+        if anthropic_provider.uses_anthropic(provider):
+            # Claude API 没有余额查询接口，DeepSeek 的峰谷提示对它也不适用
+            island.set_balance_info("用量与余额请到 Anthropic 控制台查看", "Claude API")
+            return
         provider.api_key = self.config.resolve_api_key(provider)
         if not provider.api_key:
             island.set_balance_info(
@@ -2992,33 +3205,6 @@ class AppShell:
             tmp.replace(self._balance_cache_path)
         except OSError:
             pass
-
-    # ------------------------------------------------------------ 更新
-    def check_update(self, parent=None) -> None:
-        # 重入防护（审查 GLM-L3）：连点不应起多个检查线程/叠气泡
-        if getattr(self, "_update_checking", False):
-            return
-        self._update_checking = True
-        target = parent or (self.instance.win if self.instance is not None else None)
-        if target is not None:
-            target.show_bubble("正在检查更新…", duration_ms=6000)
-        bridge = _UpdateBridge(target, owner=self)
-        self._update_bridge = bridge
-        # 完成后放行下一次检查（无论成败）
-        bridge.done.connect(lambda *_: setattr(self, "_update_checking", False))
-
-        def worker() -> None:
-            try:
-                release = updater.latest_release()
-            except Exception as exc:
-                # 后台线程异常必须收口回 GUI，否则更新提示永远停在
-                # 「正在检查更新」（审查 P1-01）
-                logging.debug("检查更新失败", exc_info=True)
-                bridge.done.emit(False, str(exc))  # 前缀由 _UpdateBridge._show 统一加
-                return
-            bridge.done.emit(bool(release), release or "无法连接更新服务，请稍后重试。")
-
-        threading.Thread(target=worker, daemon=True, name="pet-update-check").start()
 
     # ------------------------------------------------------------ 生小肥鱼 / 多窗
     def spawn_pet(self) -> None:
@@ -3560,7 +3746,6 @@ class AppShell:
         else:
             # 纯桌宠版本不提供本地 DSH 启动入口，只保留网页版入口
             menu.addAction('打开网页版 DeepSeek', open_deepseek_web)
-        menu.addAction('检查更新', lambda: self.check_update(win))
 
         # 批5.2a §③.3：多窗时单托盘 + 每窗一个子菜单（显示/隐藏、切换角色、退出这只），
         # 替代 spike 的平铺菜单项；图标仍单托盘，逐窗动作经子菜单路由。
@@ -3719,8 +3904,12 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
             logging.error("缺少 --slot 参数值")
             return 1
 
+    # 系统里的身份（任务栏分组与图标）：要在创建任何窗口之前声明
+    from . import app_identity
+    app_identity.set_process_identity()
     app = QApplication(argv)
     app.setApplicationName(APP_DIR_NAME)
+    app_identity.apply_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
 
     # 确定配置根目录
@@ -3747,7 +3936,11 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
     # 身份；缺省或 D4 门保证的单实例即主身份（slot 0）。
     slot_id = preferred_slot if preferred_slot is not None else 0
 
+    from . import shuffle_bag
     try:
+        # 洗牌式抽取（彩蛋弹窗的图 / 自言自语的配图与台词）的进度记在配置目录里：
+        # 重启后接着上一轮往下出。过了单实例门才接上——被拒的第二实例不碰它。
+        shuffle_bag.STORE.attach(config_dir / shuffle_bag.STATE_FILE_NAME)
         instance_id = slot_manager_mod.slot_to_instance_id(slot_id)
         os.environ["DSH_PET_INSTANCE"] = instance_id
 
@@ -3782,6 +3975,7 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
         logging.info("进入事件循环")
         return app.exec()
     finally:
+        shuffle_bag.STORE.detach()   # 进度每出一张就已落盘；这里只是不再往那个文件写
         # D4：正常退出（app.exec() 返回前 aboutToQuit 已跑完，各窗位置已落盘）
         # 才释放 overlay 进程门——比 _on_about_to_quit 内更晚，避免"本地还在收尾、
         # 第二实例已能起来"的位置回写竞态。会话结束路径另见 _on_session_end。

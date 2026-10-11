@@ -50,6 +50,24 @@ SOFTWARE.
 
 ---
 
+## 2a. 提示词配方与素材生成链（取自 PC2005-cloud/dsh-pet）
+
+- **Files**:
+  - `prompts/桌面宠物 10 秒动作提示词.md`、`prompts/系统通知图标 AI 生成提示词.md`（原样）
+  - `tools/asset_pipeline/` 下的 `watermark_step01.py`、`fill_nn.py`、`make_mask_black.py`、
+    `chroma_step02.py`、`pr_import_step02.py`、`normalize_step03.py`、`encode_thumbs.py`、
+    `preview.html`、`watermark_mask_v5.mkv`（按本仓库整理过，改动见该目录 README）
+- **Origin / Source Repository**: [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)
+  （提交 `9266219`，2026-10-10；`prompts/`、`scripts/`、`tools/preview.html`、`video/watermark_mask_v5.mkv`）
+- **License**:
+  - 代码（脚本 / 预览页）：MIT License，Copyright (c) 2026 PC2005-cloud（许可全文同下方
+    MIT License Text，版权行以此处为准）。
+  - 素材（提示词、动画、源视频）：上游声明「允许开源使用，**禁止商用**」。
+  - 二次创作约定：基于上游的衍生 / 改版作品，在任何介绍、展示、分发该作品的地方，须附上
+    原作者地址 <https://github.com/PC2005-cloud/dsh-pet>。
+
+---
+
 ## 3. lunar-python（农历与 24 节气换算）
 
 - **Package**: [`lunar-python`](https://pypi.org/project/lunar-python/)（import 名 `lunar_python`）

@@ -3377,3 +3377,52 @@ def test_system_notify_toggle_persists_on_save(tmp_path, monkeypatch):
     assert Config(tmp_path).get("system_notifications_enabled") is False, "拨动后的新值必须生效"
     page.close()
     app.processEvents()
+
+
+def test_classic_chat_window_uses_the_renamed_character(tmp_path):
+    """经典聊天窗（肥鱼牌小手机）的标题 / 头像 / 气泡署名都跟着用户给角色起的名字走。
+
+    实机：角色已改名「大肥鱼」，灵动岛与新版聊天窗都显示新名字，经典聊天窗仍写着
+    shenshen、头像是 S、气泡署名是「桌宠」。
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from pet.chat.legacy_widgets import ChatWindow as LegacyChatWindow
+    from pet.chat.legacy_widgets import MessageBubble
+    from pet.config import Config
+
+    QApplication.instance() or QApplication([])
+    config = Config(tmp_path)
+    config.set_character_alias("shenshen", "大肥鱼")
+    window = LegacyChatWindow(config, "shenshen")
+    try:
+        assert window.title_label.text() == "大肥鱼 · AI 对话"
+        assert window.avatar_label.text() == "大"
+        window._add("assistant", "你好")
+        replies = [b for b in window.findChildren(MessageBubble) if b.role == "assistant"]
+        assert replies, "消息气泡应已加入窗口"
+        assert replies[-1].avatar.text() == "大" and replies[-1].meta.text() == "大肥鱼"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_classic_chat_window_without_an_alias_keeps_the_old_labels(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from pet.chat.legacy_widgets import ChatWindow as LegacyChatWindow
+    from pet.chat.legacy_widgets import MessageBubble
+    from pet.config import Config
+
+    QApplication.instance() or QApplication([])
+    window = LegacyChatWindow(Config(tmp_path), "shenshen")
+    try:
+        assert window.title_label.text().endswith(" · AI 对话")
+        assert "大肥鱼" not in window.title_label.text()
+        window._add("assistant", "你好")
+        replies = [b for b in window.findChildren(MessageBubble) if b.role == "assistant"]
+        assert replies[-1].meta.text() == "桌宠", "没起名字时署名不变"
+        assert MessageBubble("user", "hi", "shenshen").meta.text() == "你"
+    finally:
+        window.close()
+        window.deleteLater()

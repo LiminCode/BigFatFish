@@ -314,11 +314,11 @@ def test_bump_and_agent_active(tmp_path):
         assert island._kick_x == 0.0 and island._kick_y == 0.0
         assert island._squish == 1.0
 
-        island.set_agent_active(True)  # dsh 开工：蓝灯 + 弹一下
+        island.set_agent_active(True)  # dsh 开工：弹一下（状态图标只表达 API，不再变蓝）
         assert island._agent_active is True
-        assert island._status_dot_color().blue() > 200
+        assert island._debug_state()["animating"] is True
         island.set_agent_active(False)
-        assert island._status_dot_color().green() > 200  # 回到可见绿灯
+        assert island._agent_active is False
     finally:
         island.hide()
         island.deleteLater()

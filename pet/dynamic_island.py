@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """独立灵动岛胶囊窗口。
 
-- 常驻顶层小窗，可显示图标、名称、信息槽、状态灯；
+- 常驻顶层小窗，可显示图标、名称、信息槽、状态区（Claude Code 会话计数 + API 连接图标：
+  绿 = 对话 API 可用，红 = 不可用）；
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
 - 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
   桌宠隐藏时（``hidden_chat`` 开启）单击改为弹岛对话气泡（island_chat.py）；
-- 事件动效（``event_effects``）：AI 回复/余额刷新/峰谷切换时位移弹跳 +
-  表面轻压 + 短暂呼吸，静止时完全无定时器开销；dsh 工作时状态灯变蓝；
+- 信息槽二选一：当前时间，或今日用量（Claude Code 今天用掉的 token，见 claude_usage）；
+- 事件动效（``event_effects``）：AI 回复/余额刷新时位移弹跳 +
+  表面轻压 + 短暂呼吸，静止时完全无定时器开销；
 - ``bump()`` 供碰撞系统调用：被撞时表面压扁回弹（史莱姆果冻形变只作用于
   胶囊外形，文字图标保持锐利）+ 按撞击方向轻微踢动；
 - 外观：黑/白/玻璃质感自绘 + 背景不透明度 + 主题色（五级）。
@@ -22,7 +24,8 @@ from PySide6.QtCore import (
     QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QColor, QGuiApplication, QLinearGradient, QPainter, QPen, QPixmap,
+    QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QTextLayout, QTextOption,
 )
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -40,6 +43,10 @@ _STRIP_THICKNESS = 16
 _STRIP_SIDE = 64  # 左右停靠时竖条的长度
 _CARD_WIDTH = 340
 _CARD_HEIGHT = 148
+_CARD_MARGIN_X = 16          # 卡片内容的左右内边距
+_CARD_HEADLINE_LINES = 2     # 标题行最多折几行
+_CARD_DETAIL_LINES = 3       # 详情行最多折几行（再多就省略，悬停看全文）
+_CARD_MESSAGE_LINES = 2      # 最近消息最多折几行
 _CARD_AUTO_COLLAPSE_MS = 15_000
 _DOCK_BACK_MS = 800
 _BREATHE_AFTER_EVENT_S = 5.0
@@ -91,6 +98,17 @@ _ICON_AUTO = "auto"
 _ICON_IMG_PREFIX = "img:"
 _ICON_PIXMAP_PX = 22  # 头像画进 26px 底圈内的尺寸
 _ICON_STRIP_PX = 16  # 左右停靠细条里的头像尺寸
+
+# 状态区：API 连接图标（自绘「链接」，不走 emoji 字体栈）+ 会话计数
+_LINK_ICON_W = 18
+_LINK_ICON_H = 10
+_API_STATUS_COLORS = {
+    "ok": QColor(80, 220, 120),        # 对话 API 可用
+    "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
+    "unknown": QColor(130, 140, 155),  # 还没查过，或此版本没有 AI 对话
+}
+# 会话计数的字色：工作中绿、等待中橙（最需要人管），其余用次文字色
+_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24"}
 
 
 def spring_step(
@@ -150,6 +168,39 @@ def strip_rect_for(rect: QRect, edge: str, available: QRect) -> QRect:
     return QRect(rect)
 
 
+def wrap_elided(text: str, font: QFont, width: int, max_lines: int) -> list[str]:
+    """把文本按宽度折成至多 ``max_lines`` 行，每一行都不超过 ``width``；
+    还放不下的部分在最后一行用省略号收尾。
+
+    QLabel 自带的换行只在词边界断（一长串英文 / 路径照样溢出），也不会省略，
+    所以逐行排版后把结果交给它原样显示。
+    """
+    width = max(1, int(width))
+    option = QTextOption()
+    option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    segments: list[str] = []
+    for paragraph in str(text or "").split("\n"):
+        layout = QTextLayout(paragraph, font)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(width)
+            segment = paragraph[line.textStart():line.textStart() + line.textLength()]
+            if segment.strip():
+                segments.append(segment)
+        layout.endLayout()
+        if segments:
+            segments[-1] += " "      # 段落之间：省略时接成一行要留个空
+    max_lines = max(1, int(max_lines))
+    if len(segments) > max_lines:
+        tail = "".join(segments[max_lines - 1:]).strip()
+        segments[max_lines - 1:] = [QFontMetrics(font).elidedText(tail, Qt.TextElideMode.ElideRight, width)]
+    return [segment.strip() for segment in segments]
+
+
 def _cfg_dict(config) -> dict:
     value = config.get("dynamic_island", {})
     return value if isinstance(value, dict) else {}
@@ -181,6 +232,11 @@ class DynamicIsland(QWidget):
     open_chat_requested = Signal()
     open_settings_requested = Signal()
     card_expanded = Signal()  # 卡片展开（AppShell 借此静默刷新余额）
+    # 卡片里的「最近的对话」折叠框（island_history_panel）：点了一行 / 右键菜单选了一项 /
+    # 用户折叠或展开了
+    history_activated = Signal(object)
+    history_action = Signal(str, object)
+    history_toggled = Signal(bool)
     chat_requested = Signal()  # 桌宠隐藏时单击胶囊（hidden_chat 开启）：弹岛对话气泡
 
     def __init__(self, config, parent=None):
@@ -210,6 +266,12 @@ class DynamicIsland(QWidget):
         # 维持现状；纯桌宠版置 False 时 hidden_chat 单击路由回退展开卡片）
         self._chat_available = True
         self._agent_active = False
+        self._api_state = "unknown"
+        self._api_detail = ""
+        # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
+        self._usage_text = "今日 --"
+        self._usage_detail = ""
+        self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
         self.on_geometry_changed = None
@@ -268,12 +330,6 @@ class DynamicIsland(QWidget):
         self._info_timer.setInterval(30_000)
         self._info_timer.timeout.connect(self._refresh)
         self._info_timer.start()
-
-        # 余额峰谷档位切换的准点刷新：单次定时到下一切换边界，刷新后再排下一次。
-        self._tier_tick_timer = QTimer(self)
-        self._tier_tick_timer.setSingleShot(True)
-        self._tier_tick_timer.timeout.connect(self._on_balance_tier_tick)
-        self._schedule_next_balance_tier_refresh()
 
         # 置顶保活接线（见 reassert_topmost）：本进程窗口被激活 = 某个 topmost
         # 窗（聊天窗/设置窗/岛气泡/托盘菜单 popup）刚插到岛上面，这是零轮询里
@@ -409,8 +465,43 @@ class DynamicIsland(QWidget):
         """
         self._chat_available = bool(available)
 
+    def set_api_status(self, state: str, detail: str = "") -> None:
+        """对话 API 的体检结论（``api_key_monitor``）：ok 绿色连通 / bad 红色断开 /
+        unknown 灰色。``detail`` 是悬停提示——红了得说得出为什么。"""
+        state = state if state in _API_STATUS_COLORS else "unknown"
+        self._api_detail = str(detail or "")
+        self._sync_tooltip()
+        if state != self._api_state:
+            self._api_state = state
+            self.update()
+
+    def set_usage_info(self, text: str, detail: str = "") -> None:
+        """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
+        text = str(text or "今日 --")
+        changed = text != self._usage_text
+        self._usage_text, self._usage_detail = text, str(detail or "")
+        self._sync_tooltip()
+        if changed and self._info_mode() == "usage_today":
+            self._refresh()
+
+    def _sync_tooltip(self) -> None:
+        """悬停提示：API 体检结论；信息槽显示用量时再加一行用量明细。"""
+        lines = [self._api_detail]
+        if self._info_mode() == "usage_today":
+            lines.append(self._usage_detail)
+        self.setToolTip("\n".join(line for line in lines if line))
+
+    def set_session_counts(self, counts) -> None:
+        """Claude Code 会话计数（``[(阶段, "2 工作中"), ...]``），画在连接图标左边；
+        空 = 不显示、不占宽度。"""
+        counts = [(str(tone), str(text)) for tone, text in (counts or []) if str(text)]
+        if counts != self._session_counts:
+            self._session_counts = counts
+            self._sync_card_labels()    # 胶囊宽度变了：卡片文字按新宽度重排
+            self._refresh()
+
     def set_agent_active(self, active: bool) -> None:
-        """dsh/agent 工作状态：点亮蓝色状态灯；上升沿弹一下提示开工。"""
+        """dsh/agent 工作状态：上升沿弹一下提示开工（谁在忙看会话计数）。"""
         active = bool(active)
         rising = active and not self._agent_active
         self._agent_active = active
@@ -424,10 +515,10 @@ class DynamicIsland(QWidget):
         self._sync_card_labels()
 
     def notify_event(self, kind: str = "generic") -> None:
-        """事件动效入口：reply / balance / tier / generic。尊重 event_effects 开关。"""
+        """事件动效入口：reply / balance / generic。尊重 event_effects 开关。"""
         if not self._event_effects_enabled():
             return
-        impulse = {"reply": 5.0, "balance": 3.5, "tier": 4.0}.get(kind, 3.0)
+        impulse = {"reply": 5.0, "balance": 3.5}.get(kind, 3.0)
         self._bounce(impulse=impulse)
         if kind == "reply":
             self._breathe_until = time.monotonic() + _BREATHE_AFTER_EVENT_S
@@ -459,7 +550,7 @@ class DynamicIsland(QWidget):
         old_edge = self.dock_edge
         old_icon = self._icon_spec()
         self._cfg = _cfg_dict(self.config)
-        self._schedule_next_balance_tier_refresh()
+        self._sync_tooltip()             # 信息槽换了内容：提示里要不要带用量跟着变
         self._sync_card_labels()
         # 头像必须跟着刷新作废：provider 取的是**当前形象**的帧，而角色热切换
         # 只调 refresh_from_config（不动 island 配置），不换缓存就一直挂旧头像
@@ -476,51 +567,6 @@ class DynamicIsland(QWidget):
             self._apply_position()
         self._refresh()
 
-    # ------------------------------------------------------------ 余额峰谷
-    def _balance_tier_display_text(self) -> str:
-        """按系统时间直接生成余额峰谷文案：当前档位标签 + 下一档切换时间。
-
-        不依赖余额查询；档位标签使用设置里的高峰/空闲（或梁文峰/梁文谷/自定义）。
-        """
-        from . import balance as balance_mod
-
-        now = balance_mod.beijing_now()
-        peak_label, idle_label = balance_mod.resolve_tier_labels(
-            str(self.config.get("balance_tier_labels_mode", "default") or "default"),
-            str(self.config.get("balance_tier_label_peak", "") or ""),
-            str(self.config.get("balance_tier_label_idle", "") or ""),
-        )
-        # 保持无参调用以兼容现有测试/调用面（函数内部使用同一北京时间）。
-        tier = balance_mod.deepseek_pricing_tier()
-        label = peak_label if tier == "peak" else idle_label
-        try:
-            _next_tier, next_time = balance_mod.next_pricing_switch(now)
-            time_text = balance_mod.format_switch_time(now, next_time)
-            return f"{label} → {time_text}"
-        except Exception:
-            return label
-
-    def _on_balance_tier_tick(self) -> None:
-        """到达预设档位切换点：刷新显示、播事件动效，并排下一次准点刷新。"""
-        self._refresh()
-        self.notify_event("tier")
-        self._schedule_next_balance_tier_refresh()
-
-    def _schedule_next_balance_tier_refresh(self) -> None:
-        """在下一个峰谷切换边界安排一次单发刷新（只在余额峰谷模式启用）。"""
-        if str(self._cfg.get("info_mode") or "time") != "balance_tier":
-            self._tier_tick_timer.stop()
-            return
-        try:
-            from . import balance as balance_mod
-
-            _next_tier, next_time = balance_mod.next_pricing_switch()
-            now = balance_mod.beijing_now()
-            delay_ms = max(250, int((next_time - now).total_seconds() * 1000) + 250)
-            self._tier_tick_timer.start(delay_ms)
-        except Exception:
-            self._tier_tick_timer.stop()
-
     def _refresh(self) -> None:
         """内容变化后立即重算尺寸、夹回屏幕并重绘。"""
         # 复用既有刷新通道重申置顶（30s 信息心跳 + 余额/配置刷新各一次）：系统
@@ -536,23 +582,35 @@ class DynamicIsland(QWidget):
 
     # ------------------------------------------------------------ 卡片
     def _build_card(self) -> None:
-        """展开卡片：余额/峰谷两行 + 最近消息 + 三个快捷按钮。默认隐藏。"""
+        """展开卡片：标题行 + 详情行（会话汇总或余额/峰谷）+ 最近消息 + 三个快捷按钮。默认隐藏。"""
         self._card_box = QWidget(self)
         self._card_box.setObjectName("dynamic-island-card")
         # 卡片底板由窗口 paintEvent 统一绘制（圆角连续），控件容器自身透明
         self._card_box.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._card_box.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(self._card_box)
-        layout.setContentsMargins(16, 6, 16, 12)
+        layout.setContentsMargins(_CARD_MARGIN_X, 6, _CARD_MARGIN_X, 12)
         layout.setSpacing(4)
         self._card_balance_label = QLabel(self._card_box)
         self._card_tier_label = QLabel(self._card_box)
         self._card_message_label = QLabel(self._card_box)
-        self._card_message_label.setWordWrap(True)
-        self._card_message_label.setMaximumHeight(34)
+        # 三行文字都是外来内容（会话标题 / 余额文案 / AI 回复）：按纯文本原样显示
+        # （带尖括号不当富文本），折行由 wrap_elided 排好（见 _sync_card_labels）
+        for label in (self._card_balance_label, self._card_tier_label,
+                      self._card_message_label):
+            label.setTextFormat(Qt.TextFormat.PlainText)
         for label in (self._card_balance_label, self._card_tier_label,
                       self._card_message_label):
             layout.addWidget(label)
+        # 「最近的对话」：没有记录时整个不出现，卡片与原来一模一样
+        from .island_history_panel import SessionHistoryPanel
+
+        self._history_panel = SessionHistoryPanel(self._card_box)
+        self._history_panel.hide()
+        self._history_panel.toggled.connect(self._on_history_toggled)
+        self._history_panel.activated.connect(self.history_activated)
+        self._history_panel.action_requested.connect(self.history_action)
+        layout.addWidget(self._history_panel)
         layout.addSpacing(2)
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
@@ -591,14 +649,20 @@ class DynamicIsland(QWidget):
         for btn in (self._card_toggle_btn, self._card_chat_btn,
                     self._card_settings_btn):
             btn.setStyleSheet(button_style)
-        self._card_balance_label.setText(self._balance_text)
-        self._card_tier_label.setText(self._balance_tier_text)
-        message = self._last_message or "（暂无最近消息）"
-        # 摘要最多两行，超出省略（标签限高 34px 配合 wordWrap）
-        metrics = self._card_message_label.fontMetrics()
-        elided = metrics.elidedText(
-            message, Qt.TextElideMode.ElideRight, max(40, (_CARD_WIDTH - 32) * 2))
-        self._card_message_label.setText(elided)
+        # 标题行 / 详情行：放不下就折行（卡片随之长高，见 _card_height），绝不让文字
+        # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
+        self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
+                                     width=self._card_width() - 2 * _CARD_MARGIN_X)
+        text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2
+        for label, text, max_lines in (
+                (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
+                (self._card_tier_label, self._balance_tier_text, _CARD_DETAIL_LINES),
+                (self._card_message_label, self._last_message or "（暂无最近消息）", _CARD_MESSAGE_LINES)):
+            label.ensurePolished()      # 字号来自样式表：排版前要先落到 font() 上
+            lines = wrap_elided(text, label.font(), text_width, max_lines)
+            label.setText("\n".join(lines))
+            if label is not self._card_message_label:   # 最近消息在聊天窗里看全文，不挂提示
+                label.setToolTip(text if lines and lines[-1].endswith("…") else "")
         self._card_toggle_btn.setText("隐藏桌宠" if self._pet_visible else "显示桌宠")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -634,8 +698,44 @@ class DynamicIsland(QWidget):
         self._card_box.show()
         self._sync_card_labels()
         self._animate_to(self._target_rect())
-        self._card_collapse_timer.start()
+        self._sync_collapse_timer()
         self.card_expanded.emit()
+
+    # ------------------------------------------------------------ 最近的对话
+    def set_session_history(self, rows, *, is_open: bool | None = None,
+                            max_rows: int | None = None) -> None:
+        """卡片里的「最近的对话」：``rows`` 见 ``island_history_panel``；空 = 不显示。
+
+        ``is_open`` 给了就把折叠状态设成它（恢复上次的状态，不回发 ``history_toggled``）；
+        ``max_rows`` 给了就改列表最多露几行。
+        """
+        panel = self._history_panel
+        if max_rows is not None:
+            panel.set_max_visible(max_rows)
+        panel.set_rows(rows)
+        if is_open is not None:
+            panel.set_open(is_open)
+        panel.setVisible(bool(rows))
+        self._sync_collapse_timer()
+        self._refresh()
+
+    def show_history_status(self, text: str) -> None:
+        self._history_panel.show_status(text)
+
+    def _on_history_toggled(self, is_open: bool) -> None:
+        self._sync_collapse_timer()
+        self._refresh()                      # 卡片高度跟着列表长 / 缩
+        self.history_toggled.emit(bool(is_open))
+
+    def _sync_collapse_timer(self) -> None:
+        """卡片的自动收起计时：「最近的对话」开着时不计（用户正在列表里找）。"""
+        if self._mode != "expanded":
+            return
+        panel = self._history_panel
+        if panel.is_open() and not panel.isHidden():
+            self._card_collapse_timer.stop()
+        else:
+            self._card_collapse_timer.start()
 
     def collapse_card(self, *, animate: bool = True) -> None:
         """收起卡片；配置为停靠边时收回细条。拖拽起手时 animate=False
@@ -825,38 +925,19 @@ class DynamicIsland(QWidget):
             info = True
         return icon, name, info, status
 
+    def _info_mode(self) -> str:
+        """信息槽显示什么：``usage_today``（今日用量）或 ``time``（当前时间）。
+
+        旧配置里的 ``balance_tier`` / ``balance`` / ``custom`` 已去掉，一律按时间。
+        """
+        return "usage_today" if str(self._cfg.get("info_mode") or "") == "usage_today" else "time"
+
     def _info_text(self) -> str:
-        mode = str(self._cfg.get("info_mode") or "time")
-        if mode == "custom":
-            return str(self._cfg.get("custom_text") or "").strip() or "自定义"
-        if mode == "balance_tier":
-            return self._balance_tier_display_text()
-        if mode == "balance":
-            return self._balance_text
+        if self._info_mode() == "usage_today":
+            return self._usage_text
         from PySide6.QtCore import QTime
 
         return QTime.currentTime().toString("HH:mm")
-
-    def _info_color(self, fallback: QColor) -> QColor:
-        """余额峰谷信息槽跟随设置的峰谷提示颜色开关。
-
-        开启后高峰显示红色、低谷显示绿色；关闭或非余额峰谷模式使用普通次文字色。
-        """
-        if str(self._cfg.get("info_mode") or "time") != "balance_tier":
-            return fallback
-        if not bool(self.config.get("balance_tier_color_enabled", True)):
-            return fallback
-        try:
-            from . import balance as balance_mod
-
-            tier = balance_mod.deepseek_pricing_tier()
-        except Exception:
-            return fallback
-        if tier == "peak":
-            return QColor("#e5484d")
-        if tier == "idle":
-            return QColor("#30a46c")
-        return fallback
 
     def _character_name(self) -> str:
         character_id = str(self.config.get("character", catalog.DEFAULT_CHARACTER))
@@ -941,7 +1022,7 @@ class DynamicIsland(QWidget):
     def _capsule_width(self) -> int:
         icon, name, info, status = self._visible_parts()
         fm = self.fontMetrics()
-        # 左右边距各 16px，让状态灯到右边界的距离与图标到左边界的距离一致。
+        # 左右边距各 16px，让连接图标到右边界的距离与图标到左边界的距离一致。
         width = 32
         if icon:
             width += 28 + 8
@@ -950,7 +1031,9 @@ class DynamicIsland(QWidget):
         if info:
             width += fm.horizontalAdvance(self._info_text()) + 8
         if status:
-            width += 10
+            for _tone, text in self._session_counts:
+                width += fm.horizontalAdvance(text) + 8
+            width += _LINK_ICON_W
         return max(120, width + _CAPSULE_INSET * 2)
 
     def _update_size(self) -> None:
@@ -960,8 +1043,17 @@ class DynamicIsland(QWidget):
     def _rest_size(self) -> QSize:
         width = self._capsule_width()
         if self._mode == "expanded":
-            return QSize(max(width, _CARD_WIDTH), _CAPSULE_HEIGHT + _CARD_HEIGHT)
+            return QSize(max(width, _CARD_WIDTH), _CAPSULE_HEIGHT + self._card_height())
         return QSize(width, _CAPSULE_HEIGHT)
+
+    def _card_width(self) -> int:
+        """展开后的窗口宽度：卡片最窄 ``_CARD_WIDTH``，胶囊更宽时跟胶囊走。"""
+        return max(self._capsule_width(), _CARD_WIDTH)
+
+    def _card_height(self) -> int:
+        """卡片高度：默认 ``_CARD_HEIGHT``；标题 / 详情折成多行时按内容长高。"""
+        # 三行文字都是排好的显式多行（不靠 QLabel 自动换行），布局的 sizeHint 就是真实所需
+        return max(_CARD_HEIGHT, self._card_box.layout().sizeHint().height())
 
     def _apply_fixed_size(self) -> None:
         size = self._rest_size()
@@ -1123,12 +1215,37 @@ class DynamicIsland(QWidget):
         c.setAlpha(max(c.alpha(), 215))
         return c
 
-    def _status_dot_color(self) -> QColor:
-        if self._agent_active:
-            return QColor(64, 150, 255)
-        if self._pet_visible:
-            return QColor(80, 220, 120)
-        return QColor(130, 140, 155)
+    def _status_color(self) -> QColor:
+        """连接图标（停靠细条里是圆点）的颜色：只表达对话 API 的状态。"""
+        return QColor(_API_STATUS_COLORS[self._api_state])
+
+    def _paint_link_icon(self, painter: QPainter, x: float, y: float) -> None:
+        """「链接」图标：两个半环；连通时中间一横，断开时换成一道斜杠。
+
+        形状也跟着状态变——红绿色弱的人不靠颜色也分得清。
+        """
+        w, h, stroke = float(_LINK_ICON_W), float(_LINK_ICON_H), 1.8
+        top, bottom, mid = y + stroke / 2, y + h - stroke / 2, y + h / 2
+        diameter = h - stroke
+        path = QPainterPath()
+        path.moveTo(x + w * 0.40, top)
+        path.arcTo(QRectF(x + stroke / 2, top, diameter, diameter), 90, 180)
+        path.lineTo(x + w * 0.40, bottom)
+        path.moveTo(x + w * 0.60, top)
+        path.arcTo(QRectF(x + w - stroke / 2 - diameter, top, diameter, diameter), 90, -180)
+        path.lineTo(x + w * 0.60, bottom)
+        if self._api_state == "ok":
+            path.moveTo(x + w * 0.32, mid)
+            path.lineTo(x + w * 0.68, mid)
+        elif self._api_state == "bad":
+            path.moveTo(x + w * 0.62, y - 2)
+            path.lineTo(x + w * 0.38, y + h + 2)
+        pen = QPen(self._status_color(), stroke)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -1214,7 +1331,7 @@ class DynamicIsland(QWidget):
             painter.drawRoundedRect(QRectF(rect.width() - 2, 6, 2, rect.height() - 12), 1, 1)
 
         dot_size = 8
-        painter.setBrush(self._status_dot_color())
+        painter.setBrush(self._status_color())
         if edge in ("left", "right"):
             # 竖条：上方角色图标、下方状态点。头像走 drawPixmap（不碰文字栈）；
             # emoji 文字模式维持原小字号（11px）防裁切；auto 模式 provider 没
@@ -1233,7 +1350,7 @@ class DynamicIsland(QWidget):
                     QRectF(0, 8, rect.width(), fm.height()),
                     Qt.AlignmentFlag.AlignCenter, self._icon_text())
                 painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._status_dot_color())
+            painter.setBrush(self._status_color())
             painter.drawEllipse(QRectF(
                 (rect.width() - dot_size) / 2, rect.height() - dot_size - 8,
                 dot_size, dot_size))
@@ -1243,7 +1360,7 @@ class DynamicIsland(QWidget):
                 dot_size, dot_size))
 
     def _content_cache(self) -> QPixmap:
-        """内容层（图标/名称/信息/状态灯）的缓存位图。
+        """内容层（图标/名称/信息/状态区）的缓存位图。
 
         为什么缓存（拖岛扫鱼实测定案）：paintEvent 均值 6.2ms，大头是 CJK
         文字的 shaping/回退字体解析；而内容只在刷新（时间跳变/余额刷新/
@@ -1255,7 +1372,7 @@ class DynamicIsland(QWidget):
         """
         icon, name, info, status = self._visible_parts()
         _background, primary_color, secondary_color = self._style_palette()
-        info_color = self._info_color(secondary_color)
+        info_color = secondary_color
         dpr = self.devicePixelRatioF()
         key = (
             icon, name, info, status,
@@ -1265,7 +1382,7 @@ class DynamicIsland(QWidget):
             self._accent_color().name() if icon else "",
             primary_color.name() if name else "",
             info_color.name() if info else "",
-            self._status_dot_color().name() if status else "",
+            (self._api_state, tuple(self._session_counts), secondary_color.name()) if status else (),
             self.font().toString(), dpr, self.width(),
         )
         if self._content_pixmap is not None and self._content_cache_key == key:
@@ -1327,11 +1444,17 @@ class DynamicIsland(QWidget):
             )
             x += self.fontMetrics().horizontalAdvance(info_text) + 8
         if status:
-            dot_size = 10
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._status_dot_color())
-            painter.drawEllipse(QRectF(x, (_CAPSULE_HEIGHT - dot_size) / 2, dot_size, dot_size))
-            x += dot_size + 12
+            for tone, text in self._session_counts:
+                painter.setPen(QColor(_SESSION_COUNT_COLORS[tone]) if tone in _SESSION_COUNT_COLORS
+                               else secondary_color)
+                advance = self.fontMetrics().horizontalAdvance(text)
+                painter.drawText(
+                    QRectF(x, 0, advance, _CAPSULE_HEIGHT),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    text,
+                )
+                x += advance + 8
+            self._paint_link_icon(painter, x, (_CAPSULE_HEIGHT - _LINK_ICON_H) / 2)
         painter.end()
         self._content_pixmap = pm
         self._content_cache_key = key
@@ -1381,7 +1504,7 @@ class DynamicIsland(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)
 
-        # 内容层（图标/名称/信息/状态灯）：缓存位图 blit——文字逐帧重画是
+        # 内容层（图标/名称/信息/状态区）：缓存位图 blit——文字逐帧重画是
         # 实测大头（见 _content_cache）；内容绝不参与形变，口径与原"按未
         # 形变静止位绘制"一致
         painter.drawPixmap(0, 0, self._content_cache())
@@ -1392,7 +1515,6 @@ class DynamicIsland(QWidget):
         隐藏态零定时器空转。"""
         super().hideEvent(event)
         self._info_timer.stop()
-        self._tier_tick_timer.stop()
         self._anim_timer.stop()
         self._dock_back_timer.stop()
         self._card_collapse_timer.stop()
@@ -1403,7 +1525,6 @@ class DynamicIsland(QWidget):
         super().showEvent(event)
         self._finish_animations()
         self._info_timer.start()
-        self._schedule_next_balance_tier_refresh()
         self._refresh()
         # 原生窗口此刻已就绪；再延迟一拍重申一次 topmost——show 期间 Qt 还在
         # 收尾窗口排序，它可能覆盖同步那次（口径同 legacy window.py showEvent）
