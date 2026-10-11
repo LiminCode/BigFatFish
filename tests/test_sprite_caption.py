@@ -108,6 +108,29 @@ def test_caption_text_layout_is_measured_once_per_text(monkeypatch):
     assert len(calls) == 2
 
 
+def test_caption_is_rendered_once_and_blitted_afterwards():
+    """胶囊 + 文字只渲染一次，之后每帧贴图。
+
+    实机 py-spy（6 只会话小鱼，144Hz）：每帧 drawRoundedRect + drawText 约占 GUI
+    线程 11%，即每只约 1.8% 的单核。
+    """
+    sprite = _sprite("dsh-pet · 写代码中")
+    _painted(sprite)
+    first = sprite.caption_pixmap()
+    assert first is not None and not first.isNull()
+    for _ in range(3):
+        _painted(sprite)
+    sprite.set_pos(sprite.pos + type(sprite.pos)(40, 0))
+    _painted(sprite)
+    assert sprite.caption_pixmap().cacheKey() == first.cacheKey(), "文本没变就不重画"
+
+    sprite.caption = "dsh-pet · 休息中"
+    _painted(sprite)
+    assert sprite.caption_pixmap().cacheKey() != first.cacheKey()
+    sprite.caption = ""
+    assert sprite.caption_pixmap() is None
+
+
 def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():
     assert _sprite("").caption_rect() == QRect()
     sprite = _sprite("x")

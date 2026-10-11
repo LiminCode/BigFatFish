@@ -110,6 +110,7 @@ class PetSprite(QObject):
         self.caption = ""
         self.caption_below = False       # False = 身体框上方；True = 下方
         self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
+        self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr) → 胶囊贴图
         self.pos = QPointF(0, 0)
         self.set_pos(pos if pos is not None else QPointF(0, 0))
         self._clip = None
@@ -1044,22 +1045,42 @@ class PetSprite(QObject):
         """标签胶囊在 overlay 局部坐标系下的矩形（无标签为空矩形）。"""
         return self._caption_layout()[0]
 
-    def _paint_caption(self, painter: QPainter) -> None:
+    def caption_pixmap(self) -> QPixmap | None:
+        """标签胶囊的贴图（含文字）；无标签为 None。
+
+        胶囊每帧都要上屏，但内容只在文本 / 尺寸 / DPR 变化时才变：渲染一次缓存
+        成贴图，之后 ``drawPixmap``。
+        """
         pill, text = self._caption_layout()
         if pill.isEmpty():
-            return
-        painter.save()
+            return None
+        key = (text, pill.width(), pill.height(), self._dpr)
+        cached = self._caption_pixmap_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        dpr = self._dpr
+        width, height = pill.width(), pill.height()
+        pixmap = QPixmap(max(1, int(round(width * dpr))), max(1, int(round(height * dpr))))
+        pixmap.setDevicePixelRatio(dpr)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(24, 28, 36, 200))
-            radius = pill.height() / 2
-            painter.drawRoundedRect(pill, radius, radius)
+            painter.drawRoundedRect(QRectF(0, 0, width, height), height / 2, height / 2)
             painter.setFont(self._caption_text_cache[2])
             painter.setPen(QColor(255, 255, 255))
-            painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
+            painter.drawText(QRect(0, 0, width, height), int(Qt.AlignmentFlag.AlignCenter), text)
         finally:
-            painter.restore()
+            painter.end()
+        self._caption_pixmap_cache = (key, pixmap)
+        return pixmap
+
+    def _paint_caption(self, painter: QPainter) -> None:
+        pixmap = self.caption_pixmap()
+        if pixmap is not None:
+            painter.drawPixmap(self.caption_rect().topLeft(), pixmap)
 
     def alpha_at(self, local: QPoint | QPointF) -> int:
         """sprite 局部**逻辑**坐标处的 alpha（0-255）。镜像已烘焙进缓存帧，无需再翻转。
