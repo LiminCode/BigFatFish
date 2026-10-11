@@ -57,8 +57,15 @@ _dp_pick() {
     esac
     case $_dp_v in *[!A-Za-z0-9_.:-]*) _dp_v= ;; esac
 }
+_dp_raw() {
+    case $_dp_in in
+        *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;
+        *) _dp_v= ;;
+    esac
+}
 _dp_pick session_id
-_dp_rec="\"sessionId\":\"$_dp_v\""
+_dp_sid=$_dp_v
+_dp_rec="\"sessionId\":\"$_dp_sid\""
 case ${DSH_PET_EVENT:-} in
     PreToolUse|PostToolUse|PostToolUseFailure)
         _dp_pick tool_name
@@ -72,6 +79,28 @@ _dp_ts=${EPOCHREALTIME:-}
 case $_dp_ts in *,*) _dp_ts="${_dp_ts%,*}.${_dp_ts#*,}" ;; esac
 { printf '{"ts":%s,"agent":"%s","event":"%s",%s}\n' \
     "$_dp_ts" "${DSH_PET_AGENT:-claude}" "${DSH_PET_EVENT:-unknown}" "$_dp_rec" >> "$DSH_PET_OUT"; } 2>/dev/null || :
+# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + transcript 里最后一个
+# ai-title。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
+# 不连累上面的事件行。截到第一个反斜杠为止，所以片段里不会剩转义序列。
+case ${DSH_PET_EVENT:-} in
+    UserPromptSubmit|Stop)
+        _dp_raw cwd
+        _dp_proj=${_dp_v##*/}; _dp_proj=${_dp_proj##*\\}
+        _dp_raw transcript_path
+        _dp_path=$_dp_v; _dp_title=
+        if [ -n "$_dp_path" ]; then
+            # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
+            [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
+            _dp_tail=$(tail -c 131072 "$_dp_path" 2>/dev/null)
+            case $_dp_tail in
+                *'"aiTitle":"'*)
+                    _dp_title=${_dp_tail##*\"aiTitle\":\"}
+                    _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
+            esac
+        fi
+        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s"}\n' \
+            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
+esac
 """
 
 # Windows 上没有 Git Bash 时的回退（Claude Code 这时用 PowerShell 跑 hook）。

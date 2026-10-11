@@ -129,6 +129,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 - **多会话收敛**（`ClaudeSessionTracker`）：按 `sessionId` 分别记「忙 / 不忙」，Agent 级状态 = 任一会话在忙。一个会话收工而别的还在忙时只弹一条提示，不切待机；最后一个会话收工才走完整的完成流程。
 - **与 §2.4 通用映射的差异**：`PostToolUseFailure` 算 `working`（工具失败后回合照常继续，回合失败是 `StopFailure`）；`SessionStart` 不产生状态（自动压缩上下文会在回合中途触发它）；非忙状态只在该会话此前确实在忙时才上报。
 - **等待批准**：`Notification` 且 `ntype` 为 `permission_prompt` / `elicitation_dialog` → 挂一条常驻提示；同一会话的下一个事件到来即视为已答复（Claude Code 没有「用户已答复」事件）。`ntype: idle_prompt` 用来释放被 Esc 打断的会话（打断不发 `Stop`）。
+- **会话标签（`SessionMeta`）**：`UserPromptSubmit` 与 `Stop` 两个回合边界上，脚本在事件行之后再追加一行 `{"event":"SessionMeta","sessionId":…,"project":…,"title":…}`。`project` 是工作目录的最后一段；`title` 是 transcript（hook 输入的 `transcript_path`）末尾 128KB 里最后一个 `ai-title` 条目的标题，取不到为空。两个值都是原样截出的 JSON 字符串片段，截到第一个反斜杠为止（不带转义序列）；单独成行是为了拼坏时只丢这一行。这是脚本里唯一的额外开销：每回合两次、各一次 `tail`（实测 Git Bash +55ms、WSL +5ms，2026-10-10，3MB transcript）；工具事件不读 transcript。
 - **事件文件归桌宠所有**：启动时先建好空文件（避免首批事件被防回放跳过）；超过约 1MB 且没有会话在忙时由读方清空——写方是 shell 脚本，没法自己轮转（§2.5 第 3 条的例外）。
 - **WSL**：只支持默认发行版。读写发行版内的 settings.json 不走 `\\wsl.localhost` 共享（经共享原子替换会把文件权限重置成 644），而是在发行版内写临时文件、照抄原权限再 `mv`。所有 `wsl.exe` 调用都在后台线程并带 `CREATE_NO_WINDOW`。
 
@@ -188,6 +189,6 @@ printf '{"ts": %s, "state": "idle"}\n' "$(date +%s)" >> ~/.gemini/pet-events.jso
 
 1. **默认全关**：所有 Agent 联动开关默认关闭，用户显式勾选才启动。
 2. **不访问外网**：联动链路只碰本地文件/本地数据库，以及本机回环（`127.0.0.1`）端口探活；任何一方不得向外网发起网络请求。
-3. **只存元数据**：事件文件只有状态/事件名/工具名/错误码/身份标识，绝不写截图、代码内容、命令全文、消息正文（DSH 桥接自 2026-10 起连截断后的正文/命令/参数指纹/结果摘要也不再落盘）。有意的例外：错误摘要（`errorMessage`，截断 300 字）与问题正文（`question/requested` 的 `questions`，agent 生成的待选问题）——前者是排障所必需，后者是气泡提示的内容本体。
+3. **只存元数据**：事件文件只有状态/事件名/工具名/错误码/身份标识，绝不写截图、代码内容、命令全文、消息正文（DSH 桥接自 2026-10 起连截断后的正文/命令/参数指纹/结果摘要也不再落盘）。有意的例外：错误摘要（`errorMessage`，截断 300 字）与问题正文（`question/requested` 的 `questions`，agent 生成的待选问题）——前者是排障所必需，后者是气泡提示的内容本体；以及 Claude Code 通道的 `SessionMeta`（项目文件夹名与会话标题，见 §3.1）——会话小鱼的标签要用它来区分会话。会话标题是对话内容的摘要：WSL 通道的标题会随事件文件落到 Windows 侧。
 4. **写外部配置必须先弹窗**：任何向 Agent 配置（如 `~/.claude/settings.json`、dsh profiles）注入内容的操作，必须先经用户确认，且卸载时只清理带本桌宠标记的条目。
 5. **自定义通道只读**：`custom_agents` 仅监听用户指定的文件，不创建目录、不写任何外部位置。

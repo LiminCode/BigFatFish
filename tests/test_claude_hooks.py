@@ -144,6 +144,87 @@ def test_hook_command_quotes_awkward_paths(tmp_path):
     assert records and records[0]["event"] == "Stop"
 
 
+# ---------------------------------------------------------------- 会话标签字段（SessionMeta）
+
+def _transcript(tmp_path: Path, *titles: str, filler: int = 0) -> Path:
+    """仿 Claude Code transcript：正文行之间夹着反复追加的 ``ai-title`` 条目。"""
+    path = tmp_path / "transcript dir" / "session.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps({"type": "user", "message": {"content": "secret prompt body"}})]
+    for title in titles:
+        lines.append(json.dumps({"type": "ai-title", "aiTitle": title, "sessionId": "s"},
+                                ensure_ascii=False, separators=(",", ":")))
+        lines.append(json.dumps({"type": "assistant", "message": {"content": "x" * filler}}))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _meta_payload(event: str, transcript: Path | None, cwd: str) -> str:
+    return json.dumps({
+        "session_id": "e0a4f9a8-e0da-4be1-8b25-839ee25b8372",
+        "transcript_path": str(transcript) if transcript else "",
+        "cwd": cwd,
+        "hook_event_name": event,
+        "prompt": "do the secret thing",
+    }, separators=(",", ":")) + "\n"
+
+
+def test_turn_boundaries_record_project_and_latest_session_title(tmp_path):
+    """会话小鱼的标签要用：项目文件夹名 + transcript 里**最后**一个 ai-title。"""
+    transcript = _transcript(tmp_path, "旧标题", "Fix login redirect loop")
+    cwd = str(tmp_path / "my project")
+
+    records = _run_hook(tmp_path, "Stop", _meta_payload("Stop", transcript, cwd))
+
+    assert [r["event"] for r in records] == ["Stop", "SessionMeta"], "元数据单独成行，排在事件之后"
+    meta = records[1]
+    assert meta["sessionId"] == "e0a4f9a8-e0da-4be1-8b25-839ee25b8372"
+    assert meta["project"] == "my project"
+    assert meta["title"] == "Fix login redirect loop"
+    raw = (tmp_path / "claude.jsonl").read_text(encoding="utf-8")
+    assert "secret" not in raw, "对话正文不许落盘"
+
+
+def test_session_title_survives_non_ascii_and_a_large_transcript(tmp_path):
+    transcript = _transcript(tmp_path, "修复登录跳转", filler=50_000)
+    meta = _run_hook(tmp_path, "UserPromptSubmit",
+                     _meta_payload("UserPromptSubmit", transcript, "/home/u/proj"))[1]
+    assert meta["title"] == "修复登录跳转" and meta["project"] == "proj"
+
+
+def test_meta_falls_back_to_project_only_without_a_title(tmp_path):
+    """首次提问时 transcript 里还没有标题（甚至文件都还没有）：只给项目名。"""
+    for transcript in (None, tmp_path / "missing.jsonl", _transcript(tmp_path)):
+        out = tmp_path / "claude.jsonl"
+        if out.exists():
+            out.unlink()
+        records = _run_hook(tmp_path, "UserPromptSubmit",
+                            _meta_payload("UserPromptSubmit", transcript, "/home/u/proj"))
+        assert records[0]["event"] == "UserPromptSubmit"
+        assert records[1]["project"] == "proj" and records[1]["title"] == ""
+
+
+def test_title_with_escapes_never_breaks_the_event_line(tmp_path):
+    """标题里有引号 / 反斜杠：宁可截短，也不能拼出坏行——更不能连累 Stop 本身。"""
+    transcript = _transcript(tmp_path, 'Rename "foo" to bar\\baz')
+    records = _run_hook(tmp_path, "Stop", _meta_payload("Stop", transcript, "/home/u/proj"))
+    assert records[0]["event"] == "Stop"
+    assert records[1]["title"] == "Rename "
+
+
+def test_tool_events_do_not_touch_the_transcript(tmp_path):
+    """高频事件保持零额外开销：不读 transcript，不写 SessionMeta。"""
+    transcript = _transcript(tmp_path, "Some title")
+    stdin = json.dumps({"session_id": "s1", "transcript_path": str(transcript), "cwd": "/p",
+                        "hook_event_name": "PreToolUse", "tool_name": "Bash"},
+                       separators=(",", ":")) + "\n"
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Notification"):
+        out = tmp_path / "claude.jsonl"
+        if out.exists():
+            out.unlink()
+        assert [r["event"] for r in _run_hook(tmp_path, event, stdin)] == [event]
+
+
 # ---------------------------------------------------------------- settings.json 合并
 
 def _entries(marker: str = "new") -> dict:
