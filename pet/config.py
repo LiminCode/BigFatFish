@@ -231,6 +231,8 @@ def _default_agent_link_data() -> dict:
     return {
         "dsh": False,
         "claude": False,
+        # WSL 发行版里的 Claude Code（仅 Windows 有意义；与本机那份是两个独立通道）
+        "claude_wsl": False,
         "cursor": False,
         "opencode": False,
         # 自定义联动 Agent（协议见 docs/AGENT_LINK_PROTOCOL.md §4）：只读监听
@@ -272,7 +274,7 @@ def _clean_click_sound_pack(value: Any) -> dict:
 
 
 # 内置联动 Agent 键：custom_agents 的 key 不得与之重复
-_AGENT_LINK_BUILTIN_KEYS = ("dsh", "claude", "cursor", "opencode")
+_AGENT_LINK_BUILTIN_KEYS = ("dsh", "claude", "claude_wsl", "cursor", "opencode")
 # 自定义联动 Agent 条目上限（防配置文件被塞爆）
 _CUSTOM_AGENT_MAX = 8
 
@@ -336,6 +338,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
     for key in (
         "dsh",
         "claude",
+        "claude_wsl",
         "cursor",
         "opencode",
         "sound_enabled",

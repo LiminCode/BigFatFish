@@ -39,6 +39,7 @@ from PySide6.QtCore import QCoreApplication, QObject, QTimer, Signal
 from PySide6.QtWidgets import QMessageBox
 
 from . import agent_cost as agent_cost_mod
+from . import claude_hooks
 from . import harness_launcher
 from .click_sound import play_sound, resolve_builtin_sound
 from .agent_event_protocol import parse_agent_event
@@ -1326,6 +1327,9 @@ class BaseAgentMonitor(QObject):
     question_resolved = Signal(str, object)   # (agent_key, payload) —— 问题已解决，气泡应消失
     cordis_requested = Signal(str, object)
     cordis_resolved = Signal(str, object)
+    # 多会话 Agent 的一个会话收工、但同 Agent 还有别的会话在忙：(agent_key, payload)。
+    # 只该弹一条提示——Agent 级状态仍是忙，不进状态机（见 ClaudeSessionTracker）。
+    session_done = Signal(str, object)
     # 原始桥接记录转发（供对话上下文记忆 / 交互生命周期兜底等消费）：(agent_key, record)
     # 只挂 DSH 监视器；其他 Agent（claude/cursor/…）不产生这类增强记录。
     raw_record = Signal(str, object)
@@ -1669,12 +1673,16 @@ class BaseAgentMonitor(QObject):
                     and meta_type != "session/meta"
                 ):
                     self._emit(self.unknown_bridge_event, (self.agent_key, data))
-                normalized = normalize_event_state(ev, st)
-                if not normalized:
-                    continue  # 不认识的事件类型：忽略，不误报为 working
-                self._emit_state(normalized, emit_gen)
+                self._dispatch_state(data, ev, st, emit_gen)
             except Exception:
                 log.debug("桥接记录处理失败，跳过该行", exc_info=True)
+
+    def _dispatch_state(self, data: dict, ev: str, st: str, gen: int) -> None:
+        """一条记录 → 状态信号。默认按通用映射逐条上报；需要跨记录收敛的监视器
+        （ClaudeCodeMonitor 的多会话记账）覆写它。"""
+        normalized = normalize_event_state(ev, st)
+        if normalized:  # 不认识的事件类型：忽略，不误报为 working
+            self._emit_state(normalized, gen)
 
 # ----------------------------------------------------------------------
 # 各 Agent 具体监视器实现
@@ -2065,30 +2073,45 @@ class DshMonitor(BaseAgentMonitor):
 
 
 class ClaudeCodeMonitor(BaseAgentMonitor):
-    """Claude Code 监视器。
-    通过 .claude/settings.json 注入官方 hooks（PreToolUse/Stop 等）将事件追加写入。
+    """Claude Code 监视器（本机通道 ``claude`` 与 WSL 通道 ``claude_wsl`` 共用）。
 
-    实现要点（终审修订）：
+    通过 ``~/.claude/settings.json`` 注入官方 hooks，hook 把事件追加写进
+    ``agent-events/<agent_key>.jsonl``。脚本、settings 合并、WSL 读写、多会话收敛的
+    纯逻辑都在 ``pet/claude_hooks.py``，本类只做 Qt 侧接线。
+
+    实现要点：
     - settings.json 的 hooks 必须是「数组对象」格式：
       {"PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "..."}]}]}
       写成字符串 Claude Code 不识别；
-    - hook 命令不依赖 sys.executable（PyInstaller 打包后它是桌宠 exe，不能跑 -c）：
-      Windows 用落地到 agent-events 目录的 PowerShell 脚本，其他平台用 Python 脚本；
-    - 注入/卸载都以脚本文件名 claude_event_hook 为标记，只动自己的条目，
-      用户已有的其他 hooks 条目原样保留。
+    - hook 命令不依赖 sys.executable（PyInstaller 打包后它是桌宠 exe，不能跑 -c），
+      也不起任何解释器：source 一段只用 shell 内建命令的 sh 脚本。Windows 上
+      Claude Code 用 Git Bash 跑 hook；找不到 Git Bash 才回退到 PowerShell 脚本；
+    - 注入/卸载只动带 ``x-dsh-pet`` 标记的条目，用户已有的其他 hooks 条目原样保留；
+    - 同一 Claude Code 的多个会话写同一个事件文件：按 ``sessionId`` 记账后收敛成
+      一个 Agent 级状态（``ClaudeSessionTracker``），一个会话收工不等于全部收工；
+    - 事件文件归本桌宠所有：启动时先建好（tailer 对首次见到的文件会跳到末尾防
+      回放，文件若由第一条事件创建，那一批事件就被跳掉了），超过约 1MB 且没有会话
+      在忙时清空（hook 是 shell 脚本，没法自己轮转）。
     """
 
-    HOOK_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SessionStart", "UserPromptSubmit")
+    HOOK_EVENTS = claude_hooks.HOOK_EVENTS
     HOOK_MARKER = "claude_event_hook"  # 识别本桌宠注入条目的标记
-    HOOK_FLAG = "x-dsh-pet"            # 结构化字段标识
+    HOOK_FLAG = claude_hooks.HOOK_FLAG  # 结构化字段标识
+    _TRIM_BYTES = 1_000_000
 
-    def start(self) -> None:
+    def __init__(self, agent_key: str, config_dir: Path, parent=None) -> None:
+        super().__init__(agent_key, config_dir, parent)
+        self._sessions = claude_hooks.ClaudeSessionTracker()
+
+    def start(self) -> bool:
         """启动时刷新 hook 脚本（脚本整体归本桌宠所有，升级版本自动覆盖旧版）。"""
         try:
             self._ensure_hook_script(self.events_file)
+            self.events_file.touch(exist_ok=True)
         except Exception as exc:
             log.debug("刷新 Claude hook 脚本失败: %s", exc)
-        super().start()
+        self._sessions.reset()
+        return super().start()
 
     @staticmethod
     def get_settings_path() -> Path:
@@ -2103,81 +2126,33 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
 
     @classmethod
     def _ensure_hook_script(cls, events_file: Path) -> tuple[Path, str]:
-        """把事件写入脚本落地到 events_file 同目录，返回 (脚本路径, 命令模板)。
-        命令模板中 {script} 为脚本路径占位符、{event} 为事件名占位符。"""
-        if sys.platform == "win32":
-            script = events_file.parent / "claude_event_hook.ps1"
-            # PowerShell 脚本：不依赖任何 Python 环境，打包版同样可用。
-            # 注意：以下为普通字符串（非 f-string），{0}/{1}/{2} 是 PowerShell -f 的占位符。
-            # stdin 读取 Claude Code 传入的 JSON（含 tool_name）；未重定向时跳过绝不阻塞。
-            events_file.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(
-                "param([string]$EventName = 'unknown')\n"
-                "$tool = ''\n"
-                "if ([Console]::IsInputRedirected) {\n"
-                "  try {\n"
-                "    $raw = [Console]::In.ReadToEnd()\n"
-                "    if ($raw) { $j = $raw | ConvertFrom-Json -ErrorAction Stop; if ($j.tool_name) { $tool = [string]$j.tool_name } }\n"
-                "  } catch {}\n"
-                "}\n"
-                "$file = Join-Path $PSScriptRoot 'claude.jsonl'\n"
-                "$rec = [ordered]@{ ts = [DateTimeOffset]::Now.ToUnixTimeMilliseconds() / 1000.0; agent = 'claude'; event = $EventName }\n"
-                "if ($tool) { $rec['tool'] = $tool }\n"
-                "# ConvertTo-Json 负责全部转义，不手工拼 JSON（tool_name 含引号/控制字符也安全）\n"
-                "Add-Content -Path $file -Value ($rec | ConvertTo-Json -Compress) -Encoding UTF8\n",
-                encoding="utf-8",
-            )
-            cmd_tmpl = (
-                'powershell -NoProfile -ExecutionPolicy Bypass -File "{script}" {event}'
-            )
-        else:
-            script = events_file.parent / "claude_event_hook.py"
-            events_file.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(
-                "import json, sys, time\n"
-                "from pathlib import Path\n"
-                "event = sys.argv[1] if len(sys.argv) > 1 else 'unknown'\n"
-                "tool = ''\n"
-                "try:\n"
-                "    if not sys.stdin.isatty():\n"
-                "        raw = sys.stdin.read()\n"
-                "        if raw.strip():\n"
-                "            tool = str(json.loads(raw).get('tool_name') or '')\n"
-                "except Exception:\n"
-                "    pass\n"
-                "out = Path(__file__).with_name('claude.jsonl')\n"
-                "rec = {'ts': time.time(), 'agent': 'claude', 'event': event}\n"
-                "if tool:\n"
-                "    rec['tool'] = tool\n"
-                "with out.open('a', encoding='utf-8') as f:\n"
-                "    f.write(json.dumps(rec, ensure_ascii=False) + '\\n')\n",
-                encoding="utf-8",
-            )
-            # 源码运行时 sys.executable 是 Python；打包（frozen）时退化为 python3
-            exe = sys.executable if not getattr(sys, "frozen", False) else "python3"
-            cmd_tmpl = f'"{exe}" "{{script}}" {{event}}'
-        return script, cmd_tmpl
+        """把事件写入脚本落地到 events_file 同目录，返回 (脚本路径, 本机命令模板)。
+        命令模板中 {event} 为事件名占位符；Agent 名取事件文件名（claude / claude_wsl）。"""
+        agent = events_file.stem
+        script = events_file.parent / claude_hooks.HOOK_SCRIPT_NAME
+        claude_hooks.write_hook_script(script)
+        if sys.platform == "win32" and claude_hooks.find_git_bash() is None:
+            # 没有 Git Bash：Claude Code 用 PowerShell 跑 hook，sh 脚本用不上。
+            ps_script = events_file.parent / "claude_event_hook.ps1"
+            ps_script.write_text(claude_hooks.ps_hook_script_text(), encoding="utf-8")
+            return ps_script, claude_hooks.ps_hook_command(str(ps_script), agent, "{event}")
+        return script, claude_hooks.sh_hook_command(
+            script.as_posix(), events_file.as_posix(), agent, "{event}")
 
     @classmethod
-    def _build_command(cls, cmd_tmpl: str, script: Path, event: str) -> str:
-        return cmd_tmpl.replace("{script}", str(script)).replace("{event}", event)
+    def _local_entries(cls, events_file: Path) -> dict[str, dict]:
+        script, cmd_tmpl = cls._ensure_hook_script(events_file)
+        shell = None
+        if sys.platform == "win32":
+            shell = "powershell" if script.suffix == ".ps1" else "bash"
+        return {
+            name: claude_hooks.hook_entry(cmd_tmpl.replace("{event}", name), shell)
+            for name in cls.HOOK_EVENTS
+        }
 
     @classmethod
     def _is_our_hook_entry(cls, entry: Any) -> bool:
-        # 新格式认结构化字段；旧格式（早期版本注入、无标记字段）兜底认
-        # command 里的脚本文件名——老用户升级后旧条目才能被正确清理/替换。
-        if not isinstance(entry, dict):
-            return False
-        if entry.get(cls.HOOK_FLAG) is True:
-            return True
-        for h in entry.get("hooks") or []:
-            # 旧格式（早期版本注入、无标记字段）兜底：command 含本桌宠落地脚本
-            # 文件名（带扩展名，避免撞名误删用户自有条目）才认作 ours——
-            # 老用户升级后旧条目才能被正确清理/替换。
-            cmd = str(h.get("command", "")) if isinstance(h, dict) else ""
-            if "claude_event_hook.ps1" in cmd or "claude_event_hook.py" in cmd:
-                return True
-        return False
+        return claude_hooks.is_our_entry(entry)
 
     @classmethod
     def install_hooks(cls, events_file: Path) -> bool:
@@ -2185,7 +2160,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
         只移除/新增带本桌宠结构化标记的条目，用户已有 hooks 不受影响。"""
         settings_path = cls.get_settings_path()
         try:
-            script, cmd_tmpl = cls._ensure_hook_script(events_file)
+            entries = cls._local_entries(events_file)
 
             settings_path.parent.mkdir(parents=True, exist_ok=True)
             data = {}
@@ -2198,27 +2173,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
                     # 文件存在但解析失败：绝不能拿空配置覆盖用户已有配置，中止安装
                     log.warning("Claude settings.json 解析失败，中止注入（未改动原文件）: %s", exc)
                     return False
-            hooks = data.setdefault("hooks", {})
-            if not isinstance(hooks, dict):
-                hooks = {}
-                data["hooks"] = hooks
-
-            for hook_name in cls.HOOK_EVENTS:
-                # 先清掉我们以前注入的条目（幂等），保留用户自己的 hooks
-                existing = hooks.get(hook_name)
-                if isinstance(existing, list):
-                    hooks[hook_name] = [
-                        g for g in existing
-                        if not cls._is_our_hook_entry(g)
-                    ]
-                else:
-                    hooks[hook_name] = []
-                cmd = cls._build_command(cmd_tmpl, script, hook_name)
-                hooks[hook_name].append({
-                    "matcher": "",
-                    "hooks": [{"type": "command", "command": cmd}],
-                    cls.HOOK_FLAG: True,
-                })
+            claude_hooks.merge_hooks(data, entries)
             cls._write_settings_atomic(settings_path, data)
             return True
         except Exception as exc:
@@ -2233,27 +2188,106 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
             return True
         try:
             data = json.loads(settings_path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
+            if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
                 return True
-            hooks = data.get("hooks")
-            if not isinstance(hooks, dict):
-                return True
-            for hook_name in list(hooks.keys()):
-                entries = hooks.get(hook_name)
-                if isinstance(entries, list):
-                    kept = [
-                        g for g in entries
-                        if not cls._is_our_hook_entry(g)
-                    ]
-                    if kept:
-                        hooks[hook_name] = kept
-                    else:
-                        del hooks[hook_name]
+            claude_hooks.strip_hooks(data)
             cls._write_settings_atomic(settings_path, data)
             return True
         except Exception as exc:
             log.warning("移除 Claude Code hooks 失败: %s", exc)
             return False
+
+    # ------------------------------------------------------------ WSL 通道
+    @classmethod
+    def install_wsl_hooks(cls, events_file: Path, *,
+                          runner: claude_hooks.WslRunner = claude_hooks.run_wsl) -> tuple[bool, str]:
+        """把 hooks 注入 WSL 默认发行版里的 ``~/.claude/settings.json``。
+
+        返回 (是否成功, 失败原因)。**阻塞**（每步一次 wsl.exe，发行版冷启动要几秒），
+        只许在后台线程调用。脚本与事件文件都留在 Windows 侧，hook 命令里用的是它们
+        在发行版里的路径（``/mnt/c/…``）。"""
+        try:
+            script = events_file.parent / claude_hooks.HOOK_SCRIPT_NAME
+            claude_hooks.write_hook_script(script)
+            events_file.touch(exist_ok=True)
+            wsl_script = claude_hooks.to_wsl_path(script, runner=runner)
+            wsl_out = claude_hooks.to_wsl_path(events_file, runner=runner)
+            if not wsl_script or not wsl_out:
+                return False, "WSL 没有响应，或默认发行版里访问不到 Windows 盘"
+            store = claude_hooks.WslSettingsStore(runner)
+            text = store.read()
+            if text is None:
+                return False, "读不到 WSL 里的 ~/.claude/settings.json"
+            try:
+                data = json.loads(text) if text.strip() else {}
+                if not isinstance(data, dict):
+                    raise ValueError("settings.json 根节点不是对象")
+            except ValueError as exc:
+                log.warning("WSL 里的 Claude settings.json 解析失败，中止注入（未改动原文件）: %s", exc)
+                return False, "WSL 里的 settings.json 解析失败（没有改动它）"
+            entries = {
+                name: claude_hooks.hook_entry(
+                    claude_hooks.sh_hook_command(wsl_script, wsl_out, events_file.stem, name))
+                for name in cls.HOOK_EVENTS
+            }
+            claude_hooks.merge_hooks(data, entries)
+            if not store.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n"):
+                return False, "写入 WSL 里的 settings.json 失败"
+            return True, ""
+        except Exception as exc:
+            log.warning("注入 WSL Claude Code hooks 失败: %s", exc)
+            return False, str(exc) or type(exc).__name__
+
+    @classmethod
+    def uninstall_wsl_hooks(cls, *, runner: claude_hooks.WslRunner = claude_hooks.run_wsl) -> bool:
+        """移除 WSL 默认发行版里本桌宠注入的 hooks（阻塞，只许在后台线程调用）。"""
+        try:
+            store = claude_hooks.WslSettingsStore(runner)
+            text = store.read()
+            if text is None:
+                return False
+            if not text.strip():
+                return True
+            data = json.loads(text)
+            if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
+                return True
+            claude_hooks.strip_hooks(data)
+            return store.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            log.warning("移除 WSL Claude Code hooks 失败: %s", exc)
+            return False
+
+    # ------------------------------------------------------------ 多会话收敛 + 文件清理
+    def _dispatch_state(self, data: dict, ev: str, st: str, gen: int) -> None:
+        for kind, payload in self._sessions.feed(data):
+            if kind == "state":
+                self._emit_state(payload, gen)
+            elif kind == "session_done":
+                self._emit(self.session_done, (self.agent_key, payload))
+            elif kind == "approval_request":
+                self._emit(self.approval_requested, (self.agent_key, payload))
+            elif kind == "approval_resolved":
+                self._emit(self.approval_resolved, (self.agent_key, payload))
+
+    def _poll(self, gen: int | None = None) -> None:
+        super()._poll(gen)
+        self._trim_events_file()
+
+    def _trim_events_file(self) -> None:
+        """事件文件超限且已读到末尾时清空（tailer 把截断识别为新文件，从头读起）。
+
+        只在没有会话在忙时动手：截断与 hook 追加之间有极小的竞争窗口，空闲时
+        丢一条事件无关痛痒，忙时丢的可能就是 Stop。"""
+        if self._sessions.any_busy():
+            return
+        try:
+            size = self.events_file.stat().st_size
+            if size < self._TRIM_BYTES or self._tailer.offset != size:
+                return
+            with open(self.events_file, "r+b") as handle:
+                handle.truncate(0)
+        except OSError:
+            log.debug("清空 Claude 事件文件失败", exc_info=True)
 
 
 class CursorMonitor(BaseAgentMonitor):
@@ -2502,7 +2536,8 @@ class AgentLinkManager(QObject):
     dsh_user_message = Signal(str, str)
 
     # 联动气泡展示名
-    AGENT_NAMES = {"dsh": "DSH", "claude": "Claude Code", "cursor": "Cursor", "opencode": "OpenCode"}
+    AGENT_NAMES = {"dsh": "DSH", "claude": "Claude Code", "claude_wsl": "Claude Code (WSL)",
+                   "cursor": "Cursor", "opencode": "OpenCode"}
     # 过程汇报：工具名 → 用户可读文案（不展示原始命令/路径）
     TOOL_LABELS = {
         "read": "正在读文件", "write": "正在写文件", "edit": "正在改代码",
@@ -2586,6 +2621,9 @@ class AgentLinkManager(QObject):
         self.monitors: dict[str, BaseAgentMonitor] = {
             "dsh": DshMonitor("dsh", self.config_dir, self),
             "claude": ClaudeCodeMonitor("claude", self.config_dir, self),
+            # WSL 里的 Claude Code：独立通道（独立事件文件、独立开关与气泡名），
+            # 与本机那份可以同时在跑、互不串状态。
+            "claude_wsl": ClaudeCodeMonitor("claude_wsl", self.config_dir, self),
             "cursor": CursorMonitor(self.config_dir, self),
             "opencode": OpenCodeMonitor(self.config_dir, self),
             }
@@ -2618,6 +2656,7 @@ class AgentLinkManager(QObject):
             mon.activity_event.connect(self._on_agent_activity_event)
             mon.approval_requested.connect(self._on_approval_request)
             mon.approval_resolved.connect(self._on_approval_resolved)
+            mon.session_done.connect(self._on_session_done)
             mon.question_requested.connect(self._on_question_request)
             mon.question_resolved.connect(self._on_question_resolved)
             mon.cordis_requested.connect(self._on_cordis_request)
@@ -2714,6 +2753,17 @@ class AgentLinkManager(QObject):
         except RuntimeError:
             log.debug("DSH 桥接安装完成但管理器已销毁，丢弃结果")
 
+    def _install_claude_wsl_worker(self, token: int) -> None:
+        """后台线程：向 WSL 默认发行版注入 Claude Code hooks，完成后信号回主线程。"""
+        ok, msg = ClaudeCodeMonitor.install_wsl_hooks(self.monitors["claude_wsl"].events_file)
+        if token != self._install_token:
+            log.info("WSL Claude hooks 安装结果已过期，丢弃")
+            return
+        try:
+            self.install_finished.emit("claude_wsl", ok, msg, token)
+        except RuntimeError:
+            log.debug("WSL Claude hooks 安装完成但管理器已销毁，丢弃结果")
+
     def _warn_if_agent_absent(self, agent_key: str) -> None:
         """开启了联动但本机没装对应 Agent 时给用户提示（不然勾了永远没反应）。"""
         # 自定义 Agent：事件文件尚未出现时提示路径，避免"勾了没反应"的困惑
@@ -2751,6 +2801,22 @@ class AgentLinkManager(QObject):
             return
         if token is not None:
             self._install_pending.pop(agent_key, None)
+        if agent_key != "dsh":
+            # 非 DSH 的后台安装（目前只有 claude_wsl）：不借用 DSH 桥接的台词键
+            name = self.AGENT_NAMES.get(agent_key, agent_key)
+            if ok:
+                ag_cfg = dict(self.cfg.get("agent_link", {}))
+                ag_cfg[agent_key] = True
+                self.cfg.set("agent_link", ag_cfg)
+                self.cfg.save()
+                self.apply_config()
+                text = f"{name} 联动已开启～"
+            else:
+                log.warning("%s hooks 配置失败: %s", name, msg)
+                text = f"{name} 联动没开成：{msg}"
+            if hasattr(self.win, "show_bubble"):
+                self.win.show_bubble(text, duration_ms=4000 if ok else 6000)
+            return
         if ok:
             ag_cfg = dict(self.cfg.get("agent_link", {}))
             ag_cfg[agent_key] = True
@@ -2798,6 +2864,30 @@ class AgentLinkManager(QObject):
                         "hooks 配置写入失败，联动未开启。\n可查看日志了解详情。",
                     )
                     return False
+            elif agent_key == "claude_wsl":
+                res = QMessageBox.question(
+                    self.win if hasattr(self.win, "winId") else None,
+                    "开启 Claude Code (WSL) 联动",
+                    "开启联动需要在 WSL 默认发行版的 ~/.claude/settings.json 中配置事件 hooks。\n"
+                    "事件只写到本机桌宠目录，内容仅有时间、事件名、会话 ID 和工具名。\n\n"
+                    "是否允许注入 hooks 配置？（关闭联动时会自动移除）",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if res != QMessageBox.StandardButton.Yes:
+                    return False
+                # wsl.exe 每次调用上百毫秒、发行版冷启动要几秒：走后台线程，
+                # 菜单先回弹，配置完成后自动开启并气泡告知（同 DSH 安装的编排）
+                self._install_token += 1
+                token = self._install_token
+                self._install_pending["claude_wsl"] = token
+                if hasattr(self.win, "show_bubble"):
+                    self.win.show_bubble("正在配置 WSL 里的 Claude Code hooks…", duration_ms=4000)
+                import threading
+                threading.Thread(
+                    target=self._install_claude_wsl_worker, args=(token,), daemon=True,
+                    name="claude-wsl-hooks-install",
+                ).start()
+                return False
             elif agent_key == "dsh":
                 res = QMessageBox.question(
                     self.win if hasattr(self.win, "winId") else None,
@@ -2837,6 +2927,19 @@ class AgentLinkManager(QObject):
                     if hasattr(self.win, "show_bubble"):
                         name = self.AGENT_NAMES.get(agent_key, agent_key)
                         self.win.show_bubble(self._dialogue("bridge.uninstall.failed", "Claude hooks 卸载未完全成功，可手动检查 ~/.claude/settings.json", name=name), duration_ms=6000)
+            elif agent_key == "claude_wsl":
+                self._install_pending.pop("claude_wsl", None)
+                self._install_token += 1
+                if self._other_instances_enabled("claude_wsl"):
+                    log.info("其他实例仍在使用 WSL Claude 联动，保留 hooks")
+                else:
+                    # 卸载同样要调 wsl.exe：后台做，失败只记日志（hook 命令对缺失的
+                    # 脚本/目录是空操作，残留条目不会让 Claude Code 报错）
+                    import threading
+                    threading.Thread(
+                        target=ClaudeCodeMonitor.uninstall_wsl_hooks, daemon=True,
+                        name="claude-wsl-hooks-uninstall",
+                    ).start()
             elif agent_key == "dsh":
                 if self._other_instances_enabled("dsh"):
                     log.info("其他实例仍在使用 DSH 联动，保留桥接插件")
@@ -3707,6 +3810,26 @@ class AgentLinkManager(QObject):
         for iid in list(self._pending_interactions):
             if self._pending_interactions[iid].get("agent_key") == agent_key:
                 self._show_interaction_bubble(iid)
+
+    def _on_session_done(self, agent_key: str, payload: dict | None = None) -> None:
+        """多会话 Agent 的一个会话收工，但同 Agent 还有别的会话在忙。
+
+        只弹一条完成提示：Agent 级状态仍是忙，所以不切待机动画、不动 ``_last_raw``
+        （最后一个会话收工时走的才是 ``_fire_done`` 那条完整路径）。与完成气泡共用
+        冷却，两个会话前后脚收工不连弹两条。"""
+        now = self._clock()
+        if now - self._done_cooldown.get(agent_key, 0.0) < self._DONE_COOLDOWN_S:
+            return
+        self._done_cooldown[agent_key] = now
+        hidden = not hasattr(self.win, "isVisible") or not self.win.isVisible()
+        if not hidden:
+            self._emit_sound("done", agent_key)
+        name = self.agent_names.get(agent_key, agent_key)
+        self._show_link_bubble(
+            self._dialogue("done.attention", f"{name} 那边停了，结果怎么样要主人自己看一眼哦",
+                           agent_key=agent_key, name=name),
+            important=True,
+        )
 
     def _schedule_done_check(self, agent_key: str) -> None:
         self._cancel_done_check(agent_key)

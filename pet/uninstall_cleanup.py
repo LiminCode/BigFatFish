@@ -20,7 +20,8 @@ def run_uninstall_cleanup(config=None) -> dict:
     步骤：
     1. 删除当前变体开机自启项（autostart.disable）；
     2. 若无其他实例使用 Claude 联动，移除 Claude hooks（ClaudeCodeMonitor.uninstall_hooks）；
-    3. 若无其他实例使用 DSH 联动，卸载 DSH 桥接插件（DshMonitor.uninstall_bridge）。
+    3. 若无其他实例使用 DSH 联动，卸载 DSH 桥接插件（DshMonitor.uninstall_bridge）；
+    4. 若本配置开过 WSL Claude 联动且无其他实例在用，移除 WSL 发行版里的 Claude hooks。
     """
     from . import autostart
 
@@ -39,5 +40,14 @@ def run_uninstall_cleanup(config=None) -> dict:
             results[result_key] = "skipped"
         else:
             results[result_key] = bool(uninstaller())
+
+    # WSL 里的 Claude hooks：只有本配置开过这个通道才去碰（调 wsl.exe 会唤醒
+    # 发行版，没用过的用户卸载时不该为此等上几秒）。
+    agent_cfg = config.get("agent_link", {})
+    if isinstance(agent_cfg, dict) and agent_cfg.get("claude_wsl"):
+        if other_instances_use_agent(config, "claude_wsl"):
+            results["claude_wsl_hooks"] = "skipped"
+        else:
+            results["claude_wsl_hooks"] = bool(ClaudeCodeMonitor.uninstall_wsl_hooks())
 
     return results
