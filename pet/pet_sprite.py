@@ -21,7 +21,6 @@ Phase 4.1a 硬化（PHASE4_DESIGN.md D2/D3）：
 from __future__ import annotations
 
 import math
-import sys
 import time
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt
@@ -29,6 +28,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPixmap
 
 from . import catalog
 from . import physics as physics_mod
+from . import ui_fonts
 from .library import MovieLibrary, clip_current_image
 from .window_effects import (begin_rotation, end_rotation, rotated_region_bounds,
                              unrotate_point)
@@ -1010,9 +1010,9 @@ class PetSprite(QObject):
     _CAPTION_FONT_PX = 12
     _CAPTION_PAD_X = 8
     _CAPTION_PAD_Y = 3
-    # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名系统的中文 UI 字体。必须是
-    # **单族**——Windows 上多族列表会让 Qt 枚举整个字体库（见 menu_styles/common.py）。
-    _CAPTION_FONT_FAMILY = {"win32": "Microsoft YaHei UI", "darwin": "PingFang SC"}.get(sys.platform, "")
+    # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名一个含中文的字体——与气泡同一
+    # 种（等线，没装则各平台的中文 UI 字体，见 ui_fonts）。必须是**单族**。
+    _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
     #: 配色 → (底色, 字色)
     _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
     _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36))}

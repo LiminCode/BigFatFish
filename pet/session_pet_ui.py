@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from . import claude_hooks, claude_session_info, claude_session_jump
 from .claude_session_info import SessionDetail
 from .speech_bubble import BUBBLE_STYLE_PRESETS
+from .ui_fonts import apply_family
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +108,7 @@ class SessionDetailCard(QFrame):
         self._scale = _card_scale(config)
         style_id = str(config.get("self_talk_bubble_style", "classic_top") or "classic_top")
         self._preset = BUBBLE_STYLE_PRESETS.get(style_id, BUBBLE_STYLE_PRESETS["classic_top"])
+        apply_family(self)   # 与桌宠气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)

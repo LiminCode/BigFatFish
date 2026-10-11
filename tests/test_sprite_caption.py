@@ -168,8 +168,12 @@ def test_changing_the_tone_alone_rerenders_the_pill():
 
 @pytest.mark.skipif(sys.platform not in _SOFT_FONT, reason="该平台沿用 Qt 默认字体")
 def test_caption_uses_the_soft_system_cjk_font(monkeypatch):
-    """Qt 默认 UI 字体不含中文，回退到的字形发硬：直接点名系统的中文 UI 字体。"""
+    """Qt 默认 UI 字体不含中文，回退到的字形发硬：直接点名一个含中文的字体。
+
+    与气泡同一种（等线；没装则各平台的中文 UI 字体，见 pet/ui_fonts.py）。
+    """
     from pet import pet_sprite as pet_sprite_mod
+    from pet import ui_fonts
 
     fonts = []
     real = pet_sprite_mod.QFontMetrics
@@ -182,7 +186,9 @@ def test_caption_uses_the_soft_system_cjk_font(monkeypatch):
     _painted(_sprite("dsh-pet · 工作中"))
 
     # 单族：Windows 上多族列表会让 Qt 枚举整个字体库（见 menu_styles/common.py）
-    assert fonts[0].families() == [_SOFT_FONT[sys.platform]]
+    expected = ui_fonts.bubble_font_family()
+    assert expected in ("DengXian", _SOFT_FONT[sys.platform])
+    assert fonts[0].families() == [expected]
 
 
 def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():
