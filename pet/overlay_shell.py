@@ -3746,10 +3746,21 @@ class OverlayShell(QObject):
         rx, ry = state.get("rx"), state.get("ry")
         if rx is not None and ry is not None:
             return self._pos_from_ratios(float(rx), float(ry), sprite=sprite)
-        index = len(self._spawned) + 1
         main_body = self.sprite.body_rect()
-        return QPointF(main_body.x() + main_body.width() + 24 * index,
-                       main_body.y())
+        body, rect = sprite.body_rect(), sprite.rect()
+        bounds = self._bounds
+        others = [s.body_rect() for s in (self.sprite, *self._spawned) if s is not sprite]
+        spot = overlay_spawn_state.free_spawn_spot(
+            (body.width(), body.height()),
+            (main_body.x(), main_body.y(), main_body.width(), main_body.height()),
+            [(r.x(), r.y(), r.width(), r.height()) for r in others],
+            (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1))
+        if spot is None:
+            # 可用区全满（鱼太多 / 屏幕太小）：退回旧的逐级错开，至少不完全重合
+            index = len(self._spawned) + 1
+            return QPointF(main_body.x() + main_body.width() + 24 * index, main_body.y())
+        # 落点是身体框左上角；sprite.pos 是画布左上角，差一个身体框在画布内的偏移
+        return QPointF(spot[0] - (body.x() - rect.x()), spot[1] - (body.y() - rect.y()))
 
     def _restore_spawned_pets(self) -> None:
         """D5：启动恢复依据 = 活跃宠清单（**不是** slot 配置存在）。

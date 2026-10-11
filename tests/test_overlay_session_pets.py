@@ -368,3 +368,20 @@ def test_facade_persists_the_session_pet_limit(shell):
     SpriteMenuFacade(shell).set_session_pets_max(10)
     assert shell._config.get("agent_link")["session_pets_max"] == 10
     assert shell._session_pet_limit() == 10
+
+
+# ---------------------------------------------------------------- 生成落点
+
+def test_new_fish_never_land_on_top_of_existing_ones(shell):
+    """新生成的鱼（会话小鱼、手动小肥鱼都算）不压住任何现有的鱼。"""
+    for _ in range(4):
+        assert shell.spawn_session_pet() is not None
+    shell.spawn_pet()
+    shell.spawn_pet()
+
+    fish = [shell.sprite, *shell._spawned]
+    bodies = [f.body_rect() for f in fish]
+    for i, a in enumerate(bodies):
+        for b in bodies[i + 1:]:
+            assert not a.intersects(b), f"{a} 与 {b} 重叠"
+        assert shell._bounds.contains(a), "落点在屏幕可用区内"
