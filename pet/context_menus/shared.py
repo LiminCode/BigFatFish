@@ -394,6 +394,14 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get(agent_key, False)))
         act.toggled.connect(lambda on, k=agent_key, a=act: pet.toggle_agent_link(k, on, a))
+    # 每个 Claude Code 会话一只小鱼：只有 overlay 拓扑有这个能力（旧 PetWindow 没有）
+    toggle_session_pets = getattr(pet, "toggle_session_pets", None)
+    if callable(toggle_session_pets):
+        sub.addSeparator()
+        act = sub.addAction("每个会话一只小鱼")
+        act.setCheckable(True)
+        act.setChecked(bool(agent_cfg.get("session_pets", True)))
+        act.toggled.connect(lambda on: toggle_session_pets(on))
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
