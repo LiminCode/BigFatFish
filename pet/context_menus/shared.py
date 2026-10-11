@@ -422,6 +422,18 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_history", True)))
         act.toggled.connect(lambda on: toggle_session_history(on))
+        set_rows = getattr(pet, "set_session_history_rows", None)
+        if callable(set_rows):
+            rows_menu = add_submenu(sub, "最近的对话显示行数", None)
+            current_rows = int(agent_cfg.get("session_history_rows", 10) or 10)
+            rows_group = QActionGroup(rows_menu)
+            rows_group.setExclusive(True)
+            for rows in sorted({5, 8, 10, 12, 15, 20, current_rows}):
+                choice = rows_menu.addAction(f"{rows} 行")
+                choice.setCheckable(True)
+                choice.setChecked(rows == current_rows)
+                rows_group.addAction(choice)
+                connect_action(choice, lambda rows=rows: set_rows(rows))
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [

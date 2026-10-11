@@ -178,3 +178,20 @@ def test_dragging_inside_the_list_does_not_count_as_a_click(panel):
     QApplication.sendEvent(row, press)
     QApplication.sendEvent(row, release)
     assert panel.events == []
+
+
+def test_ten_rows_are_visible_by_default_and_the_cap_is_adjustable(panel):
+    """5 行太短（实机反馈）：默认露 10 行，可调；超出的照旧在框里滚动。"""
+    assert MAX_VISIBLE_ROWS == 10
+    panel.set_rows(_rows(14))
+    panel.set_open(True)
+    assert panel.body.height() == 10 * ROW_HEIGHT
+
+    panel.set_max_visible(4)
+    assert panel.body.height() == 4 * ROW_HEIGHT
+    panel.set_max_visible(20)
+    assert panel.body.height() == 14 * ROW_HEIGHT, "行数不到上限：有几行露几行"
+    panel.set_max_visible(0)
+    assert panel.body.height() == 1 * ROW_HEIGHT, "至少露一行"
+    panel.set_max_visible("x")
+    assert panel.body.height() == 10 * ROW_HEIGHT, "给的值不像话就用默认"

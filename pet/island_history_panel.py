@@ -18,7 +18,8 @@ from PySide6.QtGui import QCursor, QFont, QFontMetrics
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 ROW_HEIGHT = 36
-MAX_VISIBLE_ROWS = 5
+#: 列表最多露几行（缺省值；超出的在框里滚动）。5 行实机反馈太短
+MAX_VISIBLE_ROWS = 10
 _HEADER_HEIGHT = 24
 _ROW_PAD_X = 6
 _SCROLLBAR_PX = 6
@@ -112,6 +113,7 @@ class SessionHistoryPanel(QWidget):
         self._rows: list[dict] = []
         self._row_widgets: list[_HistoryRow] = []
         self._open = False
+        self._max_visible = MAX_VISIBLE_ROWS
         self._width = 300
         self._colors = {"primary": "#e5eaf5", "secondary": "#a0aabe", "accent": "#40b8ff"}
         self._menu: QMenu | None = None
@@ -199,13 +201,23 @@ class SessionHistoryPanel(QWidget):
             self._row_widgets.append(widget)
         self._refill()
 
+    def set_max_visible(self, count) -> None:
+        """列表最多露几行（至少 1；给的值不像话就用默认）。"""
+        try:
+            count = max(1, int(count))
+        except (TypeError, ValueError):
+            count = MAX_VISIBLE_ROWS
+        if count != self._max_visible:
+            self._max_visible = count
+            self._refill()
+
     def _refill(self) -> None:
-        scroll = len(self._rows) > MAX_VISIBLE_ROWS
+        scroll = len(self._rows) > self._max_visible
         width = self._width - (_SCROLLBAR_PX + 2 if scroll else 0)
         for widget, row in zip(self._row_widgets, self._rows):
             widget.set_data(row, width, accent=self._colors["accent"], secondary=self._colors["secondary"])
             widget.title.setStyleSheet(f"color: {self._colors['primary']};")
-        self.body.setFixedHeight(min(len(self._rows), MAX_VISIBLE_ROWS) * ROW_HEIGHT)
+        self.body.setFixedHeight(min(len(self._rows), self._max_visible) * ROW_HEIGHT)
         self.body.setVisible(self._open and bool(self._rows))
         self._update_header()
         self.updateGeometry()

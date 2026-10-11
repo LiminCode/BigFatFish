@@ -602,6 +602,16 @@ class SpriteMenuFacade:
             if on:
                 service.rescan(force=True)
 
+    def set_session_history_rows(self, rows: int) -> None:
+        """「最近的对话」列表展开后露几行：落盘，岛上立刻跟着变。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_history_rows"] = int(rows)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        service = getattr(self._shell, "session_history", None)
+        if service is not None:
+            service.refresh()
+
     def set_session_pets_max(self, limit: int) -> None:
         """会话小鱼上限：落盘即生效（下一只生成时按新上限判）。"""
         ag_data = dict(self.cfg.get("agent_link", {}) or {})
