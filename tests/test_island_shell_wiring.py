@@ -544,3 +544,78 @@ def test_balance_card_does_not_query_a_claude_provider(tmp_path, monkeypatch):
         assert asked == []
     finally:
         _teardown_shell(shell)
+
+
+# ---------------------------------------------------------------- 岛卡片「聊天」按钮（overlay 拓扑）
+
+class _FakeOverlayForChat:
+    """只有 AppShell 这条路径用到的那一面：合成窗可见性 + 快速对话入口。"""
+
+    def __init__(self, *, opens: bool = True) -> None:
+        from types import SimpleNamespace
+
+        self.overlay = SimpleNamespace(isVisible=lambda: True)
+        self.session_pets = None
+        self.quick_chat_calls = 0
+        self._opens = opens
+
+    def open_quick_chat(self, sprite=None) -> bool:
+        self.quick_chat_calls += 1
+        return self._opens
+
+
+class _FakeInstanceForChat:
+    """overlay 拓扑下的 PetInstance：win 恒为 None，所以它的 open_quick_chat 进门就返回。"""
+
+    win = None
+
+    def __init__(self) -> None:
+        self.full_chat_calls = 0
+        self.quick_chat_calls = 0
+
+    def open_quick_chat(self) -> None:
+        self.quick_chat_calls += 1          # 真实实现在 win is None 时什么都不做
+
+    def open_chat(self) -> None:
+        self.full_chat_calls += 1
+
+
+def test_island_chat_button_opens_quick_chat_on_the_overlay(tmp_path):
+    """实机：点岛卡片的「聊天」没有任何反应。
+
+    overlay 拓扑不构造 PetWindow，``instance.win`` 恒为 None；旧代码把请求交给
+    ``PetInstance.open_quick_chat``，它第一行就是 ``if self.win is None: return``。
+    """
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell._overlay_shell = _FakeOverlayForChat()
+
+    shell._open_chat_from_island()
+
+    assert shell._overlay_shell.quick_chat_calls == 1
+    assert shell.instance.full_chat_calls == 0
+
+
+def test_island_chat_button_falls_back_to_the_full_chat_window(tmp_path):
+    """快速对话气泡开不出来时（构造失败等）：退到完整聊天窗，不能再是没反应。"""
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell._overlay_shell = _FakeOverlayForChat(opens=False)
+
+    shell._open_chat_from_island()
+
+    assert shell.instance.full_chat_calls == 1
+
+
+def test_island_chat_button_keeps_the_legacy_route_without_an_overlay(tmp_path):
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell.instance.win = object()
+    shell._instances = [shell.instance]
+
+    shell._open_chat_from_island()
+
+    assert shell.instance.quick_chat_calls == 1
