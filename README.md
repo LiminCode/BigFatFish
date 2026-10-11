@@ -257,6 +257,7 @@ v4.0.0 是一次大版本升级：在 v3.1.1 的桌宠基础上，合并了社�
 - **新版 AI 对话窗口**：现代双栏工作台（左侧会话管理 + 右侧消息画布），自绘标题栏、会话搜索、批量管理、跟随桌宠、背景主题（内置壁纸/自定义图片/裁剪取景）；保留旧版手机式聊天窗可随时切换。
 - **彩蛋入口（欧鲸鲸）**：新版菜单首行可配置的趣味入口，点击随机弹出一张图片；弹窗时机、图片回退、多开层叠都已打磨。
 - **「生小肥鱼」多开**：从菜单一键孵化第二只独立桌宠，自动避让位置、配置与会话相互隔离。
+- **「护驾」**：主肥鱼右键菜单一键把所有小肥鱼（手动生的 + Claude Code 会话小鱼）叫到身边——一左一右由近到远站开，互不重叠；飞过来的途中播拖拽悬空动画、不参与碰撞。
 
 **性能与主动陪伴（PR #7）**
 
@@ -462,10 +463,15 @@ python -m pip install -r requirements.txt
 python -m pet
 ```
 
-Windows 也可以直接双击 `run.bat`。它实际执行的是：
+Windows 也可以直接双击 `run.bat`。它用项目的 `.venv` 启动桌宠，并且让程序在系统里叫 **BigFish**：
+
+- 第一次运行时由 `tools/make_launcher.py` 在 `.venv\Scripts\` 下生成 `BigFish.exe`——它是这个虚拟环境的 Python 解释器（`pythonw.exe`）的一份副本，只把名字和图标换成了桌宠的。任务管理器的进程名取自 exe 本身，直接用 `pythonw` 启动时只会显示成「Python」。Python 升级或图标变化后会自动重新生成；生成不了就照旧用 `pythonw`。
+- 窗口图标与任务栏分组由程序自己声明（`pet/app_identity.py`），设置窗、聊天窗在任务栏上显示鱼的图标，不再和别的 Python 程序归成一组。
+
+等价的手动命令：
 
 ```text
-pythonw -m pet
+.venv\Scripts\BigFish.exe -m pet      （或 pythonw -m pet）
 ```
 
 源码入口默认包含 Chat 能力；如果只想验证桌宠核心功能，可使用无 Chat 的打包入口或在本地配置中关闭聊天。
@@ -901,7 +907,7 @@ assets/
 
 #### ① 提示词 → 源视频（绿幕规范）
 
-用 AI 视频生成工具（如**可灵、Runway、豆包**等；参考项目素材即由豆包生成），按提示词配方为每个动作生成一段 **10 秒绿幕视频**。配方硬性规范（参考项目的 `prompts/桌面宠物 10 秒动作提示词.md`，本项目自定义角色配方在本地 `assets/prompt/<角色ID>/图像生成提示词.md`）：
+用 AI 视频生成工具（如**可灵、Runway、豆包**等；参考项目素材即由豆包生成），按提示词配方为每个动作生成一段 **10 秒绿幕视频**。配方已随本仓库提供：[`prompts/桌面宠物 10 秒动作提示词.md`](prompts/桌面宠物%2010%20秒动作提示词.md)（通用前缀 + 一百多个动作的按秒分解，用法与换角色时的改法见 [`prompts/README.md`](prompts/README.md)；自定义角色的配方可放在本地 `assets/prompt/<角色ID>/图像生成提示词.md`，该目录不入库）。配方硬性规范：
 
 - **画面**：16:9；背景纯绿幕色 `#00FF00`，无阴影、杂物、渐变或边框。
 - **人物定位固定**：头顶约画幅垂直 20%（按角色头饰可调整为 15%），脚底约 85%；左右边缘约 25% / 75%；不同视频间人物大小、位置、比例完全一致。
@@ -911,14 +917,14 @@ assets/
 - **道具"无→有→无"**：道具/特效由角色从虚到实渐进生成、结束前由实到虚消散，不得凭空出现或残留。
 - **按秒分解**：每个动作的配方按 0–3 / 3–7 / 7–10 秒（或 0–2 / 2–5 / 5–7 / 7–10）分段描述动作节奏，确保生成结果可复现。
 
-一个动作一段视频，按动作名各存一个 mp4（如 `video/吃白饭.mp4`）。
+一个动作一段视频，按动作名各存一个 mp4，放进 `asset-work/video/`（如 `asset-work/video/吃白饭.mp4`；`asset-work/` 是素材链的工作目录，不入库）。
 
 #### ② 源视频 → 透明动画（素材生成链）
 
-参考项目 `scripts/` 提供完整 Python 素材链（依赖：Python 3 + ffmpeg + numpy + scipy），四步：
+素材链脚本已随本仓库提供，在 [`tools/asset_pipeline/`](tools/asset_pipeline/README.md)（取自参考项目的 `scripts/`，按本仓库整理过）。额外依赖 numpy + scipy：`pip install -r tools/asset_pipeline/requirements.txt`；ffmpeg 用本项目依赖自带的那份，不用另装。五步：
 
 ```sh
-cd scripts
+cd tools/asset_pipeline
 # step01：水印遮罩填充（源视频若带水印/角标则先填补为纯绿幕）
 python watermark_step01.py
 # step02：绿幕抠像 → 透明视频（两条路线二选一）
@@ -931,13 +937,17 @@ python pr_import_step02.py
 python normalize_step03.py
 # step04：转码 640×360 透明播放变体（VP9 alpha 透明 WebM）
 python encode_thumbs.py
+# step05：按分类装成角色包，并量出 manifest 里的 body_box（没点名的动画进随机池）
+python install_step05.py --character mycat --name 我的猫     --idle 待机呼吸休闲 --click 点击回应-开心跃动 --drag 被鼠标拖拽悬空反馈
+# 随时：生成 step02 / step03 / step04 并排对照的预览页
+python preview.py --open
 ```
 
-> 参考项目全部 106 个动作均采用**路线 B（PR 手工抠像）**：对含第三方物品/透明边缘复杂的动作，自动 HSV 抠像易残边或误抠；`chroma_step02.py` 保留为自动化兜底。中间产物 step01~04 由脚本生成、不入仓库；`video/` 源视频与 `scripts/` 是成果、入库维护。
+> 参考项目全部 106 个动作均采用**路线 B（PR 手工抠像）**：对含第三方物品/透明边缘复杂的动作，自动 HSV 抠像易残边或误抠；`chroma_step02.py` 保留为自动化兜底。源视频与中间产物 step01~04 都在 `asset-work/` 下，由脚本生成、不入仓库。自带的水印遮罩只适用于豆包；其它工具的做法与每一步的细节见 [`tools/asset_pipeline/README.md`](tools/asset_pipeline/README.md)。
 
 #### ③ 透明动画 → 接入本项目
 
-1. 把 step04 产出的 **640×360 透明 WebM** 按分类放入角色目录：
+1. `install_step05.py` 会把 step04 产出的 **640×360 透明 WebM** 按分类放好（默认装到用户数据目录的外部角色根，热加载、不动仓库；`--dest assets/characters` 则随仓库分发）。手工放也一样，结构是：
 
    ```text
    assets/characters/<角色ID>/videos/
@@ -1049,7 +1059,7 @@ pet/
 │   ├── ai_settings_page.py   # AI 设置页（PR #76 从 modern_settings_dialog 拆出）
 │   ├── modern_styles.qss / legacy_styles.qss
 │   └── ...
-└── updater.py                # 检查更新与发布资产解析
+└── ...                       # （在线更新 updater.py 已从本分支移除：源码运行，同步上游走 git）
 
 integrations/dsh-pet-bridge/  # DSH 桥接插件（Agent 联动）
 packaging/

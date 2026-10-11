@@ -98,7 +98,6 @@ from .menu_layout import (
     resolve_menu_layout,
 )
 from .speech_bubble import BUBBLE_STYLE_PRESETS
-from .update_settings import UpdatePage
 
 
 def _chat_feature_available() -> bool:
@@ -166,6 +165,7 @@ from . import settings_file_interpret
 from . import settings_interaction
 from . import settings_music
 from . import settings_pet_controls
+from . import settings_save
 
 
 # 语言配置页只展示用户能理解的事件名称；内部 key 仍用于保存和渲染。
@@ -247,6 +247,8 @@ def dialogue_params_hint(key: str) -> str:
 class ModernSettingsDialog(QDialog):
     """Settings window matching Modern's sidebar and rounded-card hierarchy."""
 
+    saved = Signal()    # 「保存」写盘成功（窗口还开着）：进程内宿主据此立刻应用
+
     def __init__(self, config, parent=None, *, include_ai: bool = True,
                  standalone: bool = False, initial_page: str | None = None):
         super().__init__(parent)
@@ -291,6 +293,8 @@ class ModernSettingsDialog(QDialog):
         self.save_exit_button.setAutoDefault(False)
         self.save_exit_button.setDefault(False)
         sidebar_layout.addWidget(self.save_exit_button)
+        # 「保存」：写盘不关窗，改动立刻生效（Ctrl+S 同义）；实现见 settings_save
+        settings_save.install_save_button(self, sidebar_pane, sidebar_layout)
         self.search_edit = QLineEdit(sidebar_pane)
         self.search_edit.setObjectName("settingsSearch")
         self.search_edit.setPlaceholderText("搜索设置…")
@@ -382,12 +386,11 @@ class ModernSettingsDialog(QDialog):
         self.island_info_mode_select = ModernSelect(self, width=160)
         for label, value in (
             ("当前时间", "time"),
-            ("余额峰谷", "balance_tier"),
-            ("余额数值", "balance"),
-            ("自定义短文本", "custom"),
+            ("今日用量", "usage_today"),
         ):
             self.island_info_mode_select.addItem(label, value)
         self.island_info_mode_select.setCurrentData(str(island_cfg.get("info_mode") or "time"))
+        self.island_card_source_select = settings_pet_controls.build_island_card_source_select(self, island_cfg)
         self.island_style_select = ModernSelect(self, width=160)
         for label, value in (
             ("黑色", "dark"),
@@ -433,7 +436,6 @@ class ModernSettingsDialog(QDialog):
         ):
             self.island_icon_select.addItem(label, emoji)
         self.island_icon_select.setCurrentData(str(island_cfg.get("icon") or "auto"))
-        self.island_custom_text_edit = _line_edit(str(island_cfg.get("custom_text") or ""), width=220)
         self.island_click_action_select = ModernSelect(self, width=160)
         for label, value in (
             ("展开快捷卡片", "expand"),
@@ -562,9 +564,10 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_enabled", "启用灵动岛", "显示独立胶囊小窗；桌宠隐藏后仍可常驻。", self.island_enabled_check),
                     SettingRow("dynamic_island_icon", "显示图标", "在胶囊左侧显示角色图标。", self.island_icon_check),
                     SettingRow("dynamic_island_name", "显示名称", "显示当前角色名称。", self.island_name_check),
-                    SettingRow("dynamic_island_info", "显示信息槽", "显示时间/余额/自定义短文本等信息。", self.island_info_check),
-                    SettingRow("dynamic_island_status", "显示状态灯", "显示右侧状态圆点。", self.island_status_check),
-                    SettingRow("dynamic_island_info_mode", "信息槽内容", "选择信息槽显示的内容；自定义文本在下方填写。", self.island_info_mode_select),
+                    SettingRow("dynamic_island_info", "显示信息槽", "显示当前时间或 Claude Code 今日用量。", self.island_info_check),
+                    SettingRow("dynamic_island_status", "显示状态灯", "显示右侧的 Claude Code 会话计数与 API 连接图标（绿 = 对话 API 可用，红 = 不可用）。", self.island_status_check),
+                    SettingRow("dynamic_island_info_mode", "信息槽内容", "当前时间，或今日用量：今天所有 Claude Code 对话用掉的 token（输入 + 输出 + 缓存写入；悬停灵动岛看明细）。", self.island_info_mode_select),
+                    SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示 DeepSeek 余额与峰谷。", self.island_card_source_select),
                     SettingRow(
                         "dynamic_island_style",
                         "背景风格",
@@ -574,9 +577,6 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_opacity", "背景不透明度", "越低越透（0.4~1.0）；配合深色底在低占用下做出半透明质感。", self.island_opacity_spin),
                     SettingRow("dynamic_island_accent", "主题色", "图标底圈、事件闪光、停靠描边共用的点缀色。", self.island_accent_select),
                     SettingRow("dynamic_island_icon_value", "图标", "默认显示鱼本体头像；可选 emoji 图标，首次绘制会多占约 30MB 内存。", self.island_icon_select),
-                    SettingRow(
-                        "dynamic_island_custom_text", "自定义短文本", "信息槽选择“自定义短文本”时显示的内容。", self.island_custom_text_edit, stacked=True
-                    ),
                     SettingRow(
                         "dynamic_island_click_action",
                         "单击行为",
@@ -594,7 +594,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow(
                         "dynamic_island_event_effects",
                         "事件动效",
-                        "AI 回复到达、余额刷新、峰谷切换时果冻弹跳提示；dsh 工作时状态灯变蓝。静止时零额外开销。",
+                        "AI 回复到达、余额刷新时果冻弹跳提示。静止时零额外开销。",
                         self.island_event_effects_check,
                     ),
                     SettingRow(
@@ -680,9 +680,10 @@ class ModernSettingsDialog(QDialog):
                     SettingRow(
                         "spawn_inherit_size",
                         "生小肥鱼继承大小",
-                        "开启后生成的小肥鱼与主肥鱼大小一致；关闭后使用下方为小肥鱼单独选择的大小。",
+                        "开启后生成的小肥鱼跟随主肥鱼的大小；关闭后使用下方为小肥鱼单独选择的大小。",
                         self.spawn_inherit_size_check,
                     ),
+                    SettingRow("spawn_smaller_than_main", "比主肥鱼小一号", "继承大小时，新生成的小肥鱼比主肥鱼小一档；主肥鱼已是最小档时取一半大小。", self.spawn_smaller_check),
                     SettingRow("spawn_scale", "小肥鱼大小", "关闭“继承大小”时，新生成小肥鱼使用的桌面尺寸。", self.spawn_scale_combo, stacked=True),
                     SettingRow(
                         "spawn_inherit_dynamic_island",
@@ -962,11 +963,6 @@ class ModernSettingsDialog(QDialog):
 
         self.festival_page = FestivalSettingsPage(self.config, self)
 
-        # 更新页是命令/状态面板，不写入 Config；它与常规域同级，便于从菜单
-        # 和设置窗口进入同一套检查、下载、校验、安装流程。
-        self.update_page = UpdatePage(
-            self.config, include_chat=self.include_ai, parent=self
-        )
         self._rebuild_domain_navigation()
         self.sidebar.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.sidebar.setCurrentRow(0)
@@ -982,7 +978,6 @@ class ModernSettingsDialog(QDialog):
         self.island_enabled_check.toggled.connect(self._update_island_controls)
         self.island_icon_check.toggled.connect(self._update_island_icon_controls)
         self.island_info_check.toggled.connect(self._update_island_info_controls)
-        self.island_info_mode_select.currentIndexChanged.connect(self._update_island_custom_text)
         self.egg_enabled_check.toggled.connect(self._update_egg_controls)
         self.egg_enabled_check.toggled.connect(self._sync_menu_action_states)
         self.quick_launch_editor.changed.connect(self._sync_menu_action_states)
@@ -1327,9 +1322,6 @@ class ModernSettingsDialog(QDialog):
     def _update_island_info_controls(self, enabled: bool) -> None:
         settings_pet_controls._update_island_info_controls(self, enabled)
 
-    def _update_island_custom_text(self, _index: int | None = None) -> None:
-        settings_pet_controls._update_island_custom_text(self, _index)
-
     def _update_egg_controls(self, enabled: bool) -> None:
         self._set_setting_rows_visible(
             ("egg_title", "egg_hint", "egg_avatar", "egg_image_dir"),
@@ -1556,6 +1548,7 @@ class ModernSettingsDialog(QDialog):
             not bool(inherit_size),
             dependency="spawn_inherit_size",
         )
+        self._set_setting_rows_visible(("spawn_smaller_than_main",), bool(inherit_size), dependency="spawn_inherit_size")
 
     def _on_clear_spawned_pets(self) -> None:
         """一键静默退出所有小肥鱼（slot-N）；它们的设置与数据保留。
@@ -1759,7 +1752,7 @@ class ModernSettingsDialog(QDialog):
                  + settings_music.build_music_player_rows(self)),
                 ("拖拽与弹射", claim("drag_physics", "throw_strength", "slingshot_enabled", "lock_position", "shift_drag")),
                 ("边缘探头", claim("edge_probe")),
-                ("生小肥鱼", claim("spawn_inherit_size", "spawn_scale", "spawn_inherit_dynamic_island", "clear_spawned_pets")),
+                ("生小肥鱼", claim("spawn_inherit_size", "spawn_smaller_than_main", "spawn_scale", "spawn_inherit_dynamic_island", "clear_spawned_pets")),
                 ("多开碰撞", collision_primary),
                 ("碰撞参数（高级）", collision_advanced, True),
             ]
@@ -1852,6 +1845,7 @@ class ModernSettingsDialog(QDialog):
                             "timeout",
                             "temperature",
                             "max_tokens",
+                            "effort",
                             "skip_ssl",
                         ),
                         True,
@@ -1963,7 +1957,6 @@ class ModernSettingsDialog(QDialog):
             "自动化与联动": automation,
             "语音": voice,
             "文件识别": file_interpret,
-            "更新": self.update_page,
         }
         for label, icon in SETTINGS_DOMAIN_NAV:
             content = domain_content.get(label)
@@ -2055,12 +2048,19 @@ class ModernSettingsDialog(QDialog):
         if self.autostart_check.isChecked() != self._autostart_initial:
             # set_enabled 返回 bool（enable()/disable()）；仅在明确失败时提示。
             ok = autostart_mod.set_enabled(self.autostart_check.isChecked())
+            if ok is not False:
+                # 已写入：之后再改回去要认这次的值（「保存」后窗口还开着）
+                self._autostart_initial = self.autostart_check.isChecked()
             if ok is False:
                 QMessageBox.warning(
                     self,
                     "开机自启设置失败",
                     "写入开机自启失败：可能被安全软件拦截。\n可稍后在托盘菜单重试，或检查安全软件/系统优化工具的拦截记录。",
                 )
+
+    def _save_only(self) -> None:
+        """「保存」：写入配置但不关窗口（见 settings_save.save_without_exit）。"""
+        settings_save.save_without_exit(self)
 
     def _save(self) -> None:
         """「保存并退出」：写入配置并关闭对话框。"""
@@ -2098,6 +2098,7 @@ class ModernSettingsDialog(QDialog):
         texts = [line.strip()[:120] for line in self.texts_edit.toPlainText().splitlines() if line.strip()]
         self.config.set("scale", float(self.scale_combo.currentData()))
         self.config.set("spawn_inherit_size", self.spawn_inherit_size_check.isChecked())
+        self.config.set("spawn_smaller_than_main", self.spawn_smaller_check.isChecked())
         self.config.set("spawn_scale", float(self.spawn_scale_combo.currentData()))
         self.config.set("spawn_inherit_dynamic_island", self.spawn_inherit_dynamic_island_check.isChecked())
         self.config.set("on_top", self.on_top_check.isChecked())
@@ -2145,7 +2146,7 @@ class ModernSettingsDialog(QDialog):
                 "show_name": self.island_name_check.isChecked(),
                 "show_info": self.island_info_check.isChecked(),
                 "info_mode": str(self.island_info_mode_select.currentData() or "time"),
-                "custom_text": self.island_custom_text_edit.text().strip(),
+                "card_source": str(self.island_card_source_select.currentData() or "auto"),
                 "show_status": self.island_status_check.isChecked(),
                 "style": str(self.island_style_select.currentData() or "dark"),
                 "opacity": float(self.island_opacity_spin.value()),

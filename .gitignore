@@ -30,6 +30,9 @@ assets/characters/*/frameseq/
 # Windows 安装包图标（本地生成，入库保证克隆后可构建）
 !assets/icon.ico
 
+# 素材生成链的工作目录（tools/asset_pipeline：源视频与 step01~04 中间产物，可再生）
+asset-work/
+
 # PyInstaller 构建产物
 build/
 dist/

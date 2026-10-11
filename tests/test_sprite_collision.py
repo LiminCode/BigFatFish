@@ -636,3 +636,39 @@ def test_debounce_entry_dropped_when_member_leaves_collision_world():
     b.set_pos(FakePoint(80, 0))
     world.tick([a, b], 0.016)
     assert a.pos.x() < -1.0                        # 分离立即生效（没被旧条目抑制）
+
+
+# ---------------------------------------------------------------- 护驾飞行段（collision_suspended）
+def test_suspended_sprite_passes_through_without_pushing_anyone():
+    """护驾途中的小肥鱼是拖拽态（无限质量）：不退出碰撞世界就会一路把别的鱼撞开。"""
+    world = SpriteCollisionWorld()
+    a = FakeSprite(0, 0, collision_id="a")
+    b = FakeSprite(80, 0, collision_id="b")
+    b.interaction_state = INTERACTION_DRAG
+    b.collision_suspended = True
+
+    assert world.tick([a, b], 0.016) == []
+    b.set_pos(FakePoint(20, 0))                    # 径直穿过 a
+    assert world.tick([a, b], 0.016) == []
+    assert a.pos.x() == 0.0 and a.velocity.x() == 0.0
+    assert a.interaction_state == INTERACTION_NORMAL
+
+    b.set_pos(FakePoint(400, 0))                   # 到位（不重叠）后回到碰撞世界
+    b.interaction_state = INTERACTION_NORMAL
+    b.collision_suspended = False
+    assert world.tick([a, b], 0.016) == [], "回来时不许拿穿越那一段当扫掠轨迹补撞"
+    assert a.pos.x() == 0.0
+
+
+def test_suspension_toggle_wakes_a_resting_world():
+    """全员静止时切 ``collision_suspended``：不入运动签名会被静止豁免整 tick 跳过。"""
+    world = SpriteCollisionWorld()
+    a = FakeSprite(0, 0, collision_id="a")
+    b = FakeSprite(80, 0, collision_id="b")
+    b.collision_suspended = True
+    world.tick([a, b], 0.016)
+    world.tick([a, b], 0.016)                      # 静止豁免已生效
+
+    b.collision_suspended = False                  # 位置没变，只是回到碰撞世界
+    world.tick([a, b], 0.016)
+    assert a.pos.x() < -1.0, "重叠着回来就该照常分离"

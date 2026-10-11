@@ -82,7 +82,9 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 # 用户旧布局里残留的该节点在此一次性剔除——否则菜单编辑器会把它一直回存成「此平台
 # 不可用」，旧入口就没有干净去向（docs/SETTINGS-CHANGE-GATES.md「旧 key/旧入口有去向」）。
 # 同名 action id 若将来重新引入，删掉这里即可。
-_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through"})
+# 2026-10-11：在线更新整个移除（从源码运行的 fork，查的是上游发布版、装的是上游
+# 安装包），「检查更新」「夸克网盘下载」同样在此剔除。
+_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"})
 
 
 def _drop_removed_menu_actions(nodes):
@@ -238,6 +240,17 @@ def _default_agent_link_data() -> dict:
         # 自定义联动 Agent（协议见 docs/AGENT_LINK_PROTOCOL.md §4）：只读监听
         # 用户指定的事件文件，不写外部配置、无需授权弹窗，默认空
         "custom_agents": [],
+        # 每个在用的 Claude Code 会话单独生一只小鱼（标题 + 状态），overlay 拓扑才有
+        "session_pets": True,
+        # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
+        "session_pets_max": 6,
+        # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
+        # 最多留几天（1~30）、几条（1~200）。见 pet/claude_session_history.py
+        "session_history": True,
+        "session_history_days": 7,
+        "session_history_max": 30,
+        # 列表展开后最多露几行（3~20），超出的在框里滚动
+        "session_history_rows": 10,
         # 音效配置
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
@@ -341,6 +354,8 @@ def _clean_agent_link_data(raw: Any) -> dict:
         "claude_wsl",
         "cursor",
         "opencode",
+        "session_pets",
+        "session_history",
         "sound_enabled",
         "sound_start_enabled",
         "sound_done_enabled",
@@ -348,6 +363,16 @@ def _clean_agent_link_data(raw: Any) -> dict:
     ):
         if key in raw:
             result[key] = bool(raw[key])
+    try:
+        result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
+    except (TypeError, ValueError):
+        result["session_pets_max"] = defaults["session_pets_max"]
+    for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
+                           ("session_history_rows", 3, 20)):
+        try:
+            result[key] = max(low, min(high, int(raw.get(key, defaults[key]))))
+        except (TypeError, ValueError):
+            result[key] = defaults[key]
     for key in ("sound_start_path", "sound_done_path", "sound_error_path"):
         if key in raw:
             val = str(raw[key] or "").strip()[:500]
@@ -532,8 +557,12 @@ def _default_dynamic_island_data() -> dict:
         "show_icon": True,
         "show_name": True,
         "show_info": True,
-        "info_mode": "time",  # time / balance_tier / balance / custom
-        "custom_text": "",
+        # 信息槽：time（当前时间）/ usage_today（Claude Code 今日用量）。旧的
+        # balance_tier / balance / custom 已去掉，存着这些值的配置回落成 time
+        "info_mode": "time",
+        # 展开卡片显示什么：auto（开着 Claude Code 联动就显示会话，否则余额）/
+        # balance（DeepSeek 余额与峰谷）/ claude（Claude Code 会话汇总）
+        "card_source": "auto",
         "show_status": True,
         "style": "dark",  # dark / light / glass
         "opacity": 1.0,  # 背景不透明度 0.4~1.0
@@ -543,7 +572,7 @@ def _default_dynamic_island_data() -> dict:
         "icon": "auto",
         "click_action": "expand",  # expand（展开卡片）/ toggle_pet（切换显隐，旧行为）
         "hidden_chat": True,  # 桌宠隐藏时：单击岛弹对话气泡；AI 回复到达时岛上弹预览
-        "event_effects": True,  # 事件动效：AI 回复/余额刷新/峰谷切换弹跳
+        "event_effects": True,  # 事件动效：AI 回复/余额刷新弹跳
         "edge_dock": True,  # 拖到屏幕边缘收成细条，鼠标靠近滑出
         "dock_edge": "none",  # none / top / bottom / left / right（拖拽落点写入）
         "collision_enabled": True,  # 果冻墙：岛注册为静态碰撞体，肥鱼撞到会弹开
@@ -564,8 +593,9 @@ def _clean_dynamic_island_data(value) -> dict:
     result["show_info"] = bool(result["show_info"])
     result["show_status"] = bool(result["show_status"])
     mode = str(result.get("info_mode") or "time").strip()
-    result["info_mode"] = mode if mode in {"time", "balance_tier", "balance", "custom"} else "time"
-    result["custom_text"] = str(result.get("custom_text") or "")[:80]
+    result["info_mode"] = mode if mode in {"time", "usage_today"} else "time"
+    card_source = str(result.get("card_source") or "auto").strip()
+    result["card_source"] = card_source if card_source in {"auto", "balance", "claude"} else "auto"
     style = str(result.get("style") or "dark").strip()
     result["style"] = style if style in {"dark", "light", "glass"} else "dark"
     try:
@@ -725,6 +755,7 @@ class Config:
             "facing": "left",
             "scale": catalog.DEFAULT_SCALE,
             "spawn_inherit_size": True,  # 生小肥鱼继承主肥鱼大小（False 用 spawn_scale）
+            "spawn_smaller_than_main": True,  # 继承大小时再小一号（主、小一眼可分）；固定大小时不适用
             "spawn_scale": catalog.DEFAULT_SCALE,  # 关闭继承时生小肥鱼使用的尺寸
             "spawn_inherit_dynamic_island": False,  # 生小肥鱼继承主肥鱼灵动岛（默认关=不开灵动岛）
             "user_customized": False,  # 批 C：仅当用户在该子肥鱼自己的设置界面保存过才置真
@@ -998,6 +1029,7 @@ class Config:
             "no_move",
             "character",
             "spawn_inherit_size",
+            "spawn_smaller_than_main",
             "spawn_scale",
             "spawn_inherit_dynamic_island",
             "user_customized",
@@ -1324,6 +1356,7 @@ class Config:
         self.data["self_talk_voice_precache_enabled"] = _bool_or_default(self.data.get("self_talk_voice_precache_enabled"), False)
         self.data["cursor_hidden_passthrough"] = _bool_or_default(self.data.get("cursor_hidden_passthrough"), True)
         self.data["spawn_inherit_size"] = _bool_or_default(self.data.get("spawn_inherit_size"), True)
+        self.data["spawn_smaller_than_main"] = _bool_or_default(self.data.get("spawn_smaller_than_main"), True)
         self.data["spawn_scale"] = _float_or_default(self.data.get("spawn_scale"), catalog.DEFAULT_SCALE, 0.1, 4.0)
         self.data["spawn_inherit_dynamic_island"] = _bool_or_default(self.data.get("spawn_inherit_dynamic_island"), False)
         self.data["show_dock_icon"] = bool(self.data.get("show_dock_icon", True))
@@ -1549,6 +1582,7 @@ class Config:
             "predict_prewarm_lead_ms",
             "ffmpeg_recycle_minutes",
             "spawn_inherit_size",
+            "spawn_smaller_than_main",
             "spawn_scale",
             "spawn_inherit_dynamic_island",
             "todo_reminder_enabled",

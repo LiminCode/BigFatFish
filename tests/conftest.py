@@ -107,6 +107,51 @@ def _no_real_dsh_profile_write(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_api_key_probe(monkeypatch):
+    """灵动岛的 API 体检（pet/api_key_monitor.py）在测试里绝不真的联网。
+
+    建岛就会排一次体检；默认 probe 走设置页「测试连接」那条路径，会向配置里的
+    对话端点发请求。这里把默认 probe 换成不联网的替身，要测体检语义的用例自行注入
+    probe（test_api_key_monitor.py）。
+    """
+    try:
+        from pet import api_key_monitor
+    except Exception:
+        return
+    monkeypatch.setattr(api_key_monitor, "_default_probe", lambda provider: (True, "测试替身：不联网"))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_usage_measurement(monkeypatch):
+    """灵动岛「今日用量」在测试里绝不真的去读 ``~/.claude`` 下的对话记录。
+
+    默认的统计读的是开发者 / CI 机器上真实的 Claude Code 记录；这里换成恒为 0 的替身，
+    要测统计本身的用例直接用 ``claude_usage.UsageMeter``（test_claude_usage.py，喂临时目录）。
+    """
+    try:
+        from pet import claude_usage, claude_usage_monitor
+    except Exception:
+        return
+    monkeypatch.setattr(claude_usage_monitor, "_default_measure", claude_usage.UsageTotals)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_session_history_scan(monkeypatch):
+    """「最近的对话」的回填在测试里绝不真的去读 ``~/.claude`` 或起 wsl.exe。
+
+    建 overlay 壳就会排一次回填；默认扫描读的是开发者 / CI 机器上真实的 Claude Code
+    对话记录。这里把服务的默认扫描换成空结果，要测扫描本身的用例直接调
+    ``claude_session_history.scan_local``（test_claude_session_history.py，喂临时目录）。
+    """
+    try:
+        from pet import session_history_service
+    except Exception:
+        return
+    monkeypatch.setattr(session_history_service, "_default_scan_local", lambda **_kwargs: [])
+    monkeypatch.setattr(session_history_service, "_default_scan_wsl", lambda **_kwargs: [])
+
+
+@pytest.fixture(autouse=True)
 def _close_session_writers():
     """会话异步写盘（B8）：每个测试结束后关闭所有后台 writer，
     避免守护线程在 tmp_path 已清理后继续写盘（WinError 145 之类的 teardown 竞态）。"""

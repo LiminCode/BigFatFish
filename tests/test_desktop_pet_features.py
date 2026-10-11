@@ -821,7 +821,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         on_open_chat = lambda self: None
         on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
-        on_check_update = lambda self, parent=None: None
         on_open_chat_settings = lambda self: None
         on_open_legacy_settings = lambda self: None
         on_open_modern_settings = lambda self: None
@@ -872,6 +871,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "播放速率",
         "大小",
         "音乐",
+        "护驾",
         "桌宠控制",
         "快捷启动",
         "工具与帮助",
@@ -1253,8 +1253,7 @@ def test_ojingjing_uses_popup_directory_random_images_and_drag_helpers(monkeypat
     paths = popup_mod.popup_image_paths()
     assert len(paths) >= 2
     assert popup_mod.oijingjing_image_path() == Path("assets/big_blue_fat_fish/ojingjing.jpg").resolve()
-    picks = iter((paths[0], paths[1]))
-    monkeypatch.setattr(popup_mod.random, "choice", lambda _paths: next(picks))
+    # 洗牌式抽取：同一轮里不会连着出同一张（见 pet/shuffle_bag.py）
     manager = popup_mod.OjingjingWindowManager()
     first = manager.open_window(show=False)
     second = manager.open_window(show=False)
@@ -1383,7 +1382,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert isinstance(dialog.sidebar, QListWidget)
     assert isinstance(dialog.pages, QStackedWidget)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别", "更新"]
+    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_pages
     assert dialog.pages.count() == len(expected_pages)
     assert dialog.search_edit.placeholderText() == "搜索设置…"
@@ -1621,7 +1620,7 @@ def test_modern_settings_toggle_dependencies_hide_complete_setting_groups(tmp_pa
             "dynamic_island_status", "dynamic_island_info_mode",
             "dynamic_island_style", "dynamic_island_opacity",
             "dynamic_island_accent", "dynamic_island_icon_value",
-            "dynamic_island_custom_text", "dynamic_island_click_action",
+            "dynamic_island_click_action",
             "dynamic_island_event_effects", "dynamic_island_edge_dock",
             "dynamic_island_collision",
         )
@@ -1630,15 +1629,12 @@ def test_modern_settings_toggle_dependencies_hide_complete_setting_groups(tmp_pa
     assert all(child.isHidden() for child in island_children)
     dialog.island_enabled_check.setChecked(True)
     assert not row("dynamic_island_icon_value").isHidden()
-    assert row("dynamic_island_custom_text").isHidden()
     dialog.island_icon_check.setChecked(False)
     assert row("dynamic_island_icon_value").isHidden()
     dialog.island_info_check.setChecked(False)
     assert row("dynamic_island_info_mode").isHidden()
-    dialog.island_info_mode_select.setCurrentData("custom")
-    assert row("dynamic_island_custom_text").isHidden()
     dialog.island_info_check.setChecked(True)
-    assert not row("dynamic_island_custom_text").isHidden()
+    assert not row("dynamic_island_info_mode").isHidden()
 
     egg_children = [row(key) for key in ("egg_title", "egg_hint", "egg_avatar", "egg_image_dir")]
     dialog.egg_enabled_check.setChecked(False)
@@ -3058,65 +3054,6 @@ def test_cleanup_old_pet_logs(tmp_path):
     assert _cleanup_old_pet_logs(tmp_path) == 2
     assert not old.exists() and not old_backup.exists()
     assert fresh.exists() and other.exists()
-
-
-def test_check_update_failure_reports_and_reentry_guard(tmp_path, monkeypatch):
-    """审查 P1-01/GLM-L3 回归：更新检查线程异常收口回 GUI + 重入防护。
-
-    （修复批复审 P2：payload 不再带重复前缀；重入必须在请求进行中验证，
-    且完成后必须能再次发起。）
-    """
-    import threading
-    import time
-
-    from PySide6.QtWidgets import QApplication
-
-    from pet import app as app_mod
-    from pet.app import AppShell
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    owner = AppShell(app, Config(tmp_path))
-
-    gate = threading.Event()
-
-    def boom():
-        gate.wait(5)
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(app_mod.updater, "latest_release", boom)
-    owner.check_update(parent=None)
-    first_bridge = owner._update_bridge
-    results = []
-    first_bridge.done.connect(lambda ok, payload: results.append((bool(ok), str(payload))))
-
-    # 请求进行中再次调用 → 闸门拦截，不换 bridge、不起新线程
-    owner.check_update(parent=None)
-    assert owner._update_bridge is first_bridge
-    assert owner._update_checking is True
-
-    gate.set()
-    deadline = time.monotonic() + 5
-    while not results and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
-    assert results == [(False, "boom")]  # 前缀由 UI 层统一加，payload 不带
-
-    # 完成后闸门放行，可再次发起
-    deadline = time.monotonic() + 5
-    while owner._update_checking and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
-    assert owner._update_checking is False
-    gate.clear()
-    owner.check_update(parent=None)
-    assert owner._update_bridge is not first_bridge
-    # 收尾：放行第二个线程，避免泄漏到后续测试
-    gate.set()
-    deadline = time.monotonic() + 5
-    while owner._update_checking and time.monotonic() < deadline:
-        app.processEvents()
-        time.sleep(0.01)
 
 
 def test_modern_settings_reject_saves_config(tmp_path):

@@ -22,6 +22,7 @@
       {"type": "action", "id": "music_open_qqmusic", "visible": true}
     ]},
     {"type": "separator", "id": "default.separator-playback", "visible": true},
+    {"type": "action", "id": "rally_pets", "visible": true, "section": "pet"},
     {
       "type": "submenu",
       "id": "pet_controls",
@@ -54,9 +55,7 @@
         {"type": "action", "id": "balance", "visible": true},
         {"type": "action", "id": "harness", "visible": true},
         {"type": "action", "id": "deepseek_web", "visible": true},
-        {"type": "action", "id": "check_update", "visible": true},
-        {"type": "action", "id": "github_project", "visible": true},
-        {"type": "action", "id": "quark_download", "visible": true}
+        {"type": "action", "id": "github_project", "visible": true}
       ]
     },
     {"type": "action", "id": "agent_link", "visible": true, "section": "tools"},

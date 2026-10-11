@@ -22,6 +22,7 @@ from PySide6.QtCore import QPointF, QRect, QRectF
 
 from . import physics as physics_mod
 from .pet_sprite import INTERACTION_NORMAL, INTERACTION_THROWN
+from .sprite_bounds import bounds_for
 
 
 class ThrowPhysicsController:
@@ -78,11 +79,13 @@ class ThrowPhysicsController:
         rect = sprite.rect()
         body = sprite.body_rect() if hasattr(sprite, "body_rect") else rect
         off_x, off_y = body.x() - rect.x(), body.y() - rect.y()
-        left = self._bounds.left() - off_x
-        top = self._bounds.top() - off_y
+        # 住在别的屏上的 sprite 在它自己那块屏的边上反弹（sprite_bounds）
+        bounds = bounds_for(sprite, self._bounds)
+        left = bounds.left() - off_x
+        top = bounds.top() - off_y
         # sprite 比区域还大时 right/bottom 会小于 left/top：钳回，防死循环
-        right = max(left, self._bounds.right() - off_x - body.width())
-        bottom = max(top, self._bounds.bottom() - off_y - body.height())
+        right = max(left, bounds.right() - off_x - body.width())
+        bottom = max(top, bounds.bottom() - off_y - body.height())
         return left, top, right, bottom
 
     def _advance_thrown(self, sprite, dt: float) -> None:

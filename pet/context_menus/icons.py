@@ -262,6 +262,9 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
         painter.drawEllipse(QPointF(8.0, 8.0), 5.8, 5.8)
         painter.drawArc(QRectF(4.0, 4.0, 8.0, 8.0), 90 * 16, 180 * 16)
         painter.drawLine(QPointF(8.0, 2.2), QPointF(8.0, 13.8))
+    elif name == "check":
+        painter.drawLine(QPointF(3.2, 8.4), QPointF(6.6, 11.8))
+        painter.drawLine(QPointF(6.6, 11.8), QPointF(12.8, 4.6))
     elif name in {"back", "save"}:
         painter.drawLine(QPointF(13.5, 8.0), QPointF(3.0, 8.0))
         painter.drawLine(QPointF(3.0, 8.0), QPointF(7.0, 4.0))

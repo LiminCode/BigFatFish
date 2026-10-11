@@ -122,10 +122,11 @@ def test_spawn_seed_respects_inherit_size_switch(tmp_path):
     config_dir = tmp_path / APP_DIR_NAME
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    # 开启继承：主鱼 1.0，新鱼也应为 1.0
+    # 开启继承（且关掉「小一号」）：主鱼 1.0，新鱼也应为 1.0
     master = Config(base=tmp_path)
     master.set("scale", 1.0)
     master.set("spawn_inherit_size", True)
+    master.set("spawn_smaller_than_main", False)
     master.set("spawn_scale", 0.5)
     master.set("spawn_inherit_dynamic_island", True)
     island = dict(master.get("dynamic_island"))
@@ -146,6 +147,38 @@ def test_spawn_seed_respects_inherit_size_switch(tmp_path):
     assert slot_custom.get("spawn_scale") == 0.5
     assert slot_custom.get("spawn_inherit_dynamic_island") is False
     assert slot_custom.get("dynamic_island", {}).get("enabled") is False
+
+
+@pytest.mark.parametrize("main_scale, expected", [
+    (1.0, 0.85),     # 档位表 (0.5, 0.72, 0.85, 1.0) 里往下一档
+    (0.72, 0.5),     # 默认大小的主肥鱼 → 最小档
+    (0.5, 0.25),     # 已经是最小档：没有更小的档可退 → 取一半（否则主、小一样大）
+    (0.6, 0.5),      # 主肥鱼不在档位上（手改配置）：取比它小的最大一档
+])
+def test_spawned_fish_defaults_to_one_size_smaller_than_main(tmp_path, main_scale, expected):
+    """默认：生出来的小肥鱼比主肥鱼小一号——一眼分得清谁是主、谁是小的。"""
+    (tmp_path / APP_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    master = Config(base=tmp_path)
+    assert master.get("spawn_smaller_than_main") is True
+    master.set("scale", main_scale)
+    master.save()
+
+    slot = Config(base=tmp_path, instance_id="slot-1")
+
+    assert slot.get("scale") == pytest.approx(expected)
+    assert master.get("scale") == pytest.approx(main_scale), "主肥鱼自己的大小不受影响"
+
+
+def test_fixed_spawn_scale_ignores_the_smaller_switch(tmp_path):
+    """关闭继承 = 用户给小肥鱼指定了固定大小：「小一号」是相对主肥鱼说的，这里不适用。"""
+    (tmp_path / APP_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    master = Config(base=tmp_path)
+    master.set("scale", 1.0)
+    master.set("spawn_inherit_size", False)
+    master.set("spawn_scale", 0.85)
+    master.save()
+
+    assert Config(base=tmp_path, instance_id="slot-1").get("scale") == pytest.approx(0.85)
 
 
 def test_corrupt_config_backup_unique_timestamp(tmp_path):

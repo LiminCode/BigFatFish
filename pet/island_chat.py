@@ -41,6 +41,8 @@ class IslandChatBubble(QuickChatBubble):
 
         self.show_pet_btn = QPushButton("显示桌宠")
         self.show_pet_btn.setObjectName("quick-chat-send")
+        # 样式表已生效后才创建的子控件不会自动跟上气泡放大后的字号，显式给一次
+        self.show_pet_btn.setFont(self.font())
         self.show_pet_btn.clicked.connect(self.show_pet_requested.emit)
         extra_row = QHBoxLayout()
         extra_row.setContentsMargins(0, 0, 0, 0)

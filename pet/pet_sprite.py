@@ -24,10 +24,11 @@ import math
 import time
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPixmap
 
 from . import catalog
 from . import physics as physics_mod
+from . import ui_fonts
 from .library import MovieLibrary, clip_current_image
 from .window_effects import (begin_rotation, end_rotation, rotated_region_bounds,
                              unrotate_point)
@@ -83,8 +84,11 @@ class PetSprite(QObject):
         self._dpr = 1.0
         # D3：钳制域（overlay 局部逻辑坐标的工作区，None = 不钳制）。
         self._bounds: QRectF | None = None
-        # T2 多屏占位：sprite 的归属屏（多屏钳制用，本刀只留字段）。
+        # sprite 的归属屏。home_bounds 非 None = 被拖到了 overlay 所在屏以外的屏上：
+        # 值是那块屏的可用区（同一坐标系），控制器据此取边界（sprite_bounds），
+        # overlay 据 home_screen 取它的 DPR。住在 overlay 所在屏时恒为 None。
         self.home_screen = None
+        self.home_bounds: QRect | None = None
         # pos 为 overlay 局部逻辑坐标（Phase 1a 单屏：overlay 铺满主屏，
         # 局部坐标 = 屏幕逻辑坐标）；多屏几何见 spec 开放问题 Q1。
         # 位置变化由外部行为（wander 速度/抛掷物理）写 velocity 或 set_pos；
@@ -106,6 +110,12 @@ class PetSprite(QObject):
         # 就位——构造期 set_pos 会读它选钳制域。
         self._probe_angle = 0.0
         self._probe_exposure = 1.0
+        # 常驻标签（会话小鱼的「标题 · 状态」）：空串 = 不画，零成本。
+        self.caption = ""
+        self.caption_below = False       # False = 身体框上方；True = 下方
+        self.caption_tone = ""           # 胶囊配色（_CAPTION_TONES 的键）；不认识的用默认
+        self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
+        self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr, 配色) → 胶囊贴图
         self.pos = QPointF(0, 0)
         self.set_pos(pos if pos is not None else QPointF(0, 0))
         self._clip = None
@@ -142,6 +152,9 @@ class PetSprite(QObject):
         self.drag_physics = True
         # 见模块顶部 INTERACTION_* 常量：跨模块协调协议的唯一权威字段
         self.interaction_state = INTERACTION_NORMAL
+        # 暂时整只退出碰撞世界（护驾飞行段，见 sprite_rally）：不撞鱼、不撞岛，
+        # 也不被撞；与 collision_enabled（用户的宠-宠碰撞开关）无关。
+        self.collision_suspended = False
         # 逐只显隐（M14 / PHASE4_DESIGN 4.1b）：False = 不绘制、不命中、不进
         # 位置 fanout（隐藏是"整只退出合成与交互面"，不是"变透明"）。默认 True。
         self._visible = True
@@ -993,6 +1006,96 @@ class PetSprite(QObject):
             end_rotation(painter, angle)
         if abs(throw_angle) >= 1e-6:  # 与上面的 begin 配对出栈
             self._end_throw_rotation(painter, throw_angle)
+        if self.caption:
+            self._paint_caption(painter)
+
+    # ---------------------------------------------------------------- 常驻标签
+    _CAPTION_FONT_PX = 12
+    _CAPTION_PAD_X = 8
+    _CAPTION_PAD_Y = 3
+    # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名一个含中文的字体——与气泡同一
+    # 种（等线，没装则各平台的中文 UI 字体，见 ui_fonts）。必须是**单族**。
+    _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
+    #: 配色 → (底色, 字色)
+    _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
+    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36))}
+
+    def _caption_layout(self) -> tuple[QRect, str]:
+        """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。
+
+        胶囊始终落在 ``rect()`` 之内——身体框上方或下方的透明留白里，水平对齐
+        身体框中心。画在画布矩形内意味着不需要单独的脏区：sprite 怎么重绘它就
+        怎么跟着走。
+        """
+        if not self.caption:
+            return QRect(), ""
+        rect, body = self.rect(), self.body_rect()
+        # 标签每帧都画：字体度量（建 QFont / QFontMetrics、省略、量宽）只在文本或
+        # 画布宽度变了才重算；位置是下面几行整数运算，移动时照常跟着走。
+        key = (self.caption, rect.width())
+        cached = self._caption_text_cache
+        if cached is None or cached[0] != key:
+            font = QFont(self._CAPTION_FONT_FAMILY) if self._CAPTION_FONT_FAMILY else QFont()
+            font.setPixelSize(self._CAPTION_FONT_PX)
+            metrics = QFontMetrics(font)
+            # 中间省略：开头是会话名、结尾是状态，两头都得看得见
+            text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideMiddle,
+                                      max(1, rect.width() - 2 * self._CAPTION_PAD_X - 2))
+            cached = (key, text, font,
+                      min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X),
+                      metrics.height() + 2 * self._CAPTION_PAD_Y)
+            self._caption_text_cache = cached
+        _key, text, _font, width, text_height = cached
+        height = min(rect.height(), text_height)
+        x = body.center().x() - width // 2
+        x = max(rect.left(), min(x, rect.right() - width + 1))
+        if self.caption_below:
+            y = min(body.bottom() + 2, rect.bottom() - height + 1)
+        else:
+            y = max(rect.top(), body.top() - height - 2)
+        return QRect(x, y, width, height), text
+
+    def caption_rect(self) -> QRect:
+        """标签胶囊在 overlay 局部坐标系下的矩形（无标签为空矩形）。"""
+        return self._caption_layout()[0]
+
+    def caption_pixmap(self) -> QPixmap | None:
+        """标签胶囊的贴图（含文字）；无标签为 None。
+
+        胶囊每帧都要上屏，但内容只在文本 / 尺寸 / DPR 变化时才变：渲染一次缓存
+        成贴图，之后 ``drawPixmap``。
+        """
+        pill, text = self._caption_layout()
+        if pill.isEmpty():
+            return None
+        fill, ink = self._CAPTION_TONES.get(self.caption_tone, self._CAPTION_DEFAULT_TONE)
+        key = (text, pill.width(), pill.height(), self._dpr, fill, ink)
+        cached = self._caption_pixmap_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        dpr = self._dpr
+        width, height = pill.width(), pill.height()
+        pixmap = QPixmap(max(1, int(round(width * dpr))), max(1, int(round(height * dpr))))
+        pixmap.setDevicePixelRatio(dpr)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(*fill))
+            painter.drawRoundedRect(QRectF(0, 0, width, height), height / 2, height / 2)
+            painter.setFont(self._caption_text_cache[2])
+            painter.setPen(QColor(*ink))
+            painter.drawText(QRect(0, 0, width, height), int(Qt.AlignmentFlag.AlignCenter), text)
+        finally:
+            painter.end()
+        self._caption_pixmap_cache = (key, pixmap)
+        return pixmap
+
+    def _paint_caption(self, painter: QPainter) -> None:
+        pixmap = self.caption_pixmap()
+        if pixmap is not None:
+            painter.drawPixmap(self.caption_rect().topLeft(), pixmap)
 
     def alpha_at(self, local: QPoint | QPointF) -> int:
         """sprite 局部**逻辑**坐标处的 alpha（0-255）。镜像已烘焙进缓存帧，无需再翻转。
@@ -1074,6 +1177,14 @@ class PetSprite(QObject):
         self._drag_trail.append((now, pos.x(), pos.y()))
         cutoff = now - physics_mod.TRAIL_KEEP_SEC
         self._drag_trail = [s for s in self._drag_trail if s[0] >= cutoff]
+
+    def rebase_drag(self) -> None:
+        """拖拽途中换了屏：作废已采的轨迹样本，从下一次移动重新采。
+
+        屏与屏之间的逻辑坐标不连续（中间可以隔着不存在的空隙），跨过去的那一步
+        在轨迹里是一次几百像素的瞬移——留着它，紧接着松手会被估成一次高速甩出。
+        """
+        self._drag_trail = []
 
     def on_release(self, pos: QPointF) -> None:
         """松手：落在光标处，按拖拽末段轨迹决定去向（语义对齐 window.py:3352-3366）。

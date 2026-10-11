@@ -218,7 +218,13 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-10-06 回调到 2407：该设置行改为 settings_music.browser_media_rows（受
 # 平台条件约束、并入既有的 `] + settings_music.browser_media_rows(self),` 一行），
 # 本文件净 −1 行（保存回写 4 行仍在）。实测 2407。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2407
+# 2026-10-11 设置页「保存」（不关窗）：本体在 settings_save.py，这里只有接线——
+# saved 信号 2 行、装按钮 2 行、_save_only 4 行、import 1 行，外加开机自启基线
+# 随写入更新 3 行（否则保存后再改回去不生效）。实测 2413。
+# 同日回调到 2406：在线更新整个移除，这里少了更新页的 import / 构造 / 域登记共 7 行。
+# 同日再回调到 2395：信息槽只留「当前时间 / 今日用量」，去掉「自定义短文本」那一行
+# 设置及其联动（输入框、设置行、信号接线、转发方法、保存回写共 11 行）。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2395
 
 
 def _read(name: str) -> str:

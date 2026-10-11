@@ -42,7 +42,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+#: 动图配图：气泡至少留到它播完一遍；一遍超过这么久的只播到这里（毫秒）
+ANIMATED_IMAGE_MAX_MS = 12_000
+
 # 批6-2 拆分后纯函数区 re-export（维持既有 import 兼容；外部调用点本批不改）
+from .animated_image import loop_duration_ms, open_movie
+from .ui_fonts import apply_family, font_css
 from .speech_bubble_text import (
     BUBBLE_BODY_FONT_PX,
     BUBBLE_SUBTITLE_FONT_PX,
@@ -263,6 +268,7 @@ class PetSpeechBubble(QFrame):
 
     def __init__(self, parent=None, style_id: str = "classic_top"):
         super().__init__(parent)
+        apply_family(self)   # 气泡里的字统一用等线（子控件继承；样式表里也各点一次名）
         self._interactive = False
         self._capture_compat = False
         self._capture_host: QWidget | None = None
@@ -398,6 +404,10 @@ class PetSpeechBubble(QFrame):
         # 往大涨，涨过一次就稳在那，整首歌不再随句子长短上下伸缩。
         self._locked_lines: int | None = None
         self._source_pixmap = QPixmap()
+        # 配图是动图时的播放器（静态图 / 文字为 None）与版式签名：换帧只换
+        # _source_pixmap、不动签名，所以播放期间只重画不重排。
+        self._movie = None
+        self._image_token = 0
         self._pet_scale: float | None = None
         self._image_scale: float = 1.0
         self._text_scale: float = 1.0
@@ -454,17 +464,17 @@ class PetSpeechBubble(QFrame):
         self.label.setStyleSheet(
             "QLabel#pet-speech-label { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
         )
         self._subtitle_label.setStyleSheet(
             "QLabel#pet-speech-subtitle { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
         )
         self._page_indicator.setStyleSheet(
             "QLabel#pet-page-indicator { background: transparent; border: none; padding: 0; "
             f"color: {self._preset['foreground']}; "
-            f"font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
+            f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_SUBTITLE_FONT_PX, self._text_scale)}px; }}"
         )
         self.update()
 
@@ -651,6 +661,7 @@ class PetSpeechBubble(QFrame):
         self._multi_line = bool(str(subtitle or "").strip())
         self._title_first = bool(title_first)
         self._width_locked = bool(width_locked) and self._title_first
+        self._stop_movie()
         self._source_pixmap = QPixmap()
         self._pet_scale = pet_scale
         self._reset_paging()
@@ -665,12 +676,12 @@ class PetSpeechBubble(QFrame):
                 self.label.setStyleSheet(
                     "QLabel#pet-speech-label { background: transparent; border: none; "
                     f"padding: 0; color: {self._preset['foreground']}; "
-                    f"font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
+                    f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_BODY_FONT_PX, self._text_scale)}px; }}"
                 )
                 self._subtitle_label.setStyleSheet(
                     "QLabel#pet-speech-subtitle { background: transparent; border: none; "
                     f"padding: 0; color: {self._preset['foreground']}; "
-                    f"font-size: {scale_bubble_font_px(BUBBLE_TITLE_FONT_PX, self._text_scale)}px; }}"
+                    f"{font_css()}font-size: {scale_bubble_font_px(BUBBLE_TITLE_FONT_PX, self._text_scale)}px; }}"
                 )
                 # 短标题不换行：气泡宽度会被歌词带窄，若标题跟着折行就会断成
                 # 两行、很难看。先按实际字体量宽度——放得下就关掉换行（宁可让
@@ -815,7 +826,7 @@ class PetSpeechBubble(QFrame):
                 header.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 header.setStyleSheet(
                     "QLabel { background: transparent; border: none;"
-                    " font-weight:600; font-size:11px; color:#2b3a4a;"
+                    f" font-weight:600; {font_css()}font-size:11px; color:#2b3a4a;"
                     " padding:2px 0 0 0; }"
                 )
                 self._button_layout.addWidget(header)
@@ -828,7 +839,7 @@ class PetSpeechBubble(QFrame):
                 hint.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 hint.setStyleSheet(
                     "QLabel { background: transparent; border: none;"
-                    " font-size:10px; color:#7a8a9a; padding:1px 0 0 0; }"
+                    f" {font_css()}font-size:10px; color:#7a8a9a; padding:1px 0 0 0; }}"
                 )
                 self._button_layout.addWidget(hint)
                 continue
@@ -852,7 +863,7 @@ class PetSpeechBubble(QFrame):
             btn.setStyleSheet(
                 "QPushButton {"
                 " background:#ffffff; border:1px solid #c9d4e0; border-radius:11px;"
-                " padding:4px 12px; font-size:11px; color:#2b3a4a;"
+                f" padding:4px 12px; {font_css()}font-size:11px; color:#2b3a4a;"
                 "}"
                 "QPushButton:hover { background:#eef6ff; border-color:#8ab8e8; }"
                 "QPushButton:pressed { background:#dcebfa; }"
@@ -907,8 +918,34 @@ class PetSpeechBubble(QFrame):
         """气泡被隐藏（超时 / dismiss / 父窗口隐藏）时通知上层。"""
         super().hideEvent(event)
         self._stop_page_fade()
+        self._stop_movie()      # 看不见了就别再解码
         self._teardown_interactive()
         self.hidden_signal.emit()
+
+    # ------------------------------------------------------------ 动图配图
+    def _stop_movie(self) -> None:
+        movie, self._movie = self._movie, None
+        if movie is None:
+            return
+        try:
+            movie.stop()
+            movie.deleteLater()
+        except RuntimeError:
+            pass    # 已随窗口销毁
+
+    def _on_movie_frame(self, _frame: int = 0) -> None:
+        movie = self._movie
+        if movie is None or self._content_kind != "image":
+            return
+        frame = movie.currentPixmap()
+        if frame.isNull():
+            return
+        self._source_pixmap = frame
+        # 只刷配图那一块（两种气泡外形各有各的配图矩形）
+        if self._preset.get("shape") == "breath_bubble":
+            self.update(self._breath_image_rect.toAlignedRect())
+        else:
+            self.update(self.label.geometry())
 
     def _reset_paging(self) -> None:
         """停止自动翻页并隐藏页码指示（单页内容/图片/换内容时调用）。"""
@@ -990,6 +1027,17 @@ class PetSpeechBubble(QFrame):
     ) -> bool:
         # pixmap 直供（调用方已解码/预热）：跳过同步磁盘读+解码——GUI 线程
         # 上的 QPixmap(str(path)) 是大图 100ms+ 级慢帧源（py-spy 实测）。
+        self._stop_movie()
+        # 动图（GIF / 动态 WebP）：用播放器的第一帧定版式——之后各帧同尺寸，换帧
+        # 只重画。调用方直供的那张预热图是静态首帧，这里不用它。
+        movie = open_movie(image_path, self)
+        if movie is not None:
+            first = movie.currentPixmap()
+            if first.isNull():
+                movie.deleteLater()
+                movie = None
+            else:
+                pixmap = first
         if pixmap is None:
             pixmap = QPixmap(str(image_path))
         if pixmap.isNull():
@@ -997,6 +1045,7 @@ class PetSpeechBubble(QFrame):
         self._content_kind = "image"
         self._raw_text = ""
         self._source_pixmap = pixmap
+        self._image_token = pixmap.cacheKey()
         self._pet_scale = pet_scale
         # 用户可调的配图显示尺寸（self_talk_image_scale，百分比/100），双保险钳位
         self._image_scale = max(0.5, min(3.0, float(image_scale)))
@@ -1023,7 +1072,14 @@ class PetSpeechBubble(QFrame):
         self.show()
         if not _MAC:
             self.raise_()
-        self._hide_timer.start(max(500, int(duration_ms)))
+        duration_ms = max(500, int(duration_ms))
+        if movie is not None:
+            # 至少播完一遍再收（太长的截到上限），不然动图刚动两下气泡就没了
+            duration_ms = max(duration_ms, min(loop_duration_ms(movie), ANIMATED_IMAGE_MAX_MS))
+            self._movie = movie
+            movie.frameChanged.connect(self._on_movie_frame)
+            movie.start()
+        self._hide_timer.start(duration_ms)
         return True
 
     def reflow(self, anchor_rect: QRect, *, pet_scale: float | None = None) -> None:
@@ -1166,14 +1222,15 @@ class PetSpeechBubble(QFrame):
 
         配图由**父控件** paintEvent 直接绘制（QLabel 只是占位），故换图/挪 label
         都必须让几何缓存失效；纯文字由 QLabel 自绘，不参与父控件绘制，不进签名。
-        ``QPixmap.cacheKey()`` 随每次 ``_source_pixmap`` 赋值变化（show_image 换图
-        必然失效），且是单调递增的 Qt 侧唯一键（不依赖对象地址复用）。
+        ``_image_token`` 在 show_image 换图时取 ``QPixmap.cacheKey()``（单调递增的
+        Qt 侧唯一键，不依赖对象地址复用），换图必然失效；动图播放期间逐帧换
+        ``_source_pixmap`` 但不动它——各帧同尺寸，几何不必重建。
         """
         pm = self._source_pixmap
         if self._content_kind != "image" or pm.isNull():
             return ()
         label = self.label.geometry()
-        return (pm.cacheKey(), label.x(), label.y(), label.width(), label.height())
+        return (self._image_token, label.x(), label.y(), label.width(), label.height())
 
     def _update_surface_geometry(self, global_rect: QRect) -> None:
         local = self.rect()

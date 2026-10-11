@@ -44,7 +44,7 @@ class _AiSettingsPage(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         # No-chat bundles exclude pet.chat and never construct this optional page.
         from .models import ProviderConfig, SecretStore
-        from .providers import test_connection
+        from .anthropic_provider import test_connection
 
         self.config = config
         self._provider_config_type = ProviderConfig
@@ -84,6 +84,11 @@ class _AiSettingsPage(QWidget):
         self.tokens.setValue(provider.max_tokens)
         self.skip_ssl = ToggleSwitch()
         self.skip_ssl.setChecked(not provider.verify_ssl)
+        self.effort = ModernSelect(self, width=160)
+        for label, value in (("低", "low"), ("中（默认）", "medium"), ("高", "high"),
+                             ("很高", "xhigh"), ("最高", "max")):
+            self.effort.addItem(label, value)
+        self.effort.setCurrentData(provider.effort)
         self.system_notify_check = ToggleSwitch()
         # 系统通知键：构造期快照无条件回写会把打开期间外部（老聊天设置即存入口
         # settings_dialog.py:437）对该键的改动静默回滚，所以只在用户实际拨动过
@@ -211,6 +216,7 @@ class _AiSettingsPage(QWidget):
             SettingRow("timeout", "请求超时", "等待模型服务响应的最长时间。", self.timeout),
             SettingRow("temperature", "Temperature", "数值越高，回答越随机。", self.temperature),
             SettingRow("max_tokens", "最大输出 Token", "限制模型单次回复的最大长度。", self.tokens),
+            SettingRow("effort", "思考力度（Effort）", "仅 Claude 通道生效：越高想得越深，回答越慢、花费越多。", self.effort),
             SettingRow("skip_ssl", "跳过 SSL 证书验证", "仅用于本地网关或自签名证书。", self.skip_ssl),
         ], self, advanced=True))
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
@@ -394,6 +400,7 @@ class _AiSettingsPage(QWidget):
             "timeout": float(self.timeout.value()),
             "temperature": float(self.temperature.value()),
             "max_tokens": int(self.tokens.value()),
+            "effort": str(self.effort.currentData() or "medium"),
             "vision_model": self.vision_model.text().strip(),
             "vision_same_as_chat": self.vision_same.isChecked(),
             "vision_base_url": self.vision_url.text().strip(),
@@ -414,6 +421,7 @@ class _AiSettingsPage(QWidget):
         self.timeout.setValue(int(draft.get("timeout", p.timeout)))
         self.temperature.setValue(float(draft.get("temperature", p.temperature)))
         self.tokens.setValue(int(draft.get("max_tokens", p.max_tokens)))
+        self.effort.setCurrentData(str(draft.get("effort", p.effort) or "medium"))
         self.vision_model.setText(draft.get("vision_model", p.vision_model))
         self.vision_same.setChecked(bool(draft.get("vision_same_as_chat", p.vision_same_as_chat)))
         self.vision_url.setText(draft.get("vision_base_url", p.vision_base_url))
@@ -451,6 +459,7 @@ class _AiSettingsPage(QWidget):
             timeout=base.timeout,
             temperature=base.temperature,
             max_tokens=base.max_tokens,
+            effort=base.effort,
             vision_model=base.vision_model,
             vision_same_as_chat=base.vision_same_as_chat,
             vision_base_url=base.vision_base_url,
@@ -466,6 +475,7 @@ class _AiSettingsPage(QWidget):
             "timeout": new.timeout,
             "temperature": new.temperature,
             "max_tokens": new.max_tokens,
+            "effort": new.effort,
             "vision_model": new.vision_model,
             "vision_same_as_chat": new.vision_same_as_chat,
             "vision_base_url": new.vision_base_url,
@@ -518,6 +528,7 @@ class _AiSettingsPage(QWidget):
         p.timeout = float(draft.get("timeout", p.timeout))
         p.temperature = float(draft.get("temperature", p.temperature))
         p.max_tokens = int(draft.get("max_tokens", p.max_tokens))
+        p.effort = str(draft.get("effort", p.effort) or "medium")
         p.vision_model = draft.get("vision_model", p.vision_model)
         p.vision_same_as_chat = bool(draft.get("vision_same_as_chat", p.vision_same_as_chat))
         p.vision_base_url = draft.get("vision_base_url", p.vision_base_url)
@@ -550,6 +561,8 @@ class _AiSettingsPage(QWidget):
             float(self.temperature.value()),
             int(self.tokens.value()),
             verify_ssl=not self.skip_ssl.isChecked(),
+            api_format=provider.api_format,
+            effort=str(self.effort.currentData() or "medium"),
         )
 
     def _run_test(self) -> None:
@@ -567,7 +580,12 @@ class _AiSettingsPage(QWidget):
         self._test_thread.start()
 
     def _run_test_worker(self, provider) -> None:
-        result = self._test_connection(provider, timeout=10.0)
+        try:
+            result = self._test_connection(provider, timeout=10.0)
+        except Exception as exc:
+            # 无论测试抛什么都要把结果送回去：否则这个线程悄悄死掉，按钮永远停在
+            # 「测试中…」（且是禁用态），只能关掉设置窗口重开。
+            result = (False, f"测试失败：{exc}")
         # 对话框可能在测试在飞时被关闭销毁（WA_DeleteOnClose）：直接
         # self.test_done.emit 会对已删 C++ 对象 RuntimeError。
         _safe_emit(self, "test_done", *result)
