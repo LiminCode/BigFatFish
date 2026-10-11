@@ -2605,6 +2605,15 @@ class AppShell:
         if not self._aggregate_pet_visible() and self._island_chat_available():
             self._show_island_chat(activate=True)
             return
+        overlay = getattr(self, "_overlay_shell", None)
+        if overlay is not None:
+            # overlay 拓扑：不构造 PetWindow，instance.win 恒为 None，而
+            # PetInstance.open_quick_chat 第一行就是 `if self.win is None: return`
+            # ——点了没有任何反应。快速对话气泡由壳自己开（锚在主 sprite 上）；
+            # 开不出来就退到完整聊天窗，总之不能静默。
+            if not overlay.open_quick_chat():
+                self._open_full_chat_from_island_chat()
+            return
         inst = self.instance
         if inst is not None and callable(getattr(inst, "open_quick_chat", None)):
             inst.open_quick_chat()
