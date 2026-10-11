@@ -38,7 +38,9 @@ from . import providers as _openai_compat
 from .models import ProviderConfig
 from .providers import ProviderError
 
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "claude-sonnet-5"
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+DEFAULT_EFFORT = "medium"
 DEFAULT_BASE_URL = "https://api.anthropic.com"
 _ANTHROPIC_HOST = "api.anthropic.com"
 _MIN_MAX_TOKENS = 16000
@@ -164,11 +166,32 @@ def to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dic
 
 # ---------------------------------------------------------------- 请求
 
-def _open_stream(client, model: str, system: str, messages: list[dict], max_tokens: int):
+def _effort_for(model: str, effort: str) -> str | None:
+    """这个模型该发的 effort；不支持 effort 的模型返回 None（发了就是 400）。
+
+    各代模型接受的档位不同：Haiku 4.5 / Sonnet 4.5 不支持；Opus 4.5 只有
+    low / medium / high；``xhigh`` 从 Opus 4.7 才有。超出的档位降到该模型的最高一档。
+    """
+    name = str(model or "").lower()
+    if "haiku" in name or "sonnet-4-5" in name:
+        return None
+    level = effort if effort in EFFORT_LEVELS else DEFAULT_EFFORT
+    if "opus-4-5" in name and level in ("xhigh", "max"):
+        return "high"
+    if ("opus-4-6" in name or "sonnet-4-6" in name) and level == "xhigh":
+        return "high"
+    return level
+
+
+def _open_stream(client, model: str, system: str, messages: list[dict], max_tokens: int,
+                 effort: str = DEFAULT_EFFORT):
     kwargs: dict[str, Any] = {"model": model, "max_tokens": max(int(max_tokens), _MIN_MAX_TOKENS),
                               "messages": messages}
     if system:
         kwargs["system"] = system
+    level = _effort_for(model, effort)
+    if level is not None:
+        kwargs["output_config"] = {"effort": level}
     if model in _FALLBACK_MODELS:
         return client.beta.messages.stream(betas=[_FALLBACK_BETA], fallbacks="default", **kwargs)
     return client.messages.stream(**kwargs)
@@ -215,7 +238,8 @@ class AnthropicProvider:
         model = str(config.model or "").strip() or DEFAULT_MODEL
         client = _client(config.api_key, config.base_url, config.timeout, config.verify_ssl)
         try:
-            with _open_stream(client, model, system, convo, config.max_tokens) as stream:
+            with _open_stream(client, model, system, convo, config.max_tokens,
+                              getattr(config, "effort", DEFAULT_EFFORT)) as stream:
                 if response_holder is not None:
                     response_holder.append(stream)      # 取消时由 ChatService 调它的 close()
                 for text in stream.text_stream:
@@ -252,7 +276,7 @@ def describe_image(jpeg_bytes: bytes, user_text: str, system_prompt: str, config
     ]
     try:
         with _open_stream(client, model, system_prompt, [{"role": "user", "content": content}],
-                          _MIN_MAX_TOKENS) as stream:
+                          _MIN_MAX_TOKENS, getattr(config, "effort", DEFAULT_EFFORT)) as stream:
             final = stream.get_final_message()
     except Exception as exc:
         raise _translate_error(sdk, exc, model) from exc

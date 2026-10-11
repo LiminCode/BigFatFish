@@ -211,9 +211,9 @@ def test_refusal_fallback_is_on_for_supported_models_only(fake):
     assert surface2 == "messages" and "fallbacks" not in kw2 and "betas" not in kw2
 
 
-def test_blank_model_defaults_to_claude_opus_5(fake):
+def test_blank_model_defaults_to_claude_sonnet_5(fake):
     _run([{"role": "user", "content": "嗨"}], _claude(model="  "))
-    assert fake.client.calls[0][1]["model"] == "claude-opus-5"
+    assert fake.client.calls[0][1]["model"] == "claude-sonnet-5"
 
 
 def test_refusal_is_reported_not_swallowed(fake):
@@ -237,7 +237,7 @@ def test_nothing_to_send_is_an_error(fake):
 @pytest.mark.parametrize("error, status, needle", [
     (_FakeSdk.AuthenticationError("bad key", 401), 401, "认证失败"),
     (_FakeSdk.PermissionDeniedError("no", 403), 403, "没有权限"),
-    (_FakeSdk.NotFoundError("no model", 404), 404, "claude-opus-5"),
+    (_FakeSdk.NotFoundError("no model", 404), 404, "claude-sonnet-5"),
     (_FakeSdk.RateLimitError("slow down", 429), 429, "频繁"),
     (_FakeSdk.APIStatusError("overloaded", 529), 529, "overloaded"),
     (_FakeSdk.APIConnectionError("dns"), None, "网络连接失败"),
@@ -500,3 +500,68 @@ def test_settings_page_recovers_when_the_connection_test_blows_up(tmp_path):
         assert "Could not resolve authentication method" in page.test_result.text()
     finally:
         page.deleteLater()
+
+
+# ---------------------------------------------------------------- effort（思考力度）
+
+def test_effort_defaults_to_medium_and_is_normalised():
+    assert ProviderConfig("p").effort == "medium"
+    assert ProviderConfig.from_dict("p", {"effort": "XHigh"}).effort == "xhigh"
+    assert ProviderConfig.from_dict("p", {"effort": "turbo"}).effort == "medium"
+    settings = ChatSettings.from_dict({"providers": {"c": {"effort": "low"}}})
+    assert ChatSettings.from_dict(settings.to_dict()).providers["c"].effort == "low"
+
+
+def test_effort_is_sent_with_chat_and_screen_reading(fake):
+    _run([{"role": "user", "content": "嗨"}], _claude(model="claude-sonnet-5"))
+    _run([{"role": "user", "content": "嗨"}], _claude(model="claude-sonnet-5", effort="high"))
+    ap.describe_image(b"x", "t", "s", _claude(model="claude-sonnet-5", effort="low"),
+                      model="claude-sonnet-5", base_url="", api_key="k")
+
+    efforts = [kwargs["output_config"] for _surface, kwargs in fake.client.calls]
+    assert efforts == [{"effort": "medium"}, {"effort": "high"}, {"effort": "low"}]
+
+
+@pytest.mark.parametrize("model, effort, sent", [
+    ("claude-haiku-4-5", "medium", None),          # 不支持 effort：发了就是 400
+    ("claude-sonnet-4-5", "high", None),
+    ("claude-opus-4-5", "max", "high"),            # 只有 low / medium / high
+    ("claude-sonnet-4-6", "xhigh", "high"),        # xhigh 从 Opus 4.7 才有
+    ("claude-opus-4-6", "max", "max"),
+    ("claude-opus-5", "xhigh", "xhigh"),
+    ("claude-sonnet-5", "nonsense", "medium"),
+])
+def test_effort_respects_what_each_model_accepts(fake, model, effort, sent):
+    _run([{"role": "user", "content": "嗨"}], _claude(model=model, effort=effort))
+    kwargs = fake.client.calls[0][1]
+    if sent is None:
+        assert "output_config" not in kwargs
+    else:
+        assert kwargs["output_config"] == {"effort": sent}
+
+
+def test_settings_page_has_an_effort_option_that_persists(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from pet.chat.ai_settings_page import _AiSettingsPage
+    from pet.config import Config
+
+    QApplication.instance() or QApplication([])
+    config = Config(base=tmp_path)
+    page = _AiSettingsPage(config)
+    try:
+        assert page.effort.currentData() == "medium"
+        assert page.provisional_config().effort == "medium"
+        page.effort.setCurrentData("high")
+        assert page.provisional_config().effort == "high"
+        page.save()          # 页面只把值交给 config；写盘由宿主设置窗口统一做
+        config.save()
+    finally:
+        page.deleteLater()
+
+    assert Config(base=tmp_path).chat_settings().active_config.effort == "high"
+    reopened = _AiSettingsPage(Config(base=tmp_path))
+    try:
+        assert reopened.effort.currentData() == "high"
+    finally:
+        reopened.deleteLater()
