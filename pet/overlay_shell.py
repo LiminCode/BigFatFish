@@ -1023,6 +1023,12 @@ class OverlayShell(QObject):
         self.agent_link_manager = agent_link_manager
         self.proactive_watcher = proactive_watcher
         self.session_pets = SessionPetController(self, enabled=self._session_pets_enabled)
+        # 会话小鱼的交互面（详情卡 / 专属右键菜单 / 跳转）
+        from .session_pet_ui import SessionPetActions
+        self.session_actions = SessionPetActions(
+            self, self.session_pets,
+            anchor_factory=lambda sprite: _SpriteChatAnchor(self, sprite), parent=self)
+        self.session_pets.session_gone.connect(self.session_actions.forget)
         if agent_link_manager is not None:
             self.session_pets.attach(agent_link_manager)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
@@ -1105,9 +1111,7 @@ class OverlayShell(QObject):
         # （slingshot_enabled 热读，设置页即改即生效）
         self.overlay.slingshot.config = self._config
         # 4.1c 全量右键菜单（facade 适配旧 context_menus 建造器）
-        from .sprite_menu_facade import build_sprite_full_menu
-        self.overlay._full_menu_builder = (
-            lambda target: build_sprite_full_menu(self, target))
+        self.overlay._full_menu_builder = self._build_menu_for
         # 跨屏：sprite ↔ 屏幕归属表 + 副屏视口（拖到哪块屏就住哪块屏）
         from .overlay_screens import ScreenRouter
         self._screens = ScreenRouter(self)
@@ -1171,6 +1175,16 @@ class OverlayShell(QObject):
         overlay.add_sprite_removed_listener(self.behavior.forget)
         overlay.add_sprite_removed_listener(self._probe.forget)
         overlay.add_sprite_removed_listener(self._throw_egg.forget)
+
+    def _build_menu_for(self, target):
+        """右键菜单：会话小鱼用它自己的精简菜单，其余走全量菜单。"""
+        from .sprite_menu_facade import build_sprite_full_menu
+
+        actions = getattr(self, "session_actions", None)
+        if actions is not None and self.is_session_pet(target):
+            from .session_pet_ui import build_session_pet_menu
+            return build_session_pet_menu(self, target, actions)
+        return build_sprite_full_menu(self, target)
 
     def _create_main_library(self):
         """per-pet MovieLibrary（T3）；角色素材缺失回退默认角色（口径同
@@ -2090,6 +2104,13 @@ class OverlayShell(QObject):
         ``after_display`` 重排**它的**周期定时器（避免与刚弹出的点击气泡叠一起）。
         """
         target = self.sprite if sprite is None else sprite
+        actions = getattr(self, "session_actions", None)
+        if actions is not None and self.is_session_pet(target):
+            # 会话小鱼是状态指示：单击看这个会话的详情，不走余额 / 自言自语气泡
+            if callable(getattr(self.overlay, "click_feedback", None)):
+                self._sound.on_click(target)
+            actions.show_card(target)
+            return
         # 点击音效：overlay 的 click_feedback 通道不带 sprite 身份（播放器对
         # "无 sprite"的调用已按契约静音，见 SpriteSoundPlayer.on_click），真正的
         # 播放落在这一句——门/音量/音源都取被点的那一只自己的配置。通道被置 None
@@ -2835,6 +2856,7 @@ class OverlayShell(QObject):
         self._run_exit_step('停止可见性监视器', self._watcher.stop)
         self._run_exit_step('删除运行标记', self._delete_runtime_marker)
         self._run_exit_step('关闭快速对话', self._close_quick_chat)
+        self._run_exit_step('关闭会话详情卡', self.session_actions.close)
         self._run_exit_step('收掉气泡跟随器', self._close_bubble_followers)
         self._run_exit_step('停 overlay 驱动', self.overlay.stop)
         self._run_exit_step('关闭 overlay 窗口', self.overlay.close)
@@ -4799,13 +4821,11 @@ class OverlayShell(QObject):
         # 4.1c 弹弓：controller 由 OverlayWindow 自持，这里只接 config
         # （slingshot_enabled 热读，设置页即改即生效）
         self.overlay.slingshot.config = self._config
-        from .sprite_menu_facade import build_sprite_full_menu
         # 点击气泡族（余额/点击自言自语）：新 overlay 上必须重挂，否则屏迁移后
         # 点击静默丢失（与 click_feedback 同位置）
         self.overlay._on_sprite_click = self._on_sprite_click
         self.overlay._click_route_spin = self._route_click_golden_spin
-        self.overlay._full_menu_builder = (
-            lambda target: build_sprite_full_menu(self, target))
+        self.overlay._full_menu_builder = self._build_menu_for
         self.overlay._through_changed = self._on_user_through_changed
         self.overlay._grab_finished_cb = self._on_grab_finished
         self.overlay.add_position_listener(self.sprite, self._on_main_sprite_moved)

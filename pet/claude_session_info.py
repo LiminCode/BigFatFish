@@ -1,0 +1,373 @@
+# -*- coding: utf-8 -*-
+"""Claude Code 会话详情：最近的问题、在哪打开的、进程还在不在（纯逻辑 + 本机读取，零 Qt）。
+
+会话小鱼平时只知道 hook 送来的几样东西（标题、项目名、工作目录、transcript 路径）。
+用户点开详情 / 要跳转时，这里再去读两处 Claude Code 自己的文件：
+
+- **transcript**（hook 给的 ``transcript_path``）尾部：``last-prompt`` 条目（最近一次
+  提问）、``gitBranch``、``entrypoint``；
+- **运行中会话清单** ``~/.claude/sessions/<pid>.json``：进程号、入口（``cli`` /
+  ``claude-vscode`` / ``sdk-cli``）、启动时间。
+
+这两处都是 Claude Code 的**内部格式**（官方文档明说 transcript 的条目格式会随版本变，
+清单则完全没有文档），所以这里的每一步都按「读不到就留空」处理——调用方拿到的
+``SessionDetail`` 永远可用，只是字段可能是空的。清单里还会留着进程早已不在的陈旧
+文件，所以「还活着」必须拿进程号 + 进程启动时间去和系统核对。
+
+**提问正文只在内存里**：按需读、读完交给界面，不写进事件文件、日志或配置
+（``docs/AGENT_LINK_PROTOCOL.md`` §6）。
+
+WSL 通道的两处文件在发行版里，经一次 ``wsl.exe`` 调用一并取回（``WSL_SCRIPT``）。
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Iterable
+
+from . import claude_hooks
+
+#: transcript 只读尾部这么多字节（最近一次提问、标题都在回合末尾反复追加）
+TAIL_BYTES = 512 * 1024
+#: 详情卡上「最近的问题」的显示上限
+PROMPT_MAX = 300
+
+ENTRY_VSCODE = "claude-vscode"
+ENTRY_CLI = "cli"
+#: 入口 → 给人看的说法（不认识的原样显示）
+ENTRY_TEXT = {ENTRY_VSCODE: "VS Code 插件", ENTRY_CLI: "终端", "sdk-cli": "SDK / 脚本"}
+
+#: Windows FILETIME（1601 起、100ns）→ Unix 秒
+_FILETIME_EPOCH_S = 11644473600
+
+
+@dataclass
+class SessionDetail:
+    """一个会话的全部已知信息。``alive``：True / False / None（无从判断）。"""
+
+    agent: str = "claude"
+    session_id: str = ""
+    title: str = ""
+    project: str = ""
+    cwd: str = ""
+    transcript: str = ""
+    phase: str = ""
+    tool: str = ""
+    last_prompt: str = ""
+    git_branch: str = ""
+    entrypoint: str = ""
+    version: str = ""
+    name: str = ""
+    pid: int | None = None
+    started_at: float | None = None    # Unix 秒
+    alive: bool | None = None
+    distro: str = ""                   # WSL 发行版名（仅 WSL 通道）
+    extra: dict = field(default_factory=dict)
+
+    @property
+    def is_wsl(self) -> bool:
+        return self.agent == "claude_wsl"
+
+    @property
+    def entry_text(self) -> str:
+        where = ENTRY_TEXT.get(self.entrypoint, self.entrypoint)
+        if self.is_wsl:
+            return f"{where} · WSL" if where else "WSL"
+        return where
+
+    @property
+    def resume_command(self) -> str:
+        """在终端里重新打开这个会话的命令（官方文档：按 ID 恢复不要求同一目录）。"""
+        return f"claude --resume {self.session_id}" if self.session_id else ""
+
+
+def from_session(agent: str, info: dict) -> SessionDetail:
+    """用 hook 送来的那几样（``SessionPetController.sessions()`` 的一项）起一份详情。"""
+    return SessionDetail(
+        agent=str(agent or "claude"), session_id=str(info.get("sessionId") or ""),
+        title=str(info.get("title") or ""), project=str(info.get("project") or ""),
+        cwd=str(info.get("cwd") or ""), transcript=str(info.get("transcript") or ""),
+        phase=str(info.get("phase") or ""), tool=str(info.get("tool") or ""))
+
+
+# ---------------------------------------------------------------- 解析
+def parse_transcript_tail(text: str) -> dict:
+    """从 transcript 尾部取 ``last_prompt / title / git_branch / entrypoint / version / cwd``。
+
+    逐行当 JSON 解析，从后往前、每个字段取最靠后的一次出现；解析不了的行（被截断的
+    第一行、格式变了的行）直接跳过。
+    """
+    found: dict[str, str] = {}
+    wanted = {"last_prompt", "title", "git_branch", "entrypoint", "version", "cwd"}
+    for line in reversed(text.splitlines()):
+        if not line.startswith("{"):
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("type")
+        if kind == "last-prompt":
+            found.setdefault("last_prompt", _clean(entry.get("lastPrompt"), PROMPT_MAX))
+        elif kind == "ai-title":
+            found.setdefault("title", _clean(entry.get("aiTitle"), 80))
+        for key, source in (("git_branch", "gitBranch"), ("entrypoint", "entrypoint"),
+                            ("version", "version"), ("cwd", "cwd")):
+            value = entry.get(source)
+            if isinstance(value, str) and value:
+                found.setdefault(key, value)
+        if wanted <= found.keys():
+            break
+    return {key: value for key, value in found.items() if value}
+
+
+def _clean(value, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def parse_registry(texts: Iterable[str]) -> dict[str, dict]:
+    """清单文件内容 → ``{sessionId: 条目}``；同一会话有多条时取最近更新的。"""
+    result: dict[str, dict] = {}
+    for text in texts:
+        try:
+            entry = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        sid = str(entry.get("sessionId") or "")
+        if not sid or not isinstance(entry.get("pid"), int):
+            continue
+        known = result.get(sid)
+        if known is None or _number(entry.get("updatedAt")) >= _number(known.get("updatedAt")):
+            result[sid] = entry
+    return result
+
+
+def _number(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def apply_registry(detail: SessionDetail, entry: dict | None) -> None:
+    if not entry:
+        return
+    detail.pid = entry.get("pid") if isinstance(entry.get("pid"), int) else None
+    detail.entrypoint = str(entry.get("entrypoint") or detail.entrypoint)
+    detail.name = str(entry.get("name") or "")
+    detail.version = str(entry.get("version") or detail.version)
+    started = _number(entry.get("startedAt"))
+    detail.started_at = started / 1000.0 if started else None
+    if not detail.cwd:
+        detail.cwd = str(entry.get("cwd") or "")
+
+
+def apply_transcript(detail: SessionDetail, parsed: dict) -> None:
+    detail.last_prompt = parsed.get("last_prompt", "")
+    detail.git_branch = parsed.get("git_branch", "")
+    detail.entrypoint = detail.entrypoint or parsed.get("entrypoint", "")
+    detail.version = detail.version or parsed.get("version", "")
+    detail.title = detail.title or parsed.get("title", "")
+    detail.cwd = detail.cwd or parsed.get("cwd", "")
+
+
+# ---------------------------------------------------------------- 本机（Windows / 原生）读取
+def read_tail(path: Path | str, limit: int = TAIL_BYTES) -> str:
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - limit))
+            return handle.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def registry_dir(home: Path | None = None) -> Path:
+    return (home or Path.home()) / ".claude" / "sessions"
+
+
+def read_registry(directory: Path) -> dict[str, dict]:
+    texts = []
+    try:
+        files = sorted(directory.glob("*.json"))
+    except OSError:
+        files = []
+    for path in files:
+        try:
+            texts.append(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return parse_registry(texts)
+
+
+def process_alive(entry: dict) -> bool | None:
+    """清单条目指的那个进程还在不在（进程号 + 启动时间都对得上才算）。
+
+    只核对本机进程；psutil 不可用时返回 None（无从判断，调用方按「不知道」处理，
+    不据此让小鱼离场）。
+    """
+    pid = entry.get("pid")
+    if not isinstance(pid, int):
+        return None
+    try:
+        import psutil
+    except ImportError:
+        return None
+    try:
+        process = psutil.Process(pid)
+        created = process.create_time()
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.Error:
+        return None
+    expected = _proc_start_seconds(entry.get("procStart"))
+    if expected is None:
+        return True
+    return abs(created - expected) < 5.0      # 进程号被别的进程复用了 → 不是它
+
+
+def _proc_start_seconds(raw) -> float | None:
+    """清单里的 ``procStart``（Windows：FILETIME 字符串）→ Unix 秒；别的平台不比对。"""
+    if sys.platform != "win32":
+        return None
+    try:
+        return int(str(raw)) / 1e7 - _FILETIME_EPOCH_S
+    except (TypeError, ValueError):
+        return None
+
+
+def load_local(detail: SessionDetail, *, home: Path | None = None,
+               alive: Callable[[dict], bool | None] = process_alive) -> SessionDetail:
+    """补全一个本机（非 WSL）会话的详情；返回同一个对象。"""
+    entry = read_registry(registry_dir(home)).get(detail.session_id)
+    apply_registry(detail, entry)
+    if entry is not None:
+        detail.alive = alive(entry)
+    if detail.transcript:
+        apply_transcript(detail, parse_transcript_tail(read_tail(detail.transcript)))
+    return detail
+
+
+def local_liveness(session_ids: Iterable[str], *, home: Path | None = None,
+                   alive: Callable[[dict], bool | None] = process_alive) -> dict[str, bool | None]:
+    """一批本机会话是否还活着：``{sessionId: True / False / None}``。
+
+    清单里没有这条会话 = None（清单是内部文件，没有记录不等于会话没了）。
+    """
+    registry = read_registry(registry_dir(home))
+    result: dict[str, bool | None] = {}
+    for sid in session_ids:
+        entry = registry.get(sid)
+        result[sid] = alive(entry) if entry is not None else None
+    return result
+
+
+# ---------------------------------------------------------------- WSL 读取
+#: 在发行版里跑的脚本：发行版名、清单文件（附该进程此刻的启动时刻，对不上 = 已死）、
+#: ``$2`` 那个会话的进程是在哪种终端里跑的（两个环境变量），以及 ``$1`` 指的
+#: transcript 尾部。各段用 ``@@`` 开头的标记行分隔。
+WSL_SCRIPT = r'''
+echo "@@distro ${WSL_DISTRO_NAME:-}"
+for f in "$HOME"/.claude/sessions/*.json; do
+    [ -f "$f" ] || continue
+    p=${f##*/}; p=${p%.json}
+    s=
+    [ -r "/proc/$p/stat" ] && s=$(sed 's/^.*) //' "/proc/$p/stat" 2>/dev/null | cut -d" " -f20)
+    printf '@@reg %s ' "$s"; tr -d '\n' < "$f"; echo
+    if [ -n "${2:-}" ] && [ -r "/proc/$p/environ" ] && grep -q "\"sessionId\":\"$2\"" "$f" 2>/dev/null; then
+        tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -E '^(TERM_PROGRAM|WT_SESSION)=' | sed 's/^/@@env /'
+    fi
+done
+echo "@@tail"
+[ -n "${1:-}" ] && tail -c ''' + str(TAIL_BYTES) + r''' "$1" 2>/dev/null
+:
+'''
+
+
+def parse_wsl_output(text: str) -> dict:
+    """``WSL_SCRIPT`` 的输出 → ``{"distro", "registry", "alive", "env", "tail"}``。
+
+    ``alive``：``{sessionId: 是否活着}``；``env``：被问的那个会话进程的
+    ``TERM_PROGRAM`` / ``WT_SESSION``（跳转时用来判断它在哪种终端里）。
+    """
+    head, found, tail = text.partition("\n@@tail\n")
+    if not found:
+        head, tail = text, ""
+    distro = ""
+    entries: list[str] = []
+    live_start: dict[int, str] = {}
+    env: dict[str, str] = {}
+    for line in head.splitlines():
+        if line.startswith("@@distro "):
+            distro = line[len("@@distro "):].strip()
+        elif line.startswith("@@env "):
+            key, _sep, value = line[len("@@env "):].partition("=")
+            env[key] = value
+        elif line.startswith("@@reg "):
+            start, _sep, body = line[len("@@reg "):].partition(" ")
+            if not body.startswith("{"):       # 进程不在：启动时刻那一栏是空的
+                body, start = (start + " " + body).strip(), ""
+            entries.append(body)
+            try:
+                pid = json.loads(body).get("pid")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(pid, int):
+                live_start[pid] = start
+    registry = parse_registry(entries)
+    alive = {}
+    for sid, entry in registry.items():
+        now = live_start.get(entry["pid"], "")
+        recorded = str(entry.get("procStart") or "")
+        # 进程在，且启动时刻对得上（清单没记启动时刻就只看进程在不在）
+        alive[sid] = bool(now) and (not recorded or now == recorded)
+    return {"distro": distro, "registry": registry, "alive": alive, "env": env, "tail": tail}
+
+
+def _safe_session_id(session_id: str) -> str:
+    """会话 ID 要拼进发行版里的 grep 模式：只放行 UUID 用得到的字符。"""
+    return session_id if session_id and all(c.isalnum() or c == "-" for c in session_id) else ""
+
+
+def load_wsl(detail: SessionDetail, *, runner=claude_hooks.run_wsl) -> SessionDetail:
+    """补全一个 WSL 会话的详情（一次 wsl.exe 调用；失败则原样返回）。"""
+    code, out = runner(["-e", "sh", "-c", WSL_SCRIPT, "sh", detail.transcript,
+                        _safe_session_id(detail.session_id)])
+    if code != 0 and not out:
+        return detail
+    parsed = parse_wsl_output(out)
+    detail.distro = parsed["distro"]
+    entry = parsed["registry"].get(detail.session_id)
+    apply_registry(detail, entry)
+    if entry is not None:
+        detail.alive = parsed["alive"].get(detail.session_id)
+    detail.extra["env"] = parsed["env"]
+    apply_transcript(detail, parse_transcript_tail(parsed["tail"]))
+    return detail
+
+
+def wsl_liveness(session_ids: Iterable[str], *,
+                 runner=claude_hooks.run_wsl) -> dict[str, bool | None]:
+    code, out = runner(["-e", "sh", "-c", WSL_SCRIPT, "sh", ""])
+    if code != 0 and not out:
+        return {sid: None for sid in session_ids}
+    parsed = parse_wsl_output(out)
+    return {sid: (parsed["alive"].get(sid) if sid in parsed["registry"] else None)
+            for sid in session_ids}
+
+
+def load(detail: SessionDetail) -> SessionDetail:
+    """按通道补全详情（阻塞：读文件 / 起 wsl.exe——在后台线程里调）。"""
+    try:
+        return load_wsl(detail) if detail.is_wsl else load_local(detail)
+    except Exception:
+        return detail      # 内部格式随时可能变：详情是锦上添花，绝不因此出错

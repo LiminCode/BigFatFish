@@ -2286,6 +2286,43 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
     def _poll(self, gen: int | None = None) -> None:
         super()._poll(gen)
         self._trim_events_file()
+        self._reap_dead_sessions(gen)
+
+    #: 每隔这么久核对一次会话进程是否还在
+    _LIVENESS_PERIOD_S = 60.0
+
+    def _reap_dead_sessions(self, gen: int | None) -> None:
+        """进程已经不在的会话按「已关闭」处理。
+
+        Claude Code 被直接杀掉（关窗口、崩溃、断电重启）时不发 ``SessionEnd``：它的
+        会话小鱼会一直留着，忙到一半的还会让桌宠一直停在「工作中」。这里拿 Claude
+        Code 自己的运行中会话清单核对进程（见 ``claude_session_info``）；清单里
+        没有记录的会话不动——没有记录不等于没了。
+        """
+        now = time.monotonic()
+        last = getattr(self, "_last_liveness", None)
+        if last is None:
+            self._last_liveness = now
+            return
+        if now - last < self._LIVENESS_PERIOD_S:
+            return
+        self._last_liveness = now
+        ids = self._sessions.session_ids()
+        if not ids:
+            return
+        from . import claude_session_info
+        probe = (claude_session_info.wsl_liveness if self.agent_key == "claude_wsl"
+                 else claude_session_info.local_liveness)
+        try:
+            verdicts = probe(ids)
+        except Exception:
+            log.debug("核对 Claude Code 会话进程失败", exc_info=True)
+            return
+        for sid, alive in verdicts.items():
+            if alive is False:
+                log.info("Claude Code 会话进程已不在，按已关闭处理 agent=%s session=%s",
+                         self.agent_key, sid[:8])
+                self._dispatch_state({"event": "SessionEnd", "sessionId": sid}, "SessionEnd", "", gen)
 
     def _trim_events_file(self) -> None:
         """事件文件超限且已读到末尾时清空（tailer 把截断识别为新文件，从头读起）。

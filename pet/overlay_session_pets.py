@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -34,6 +35,8 @@ class SessionPetController(QObject):
 
     #: 在用的会话有增减 / 换阶段 / 换标签（灵动岛卡片据此刷新）
     sessions_changed = Signal()
+    #: 一个会话离场了（``(agent_key, sessionId)``）：详情缓存、正开着的详情卡据此收掉
+    session_gone = Signal(object)
 
     def __init__(self, shell, *, enabled: Callable[[], bool], parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -44,6 +47,43 @@ class SessionPetController(QObject):
         # 在用的会话登记表：与「有没有鱼」无关——功能关着、超出上限的会话也照记，
         # 灵动岛卡片要的是「有哪些会话」。
         self._sessions: dict[tuple[str, str], dict] = {}
+        # 详情用的附加信息：完整工作目录、transcript 路径、最近调用的工具、当前阶段
+        # 的起始时刻。不进 _sessions——那张表的内容变化会触发灵动岛刷新。
+        self._extras: dict[tuple[str, str], dict] = {}
+        # 用户点了「让这只离场」的会话：到它关闭为止不再生小鱼
+        self._dismissed: set[tuple[str, str]] = set()
+
+    # ------------------------------------------------------------ sprite ↔ 会话
+    def key_of(self, sprite) -> tuple[str, str] | None:
+        """这只 sprite 代表哪个会话（``(agent_key, sessionId)``）；不是会话小鱼 → None。"""
+        for key, owned in self._pets.items():
+            if owned is sprite:
+                return key
+        return None
+
+    def sprite_of(self, key: tuple[str, str]):
+        return self._pets.get(key)
+
+    def describe(self, key: tuple[str, str]) -> dict | None:
+        """一个会话的已知信息：``sessions()`` 的那几项 + ``cwd / transcript / tool``。"""
+        info = self._sessions.get(key)
+        if info is None:
+            return None
+        extras = self._extras.get(key, {})
+        return {**info, **{k: v for k, v in extras.items() if k != "since"}}
+
+    def since(self, key: tuple[str, str]) -> float | None:
+        """当前阶段（工作中 / 等批准 / 休息中）是从什么时候开始的（Unix 秒）。"""
+        return self._extras.get(key, {}).get("since")
+
+    def dismiss(self, sprite) -> bool:
+        """让这只小鱼离场，并且这个会话关闭之前不再为它生小鱼。"""
+        key = self.key_of(sprite)
+        if key is None:
+            return False
+        self._dismissed.add(key)
+        self._retire(key)
+        return True
 
     def sessions(self) -> list[dict]:
         """在用的会话：``{"agent", "sessionId", "phase", "title", "project"}``，按出场先后。"""
@@ -79,11 +119,21 @@ class SessionPetController(QObject):
             return
         if phase == "gone":
             changed = self._sessions.pop(key, None) is not None
+            self._extras.pop(key, None)
+            self._dismissed.discard(key)
+            self.session_gone.emit(key)
         else:
             info = {"sessionId": key[1], "phase": phase,
                     "title": str(update.get("title") or ""), "project": str(update.get("project") or "")}
-            changed = self._sessions.get(key) != info
+            previous_info = self._sessions.get(key)
+            changed = previous_info != info
             self._sessions[key] = info
+            extras = self._extras.setdefault(key, {})
+            for name in ("cwd", "transcript", "tool"):
+                if update.get(name):
+                    extras[name] = str(update[name])
+            if previous_info is None or previous_info.get("phase") != phase:
+                extras["since"] = time.time()
         if changed:
             self.sessions_changed.emit()
         shell = self._shell
@@ -93,7 +143,7 @@ class SessionPetController(QObject):
             self._pets.pop(key, None)
             self._phases.pop(key, None)
             sprite = None
-        if phase == "gone" or not self._enabled():
+        if phase == "gone" or not self._enabled() or key in self._dismissed:
             self._retire(key)
             return
         if sprite is None:

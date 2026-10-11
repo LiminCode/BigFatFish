@@ -85,9 +85,10 @@ case $_dp_ts in *,*) _dp_ts="${_dp_ts%,*}.${_dp_ts#*,}" ;; esac
 case ${DSH_PET_EVENT:-} in
     UserPromptSubmit|Stop)
         _dp_raw cwd
+        _dp_cwd=$_dp_v
         _dp_proj=${_dp_v##*/}; _dp_proj=${_dp_proj##*\\}
         _dp_raw transcript_path
-        _dp_path=$_dp_v; _dp_title=
+        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=
         if [ -n "$_dp_path" ]; then
             # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
             [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
@@ -98,8 +99,10 @@ case ${DSH_PET_EVENT:-} in
                     _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
             esac
         fi
-        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s"}\n' \
-            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
+        # cwd / transcript 是 stdin 里原样截出的 JSON 字符串片段（Windows 路径的反斜杠
+        # 已经是转义好的 \\），直接嵌回去；它们只是两条路径，不含对话内容。
+        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s"}\n' \
+            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
 esac
 """
 
@@ -419,6 +422,11 @@ class ClaudeSessionTracker:
 
     #: 标签文本（项目名 / 会话标题）的长度上限
     _LABEL_MAX = 40
+    #: 路径（工作目录 / transcript）的长度上限
+    _PATH_MAX = 520
+    #: 随逐会话更新捎带的附加字段：有值才出现，值变了不单独触发一条更新
+    #: （``tool`` 每次工具调用都变，单独上报会把呈现层刷爆）。
+    _EXTRA_KEYS = ("cwd", "transcript", "tool")
 
     def __init__(self) -> None:
         self._busy: dict[str, str] = {}       # 会话 ID → thinking / working
@@ -426,16 +434,22 @@ class ClaudeSessionTracker:
         # 已「出场」的会话（提过问 / 被看到在干活）→ {"phase", "title", "project"}。
         # 逐会话呈现（会话小鱼）的数据源，与上面收敛成 Agent 级状态的记账互不影响。
         self._sessions: dict[str, dict[str, str]] = {}
+        self._extras: dict[str, dict[str, str]] = {}   # 会话 ID → 附加字段（见 _EXTRA_KEYS）
         self._updates: list[dict[str, str]] = []
 
     def reset(self) -> None:
         self._busy.clear()
         self._waiting.clear()
         self._sessions.clear()
+        self._extras.clear()
         self._updates.clear()
 
     def any_busy(self) -> bool:
         return bool(self._busy)
+
+    def session_ids(self) -> list[str]:
+        """记着的全部会话（已出场的 + 还占着「忙」的），存活核对用。"""
+        return list(dict.fromkeys([*self._sessions, *self._busy]))
 
     def take_session_updates(self) -> list[dict[str, str]]:
         """取走自上次以来的逐会话更新：``{"sessionId", "phase", "title", "project"}``。
@@ -443,6 +457,9 @@ class ClaudeSessionTracker:
         ``phase``：``working``（在干活）/ ``waiting``（等用户批准）/ ``resting``
         （回合结束）/ ``gone``（会话关闭或被淘汰）。只在内容变化时产生一条；
         只开着没提过问的会话不出场。
+
+        已知时另带 ``cwd``（完整工作目录）、``transcript``（会话记录文件路径）、
+        ``tool``（最近一次调用的工具）——会话详情与跳转用。
         """
         updates, self._updates = self._updates, []
         return updates
@@ -464,7 +481,19 @@ class ClaudeSessionTracker:
                 info[key] = value
                 changed = True
         if changed:
-            self._updates.append({"sessionId": sid, **info})
+            self._updates.append({"sessionId": sid, **info, **self._extras.get(sid, {})})
+
+    def _note_extra(self, sid: str, **fields: str) -> bool:
+        """记下附加字段（空值不覆盖已知值）；返回是否有路径类字段变了。"""
+        if sid not in self._sessions:
+            return False
+        extras = self._extras.setdefault(sid, {})
+        changed = False
+        for key, value in fields.items():
+            if value and extras.get(key) != value:
+                extras[key] = value
+                changed = changed or key != "tool"
+        return changed
 
     def end_all(self) -> None:
         """所有已出场的会话离场（通道被关掉时用）。"""
@@ -473,6 +502,7 @@ class ClaudeSessionTracker:
 
     def _session_gone(self, sid: str) -> None:
         info = self._sessions.pop(sid, None)
+        self._extras.pop(sid, None)
         if info is not None:
             self._updates.append({"sessionId": sid, **info, "phase": "gone"})
 
@@ -491,9 +521,19 @@ class ClaudeSessionTracker:
         resolved = False
 
         if event == "SessionMeta":
+            paths_changed = self._note_extra(
+                sid, cwd=str(record.get("cwd") or "")[:self._PATH_MAX],
+                transcript=str(record.get("transcript") or "")[:self._PATH_MAX])
+            before = len(self._updates)
             self._session_update(sid, title=self._label(record.get("title")),
                                  project=self._label(record.get("project")))
+            if paths_changed and len(self._updates) == before:
+                # 标题 / 项目名没变但路径是新知道的：补一条，呈现层才拿得到路径
+                self._updates.append({"sessionId": sid, **self._sessions[sid],
+                                      **self._extras.get(sid, {})})
             return out
+        if record.get("tool"):
+            self._note_extra(sid, tool=self._label(record.get("tool")))
         if event == "Notification":
             ntype = str(record.get("ntype") or "")
             if ntype in self._PROMPT_NTYPES:
