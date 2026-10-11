@@ -584,6 +584,16 @@ class SpriteMenuFacade:
                     log.debug("overlay: 回填联动管理器失败", exc_info=True)
         return manager
 
+    def toggle_session_pets(self, on: bool) -> None:
+        """「每个会话一只小鱼」开关：落盘；关掉时在场的会话小鱼立即离场。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_pets"] = bool(on)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        controller = getattr(self._shell, "session_pets", None)
+        if not on and controller is not None:
+            controller.clear()
+
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """Agent 联动子项（window.py ``_toggle_agent_link`` 等价，含拒绝回滚）。
 

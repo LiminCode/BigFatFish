@@ -84,6 +84,7 @@ from . import catalog
 from . import click_sound
 from . import overlay_settings_command
 from . import overlay_spawn_state
+from .overlay_session_pets import SessionPetController
 from . import slot_manager
 from . import window_alerts
 from .context_menus.shared import release_menu_tree
@@ -991,6 +992,9 @@ class OverlayShell(QObject):
         self._spawned: list = []
         self._spawned_libs: dict = {}
         self._spawned_slots: dict = {}
+        # 会话小鱼（每个 Claude Code 会话一只）：也在 _spawned 里（碰撞 / 绘制 /
+        # 隐藏等全部复用），但没有 slot 身份——不进活跃清单、不接管主身份。
+        self._session_pets: set = set()
         # B7b per-slot 取源：逐 sprite 的配置视图（配置同步边界重建）与子 sprite
         # 的各自主气泡跟随器/自言自语宿主/ pet 形宿主。
         self._sprite_cfg_cache: dict = {}
@@ -1018,6 +1022,9 @@ class OverlayShell(QObject):
         # 4.3 后半：共享子系统注入（等价 PetWindow 的构造参数；None = 惰性空转）
         self.agent_link_manager = agent_link_manager
         self.proactive_watcher = proactive_watcher
+        self.session_pets = SessionPetController(self, enabled=self._session_pets_enabled)
+        if agent_link_manager is not None:
+            self.session_pets.attach(agent_link_manager)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
         # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()
@@ -3030,6 +3037,8 @@ class OverlayShell(QObject):
         for sprite in self._spawned:
             slot = self._spawned_slots.get(sprite)
             label = f"小肥鱼 [slot-{slot}]" if slot is not None else "小肥鱼"
+            if sprite in self._session_pets:
+                label = f"会话：{sprite.caption}" if sprite.caption else "会话小鱼"
             entries.append((sprite, label))
         return entries
 
@@ -3290,6 +3299,8 @@ class OverlayShell(QObject):
         # 桌宠大小（scale）：旧机 refresh_pet_settings 即时 change_scale
         # （window.py:3937-3938），改完即改气泡画布/锚点。
         scale = self._config_scale(cfg)
+        if sprite in self._session_pets:      # 会话小鱼：跟主肥鱼走，再小一号
+            scale = catalog.smaller_scale_step(scale)
         if abs(float(getattr(sprite, "scale", scale)) - scale) > 1e-9:
             try:
                 sprite.scale = scale
@@ -3642,6 +3653,54 @@ class OverlayShell(QObject):
             # 自写当成"外部变更"，把**别的**子宠的运行态一起重下发（窄契约破了）。
             self._slot_signature_cache = self._slot_config_signatures()
 
+    # ------------------------------------------------------------ 会话小鱼（临时 sprite）
+    SESSION_PET_MAX = 6
+
+    def _session_pets_enabled(self) -> bool:
+        agent_cfg = self._config.get("agent_link") or {}
+        return bool(agent_cfg.get("session_pets", True)) if isinstance(agent_cfg, dict) else True
+
+    def is_session_pet(self, sprite) -> bool:
+        return sprite in self._session_pets
+
+    def spawn_session_pet(self):
+        """生一只会话小鱼，返回 sprite；到上限返回 None。
+
+        与 ``_spawn_slot`` 的区别只有身份：不分配 slot（身份永不回收，自动生成会
+        把 128 个名额耗光）、不落种配置、不进活跃清单，重启不复活。角色跟主配置，
+        大小是主肥鱼的小一号；不自言自语。
+        """
+        if len(self._session_pets) >= self.SESSION_PET_MAX:
+            return None
+        lib = self._create_main_library()
+        scale = catalog.smaller_scale_step(self._config_scale())
+        sprite = self._sprite_factory(lib, QPointF(0, 0), scale)
+        sprite.home_screen = self._screen
+        sprite.set_bounds(QRect(self._bounds))
+        sprite.set_pos(self._spawn_sprite_pos(sprite, {}))
+        self.overlay.add_sprite(sprite)
+        if not self._clips_playable():
+            self._set_sprite_clip_paused(sprite, True)
+        self._spawned.append(sprite)
+        self._spawned_libs[sprite] = lib
+        self._session_pets.add(sprite)
+        self._sync_sprite_settings()
+        self._ensure_sprite_bubble(sprite)
+        self._refresh_tray_menu()
+        return sprite
+
+    def remove_session_pet(self, sprite) -> None:
+        if sprite not in self._session_pets:
+            return
+        self._remove_spawned_sprite(sprite)
+        self._refresh_tray_menu()
+
+    def set_session_pet_caption(self, sprite, text: str) -> None:
+        if sprite.caption == text:
+            return
+        sprite.caption = text
+        self.overlay.update(QRegion(sprite.rect()))
+
     def _slot_writer(self, slot: int):
         """该 slot 的设置写入器（键/值 → ``config-slot-N.json``，原子写）。
 
@@ -3720,6 +3779,7 @@ class OverlayShell(QObject):
         （旧架构进程退出即整套资源释放；留着就是孤儿顶层气泡 + 空转定时器）。
         """
         config_dir = self._spawn_config_dir()
+        self._session_pets.discard(sprite)
         slot = self._spawned_slots.pop(sprite, None)
         geometry = self._sprite_geometry(sprite, self._bounds)
         if config_dir and slot and geometry:
@@ -3780,14 +3840,16 @@ class OverlayShell(QObject):
         """主宠退出（app.py:2944-2956 等价）：无子宠 → 全部退出语义；
         有子宠 → 活跃清单列表头提升为主（接管主身份/持久化身份）。"""
         self.save_position()
-        if not self._spawned:
+        # 会话小鱼没有持久身份，不接管主身份：只在手动生的小肥鱼里挑提升者
+        heirs = [s for s in self._spawned if s not in self._session_pets]
+        if not heirs:
             self._persist_active_slots()
             self._refresh_tray_menu()
             quit_fn = getattr(self.app, "quit", None)
             if callable(quit_fn):
                 quit_fn()  # 最后一窗关闭 → 走全部退出语义
             return True
-        promoted = self._spawned[0]
+        promoted = heirs[0]
         promoted_lib = self._spawned_libs.pop(promoted, None)
         promoted_slot = self._spawned_slots.pop(promoted, None)
         old_main, old_lib = self.sprite, self.lib

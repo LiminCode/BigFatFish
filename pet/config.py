@@ -238,6 +238,8 @@ def _default_agent_link_data() -> dict:
         # 自定义联动 Agent（协议见 docs/AGENT_LINK_PROTOCOL.md §4）：只读监听
         # 用户指定的事件文件，不写外部配置、无需授权弹窗，默认空
         "custom_agents": [],
+        # 每个在用的 Claude Code 会话单独生一只小鱼（标题 + 状态），overlay 拓扑才有
+        "session_pets": True,
         # 音效配置
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
@@ -341,6 +343,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
         "claude_wsl",
         "cursor",
         "opencode",
+        "session_pets",
         "sound_enabled",
         "sound_start_enabled",
         "sound_done_enabled",
