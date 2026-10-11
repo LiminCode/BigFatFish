@@ -275,11 +275,52 @@ def foreground_app_info() -> str:
     return ' | '.join(parts)
 
 
-def capture_screen_bytes() -> bytes:
-    """截全屏（含多显示器）→ 缩到最长边 MAX_EDGE → 内存 JPEG bytes，全程不落盘。"""
+def _monitor_rect_at(rect) -> tuple[int, int, int, int]:
+    """把 ``rect`` 对齐到它中心所在那块显示器的真实像素矩形（Windows）。
+
+    调用方给的矩形是由逻辑几何 × 缩放反推的，可能差一两个像素；截屏要的是
+    显示器自己报的矩形。查不到（非 Windows / API 失败）原样返回。
+    """
+    left, top, right, bottom = (int(v) for v in rect)
+    if sys.platform != "win32":
+        return left, top, right, bottom
+
+    class _MonitorInfo(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.wintypes.DWORD),
+                    ("rcMonitor", ctypes.wintypes.RECT),
+                    ("rcWork", ctypes.wintypes.RECT),
+                    ("dwFlags", ctypes.wintypes.DWORD)]
+
+    try:
+        user32 = ctypes.windll.user32
+        user32.MonitorFromPoint.argtypes = [ctypes.wintypes.POINT, ctypes.wintypes.DWORD]
+        user32.MonitorFromPoint.restype = ctypes.wintypes.HANDLE
+        user32.GetMonitorInfoW.argtypes = [ctypes.wintypes.HANDLE, ctypes.c_void_p]
+        center = ctypes.wintypes.POINT((left + right) // 2, (top + bottom) // 2)
+        monitor = user32.MonitorFromPoint(center, 2)  # MONITOR_DEFAULTTONEAREST
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        if not monitor or not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return left, top, right, bottom
+        found = info.rcMonitor
+        return int(found.left), int(found.top), int(found.right), int(found.bottom)
+    except (AttributeError, OSError, ValueError):
+        return left, top, right, bottom
+
+
+def capture_screen_bytes(rect=None) -> bytes:
+    """截屏 → 缩到最长边 MAX_EDGE → 内存 JPEG bytes，全程不落盘。
+
+    ``rect`` = 只截这一块（虚拟桌面物理像素 ``(左, 上, 右, 下)``，通常是一块
+    显示器）；``None`` = 整个虚拟桌面（全部显示器拼在一起）。多屏下整个桌面缩到
+    MAX_EDGE 后每块屏只剩几百像素宽，所以「看看屏幕」只截发起者所在的那一块。
+    """
     import io
     from PIL import Image, ImageGrab  # 懒导入：PIL 不随模块加载常驻（见模块头注释）
-    img = ImageGrab.grab(all_screens=True)
+    if rect is None:
+        img = ImageGrab.grab(all_screens=True)
+    else:
+        img = ImageGrab.grab(bbox=_monitor_rect_at(rect), all_screens=True)
     w, h = img.size
     scale = MAX_EDGE / max(w, h, 1)
     if scale < 1.0:

@@ -48,6 +48,7 @@ from typing import Any
 from PySide6.QtCore import QEasingCurve, QPointF, QRect
 
 from .pet_sprite import INTERACTION_NORMAL, INTERACTION_THROWN
+from .sprite_bounds import bounds_for
 from .window_effects import eased_progress, rotated_region_bounds
 
 # 日志锚点口径同旧机：定位「探出太多/按框探」需要姿态与分母框数据。
@@ -183,6 +184,10 @@ class SpriteEdgeProbeWorld:
     def set_bounds(self, bounds: QRect) -> None:
         """更新活动边界（屏幕/工作区变化时由集成层调用）；不重算在途姿态。"""
         self._bounds = QRect(bounds)
+
+    def _bounds_of(self, sprite: Any) -> QRect:
+        """该 sprite 的活动边界：住在别的屏上的用它自己那块屏的（sprite_bounds）。"""
+        return bounds_for(sprite, self._bounds)
 
     @property
     def active(self) -> bool:
@@ -374,7 +379,7 @@ class SpriteEdgeProbeWorld:
     def _tick_pre_entry(self, sprite: Any, now: float) -> None:
         """未会话：累计"贴边静止"时长，达到阈值即进入。"""
         st = self._states.get(sprite)
-        if not self._at_rest(sprite) or edge_side_at_rest(sprite, self._bounds) is None:
+        if not self._at_rest(sprite) or edge_side_at_rest(sprite, self._bounds_of(sprite)) is None:
             if st is not None:
                 self._states.pop(sprite, None)  # 离开边缘/动起来：累计作废
             return
@@ -394,7 +399,7 @@ class SpriteEdgeProbeWorld:
         st.reentry_remaining = max(0.0, st.reentry_remaining - dt)
         if st.reentry_remaining > 0.0:
             return
-        if self._at_rest(sprite) and edge_side_at_rest(sprite, self._bounds) is not None:
+        if self._at_rest(sprite) and edge_side_at_rest(sprite, self._bounds_of(sprite)) is not None:
             self._enter(sprite, st, now)
         else:
             self._states.pop(sprite, None)
@@ -419,7 +424,7 @@ class SpriteEdgeProbeWorld:
         # PEEKING 稳态：不推进、不需要 timer（等点击/取消），同旧机
 
     def _enter(self, sprite: Any, st: _ProbeState, now: float) -> None:
-        side = edge_side_at_rest(sprite, self._bounds) or "left"
+        side = edge_side_at_rest(sprite, self._bounds_of(sprite)) or "left"
         st.side = side
         st.rest_seconds = 0.0
         st.reentry_remaining = 0.0
@@ -434,7 +439,7 @@ class SpriteEdgeProbeWorld:
         log.info("[边缘探头] 入场 side=%s pos=(%.1f,%.1f) 身体框=%s 可用区=%s",
                  side, sprite.pos.x(), sprite.pos.y(),
                  sprite.body_rect().getRect() if hasattr(sprite, "body_rect") else None,
-                 self._bounds.getRect())
+                 self._bounds_of(sprite).getRect())
 
     def _begin_transition(self, sprite: Any, st: _ProbeState, mode: str,
                           duration_ms: int, *, to_angle: float, to_exposure: float,
@@ -500,7 +505,7 @@ class SpriteEdgeProbeWorld:
             body.translated(-rect.x(), -rect.y()),
             QRect(0, 0, rect.width(), rect.height()),
             angle)
-        target_x = probe_target_x(st.side, exposure, projected, self._bounds)
+        target_x = probe_target_x(st.side, exposure, projected, self._bounds_of(sprite))
         if abs(target_x - sprite.pos.x()) > 1e-9:
             sprite.set_pos(QPointF(target_x, sprite.pos.y()))
 

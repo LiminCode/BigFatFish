@@ -66,6 +66,7 @@ from typing import Any
 from PySide6.QtCore import QRect, QRectF
 
 from .pet_sprite import INTERACTION_NORMAL, INTERACTION_THROWN
+from .sprite_bounds import bounds_for
 from .throw_egg import THROW_EGG_AIR_FOLLOW_SPEED, THROW_EGG_RECOVER_SPEED
 
 log = logging.getLogger(__name__)
@@ -169,7 +170,7 @@ class SpriteThrowEggWorld:
             return
         vx, vy = self._velocity_of(sprite)
         speed = math.hypot(vx, vy)
-        touching = touching_boundary(sprite, self._bounds)
+        touching = touching_boundary(sprite, bounds_for(sprite, self._bounds))
         follow_threshold = (
             THROW_EGG_RECOVER_SPEED if touching else THROW_EGG_AIR_FOLLOW_SPEED
         )

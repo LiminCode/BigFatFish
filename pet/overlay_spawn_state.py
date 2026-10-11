@@ -181,7 +181,7 @@ def _finite(value):
 
 
 def _clean_geometry(geometry) -> dict:
-    """只保留合法几何键（rx/ry 有限数、facing 枚举、scale 正有限数）。"""
+    """只保留合法几何键（rx/ry 有限数、facing 枚举、scale 正有限数、屏名非空串）。"""
     result: dict = {}
     if not isinstance(geometry, dict):
         return result
@@ -195,6 +195,9 @@ def _clean_geometry(geometry) -> dict:
     scale = _finite(geometry.get("scale"))
     if scale is not None and scale > 0:
         result["scale"] = scale
+    screen_name = geometry.get("screen_name")
+    if isinstance(screen_name, str) and screen_name:
+        result["screen_name"] = screen_name  # 住在哪块副屏上（主屏不记）
     return result
 
 
@@ -207,7 +210,7 @@ def slot_config_exists(config_dir: Path | str, slot_id: int) -> bool:
 
 
 def read_slot_geometry(config_dir: Path | str, slot_id: int) -> dict:
-    """读 slot 身份持久化的几何（rx/ry/facing/scale）；无记录/损坏 → 空 dict。"""
+    """读 slot 身份持久化的几何（rx/ry/facing/scale/screen_name）；无记录/损坏 → 空 dict。"""
     return _clean_geometry(_load_slot_config(config_dir, slot_id))
 
 
@@ -319,6 +322,8 @@ def write_slot_geometry(config_dir: Path | str, slot_id: int, geometry) -> bool:
     data = _load_slot_config(config_dir, slot_id)
     data.setdefault("version", 4)
     data.update(clean)
+    if "screen_name" in geometry and "screen_name" not in clean:
+        data.pop("screen_name", None)  # 回到主屏：清掉上次记的副屏
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
