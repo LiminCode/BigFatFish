@@ -19,6 +19,7 @@ from collections import deque
 from PySide6.QtCore import QTimer
 
 from . import catalog
+from . import shuffle_bag
 from . import window_placement
 
 # 确认"音乐真的停了"所需的持续静音时长（秒）。歌曲的前奏/间奏/轻声段会让
@@ -420,23 +421,43 @@ def pick_self_talk_choice(texts, images, image_chance):
 
     为什么要先掷骰子：图片目录常有几十张图，和文本混在一起**等权随机**会让图片
     彻底压过文本——实测 24 张图 + 5 句文本 → 出图概率 82.8%，点击桌宠几乎总是
-    弹图。现在先决定"这次出图还是出文本"，再在对应池里等权选一条，用户设的百分比
+    弹图。现在先决定"这次出图还是出文本"，再在对应池里选一条，用户设的百分比
     就是真实概率（0 = 只出文本，100 = 只出图）。
+
+    池里怎么选：**洗牌式**（``shuffle_bag``）——图片、台词各一副牌，全部出过一轮才
+    重复。此前是每次独立随机，5 句台词每句每次 14%，连着出同一句很常见。
 
     只有一边有内容时不掷骰子：必须显示那一边，否则这一次点击会什么都不出现。
     """
-    clean_texts = [text for text in (texts or []) if str(text).strip()]
+    clean_texts = _clean_self_talk_texts(texts)
     image_list = list(images or [])
     if not clean_texts and not image_list:
         return None
     if not image_list:
-        return ("text", random.choice(clean_texts))
+        return ("text", shuffle_bag.draw(shuffle_bag.SELF_TALK_TEXT, clean_texts))
     if not clean_texts:
-        return ("image", random.choice(image_list))
+        return ("image", shuffle_bag.draw(shuffle_bag.SELF_TALK_IMAGE, image_list))
     chance = max(0.0, min(100.0, float(image_chance)))
     if random.random() * 100.0 < chance:
-        return ("image", random.choice(image_list))
-    return ("text", random.choice(clean_texts))
+        return ("image", shuffle_bag.draw(shuffle_bag.SELF_TALK_IMAGE, image_list))
+    return ("text", shuffle_bag.draw(shuffle_bag.SELF_TALK_TEXT, clean_texts))
+
+
+def _clean_self_talk_texts(texts) -> list:
+    return [text for text in (texts or []) if str(text).strip()]
+
+
+def fallback_self_talk_text(texts, images, image):
+    """抽到的配图这次显示不了（还没解码好）：把它放回牌堆顶，改出一句台词。
+
+    放回去是为了下次先出它——不然这张图这一轮就白白跳过了。台词照样走洗牌，
+    不再固定回退到第一句（那会让第一句的出现次数明显偏多）。没有台词返回 None。
+    """
+    shuffle_bag.put_back(shuffle_bag.SELF_TALK_IMAGE, list(images or []), image)
+    clean_texts = _clean_self_talk_texts(texts)
+    if not clean_texts:
+        return None
+    return shuffle_bag.draw(shuffle_bag.SELF_TALK_TEXT, clean_texts)
 
 
 def show_random_self_talk(host) -> bool:
@@ -526,7 +547,7 @@ def show_click_self_talk(host, click_name: str) -> bool:
     character_id = str(host.cfg.get('character', catalog.DEFAULT_CHARACTER))
     texts = host.cfg.click_talk_texts_for(character_id, click_name)
     if texts:
-        value = random.choice(texts)
+        value = shuffle_bag.draw(f"{shuffle_bag.CLICK_TEXT}:{click_name}", list(texts))
         shown = host._show_self_talk_text(value)
     else:
         host._last_self_talk_text = None

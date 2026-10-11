@@ -620,10 +620,12 @@ class _SpriteSelfTalkHost:
             image = cache.get(str(value))
             if image is None or image.isNull():
                 self._shell._warm_shared_self_talk_images([str(value)])
-                if not self._self_talk_texts:
+                text = window_alerts.fallback_self_talk_text(
+                    self._self_talk_texts, self._self_talk_images, value)
+                if text is None:
                     return False
-                self._last_self_talk_text = self._self_talk_texts[0]
-                return self._show_self_talk_text(self._last_self_talk_text)
+                self._last_self_talk_text = text
+                return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
                 pixmap=QPixmap.fromImage(image))
@@ -1972,10 +1974,12 @@ class OverlayShell(QObject):
             image = cache.get(str(value))
             if image is None or image.isNull():
                 self._warm_self_talk_images()
-                if not self._self_talk_texts:
+                text = window_alerts.fallback_self_talk_text(
+                    self._self_talk_texts, self._self_talk_images, value)
+                if text is None:
                     return False
-                self._last_self_talk_text = self._self_talk_texts[0]
-                return self._show_self_talk_text(self._last_self_talk_text)
+                self._last_self_talk_text = text
+                return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
                 pixmap=QPixmap.fromImage(image))
