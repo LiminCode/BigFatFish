@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QTimer, Qt
@@ -37,6 +38,21 @@ _PAGE_SIZE = 500
 _REPLY_PREVIEW_LIMIT = 150
 _REPLY_PREVIEW_SUFFIX = "…（全文见聊天窗）"
 
+# 气泡整体放大倍数（宽高、留白、圆角、字号一起放大）。原始尺寸（320~460 宽、
+# 系统默认字号）在高分屏上偏小；再乘「气泡文字大小」设置（bubble_text_scale，
+# 100 = 不额外缩放），所以用户调那一项时聊天气泡跟着变。
+QUICK_CHAT_BASE_SCALE = 2.0
+_SCALE_MIN, _SCALE_MAX = 1.0, 4.0
+
+
+def quick_chat_scale(config) -> float:
+    """聊天气泡的整体缩放倍数（构造时取一次）。"""
+    try:
+        percent = float(config.get("bubble_text_scale", 100) or 100)
+    except (AttributeError, TypeError, ValueError):
+        percent = 100.0
+    return max(_SCALE_MIN, min(_SCALE_MAX, QUICK_CHAT_BASE_SCALE * percent / 100.0))
+
 
 def _surface_radius(preset: dict) -> float:
     """气泡主体圆角。
@@ -66,8 +82,24 @@ class QuickChatBubble(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._capture_compat = False
         self._capture_host: QWidget | None = None
-        self.setMinimumWidth(320)
-        self.setMaximumWidth(460)
+        self._scale = quick_chat_scale(config)
+        font = self.font()
+        if font.pointSizeF() > 0:
+            font.setPointSizeF(font.pointSizeF() * self._scale)
+            self.setFont(font)  # 子控件在 _build 里创建，继承这份字号
+        min_w, max_w = self._px(320), self._px(460)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            # 放大后也不许比屏幕还宽（小屏 / 竖屏）
+            limit = max(240, screen.availableGeometry().width() - 16)
+            min_w, max_w = min(min_w, limit), min(max_w, limit)
+        self.setMinimumWidth(min_w)
+        self.setMaximumWidth(max_w)
+        # 完整聊天窗的同步入口（宿主注入）：``callback(session_id, focus=False)``。
+        # 回复落库后调一次，让开着的聊天窗重读；点「去聊天窗」时带 focus=True，
+        # 让聊天窗切到这里正在聊的会话。
+        self.chat_sync_callback = None
+        self._handoff = False  # 生成途中点了「去聊天窗」：关气泡也不打断这一轮
 
         style_id = str(config.get("self_talk_bubble_style", "classic_top") or "classic_top")
         self._preset = BUBBLE_STYLE_PRESETS.get(style_id, BUBBLE_STYLE_PRESETS["classic_top"])
@@ -90,10 +122,15 @@ class QuickChatBubble(QFrame):
         self._build()
         self._connect()
 
+    def _px(self, value: float) -> int:
+        """按气泡缩放倍数换算一个像素尺寸。"""
+        return int(round(value * self._scale))
+
     def _build(self) -> None:
+        px = self._px
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(px(14), px(12), px(14), px(12))
+        layout.setSpacing(px(8))
 
         header = QHBoxLayout()
         title = QLabel("快速对话")
@@ -106,22 +143,22 @@ class QuickChatBubble(QFrame):
         header.addWidget(self.hint_label)
         self.close_btn = QPushButton("×")
         self.close_btn.setObjectName("quick-chat-close")
-        self.close_btn.setFixedSize(24, 24)
+        self.close_btn.setFixedSize(px(24), px(24))
         header.addWidget(self.close_btn)
         layout.addLayout(header)
 
         self.output = QLabel("")
         self.output.setObjectName("quick-chat-output")
         self.output.setWordWrap(True)
-        self.output.setMinimumHeight(60)
+        self.output.setMinimumHeight(px(60))
         self.output.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.output_scroll = QScrollArea()
         self.output_scroll.setObjectName("quick-chat-output-scroll")
         self.output_scroll.setWidgetResizable(True)
         self.output_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.output_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.output_scroll.setMinimumHeight(60)
-        self.output_scroll.setMaximumHeight(220)
+        self.output_scroll.setMinimumHeight(px(60))
+        self.output_scroll.setMaximumHeight(px(220))
         self.output_scroll.setWidget(self.output)
         layout.addWidget(self.output_scroll)
 
@@ -133,7 +170,7 @@ class QuickChatBubble(QFrame):
         self.next_btn = QPushButton("→")
         for btn in (self.prev_btn, self.next_btn):
             btn.setObjectName("quick-chat-page")
-            btn.setFixedSize(28, 24)
+            btn.setFixedSize(px(28), px(24))
         self.open_chat_btn = QPushButton("去聊天窗")
         self.open_chat_btn.setObjectName("quick-chat-open")
         self.page_row.addWidget(self.prev_btn)
@@ -161,13 +198,13 @@ class QuickChatBubble(QFrame):
             QLabel#quick-chat-page {{ background: transparent; color: {fg}; border: none; }}
             QScrollArea#quick-chat-output-scroll {{ background: transparent; border: none; }}
             QPushButton {{
-                background: {border}; color: {fg}; border: none; border-radius: 8px;
-                padding: 3px 8px;
+                background: {border}; color: {fg}; border: none; border-radius: {px(8)}px;
+                padding: {px(3)}px {px(8)}px;
             }}
             QPushButton:hover {{ background: {fg}; color: {bg}; }}
             QLineEdit {{
                 background: {bg}; color: {fg}; border: 1px solid {border};
-                border-radius: 8px; padding: 5px 8px;
+                border-radius: {px(8)}px; padding: {px(5)}px {px(8)}px;
             }}
         """)
 
@@ -189,22 +226,24 @@ class QuickChatBubble(QFrame):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        rect = QRectF(self.rect()).adjusted(6, 8, -6, -8)
-        radius = _surface_radius(self._preset)
+        s = self._scale
+        rect = QRectF(self.rect()).adjusted(6 * s, 8 * s, -6 * s, -8 * s)
+        radius = _surface_radius(self._preset) * s
         body = QPainterPath()
         body.addRoundedRect(rect, radius, radius)
         tail = QPainterPath()
         tip_x = rect.center().x()
+        half, rise, overlap = 8 * s, 6 * s, 2 * s
         if self._tail_up:
-            tip = QPointF(tip_x, rect.top() - 6)
-            tail.moveTo(QPointF(tip_x - 8, rect.top() + 2))
+            tip = QPointF(tip_x, rect.top() - rise)
+            tail.moveTo(QPointF(tip_x - half, rect.top() + overlap))
             tail.lineTo(tip)
-            tail.lineTo(QPointF(tip_x + 8, rect.top() + 2))
+            tail.lineTo(QPointF(tip_x + half, rect.top() + overlap))
         else:
-            tip = QPointF(tip_x, rect.bottom() + 6)
-            tail.moveTo(QPointF(tip_x - 8, rect.bottom() - 2))
+            tip = QPointF(tip_x, rect.bottom() + rise)
+            tail.moveTo(QPointF(tip_x - half, rect.bottom() - overlap))
             tail.lineTo(tip)
-            tail.lineTo(QPointF(tip_x + 8, rect.bottom() - 2))
+            tail.lineTo(QPointF(tip_x + half, rect.bottom() - overlap))
         tail.closeSubpath()
         surface = body.united(tail).simplified()
 
@@ -347,6 +386,7 @@ class QuickChatBubble(QFrame):
             self.store.save(self.session)
         else:
             self.session = synced
+        self._notify_chat_sync()
         self.output.setText("")
         self._set_reply_text("")
         self._page = 0
@@ -383,13 +423,16 @@ class QuickChatBubble(QFrame):
         else:
             self.session = synced
         self._active_request_id = None
+        self._handoff = False
         self.hint_label.setText("")
         self._render_reply()
+        self._notify_chat_sync()
 
     def _error(self, request_id: str, text: str) -> None:
         if request_id != self._active_request_id:
             return
         self._active_request_id = None
+        self._handoff = False
         self.hint_label.setText("")
         self._set_reply_text(f"请求失败：{text}")
         self._render_reply()
@@ -398,6 +441,7 @@ class QuickChatBubble(QFrame):
         if request_id != self._active_request_id:
             return
         self._active_request_id = None
+        self._handoff = False
         self.hint_label.setText("已停止")
 
     # ------------------------------------------------------------ 显示
@@ -443,11 +487,25 @@ class QuickChatBubble(QFrame):
         self.next_btn.setEnabled(self._page < len(self._pages) - 1)
 
     def _open_full_chat(self) -> None:
+        # 聊天窗一激活，本气泡就会因失焦而关闭。回答还在生成时不能跟着被掐掉：
+        # 让这一轮在后台跑完、照常落库，落库后再通知聊天窗重读。
+        self._handoff = bool(self.service.busy)
         pet = self.pet_window
         if pet is not None and callable(getattr(pet, "on_open_chat", None)):
             pet.on_open_chat()
         elif hasattr(self, "open_chat_callback") and callable(self.open_chat_callback):
             self.open_chat_callback()
+        # 聊天窗是隐藏后复用的，手里可能还是旧快照，甚至停在别的会话上
+        self._notify_chat_sync(focus=True)
+
+    def _notify_chat_sync(self, *, focus: bool = False) -> None:
+        callback = self.chat_sync_callback
+        if not callable(callback):
+            return
+        try:
+            callback(self.session.session_id, focus=focus)
+        except Exception:
+            logging.exception("快速对话：同步聊天窗失败")
 
     def event(self, event) -> bool:
         if event.type() == QEvent.Type.WindowDeactivate and self.isVisible():
@@ -466,7 +524,7 @@ class QuickChatBubble(QFrame):
             self.close()
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if self.service.busy:
+        if self.service.busy and not self._handoff:
             self.service.stop()
         if self._capture_compat and self._capture_host is not None:
             setter = getattr(self._capture_host, "set_capture_headroom", None)

@@ -747,6 +747,7 @@ class PetInstance:
         if self.quick_chat is None:
             self.quick_chat = QuickChatBubble(self.config, pet_window=self.win)
             self.quick_chat.open_chat_callback = self.open_chat
+            self.quick_chat.chat_sync_callback = self.sync_chat_windows
         else:
             self.quick_chat.pet_window = self.win
             self.quick_chat.settings = self.config.chat_settings()
@@ -772,6 +773,7 @@ class PetInstance:
             )
         else:
             self.legacy_chat_window.set_pet_window(host)
+            self.legacy_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
         self.chat_window = self.legacy_chat_window
         self._present_dialog(self.legacy_chat_window, lambda: self.legacy_chat_window.position_near_pet(host))
 
@@ -792,8 +794,24 @@ class PetInstance:
             )
         else:
             self.modern_chat_window.set_pet_window(host)
+            self.modern_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
         self.chat_window = self.modern_chat_window
         self._present_dialog(self.modern_chat_window, lambda: self.modern_chat_window.position_near_pet(host))
+
+    def sync_chat_windows(self, session_id: str, *, focus: bool = False) -> None:
+        """快速对话 / 灵动岛气泡往会话里写了东西：让完整聊天窗跟上。
+
+        ``focus=True``（气泡里点了「去聊天窗」）：当前聊天窗切到这个会话并重读。
+        否则只刷新**开着且正停在这个会话上**的聊天窗——不把用户正在看的别的
+        会话换掉。
+        """
+        for window in (self.legacy_chat_window, self.modern_chat_window):
+            if window is None or not shiboken6.isValid(window):
+                continue
+            if focus and window is self.chat_window:
+                window.sync_from_store(session_id)
+            elif window.isVisible() and window.session.session_id == session_id:
+                window.sync_from_store()
 
     def _defer_while_popup_active(self, key: str, callback) -> bool:
         """Avoid constructing a heavy dialog inside QMenu.exec()."""
@@ -2646,6 +2664,7 @@ class AppShell:
             self.island_chat.show_pet_requested.connect(self._show_pets_from_island_chat)
         bubble = self.island_chat
         bubble.open_chat_callback = self._open_full_chat_from_island_chat
+        bubble.chat_sync_callback = self._sync_chat_windows_from_island_chat
         bubble.settings = self.config.chat_settings()
         bubble.refresh_session()
         bubble.show_for_island(self.island, activate=activate, reply_text=reply_text)
@@ -2671,6 +2690,13 @@ class AppShell:
         inst = getattr(self, "instance", None)
         if inst is not None and callable(getattr(inst, "open_chat", None)):
             inst.open_chat()
+
+    def _sync_chat_windows_from_island_chat(self, session_id: str, *,
+                                            focus: bool = False) -> None:
+        inst = getattr(self, "instance", None)
+        sync = getattr(inst, "sync_chat_windows", None)
+        if callable(sync):
+            sync(session_id, focus=focus)
 
     def _island_feedback_available(self) -> bool:
         """桌宠隐藏期间灵动岛反馈面是否可用（window 的联动暂停决策探针）。
