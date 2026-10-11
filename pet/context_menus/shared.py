@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QMenu
 
 from .. import autostart as autostart_mod
 from .. import catalog
+from .. import claude_hooks
 from ..harness_launcher import launch_harness_gui
 from ..updater import QUARK_PAN_URL as QUARK_PAN_URL, REPO_URL as REPO_URL
 from .icons import fitted_pet_pixmap_icon, pet_avatar_menu_icon, vector_menu_icon
@@ -379,12 +380,16 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
     sub = add_submenu(menu, "Agent 联动", None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
-    for agent_key, agent_label in (
+    agents = [
         ('dsh', 'DeepSeek Harness (DSH)'),
         ('claude', 'Claude Code'),
         ('cursor', 'Cursor'),
         ('opencode', 'OpenCode'),
-    ):
+    ]
+    # WSL 里的 Claude Code：只在装了 WSL 的 Windows 上才有这个通道
+    if claude_hooks.wsl_exe():
+        agents.insert(2, ('claude_wsl', 'Claude Code (WSL)'))
+    for agent_key, agent_label in agents:
         act = sub.addAction(agent_label)
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get(agent_key, False)))

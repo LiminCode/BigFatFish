@@ -66,6 +66,8 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 | `event` | 二选一 | 事件名，见 §2.4 内置映射；不认识的会被忽略 |
 | `state` | 二选一 | 显式状态，必须是 §2.3 六态词汇之一；优先于 `event` |
 | `tool` | 可选 | 工具名（小写），用于「过程汇报」气泡（如 `bash` → 「正在跑命令」） |
+| `sessionId` | 可选 | 会话标识。目前只有 Claude Code 通道消费：同一 Agent 的多个会话写同一个文件时，按它分别记账（见 §3.1） |
+| `ntype` | 可选 | 仅 `event: "Notification"` 时有意义：Claude Code 的通知类型（`permission_prompt` 等，见 §3.1） |
 
 ### 2.3 六态状态词汇（读方统一词汇）
 
@@ -108,6 +110,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 |---|---|---|---|
 | DSH | 插件订阅 | 内置桥接插件 `integrations/dsh-pet-bridge/` 订阅 agent 生命周期事件，按实例写桥目录 `<base>/dsh-pet-bridge/dsh-{pid}.jsonl`（消费端 glob `dsh*.jsonl`，兼容旧版单文件 `dsh.jsonl`） | 安装/卸载 dsh 插件（弹窗同意） |
 | Claude Code | hooks 注入 | 向 `~/.claude/settings.json` 注入官方 hooks，落地脚本把事件写 `agent-events/claude.jsonl` | 注入/卸载 hooks（弹窗同意） |
+| Claude Code (WSL) | hooks 注入 | 同上，但注入的是 WSL 默认发行版里的 `~/.claude/settings.json`（经 `wsl.exe` 读写）；事件仍写 Windows 侧的 `agent-events/claude_wsl.jsonl`（发行版里是 `/mnt/c/…`）。仅 Windows | 注入/卸载 hooks（弹窗同意） |
 | Cursor | transcript 直读 | 直接 tail `~/.cursor/projects/**/agent-transcripts/*.jsonl`（官方转写文件，按 role/content 解析） | 否 |
 | OpenCode | 数据库直读 | 只读 `~/.local/share/opencode/opencode.db` 的 `event` 表（rowid 增量） | 否 |
 
@@ -116,6 +119,18 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 - **Agent 有插件/hook 机制** → 优先「hook 注入 + 统一协议写文件」（模式同 Claude Code），这是侵入最小、协议最稳的方式。
 - **Agent 有现成的本地事件源**（transcript/日志/SQLite）→ 可以像 Cursor/OpenCode 那样写直读适配器（需要改桌宠代码，见 §5）。
 - **Agent 什么都没有** → 只要它能执行任意命令（几乎都能），就可以让它周期性地往统一协议文件追加一行 JSON——配合 §4 的自定义通道，零代码接入。
+
+### 3.1 Claude Code 通道细节（`claude` / `claude_wsl`）
+
+两个通道共用 `ClaudeCodeMonitor`，纯逻辑在 `pet/claude_hooks.py`。
+
+- **hook 脚本**：`agent-events/claude_event_hook.sh`，POSIX sh，由 hook 命令 `source` 执行，只用 shell 内建命令；事件名 / Agent 名 / 输出文件经环境变量（`DSH_PET_EVENT` / `DSH_PET_AGENT` / `DSH_PET_OUT`）传入，所以两个通道是同一份脚本。Windows 上 Claude Code 用 Git Bash 跑 hook（命令带 `"shell": "bash"`）；找不到 Git Bash 才回退到 PowerShell 脚本。脚本只读 stdin 的前 4096 字节：需要的字段都排在最前面，而 `PostToolUse` 的载荷可以有几百 KB。
+- **注入的事件**：`PreToolUse` / `PostToolUse` / `PostToolUseFailure` / `Stop` / `StopFailure` / `SessionStart` / `SessionEnd` / `UserPromptSubmit` / `Notification`。hook 全部同步执行——事件顺序即落盘顺序（异步 hook 会让 `Stop` 抢在迟到的工具事件前面）。
+- **多会话收敛**（`ClaudeSessionTracker`）：按 `sessionId` 分别记「忙 / 不忙」，Agent 级状态 = 任一会话在忙。一个会话收工而别的还在忙时只弹一条提示，不切待机；最后一个会话收工才走完整的完成流程。
+- **与 §2.4 通用映射的差异**：`PostToolUseFailure` 算 `working`（工具失败后回合照常继续，回合失败是 `StopFailure`）；`SessionStart` 不产生状态（自动压缩上下文会在回合中途触发它）；非忙状态只在该会话此前确实在忙时才上报。
+- **等待批准**：`Notification` 且 `ntype` 为 `permission_prompt` / `elicitation_dialog` → 挂一条常驻提示；同一会话的下一个事件到来即视为已答复（Claude Code 没有「用户已答复」事件）。`ntype: idle_prompt` 用来释放被 Esc 打断的会话（打断不发 `Stop`）。
+- **事件文件归桌宠所有**：启动时先建好空文件（避免首批事件被防回放跳过）；超过约 1MB 且没有会话在忙时由读方清空——写方是 shell 脚本，没法自己轮转（§2.5 第 3 条的例外）。
+- **WSL**：只支持默认发行版。读写发行版内的 settings.json 不走 `\\wsl.localhost` 共享（经共享原子替换会把文件权限重置成 644），而是在发行版内写临时文件、照抄原权限再 `mv`。所有 `wsl.exe` 调用都在后台线程并带 `CREATE_NO_WINDOW`。
 
 ## 4. 自定义 Agent 通道（不改桌宠代码）
 
@@ -138,7 +153,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 
 | 字段 | 约束 |
 |---|---|
-| `key` | `^[a-z0-9][a-z0-9_-]{0,31}$`，不得与内置键（`dsh`/`claude`/`cursor`/`opencode`）重复，全局唯一 |
+| `key` | `^[a-z0-9][a-z0-9_-]{0,31}$`，不得与内置键（`dsh`/`claude`/`claude_wsl`/`cursor`/`opencode`）重复，全局唯一 |
 | `name` | 联动气泡/菜单显示名；留空时用 key |
 | `path` | 事件文件路径，支持 `~` 展开；文件不必预先存在（不存在时静默等待） |
 
@@ -163,6 +178,7 @@ printf '{"ts": %s, "state": "idle"}\n' "$(date +%s)" >> ~/.gemini/pet-events.jso
 | 3 | `pet/agent_link.py` `AgentLinkManager.__init__` | `monitors` 字典注册监视器实例 |
 | 4 | `pet/agent_link.py` `AgentLinkManager.AGENT_NAMES` | 显示名 |
 | 5 | `pet/context_menus/shared.py` `add_agent_link_menu()` | 菜单条目 |
+| 6 | `pet/window_optional_services.py` `_agent_link_wanted()` | 启动时是否装配联动管理器的键列表 |
 
 监视器实现上，走统一协议的只需继承 `BaseAgentMonitor`（参考 `CustomAgentMonitor`）；已有本地事件源的覆写 `_poll()`（参考 `CursorMonitor`/`OpenCodeMonitor`），把解析结果经 `state_changed`/`activity` 信号发出即可。
 

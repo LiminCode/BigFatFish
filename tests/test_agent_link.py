@@ -493,6 +493,7 @@ class TestAgentLinkManager:
         assert cfg.data["agent_link"] == {
             "dsh": False,
             "claude": False,
+            "claude_wsl": False,
             "cursor": False,
             "opencode": False,
             "custom_agents": [],
