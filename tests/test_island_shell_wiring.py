@@ -404,3 +404,125 @@ def test_overlay_island_drag_wakes_tick_tier(tmp_path):
         driver.stop()
         _teardown_overlay_shell(shell, host)
         app.processEvents()
+
+
+# ---------------------------------------------------------------- 卡片内容来源
+
+class _FakeSessionRegistry:
+    def __init__(self, sessions) -> None:
+        self._sessions = sessions
+
+    def sessions(self):
+        return list(self._sessions)
+
+
+def _card_shell(tmp_path, monkeypatch, *, source: str, claude_on: bool, sessions=()):
+    from types import SimpleNamespace
+
+    shell = _make_shell(tmp_path, card_source=source)
+    shell._balance_busy = False
+    shell._balance_cache = None
+    shell._balance_cache_path = Path(shell.config.dir) / "balance_cache.json"
+    agent_cfg = dict(shell.config.get("agent_link"))
+    agent_cfg["claude"] = claude_on
+    shell.config.set("agent_link", agent_cfg)
+    provider = SimpleNamespace(id="p", base_url="http://x", api_key="", verify_ssl=True)
+    monkeypatch.setattr(shell.config, "chat_settings", lambda: SimpleNamespace(active_config=provider))
+    asked: list = []
+    monkeypatch.setattr(shell.config, "resolve_api_key", lambda _p: (asked.append(1), "")[1])
+    shell._sync_dynamic_island()
+    # 建岛之后再挂：这里只要 AppShell 读会话登记表的那一面，不要整只 overlay 壳
+    shell._overlay_shell = SimpleNamespace(session_pets=_FakeSessionRegistry(sessions))
+    return shell, asked
+
+
+_WORKING = {"agent": "claude", "sessionId": "abc", "phase": "working", "title": "Fix login loop", "project": "p"}
+
+
+def test_card_shows_claude_sessions_when_the_claude_link_is_on(tmp_path, monkeypatch):
+    """开着 Claude Code 联动的人看的是会话，不是 DeepSeek 余额——也就不再去要 API Key。"""
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude Code · 1 个在干活"
+        assert shell.island._balance_tier_text == "Fix login loop · 写代码中"
+        assert asked == [], "Claude 模式不碰 API Key"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_keeps_the_balance_when_the_claude_link_is_off(tmp_path, monkeypatch):
+    _qapp()
+    shell, asked = _card_shell(tmp_path, monkeypatch, source="auto", claude_on=False)
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+        assert asked == [1]
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_source_can_be_pinned_either_way(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="balance", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+    finally:
+        _teardown_shell(shell)
+
+    other = tmp_path / "other"
+    other.mkdir()
+    shell, _ = _card_shell(other, monkeypatch, source="claude", claude_on=False)
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text == "Claude Code · 没有在用的会话"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_balance_updates_do_not_overwrite_the_claude_card(tmp_path, monkeypatch):
+    """余额自动刷新的结果回来时，卡片正在显示 Claude 会话：不许被顶成余额。"""
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        shell._update_island_balance({"text": "余额 ¥9.9"}, animate=False)
+        assert shell.island._balance_text == "Claude Code · 1 个在干活"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_follows_session_changes(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True, sessions=[_WORKING])
+    try:
+        shell.island.expand_card()
+        shell._overlay_shell.session_pets._sessions = [dict(_WORKING, phase="waiting")]
+        shell._on_claude_sessions_changed()
+        assert shell.island._balance_text == "Claude Code · 1 个等你批准"
+    finally:
+        _teardown_shell(shell)
+
+
+def test_legacy_topology_has_no_session_registry_and_falls_back_to_balance(tmp_path, monkeypatch):
+    _qapp()
+    shell, _ = _card_shell(tmp_path, monkeypatch, source="claude", claude_on=True)
+    shell._overlay_shell = None
+    try:
+        shell.island.expand_card()
+        assert shell.island._balance_text.startswith("未配置 API Key")
+    finally:
+        _teardown_shell(shell)
+
+
+def test_card_source_is_normalised(tmp_path):
+    cfg = Config(base=tmp_path)
+    assert cfg.get("dynamic_island")["card_source"] == "auto"
+    for raw, expected in (("claude", "claude"), ("balance", "balance"), ("nonsense", "auto"), (None, "auto")):
+        data = dict(cfg.get("dynamic_island"))
+        data["card_source"] = raw
+        cfg.set("dynamic_island", data)
+        cfg.save()
+        assert Config(base=tmp_path).get("dynamic_island")["card_source"] == expected

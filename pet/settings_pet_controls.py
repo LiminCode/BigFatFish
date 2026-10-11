@@ -682,6 +682,15 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
     )
 
 
+def build_island_card_source_select(host, island_cfg: dict):
+    """灵动岛「卡片内容」下拉：自动 / DeepSeek 余额 / Claude Code 会话。"""
+    select = ModernSelect(host, width=160)
+    for label, value in (("自动", "auto"), ("DeepSeek 余额", "balance"), ("Claude Code 会话", "claude")):
+        select.addItem(label, value)
+    select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
+    return select
+
+
 def _update_island_info_controls(host, enabled: bool) -> None:
     host._set_setting_rows_visible(
         ("dynamic_island_info_mode", "dynamic_island_custom_text"),

@@ -388,6 +388,7 @@ class ModernSettingsDialog(QDialog):
         ):
             self.island_info_mode_select.addItem(label, value)
         self.island_info_mode_select.setCurrentData(str(island_cfg.get("info_mode") or "time"))
+        self.island_card_source_select = settings_pet_controls.build_island_card_source_select(self, island_cfg)
         self.island_style_select = ModernSelect(self, width=160)
         for label, value in (
             ("黑色", "dark"),
@@ -565,6 +566,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_info", "显示信息槽", "显示时间/余额/自定义短文本等信息。", self.island_info_check),
                     SettingRow("dynamic_island_status", "显示状态灯", "显示右侧状态圆点。", self.island_status_check),
                     SettingRow("dynamic_island_info_mode", "信息槽内容", "选择信息槽显示的内容；自定义文本在下方填写。", self.island_info_mode_select),
+                    SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示 DeepSeek 余额与峰谷。", self.island_card_source_select),
                     SettingRow(
                         "dynamic_island_style",
                         "背景风格",
@@ -2148,6 +2150,7 @@ class ModernSettingsDialog(QDialog):
                 "show_name": self.island_name_check.isChecked(),
                 "show_info": self.island_info_check.isChecked(),
                 "info_mode": str(self.island_info_mode_select.currentData() or "time"),
+                "card_source": str(self.island_card_source_select.currentData() or "auto"),
                 "custom_text": self.island_custom_text_edit.text().strip(),
                 "show_status": self.island_status_check.isChecked(),
                 "style": str(self.island_style_select.currentData() or "dark"),

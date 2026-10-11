@@ -498,6 +498,7 @@ class TestAgentLinkManager:
             "opencode": False,
             "custom_agents": [],
             "session_pets": True,
+            "session_pets_max": 6,
             "sound_enabled": False,
             "sound_start_path": "builtin:agent-start",
             "sound_done_path": "builtin:agent-done",

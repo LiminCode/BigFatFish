@@ -60,8 +60,8 @@ POOLS = {
 
 # overlay 特有的额外条目（仅这几项允许出现在基准之外）。
 # 「每个会话一只小鱼」：会话小鱼是 overlay 的多 sprite 能力，PetWindow 一窗一宠
-# 做不了（且已冻结为只修崩溃），所以该开关只在 overlay 菜单里出现。
-ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼"})
+# 做不了（且已冻结为只修崩溃），所以该开关与它的「会话小鱼上限」只在 overlay 菜单里出现。
+ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼", "会话小鱼上限"})
 
 # 用户点名的缺失条目（legacy 清单 → overlay 菜单必须逐项存在）
 REQUIRED_LABELS = (

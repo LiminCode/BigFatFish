@@ -3654,7 +3654,15 @@ class OverlayShell(QObject):
             self._slot_signature_cache = self._slot_config_signatures()
 
     # ------------------------------------------------------------ 会话小鱼（临时 sprite）
-    SESSION_PET_MAX = 6
+    SESSION_PET_MAX = 6      # 缺省上限；实际取 agent_link.session_pets_max
+
+    def _session_pet_limit(self) -> int:
+        agent_cfg = self._config.get("agent_link") or {}
+        try:
+            limit = int(agent_cfg.get("session_pets_max", self.SESSION_PET_MAX))
+        except (AttributeError, TypeError, ValueError):
+            limit = self.SESSION_PET_MAX
+        return max(0, min(24, limit))
 
     def _session_pets_enabled(self) -> bool:
         agent_cfg = self._config.get("agent_link") or {}
@@ -3670,7 +3678,7 @@ class OverlayShell(QObject):
         把 128 个名额耗光）、不落种配置、不进活跃清单，重启不复活。角色跟主配置，
         大小是主肥鱼的一半；不自言自语。
         """
-        if len(self._session_pets) >= self.SESSION_PET_MAX:
+        if len(self._session_pets) >= self._session_pet_limit():
             return None
         lib = self._create_main_library()
         scale = catalog.half_scale(self._config_scale())

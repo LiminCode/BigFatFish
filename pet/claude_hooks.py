@@ -327,6 +327,44 @@ class WslSettingsStore:
         return code == 0
 
 
+# ---------------------------------------------------------------- 会话呈现文案
+
+#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）
+PHASE_TEXT = {"working": "写代码中", "waiting": "等你批准", "resting": "休息中"}
+_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+#: 汇总时的排序：最需要人管的排最前
+_PHASE_ORDER = ("waiting", "working", "resting")
+#: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
+CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
+
+
+def session_label(agent: str, info: dict) -> str:
+    """一个会话的显示名：标题 > 项目文件夹名 > 会话 ID 前 8 位。"""
+    name = str(info.get("title") or info.get("project") or str(info.get("sessionId") or "")[:8]
+               or "Claude Code")
+    return f"{name}{CHANNEL_SUFFIX.get(str(agent), '')}"
+
+
+def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[str, str]:
+    """把在用的会话汇总成两行：(各阶段计数, 前几个会话的「名 · 状态」)。
+
+    灵动岛卡片用：第一行一眼看出有没有会话在等你，第二行点名最需要管的那几个。
+    """
+    live = [s for s in sessions if s.get("phase") in PHASE_TEXT]
+    if not live:
+        return "Claude Code · 没有在用的会话", "会话提问后会出现在这里"
+    counts = {phase: sum(1 for s in live if s["phase"] == phase) for phase in _PHASE_ORDER}
+    headline = "Claude Code · " + " · ".join(
+        _PHASE_COUNT_TEXT[phase].format(n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
+    ordered = sorted(live, key=lambda s: _PHASE_ORDER.index(s["phase"]))
+    detail = " ｜ ".join(
+        f"{session_label(str(s.get('agent') or ''), s)} · {PHASE_TEXT[s['phase']]}"
+        for s in ordered[:detail_max])
+    if len(ordered) > detail_max:
+        detail += f" 等 {len(ordered)} 个"
+    return headline, detail
+
+
 # ---------------------------------------------------------------- 会话收敛
 
 class ClaudeSessionTracker:

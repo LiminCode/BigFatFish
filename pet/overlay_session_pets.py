@@ -15,7 +15,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Signal, Slot
+
+from . import claude_hooks
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +29,11 @@ class SessionPetController(QObject):
     #: 一段都没有就不保持——小鱼退回普通的随机行为，标签照常显示。
     WORK_CLIPS: tuple[str, ...] = ("写代码", "吃Token")
     REST_CLIPS: tuple[str, ...] = ("原地小憩沉眠",)
-    PHASE_TEXT = {"working": "写代码中", "waiting": "等你批准", "resting": "休息中"}
-    #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
-    CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
+    PHASE_TEXT = claude_hooks.PHASE_TEXT
     AGENT_KEYS = ("claude", "claude_wsl")
+
+    #: 在用的会话有增减 / 换阶段 / 换标签（灵动岛卡片据此刷新）
+    sessions_changed = Signal()
 
     def __init__(self, shell, *, enabled: Callable[[], bool], parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -38,6 +41,13 @@ class SessionPetController(QObject):
         self._enabled = enabled
         self._pets: dict[tuple[str, str], Any] = {}
         self._phases: dict[tuple[str, str], str] = {}
+        # 在用的会话登记表：与「有没有鱼」无关——功能关着、超出上限的会话也照记，
+        # 灵动岛卡片要的是「有哪些会话」。
+        self._sessions: dict[tuple[str, str], dict] = {}
+
+    def sessions(self) -> list[dict]:
+        """在用的会话：``{"agent", "sessionId", "phase", "title", "project"}``，按出场先后。"""
+        return [{"agent": key[0], **info} for key, info in self._sessions.items()]
 
     def attach(self, manager) -> None:
         """订阅联动管理器里两个 Claude Code 通道的逐会话更新。"""
@@ -65,6 +75,17 @@ class SessionPetController(QObject):
             return
         key = (str(agent_key), str(update.get("sessionId") or ""))
         phase = str(update.get("phase") or "")
+        if phase != "gone" and phase not in self.PHASE_TEXT:
+            return
+        if phase == "gone":
+            changed = self._sessions.pop(key, None) is not None
+        else:
+            info = {"sessionId": key[1], "phase": phase,
+                    "title": str(update.get("title") or ""), "project": str(update.get("project") or "")}
+            changed = self._sessions.get(key) != info
+            self._sessions[key] = info
+        if changed:
+            self.sessions_changed.emit()
         shell = self._shell
         sprite = self._pets.get(key)
         if sprite is not None and not shell.is_session_pet(sprite):
@@ -75,8 +96,6 @@ class SessionPetController(QObject):
         if phase == "gone" or not self._enabled():
             self._retire(key)
             return
-        if phase not in self.PHASE_TEXT:
-            return
         if sprite is None:
             if phase == "resting":
                 return  # 没赶上它干活（或刚被退掉）：不凭空生一只，等它下次提问
@@ -85,9 +104,8 @@ class SessionPetController(QObject):
                 return  # 到上限：这个会话只体现在主肥鱼的汇总状态里
             self._pets[key] = sprite
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
-        name = str(update.get("title") or update.get("project") or key[1][:8] or "Claude Code")
         shell.set_session_pet_caption(
-            sprite, f"{name}{self.CHANNEL_SUFFIX.get(key[0], '')} · {self.PHASE_TEXT[phase]}")
+            sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}")
         previous = self._phases.get(key)
         if previous == phase:
             return  # 只是标签变了：不重启正在播的动画

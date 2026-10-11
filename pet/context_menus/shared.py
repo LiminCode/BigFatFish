@@ -402,6 +402,18 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_pets", True)))
         act.toggled.connect(lambda on: toggle_session_pets(on))
+        set_limit = getattr(pet, "set_session_pets_max", None)
+        if callable(set_limit):
+            limit_menu = add_submenu(sub, "会话小鱼上限", None)
+            current = int(agent_cfg.get("session_pets_max", 6) or 6)
+            group = QActionGroup(limit_menu)
+            group.setExclusive(True)
+            for limit in sorted({3, 6, 9, 12, 16, 24, current}):
+                choice = limit_menu.addAction(f"{limit} 只")
+                choice.setCheckable(True)
+                choice.setChecked(limit == current)
+                group.addAction(choice)
+                connect_action(choice, lambda limit=limit: set_limit(limit))
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
