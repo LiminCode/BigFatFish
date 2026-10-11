@@ -725,6 +725,7 @@ class Config:
             "facing": "left",
             "scale": catalog.DEFAULT_SCALE,
             "spawn_inherit_size": True,  # 生小肥鱼继承主肥鱼大小（False 用 spawn_scale）
+            "spawn_smaller_than_main": True,  # 继承大小时再小一号（主、小一眼可分）；固定大小时不适用
             "spawn_scale": catalog.DEFAULT_SCALE,  # 关闭继承时生小肥鱼使用的尺寸
             "spawn_inherit_dynamic_island": False,  # 生小肥鱼继承主肥鱼灵动岛（默认关=不开灵动岛）
             "user_customized": False,  # 批 C：仅当用户在该子肥鱼自己的设置界面保存过才置真
@@ -998,6 +999,7 @@ class Config:
             "no_move",
             "character",
             "spawn_inherit_size",
+            "spawn_smaller_than_main",
             "spawn_scale",
             "spawn_inherit_dynamic_island",
             "user_customized",
@@ -1324,6 +1326,7 @@ class Config:
         self.data["self_talk_voice_precache_enabled"] = _bool_or_default(self.data.get("self_talk_voice_precache_enabled"), False)
         self.data["cursor_hidden_passthrough"] = _bool_or_default(self.data.get("cursor_hidden_passthrough"), True)
         self.data["spawn_inherit_size"] = _bool_or_default(self.data.get("spawn_inherit_size"), True)
+        self.data["spawn_smaller_than_main"] = _bool_or_default(self.data.get("spawn_smaller_than_main"), True)
         self.data["spawn_scale"] = _float_or_default(self.data.get("spawn_scale"), catalog.DEFAULT_SCALE, 0.1, 4.0)
         self.data["spawn_inherit_dynamic_island"] = _bool_or_default(self.data.get("spawn_inherit_dynamic_island"), False)
         self.data["show_dock_icon"] = bool(self.data.get("show_dock_icon", True))
@@ -1549,6 +1552,7 @@ class Config:
             "predict_prewarm_lead_ms",
             "ffmpeg_recycle_minutes",
             "spawn_inherit_size",
+            "spawn_smaller_than_main",
             "spawn_scale",
             "spawn_inherit_dynamic_island",
             "todo_reminder_enabled",

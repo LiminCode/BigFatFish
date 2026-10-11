@@ -172,6 +172,28 @@ def test_spawn_size_controls_visibility(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_spawn_smaller_switch_round_trip_and_dependency(qapp, tmp_path: Path):
+    """「比主肥鱼小一号」默认开；只在继承大小时有意义，关闭继承即隐藏；关掉能存住。"""
+    cfg_root = tmp_path / "appdata"
+    dialog = ModernSettingsDialog(Config(cfg_root), include_ai=False)
+    try:
+        row = dialog.findChild(SettingRow, "settingRow_spawn_smaller_than_main")
+        assert row is not None and row.isHidden() is False
+        assert dialog.spawn_smaller_check.isChecked() is True
+
+        dialog.spawn_inherit_size_check.setChecked(False)
+        assert row.isHidden() is True, "固定大小时「小一号」不适用"
+        dialog.spawn_inherit_size_check.setChecked(True)
+        assert row.isHidden() is False
+
+        dialog.spawn_smaller_check.setChecked(False)
+        assert dialog._write_config() is True
+    finally:
+        dialog.deleteLater()
+
+    assert Config(cfg_root).get("spawn_smaller_than_main") is False
+
+
 def test_agent_sound_controls_visibility_and_subcontrols(qapp, tmp_path: Path):
     """总开关隐藏子项；单事件开关隐藏路径和试听，但保留自身以便恢复。"""
     cfg_root = tmp_path / "appdata"
