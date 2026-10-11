@@ -567,7 +567,12 @@ class _AiSettingsPage(QWidget):
         self._test_thread.start()
 
     def _run_test_worker(self, provider) -> None:
-        result = self._test_connection(provider, timeout=10.0)
+        try:
+            result = self._test_connection(provider, timeout=10.0)
+        except Exception as exc:
+            # 无论测试抛什么都要把结果送回去：否则这个线程悄悄死掉，按钮永远停在
+            # 「测试中…」（且是禁用态），只能关掉设置窗口重开。
+            result = (False, f"测试失败：{exc}")
         # 对话框可能在测试在飞时被关闭销毁（WA_DeleteOnClose）：直接
         # self.test_done.emit 会对已删 C++ 对象 RuntimeError。
         _safe_emit(self, "test_done", *result)

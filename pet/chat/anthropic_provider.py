@@ -76,6 +76,7 @@ def _sdk():
 def _client(api_key: str, base_url: str, timeout: float, verify_ssl: bool, *, max_retries: int | None = None):
     sdk = _sdk()
     kwargs: dict[str, Any] = {"timeout": float(timeout)}
+    api_key = str(api_key or "").strip()      # 粘贴带进来的空格 / 换行会让请求头非法
     if api_key:
         kwargs["api_key"] = api_key
     base = str(base_url or "").strip().rstrip("/")
@@ -196,6 +197,9 @@ def _translate_error(sdk, exc: Exception, model: str) -> ProviderError:
         return ProviderError(str(getattr(exc, "message", "") or exc), status)
     if isinstance(exc, sdk.APIConnectionError):
         return ProviderError(f"网络连接失败：{exc}")
+    if "authentication method" in str(exc):
+        # 没有任何凭据时 SDK 抛的是 TypeError（不是它自己的异常基类），且要到发请求时才抛
+        return ProviderError("没有配置 API Key（设置 → AI 对话），环境里也没有 Anthropic 凭据")
     return ProviderError(f"Claude 请求失败：{exc}")
 
 
@@ -223,7 +227,9 @@ class AnthropicProvider:
                 _check_final(stream.get_final_message())
         except ProviderError:
             raise
-        except sdk.AnthropicError as exc:
+        except Exception as exc:
+            # 不只接 sdk.AnthropicError：SDK 有些失败抛内建异常（缺凭据是 TypeError），
+            # 漏出去的话调用方的工作线程会直接死掉，界面永远等不到结果。
             if cancel_event.is_set():
                 return                                   # 取消时连接被关掉引出的错误不算失败
             raise _translate_error(sdk, exc, model) from exc
@@ -248,7 +254,7 @@ def describe_image(jpeg_bytes: bytes, user_text: str, system_prompt: str, config
         with _open_stream(client, model, system_prompt, [{"role": "user", "content": content}],
                           _MIN_MAX_TOKENS) as stream:
             final = stream.get_final_message()
-    except sdk.AnthropicError as exc:
+    except Exception as exc:
         raise _translate_error(sdk, exc, model) from exc
     _check_final(final)
     text = "".join(block.text for block in final.content if block.type == "text").strip()
@@ -265,7 +271,7 @@ def _test_anthropic(config, timeout: float) -> tuple[bool, str]:
         client = _client(config.api_key, config.base_url, timeout, config.verify_ssl, max_retries=0)
         try:
             client.messages.count_tokens(model=model, messages=[{"role": "user", "content": "ping"}])
-        except sdk.AnthropicError as exc:
+        except Exception as exc:
             raise _translate_error(sdk, exc, model) from exc
     except ProviderError as exc:
         return False, str(exc)
