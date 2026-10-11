@@ -19,8 +19,8 @@ QLabel#updateCurrentVersion, QLabel#updateNotesTitle { color: #f0f0f5; font-weig
 QLabel#updateStatus, QLabel#updateIntro, QLabel#updateNotes { color: #a8a8b0; }
 QStackedWidget { background: #202024; }
 QLineEdit#settingsSearch { background: #2e2e35; color: #e4e4e9; }
-QPushButton#saveAndExit { color: #e4e4e9; }
-QPushButton#saveAndExit:hover { background: #33333c; }
+QPushButton#saveAndExit, QPushButton#saveOnly { color: #e4e4e9; }
+QPushButton#saveAndExit:hover, QPushButton#saveOnly:hover { background: #33333c; }
 QListWidget#settingsSidebar::item { color: #b8b8c0; }
 QListWidget#settingsSidebar::item:hover { background: #2e2e36; color: #f0f0f5; }
 QListWidget#settingsSidebar::item:selected { background: #3a3a46; color: #ffffff; }
@@ -150,7 +150,7 @@ QLineEdit#settingsSearch:focus {
     border: 2px solid #0a84ff;
     padding: 0 7px;
 }
-QPushButton#saveAndExit {
+QPushButton#saveAndExit, QPushButton#saveOnly {
     min-height: 28px;
     padding: 2px 8px;
     text-align: left;
@@ -159,7 +159,7 @@ QPushButton#saveAndExit {
     border-radius: 8px;
     font-weight: 500;
 }
-QPushButton#saveAndExit:hover { background: #e9eaec; }
+QPushButton#saveAndExit:hover, QPushButton#saveOnly:hover { background: #e9eaec; }
 QLabel#searchStatus {
     padding: 0 5px;
     color: #777b80;

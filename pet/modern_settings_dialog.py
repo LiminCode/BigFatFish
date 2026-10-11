@@ -166,6 +166,7 @@ from . import settings_file_interpret
 from . import settings_interaction
 from . import settings_music
 from . import settings_pet_controls
+from . import settings_save
 
 
 # 语言配置页只展示用户能理解的事件名称；内部 key 仍用于保存和渲染。
@@ -247,6 +248,8 @@ def dialogue_params_hint(key: str) -> str:
 class ModernSettingsDialog(QDialog):
     """Settings window matching Modern's sidebar and rounded-card hierarchy."""
 
+    saved = Signal()    # 「保存」写盘成功（窗口还开着）：进程内宿主据此立刻应用
+
     def __init__(self, config, parent=None, *, include_ai: bool = True,
                  standalone: bool = False, initial_page: str | None = None):
         super().__init__(parent)
@@ -291,6 +294,8 @@ class ModernSettingsDialog(QDialog):
         self.save_exit_button.setAutoDefault(False)
         self.save_exit_button.setDefault(False)
         sidebar_layout.addWidget(self.save_exit_button)
+        # 「保存」：写盘不关窗，改动立刻生效（Ctrl+S 同义）；实现见 settings_save
+        settings_save.install_save_button(self, sidebar_pane, sidebar_layout)
         self.search_edit = QLineEdit(sidebar_pane)
         self.search_edit.setObjectName("settingsSearch")
         self.search_edit.setPlaceholderText("搜索设置…")
@@ -2060,12 +2065,19 @@ class ModernSettingsDialog(QDialog):
         if self.autostart_check.isChecked() != self._autostart_initial:
             # set_enabled 返回 bool（enable()/disable()）；仅在明确失败时提示。
             ok = autostart_mod.set_enabled(self.autostart_check.isChecked())
+            if ok is not False:
+                # 已写入：之后再改回去要认这次的值（「保存」后窗口还开着）
+                self._autostart_initial = self.autostart_check.isChecked()
             if ok is False:
                 QMessageBox.warning(
                     self,
                     "开机自启设置失败",
                     "写入开机自启失败：可能被安全软件拦截。\n可稍后在托盘菜单重试，或检查安全软件/系统优化工具的拦截记录。",
                 )
+
+    def _save_only(self) -> None:
+        """「保存」：写入配置但不关窗口（见 settings_save.save_without_exit）。"""
+        settings_save.save_without_exit(self)
 
     def _save(self) -> None:
         """「保存并退出」：写入配置并关闭对话框。"""
