@@ -368,16 +368,68 @@ class ClaudeSessionTracker:
     #: 会话表上限：被 Esc 打断的会话不发 Stop，会一直占着「忙」直到它的下一个事件。
     _MAX_SESSIONS = 64
 
+    #: 标签文本（项目名 / 会话标题）的长度上限
+    _LABEL_MAX = 40
+
     def __init__(self) -> None:
         self._busy: dict[str, str] = {}       # 会话 ID → thinking / working
         self._waiting: set[str] = set()       # 停在权限确认上的会话
+        # 已「出场」的会话（提过问 / 被看到在干活）→ {"phase", "title", "project"}。
+        # 逐会话呈现（会话小鱼）的数据源，与上面收敛成 Agent 级状态的记账互不影响。
+        self._sessions: dict[str, dict[str, str]] = {}
+        self._updates: list[dict[str, str]] = []
 
     def reset(self) -> None:
         self._busy.clear()
         self._waiting.clear()
+        self._sessions.clear()
+        self._updates.clear()
 
     def any_busy(self) -> bool:
         return bool(self._busy)
+
+    def take_session_updates(self) -> list[dict[str, str]]:
+        """取走自上次以来的逐会话更新：``{"sessionId", "phase", "title", "project"}``。
+
+        ``phase``：``working``（在干活）/ ``waiting``（等用户批准）/ ``resting``
+        （回合结束）/ ``gone``（会话关闭或被淘汰）。只在内容变化时产生一条；
+        只开着没提过问的会话不出场。
+        """
+        updates, self._updates = self._updates, []
+        return updates
+
+    def _session_update(self, sid: str, *, phase: str = "", title: str = "", project: str = "",
+                        born: bool = False) -> None:
+        """改一个会话的呈现信息（空串 = 不改），有变化才记一条更新。"""
+        info = self._sessions.get(sid)
+        if info is None:
+            if not born:
+                return
+            info = {"phase": "", "title": "", "project": ""}
+            self._sessions[sid] = info
+            while len(self._sessions) > self._MAX_SESSIONS:
+                self._session_gone(next(iter(self._sessions)))
+        changed = False
+        for key, value in (("phase", phase), ("title", title), ("project", project)):
+            if value and info[key] != value:
+                info[key] = value
+                changed = True
+        if changed:
+            self._updates.append({"sessionId": sid, **info})
+
+    def end_all(self) -> None:
+        """所有已出场的会话离场（通道被关掉时用）。"""
+        for sid in list(self._sessions):
+            self._session_gone(sid)
+
+    def _session_gone(self, sid: str) -> None:
+        info = self._sessions.pop(sid, None)
+        if info is not None:
+            self._updates.append({"sessionId": sid, **info, "phase": "gone"})
+
+    @classmethod
+    def _label(cls, value: Any) -> str:
+        return " ".join(str(value or "").split())[:cls._LABEL_MAX]
 
     @staticmethod
     def _approval(sid: str) -> dict:
@@ -387,13 +439,19 @@ class ClaudeSessionTracker:
         event = str(record.get("event") or "")
         sid = str(record.get("sessionId") or "")
         out: list[tuple[str, Any]] = []
+        resolved = False
 
+        if event == "SessionMeta":
+            self._session_update(sid, title=self._label(record.get("title")),
+                                 project=self._label(record.get("project")))
+            return out
         if event == "Notification":
             ntype = str(record.get("ntype") or "")
             if ntype in self._PROMPT_NTYPES:
                 if sid not in self._waiting:
                     self._waiting.add(sid)
                     out.append(("approval_request", self._approval(sid)))
+                self._session_update(sid, phase="waiting", born=True)
                 return out
             if ntype != "idle_prompt" or sid not in self._busy:
                 return out
@@ -406,10 +464,14 @@ class ClaudeSessionTracker:
                 # 停在确认上的会话又有动静：用户已经答复（没有专门的「已答复」事件）
                 self._waiting.discard(sid)
                 out.append(("approval_resolved", self._approval(sid)))
+                resolved = True
         if not state:
+            if resolved:    # 答复了但这条记录不带状态：按它此刻是否还在忙归位
+                self._session_update(sid, phase="working" if sid in self._busy else "resting")
             return out
 
         if state in self.BUSY:
+            self._session_update(sid, phase="working", born=True)
             self._busy.pop(sid, None)
             self._busy[sid] = state            # 重新插到末尾：淘汰时先丢最久没动的
             while len(self._busy) > self._MAX_SESSIONS:
@@ -417,6 +479,10 @@ class ClaudeSessionTracker:
             out.append(("state", state))
             return out
 
+        if event == "SessionEnd":
+            self._session_gone(sid)
+        else:
+            self._session_update(sid, phase="resting")
         was_busy = self._busy.pop(sid, None) is not None
         if not was_busy:
             return out

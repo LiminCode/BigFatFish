@@ -38,6 +38,14 @@ def _line(event: str, sid: str = "A", **extra) -> str:
     return json.dumps({"ts": 1.0, "agent": "claude", "event": event, "sessionId": sid, **extra}) + "\n"
 
 
+class _Got(list):
+    """Agent 级信号按到达顺序进列表本身；逐会话更新另存 ``sessions``（两条管线互不干扰）。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sessions: list = []
+
+
 def _monitor(tmp_path, key: str = "claude"):
     """不起线程的监视器：直接驱动 ``_poll``，信号同步落进 ``got``。"""
     QApplication.instance() or QApplication([])
@@ -45,12 +53,14 @@ def _monitor(tmp_path, key: str = "claude"):
     mon.events_dir.mkdir(parents=True, exist_ok=True)
     mon.events_file.touch()
     mon._tailer.read_new_lines()        # 首读：定位到末尾（之后的追加才算新事件）
-    got: list = []
+    got = _Got()
     mon.state_changed.connect(lambda k, s: got.append(("state", k, s)))
     mon.activity.connect(lambda k, t: got.append(("tool", k, t)))
     mon.session_done.connect(lambda k, p: got.append(("session_done", k, p)))
     mon.approval_requested.connect(lambda k, p: got.append(("approval_request", k, p)))
     mon.approval_resolved.connect(lambda k, p: got.append(("approval_resolved", k, p)))
+    mon.session_update.connect(
+        lambda k, p: got.sessions.append((k, p["sessionId"], p["phase"], p["title"] or p["project"])))
     return mon, got
 
 
@@ -156,6 +166,33 @@ def test_permission_prompt_becomes_an_approval_pair(tmp_path):
 
     _append(mon, _line("PostToolUse", tool="Bash"))
     assert ("approval_resolved", "claude_wsl", approval) in got
+
+
+def test_each_session_reports_its_own_phase_and_label(tmp_path):
+    """会话小鱼的数据源：逐会话的阶段 + 标签，经监视器信号送出（不走 Agent 级状态机）。"""
+    mon, got = _monitor(tmp_path, "claude_wsl")
+    meta = json.dumps({"agent": "claude_wsl", "event": "SessionMeta", "sessionId": "A",
+                       "project": "dsh-pet", "title": "Fix login loop"}) + "\n"
+
+    _append(mon, _line("UserPromptSubmit", "A"), meta, _line("UserPromptSubmit", "B"), _line("Stop", "A"))
+
+    assert got.sessions == [
+        ("claude_wsl", "A", "working", ""),
+        ("claude_wsl", "A", "working", "Fix login loop"),
+        ("claude_wsl", "B", "working", ""),
+        ("claude_wsl", "A", "resting", "Fix login loop"),
+    ]
+
+
+def test_stopping_the_monitor_retires_its_sessions(tmp_path):
+    """关掉联动 = 这个通道的会话小鱼全部离场；否则它们会永远留在桌面上。"""
+    mon, got = _monitor(tmp_path)
+    _append(mon, _line("UserPromptSubmit", "A"), _line("UserPromptSubmit", "B"))
+    got.sessions.clear()
+
+    mon.stop()
+
+    assert sorted(s[1:3] for s in got.sessions) == [("A", "gone"), ("B", "gone")]
 
 
 def test_start_creates_the_events_file(tmp_path):
