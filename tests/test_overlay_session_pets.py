@@ -297,3 +297,74 @@ def test_facade_toggle_persists_and_clears(shell):
     assert shell._config.get("agent_link")["session_pets"] is True
     assert cleared == [1], "打开时不用清"
     assert shell.sprite.pos != QPointF(-1, -1)
+
+
+# ---------------------------------------------------------------- 会话登记表与上限
+
+def test_controller_keeps_a_session_registry_independent_of_the_fish(shell, controller):
+    """灵动岛卡片要的是「有哪些会话」，不是「有哪些鱼」：关掉小鱼、超出上限都照记。"""
+    changes: list = []
+    controller.sessions_changed.connect(lambda: changes.append(1))
+    controller.state["on"] = False
+
+    controller.on_session_update("claude", _update("A", project="p"))
+    controller.on_session_update("claude", _update("A", project="p"))          # 内容没变
+    controller.on_session_update("claude_wsl", _update("B", phase="resting", title="T"))
+
+    assert _session_pets(shell) == []
+    assert controller.sessions() == [
+        {"agent": "claude", "sessionId": "A", "phase": "working", "title": "", "project": "p"},
+        {"agent": "claude_wsl", "sessionId": "B", "phase": "resting", "title": "T", "project": ""},
+    ]
+    assert len(changes) == 2, "内容变化才通知"
+
+    controller.on_session_update("claude", _update("A", phase="gone"))
+    assert [s["sessionId"] for s in controller.sessions()] == ["B"]
+    assert len(changes) == 3
+
+
+def test_session_pet_limit_is_configurable(shell):
+    data = dict(shell._config.get("agent_link"))
+    data["session_pets_max"] = 2
+    shell._config.set("agent_link", data)
+
+    assert shell.spawn_session_pet() is not None
+    assert shell.spawn_session_pet() is not None
+    assert shell.spawn_session_pet() is None
+
+    data["session_pets_max"] = 3
+    shell._config.set("agent_link", data)
+    assert shell.spawn_session_pet() is not None, "调大即时生效"
+
+
+@pytest.mark.parametrize("raw, expected", [(12, 12), ("9", 9), (0, 1), (999, 24), ("x", 6), (None, 6)])
+def test_session_pets_max_is_normalised(tmp_path, raw, expected):
+    cfg = Config(base=tmp_path)
+    assert cfg.get("agent_link")["session_pets_max"] == 6
+    data = dict(cfg.get("agent_link"))
+    data["session_pets_max"] = raw
+    cfg.set("agent_link", data)
+    cfg.save()
+    assert Config(base=tmp_path).get("agent_link")["session_pets_max"] == expected
+
+
+def test_menu_lets_the_user_pick_the_session_pet_limit(tmp_path):
+    cfg = Config(base=tmp_path)
+    pet = _MenuPet(cfg, with_toggle=True)
+    picked: list = []
+    pet.set_session_pets_max = picked.append
+
+    limit_menu = _menu_actions(pet)["会话小鱼上限"].menu()
+    choices = {a.text(): a for a in limit_menu.actions()}
+
+    assert [a.text() for a in limit_menu.actions() if a.isChecked()] == ["6 只"]
+    choices["12 只"].trigger()
+    assert picked == [12]
+
+
+def test_facade_persists_the_session_pet_limit(shell):
+    from pet.sprite_menu_facade import SpriteMenuFacade
+
+    SpriteMenuFacade(shell).set_session_pets_max(10)
+    assert shell._config.get("agent_link")["session_pets_max"] == 10
+    assert shell._session_pet_limit() == 10

@@ -240,6 +240,8 @@ def _default_agent_link_data() -> dict:
         "custom_agents": [],
         # 每个在用的 Claude Code 会话单独生一只小鱼（标题 + 状态），overlay 拓扑才有
         "session_pets": True,
+        # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
+        "session_pets_max": 6,
         # 音效配置
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
@@ -351,6 +353,10 @@ def _clean_agent_link_data(raw: Any) -> dict:
     ):
         if key in raw:
             result[key] = bool(raw[key])
+    try:
+        result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
+    except (TypeError, ValueError):
+        result["session_pets_max"] = defaults["session_pets_max"]
     for key in ("sound_start_path", "sound_done_path", "sound_error_path"):
         if key in raw:
             val = str(raw[key] or "").strip()[:500]
@@ -536,6 +542,9 @@ def _default_dynamic_island_data() -> dict:
         "show_name": True,
         "show_info": True,
         "info_mode": "time",  # time / balance_tier / balance / custom
+        # 展开卡片显示什么：auto（开着 Claude Code 联动就显示会话，否则余额）/
+        # balance（DeepSeek 余额与峰谷）/ claude（Claude Code 会话汇总）
+        "card_source": "auto",
         "custom_text": "",
         "show_status": True,
         "style": "dark",  # dark / light / glass
@@ -569,6 +578,8 @@ def _clean_dynamic_island_data(value) -> dict:
     mode = str(result.get("info_mode") or "time").strip()
     result["info_mode"] = mode if mode in {"time", "balance_tier", "balance", "custom"} else "time"
     result["custom_text"] = str(result.get("custom_text") or "")[:80]
+    card_source = str(result.get("card_source") or "auto").strip()
+    result["card_source"] = card_source if card_source in {"auto", "balance", "claude"} else "auto"
     style = str(result.get("style") or "dark").strip()
     result["style"] = style if style in {"dark", "light", "glass"} else "dark"
     try:

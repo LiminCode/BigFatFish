@@ -579,3 +579,39 @@ def test_git_bash_lookup_honours_the_claude_code_override(tmp_path, monkeypatch)
     monkeypatch.setenv("CLAUDE_CODE_GIT_BASH_PATH", str(bash))
     assert ch.find_git_bash() == str(bash)
     assert os.path.isfile(ch.find_git_bash())
+
+
+# ---------------------------------------------------------------- 会话汇总（灵动岛卡片）
+
+def _s(agent: str, phase: str, **fields) -> dict:
+    return {"agent": agent, "sessionId": fields.pop("sid", "0123456789abcdef"), "phase": phase,
+            "title": "", "project": "", **fields}
+
+
+def test_summary_without_sessions_says_so():
+    headline, detail = ch.summarize_sessions([])
+    assert headline == "Claude Code · 没有在用的会话"
+    assert detail
+
+
+def test_summary_counts_by_phase_and_puts_what_needs_you_first():
+    headline, detail = ch.summarize_sessions([
+        _s("claude", "resting", title="Old chat"),
+        _s("claude", "working", project="dsh-pet"),
+        _s("claude_wsl", "waiting", project="work"),
+        _s("claude", "working", sid="abcdef0123"),
+    ])
+    assert headline == "Claude Code · 1 个等你批准 · 2 个在干活 · 1 个休息中"
+    assert detail == "work (WSL) · 等你批准 ｜ dsh-pet · 写代码中 等 4 个"
+
+
+def test_summary_lists_every_session_when_they_fit():
+    _headline, detail = ch.summarize_sessions([_s("claude", "working", title="Fix login loop")])
+    assert detail == "Fix login loop · 写代码中"
+
+
+def test_session_label_prefers_title_then_project_then_short_id():
+    assert ch.session_label("claude", {"title": "T", "project": "P", "sessionId": "abc"}) == "T"
+    assert ch.session_label("claude", {"title": "", "project": "P", "sessionId": "abc"}) == "P"
+    assert ch.session_label("claude_wsl", {"sessionId": "0123456789"}) == "01234567 (WSL)"
+    assert ch.session_label("claude", {}) == "Claude Code"

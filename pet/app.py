@@ -1929,6 +1929,11 @@ class AppShell:
                 self.app, self.instance,
                 agent_link_manager=getattr(shared, "agent_link", None),
                 proactive_watcher=getattr(shared, "proactive", None))
+            # 会话增减 / 换阶段 → 灵动岛卡片（显示 Claude 会话时）跟着刷新。
+            # 附加能力：壳没有会话登记表（替身 / 旧实现）时跳过，绝不阻断启动。
+            sessions_changed = getattr(self._claude_session_registry(), "sessions_changed", None)
+            if sessions_changed is not None:
+                sessions_changed.connect(self._on_claude_sessions_changed)
             # 点击自言自语的朗读走同一条音频通道（AppShell 持有，进程内唯一）；
             # overlay 拓扑没有 PetWindow 可注入（app.py:481 的 legacy 落点是
             # PetInstance._wire_window，那里用 self.shell），本类就是那个
@@ -2513,8 +2518,9 @@ class AppShell:
             self.island.open_settings_requested.connect(self._open_settings_from_island)
             # 桌宠隐藏时单击岛：弹/收锚定岛的对话气泡（hidden_chat 开启时）
             self.island.chat_requested.connect(self._chat_from_island)
-            # 卡片展开 → 静默刷新余额（不冒泡、不播动画，只更新岛卡片）
-            self.island.card_expanded.connect(self._quiet_balance_refresh)
+            # 卡片展开 → 按卡片内容来源刷新：Claude Code 会话汇总，或静默刷新余额
+            # （不冒泡、不播动画，只更新岛卡片）
+            self.island.card_expanded.connect(self._refresh_island_card)
             # 进程级聊天完成订阅：AI 回复到达 → 岛播事件动效并记录最近消息。
             # 无聊天功能的打包变体会排除 pet.chat（参照 config.py 的同款守卫），
             # 那里跳过订阅即可，灵动岛本体照常可用。
@@ -2805,6 +2811,49 @@ class AppShell:
             peak_label=peak_label, idle_label=idle_label,
         )
 
+    # ------------------------------------------------------------ 岛卡片内容来源
+    def _claude_session_registry(self):
+        """在用的 Claude Code 会话登记表（overlay 拓扑才有；旧 PetWindow 为 None）。"""
+        return getattr(getattr(self, "_overlay_shell", None), "session_pets", None)
+
+    def _island_card_source(self) -> str:
+        """展开卡片显示什么：``claude``（会话汇总）或 ``balance``（DeepSeek 余额）。
+
+        ``dynamic_island.card_source``：auto = 开着 Claude Code 联动（本机或 WSL
+        任一通道）就显示会话，否则余额；也可钉死成其中一种。没有会话登记表的
+        拓扑一律退回余额。
+        """
+        if self._claude_session_registry() is None:
+            return "balance"
+        island_cfg = self.config.get("dynamic_island", {})
+        source = str(island_cfg.get("card_source") or "auto") if isinstance(island_cfg, dict) else "auto"
+        if source in ("balance", "claude"):
+            return source
+        agent_cfg = self.config.get("agent_link", {})
+        linked = isinstance(agent_cfg, dict) and (agent_cfg.get("claude") or agent_cfg.get("claude_wsl"))
+        return "claude" if linked else "balance"
+
+    def _refresh_island_card(self) -> None:
+        if self._island_card_source() == "claude":
+            self._show_island_claude_sessions()
+        else:
+            self._quiet_balance_refresh()
+
+    def _show_island_claude_sessions(self) -> None:
+        """卡片两行换成 Claude Code 会话汇总。纯本地数据：不查余额，不碰 API Key。"""
+        island = getattr(self, "island", None)
+        registry = self._claude_session_registry()
+        if island is None or registry is None:
+            return
+        from . import claude_hooks
+
+        headline, detail = claude_hooks.summarize_sessions(registry.sessions())
+        island.set_balance_info(detail, headline)
+
+    def _on_claude_sessions_changed(self) -> None:
+        if self._island_card_source() == "claude":
+            self._show_island_claude_sessions()
+
     def _update_island_balance(self, payload, *, animate: bool = True) -> None:
         """把余额文本/峰谷提示同步给灵动岛（若有）。
 
@@ -2813,6 +2862,8 @@ class AppShell:
         """
         if getattr(self, "island", None) is None:
             return
+        if self._island_card_source() == "claude":
+            return  # 卡片正在显示 Claude 会话：余额自动刷新的结果不许把它顶掉
         text = "余额 --"
         if isinstance(payload, dict):
             text = str(payload.get("text") or "余额 --")
