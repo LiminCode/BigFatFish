@@ -24,7 +24,7 @@ import math
 import time
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPixmap
 
 from . import catalog
 from . import physics as physics_mod
@@ -106,6 +106,9 @@ class PetSprite(QObject):
         # 就位——构造期 set_pos 会读它选钳制域。
         self._probe_angle = 0.0
         self._probe_exposure = 1.0
+        # 常驻标签（会话小鱼的「标题 · 状态」）：空串 = 不画，零成本。
+        self.caption = ""
+        self.caption_below = False       # False = 身体框上方；True = 下方
         self.pos = QPointF(0, 0)
         self.set_pos(pos if pos is not None else QPointF(0, 0))
         self._clip = None
@@ -993,6 +996,61 @@ class PetSprite(QObject):
             end_rotation(painter, angle)
         if abs(throw_angle) >= 1e-6:  # 与上面的 begin 配对出栈
             self._end_throw_rotation(painter, throw_angle)
+        if self.caption:
+            self._paint_caption(painter)
+
+    # ---------------------------------------------------------------- 常驻标签
+    _CAPTION_FONT_PX = 12
+    _CAPTION_PAD_X = 8
+    _CAPTION_PAD_Y = 3
+
+    def _caption_layout(self) -> tuple[QRect, str]:
+        """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。
+
+        胶囊始终落在 ``rect()`` 之内——身体框上方或下方的透明留白里，水平对齐
+        身体框中心。画在画布矩形内意味着不需要单独的脏区：sprite 怎么重绘它就
+        怎么跟着走。
+        """
+        if not self.caption:
+            return QRect(), ""
+        rect, body = self.rect(), self.body_rect()
+        font = QFont()
+        font.setPixelSize(self._CAPTION_FONT_PX)
+        metrics = QFontMetrics(font)
+        text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideRight,
+                                  max(1, rect.width() - 2 * self._CAPTION_PAD_X - 2))
+        width = min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X)
+        height = min(rect.height(), metrics.height() + 2 * self._CAPTION_PAD_Y)
+        x = body.center().x() - width // 2
+        x = max(rect.left(), min(x, rect.right() - width + 1))
+        if self.caption_below:
+            y = min(body.bottom() + 2, rect.bottom() - height + 1)
+        else:
+            y = max(rect.top(), body.top() - height - 2)
+        return QRect(x, y, width, height), text
+
+    def caption_rect(self) -> QRect:
+        """标签胶囊在 overlay 局部坐标系下的矩形（无标签为空矩形）。"""
+        return self._caption_layout()[0]
+
+    def _paint_caption(self, painter: QPainter) -> None:
+        pill, text = self._caption_layout()
+        if pill.isEmpty():
+            return
+        painter.save()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(24, 28, 36, 200))
+            radius = pill.height() / 2
+            painter.drawRoundedRect(pill, radius, radius)
+            font = QFont()
+            font.setPixelSize(self._CAPTION_FONT_PX)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
+        finally:
+            painter.restore()
 
     def alpha_at(self, local: QPoint | QPointF) -> int:
         """sprite 局部**逻辑**坐标处的 alpha（0-255）。镜像已烘焙进缓存帧，无需再翻转。
