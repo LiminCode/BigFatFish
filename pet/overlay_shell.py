@@ -1031,6 +1031,21 @@ class OverlayShell(QObject):
         self.session_pets.session_gone.connect(self.session_actions.forget)
         if agent_link_manager is not None:
             self.session_pets.attach(agent_link_manager)
+        # 最近的对话（灵动岛卡片里的折叠框）：记下每个会话在哪打开的。与会话小鱼
+        # 订阅同一个信号，但各记各的——小鱼关着、超出上限的会话照样记。
+        from .claude_session_history import HISTORY_FILE, SessionHistory
+        from .session_history_service import SessionHistoryService
+        history_dir = self._spawn_config_dir()
+        self.session_history = SessionHistoryService(
+            SessionHistory(Path(history_dir) / HISTORY_FILE if history_dir else None),
+            enabled=lambda: bool(self._agent_link_value("session_history", True)),
+            wsl_enabled=lambda: bool(self._agent_link_value("claude_wsl", False)),
+            limits=lambda: (self._agent_link_value("session_history_days", 7),
+                            self._agent_link_value("session_history_max", 30)),
+            parent=self)
+        if agent_link_manager is not None:
+            self.session_history.attach(agent_link_manager)
+        self.session_history.start()
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
         # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()
@@ -2863,6 +2878,7 @@ class OverlayShell(QObject):
         self._run_exit_step('删除运行标记', self._delete_runtime_marker)
         self._run_exit_step('关闭快速对话', self._close_quick_chat)
         self._run_exit_step('关闭会话详情卡', self.session_actions.close)
+        self._run_exit_step('保存最近的对话', self._flush_session_history)
         self._run_exit_step('收掉气泡跟随器', self._close_bubble_followers)
         self._run_exit_step('停 overlay 驱动', self.overlay.stop)
         self._run_exit_step('关闭 overlay 窗口', self.overlay.close)
@@ -3722,6 +3738,14 @@ class OverlayShell(QObject):
         except (AttributeError, TypeError, ValueError):
             limit = self.SESSION_PET_MAX
         return max(0, min(24, limit))
+
+    def _agent_link_value(self, key: str, default):
+        agent_cfg = self._config.get("agent_link") or {}
+        return agent_cfg.get(key, default) if isinstance(agent_cfg, dict) else default
+
+    def _flush_session_history(self) -> None:
+        """退出步骤：「最近的对话」有没写的立刻落盘。"""
+        self.session_history.flush()
 
     def _session_pets_enabled(self) -> bool:
         agent_cfg = self._config.get("agent_link") or {}

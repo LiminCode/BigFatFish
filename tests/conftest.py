@@ -122,6 +122,22 @@ def _no_real_api_key_probe(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_session_history_scan(monkeypatch):
+    """「最近的对话」的回填在测试里绝不真的去读 ``~/.claude`` 或起 wsl.exe。
+
+    建 overlay 壳就会排一次回填；默认扫描读的是开发者 / CI 机器上真实的 Claude Code
+    对话记录。这里把服务的默认扫描换成空结果，要测扫描本身的用例直接调
+    ``claude_session_history.scan_local``（test_claude_session_history.py，喂临时目录）。
+    """
+    try:
+        from pet import session_history_service
+    except Exception:
+        return
+    monkeypatch.setattr(session_history_service, "_default_scan_local", lambda **_kwargs: [])
+    monkeypatch.setattr(session_history_service, "_default_scan_wsl", lambda **_kwargs: [])
+
+
+@pytest.fixture(autouse=True)
 def _close_session_writers():
     """会话异步写盘（B8）：每个测试结束后关闭所有后台 writer，
     避免守护线程在 tmp_path 已清理后继续写盘（WinError 145 之类的 teardown 竞态）。"""

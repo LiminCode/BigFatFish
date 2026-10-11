@@ -1927,6 +1927,7 @@ class AppShell:
             sessions_changed = getattr(self._claude_session_registry(), "sessions_changed", None)
             if sessions_changed is not None:
                 sessions_changed.connect(self._on_claude_sessions_changed)
+            self._wire_session_history()
             # 点击自言自语的朗读走同一条音频通道（AppShell 持有，进程内唯一）；
             # overlay 拓扑没有 PetWindow 可注入（app.py:481 的 legacy 落点是
             # PetInstance._wire_window，那里用 self.shell），本类就是那个
@@ -2517,6 +2518,10 @@ class AppShell:
             # 卡片展开 → 按卡片内容来源刷新：Claude Code 会话汇总，或静默刷新余额
             # （不冒泡、不播动画，只更新岛卡片）
             self.island.card_expanded.connect(self._refresh_island_card)
+            # 卡片里的「最近的对话」：点一行 / 右键菜单 / 折叠
+            self.island.history_activated.connect(self._on_island_history_activated)
+            self.island.history_action.connect(self._on_island_history_action)
+            self.island.history_toggled.connect(self._on_island_history_toggled)
             # 进程级聊天完成订阅：AI 回复到达 → 岛播事件动效并记录最近消息。
             # 无聊天功能的打包变体会排除 pet.chat（参照 config.py 的同款守卫），
             # 那里跳过订阅即可，灵动岛本体照常可用。
@@ -2861,6 +2866,10 @@ class AppShell:
         return "claude" if linked else "balance"
 
     def _refresh_island_card(self) -> None:
+        history = self._session_history()
+        if history is not None:
+            history.rescan()            # 桌宠没开着时打开过的对话：展开卡片时补一遍（节流在服务里）
+            self._push_island_history()  # 「多久以前」随手刷新
         if self._island_card_source() == "claude":
             self._show_island_claude_sessions()
         else:
@@ -2879,6 +2888,7 @@ class AppShell:
 
     def _on_claude_sessions_changed(self) -> None:
         self._push_island_session_counts()
+        self._push_island_history()     # 哪些对话「进行中」跟着变
         if self._island_card_source() == "claude":
             self._show_island_claude_sessions()
 
@@ -2891,6 +2901,91 @@ class AppShell:
         from . import claude_hooks
 
         island.set_session_counts(claude_hooks.session_counts(registry.sessions()) if registry is not None else [])
+
+    # ------------------------------------------------------------ 最近的对话
+    def _session_history(self):
+        """「最近的对话」服务（overlay 拓扑才有；旧 PetWindow 为 None）。"""
+        return getattr(getattr(self, "_overlay_shell", None), "session_history", None)
+
+    def _wire_session_history(self) -> None:
+        """记录有变化 → 岛上的列表跟着变（overlay 壳建好之后调一次）。"""
+        history = self._session_history()
+        if history is not None:
+            history.changed.connect(self._push_island_history)
+        self._push_island_history()
+
+    def _live_session_keys(self) -> set:
+        registry = self._claude_session_registry()
+        if registry is None:
+            return set()
+        return {(str(s.get("agent") or ""), str(s.get("sessionId") or "")) for s in registry.sessions()}
+
+    def _push_island_history(self) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        history = self._session_history()
+        if history is None:
+            island.set_session_history([])
+            return
+        from .claude_session_history import ago_text
+
+        now, live = time.time(), self._live_session_keys()
+        island.set_session_history([
+            {"key": entry.key, "label": entry.label, "where": entry.where, "path": entry.cwd,
+             "ago": ago_text(now - entry.last_seen), "live": entry.key in live}
+            for entry in history.entries()], is_open=history.ui_open)
+
+    def _history_actions(self):
+        actions = getattr(self, "_session_history_actions", None)
+        if actions is None:
+            from .session_history_service import SessionHistoryActions
+
+            clipboard = QApplication.clipboard()
+            actions = SessionHistoryActions(copy=clipboard.setText if clipboard is not None else None)
+            self._session_history_actions = actions
+        return actions
+
+    def _island_history_entry(self, key):
+        history = self._session_history()
+        return history.find(key) if history is not None else None
+
+    def _say_island_history(self, message: str) -> None:
+        island = getattr(self, "island", None)
+        if message and island is not None and shiboken6.isValid(island):
+            island.show_history_status(message)
+
+    def _on_island_history_activated(self, key) -> None:
+        """点了一行：还开着的切到它的窗口；关掉的按来源恢复（终端 / VS Code）。"""
+        entry = self._island_history_entry(key)
+        if entry is None:
+            return
+        if entry.key in self._live_session_keys():
+            jumper = getattr(getattr(self, "_overlay_shell", None), "session_actions", None)
+            jumped = jumper is not None and bool(jumper.jump_key(entry.key))
+            self._say_island_history("正在切到这个对话…" if jumped else "找不到这个对话的窗口")
+            return
+        self._say_island_history(self._history_actions().activate(entry))
+
+    def _on_island_history_action(self, action: str, key) -> None:
+        history = self._session_history()
+        if history is None:
+            return
+        if action == "clear":
+            history.clear()
+            return
+        entry = history.find(key)
+        if entry is None:
+            return
+        if action == "remove":
+            history.remove(entry.key)
+            return
+        self._say_island_history(self._history_actions().run(action, entry))
+
+    def _on_island_history_toggled(self, is_open: bool) -> None:
+        history = self._session_history()
+        if history is not None:
+            history.set_ui_open(is_open)
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""

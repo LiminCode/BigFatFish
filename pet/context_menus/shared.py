@@ -415,6 +415,13 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(limit == current)
                 group.addAction(choice)
                 connect_action(choice, lambda limit=limit: set_limit(limit))
+    # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
+    toggle_session_history = getattr(pet, "toggle_session_history", None)
+    if callable(toggle_session_history):
+        act = sub.addAction("记录最近的对话")
+        act.setCheckable(True)
+        act.setChecked(bool(agent_cfg.get("session_history", True)))
+        act.toggled.connect(lambda on: toggle_session_history(on))
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
