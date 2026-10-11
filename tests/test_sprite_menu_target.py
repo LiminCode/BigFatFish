@@ -157,8 +157,12 @@ def test_child_menu_acts_on_clicked_sprite_not_main(tmp_path):
         assert main._clip_name == main_clip
 
         # 移动素材
+        # 移动方向是随机的：要反向走时先播一段转向（turn1），移动计划挂起、转完再走。
+        # 两种都说明这次移动落在了子宠身上——本用例验证的是「作用对象」，不是方向。
+        # （旧落点把子宠挤在屏幕右缘，只能往左走，所以这里曾经恒为 walk；落点改成
+        # 不压住现有的鱼之后，子宠两侧都有空间。）
         assert facade.trigger_move("walk") is True
-        assert child._clip_name == "walk"
+        assert child._clip_name in ("walk", "turn1")
         assert main._clip_name == main_clip
 
         # 播放速率（菜单「播放速率」→ 1.5x）
