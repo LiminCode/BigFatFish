@@ -1330,6 +1330,9 @@ class BaseAgentMonitor(QObject):
     # 多会话 Agent 的一个会话收工、但同 Agent 还有别的会话在忙：(agent_key, payload)。
     # 只该弹一条提示——Agent 级状态仍是忙，不进状态机（见 ClaudeSessionTracker）。
     session_done = Signal(str, object)
+    # 逐会话呈现更新：(agent_key, {"sessionId", "phase", "title", "project"})。
+    # 给「每个会话一只小鱼」用；与 Agent 级状态机无关（见 ClaudeSessionTracker）。
+    session_update = Signal(str, object)
     # 原始桥接记录转发（供对话上下文记忆 / 交互生命周期兜底等消费）：(agent_key, record)
     # 只挂 DSH 监视器；其他 Agent（claude/cursor/…）不产生这类增强记录。
     raw_record = Signal(str, object)
@@ -2268,6 +2271,17 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
                 self._emit(self.approval_requested, (self.agent_key, payload))
             elif kind == "approval_resolved":
                 self._emit(self.approval_resolved, (self.agent_key, payload))
+        self._flush_session_updates()
+
+    def _flush_session_updates(self) -> None:
+        for update in self._sessions.take_session_updates():
+            self._emit(self.session_update, (self.agent_key, update))
+
+    def stop(self) -> None:
+        # 通道关掉：它名下的会话全部离场（先发完再停，停了之后信号就不该再出了）
+        self._sessions.end_all()
+        self._flush_session_updates()
+        super().stop()
 
     def _poll(self, gen: int | None = None) -> None:
         super()._poll(gen)

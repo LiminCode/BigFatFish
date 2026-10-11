@@ -477,6 +477,95 @@ def test_reset_forgets_everything():
     assert tracker.feed(_ev("Stop")) == []
 
 
+# ---------------------------------------------------------------- 逐会话更新（会话小鱼的数据源）
+
+def _updates(tracker: ClaudeSessionTracker, *records: dict) -> list[dict]:
+    for record in records:
+        tracker.feed(record)
+    return tracker.take_session_updates()
+
+
+def _meta(sid: str = "A", **fields) -> dict:
+    return {"event": "SessionMeta", "sessionId": sid, **fields}
+
+
+def test_session_appears_on_first_prompt_and_follows_the_turn():
+    tracker = ClaudeSessionTracker()
+    assert _updates(tracker, _ev("SessionStart")) == [], "只开着没提问的会话不出场"
+
+    assert _updates(tracker, _ev("UserPromptSubmit"), _meta(project="dsh-pet", title="")) == [
+        {"sessionId": "A", "phase": "working", "title": "", "project": ""},
+        {"sessionId": "A", "phase": "working", "title": "", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("PreToolUse"), _ev("PostToolUse")) == [], "状态没变不重复上报"
+    assert _updates(tracker, _ev("Stop"), _meta(project="dsh-pet", title="Fix login loop")) == [
+        {"sessionId": "A", "phase": "resting", "title": "", "project": "dsh-pet"},
+        {"sessionId": "A", "phase": "resting", "title": "Fix login loop", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("UserPromptSubmit"), _meta(project="dsh-pet", title="")) == [
+        {"sessionId": "A", "phase": "working", "title": "Fix login loop", "project": "dsh-pet"},
+    ], "这次没读到标题（transcript 窗口里没有）：保留已知的，不清空"
+    assert _updates(tracker, _ev("SessionEnd")) == [
+        {"sessionId": "A", "phase": "gone", "title": "Fix login loop", "project": "dsh-pet"},
+    ]
+    assert _updates(tracker, _ev("Stop"), _meta(title="late")) == [], "离场后的迟到记录不复活它"
+
+
+def test_sessions_report_independently():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("UserPromptSubmit", "A"), _ev("UserPromptSubmit", "B"), _ev("Stop", "A"))
+    assert [(u["sessionId"], u["phase"]) for u in updates] == [
+        ("A", "working"), ("B", "working"), ("A", "resting")]
+
+
+def test_waiting_for_approval_is_its_own_phase():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("PreToolUse"), _ev("Notification", ntype="permission_prompt"),
+                       _ev("PostToolUse"))
+    assert [u["phase"] for u in updates] == ["working", "waiting", "working"]
+
+    updates = _updates(tracker, _ev("Notification", ntype="permission_prompt"), _ev("Stop"))
+    assert [u["phase"] for u in updates] == ["waiting", "resting"], "被拒绝后直接收工"
+
+
+def test_session_first_seen_mid_turn_still_appears():
+    """桌宠在回合中途才启动：没见到提问，第一眼就是工具事件或权限确认。"""
+    tracker = ClaudeSessionTracker()
+    assert [u["phase"] for u in _updates(tracker, _ev("PostToolUse", "A"))] == ["working"]
+    assert [u["phase"] for u in _updates(tracker, _ev("Notification", "B", ntype="permission_prompt"))] == ["waiting"]
+
+
+def test_interrupted_session_rests_after_the_idle_notice():
+    tracker = ClaudeSessionTracker()
+    updates = _updates(tracker, _ev("UserPromptSubmit"), _ev("Notification", ntype="idle_prompt"))
+    assert [u["phase"] for u in updates] == ["working", "resting"]
+
+
+def test_session_labels_are_cleaned_and_capped():
+    tracker = ClaudeSessionTracker()
+    update = _updates(tracker, _ev("UserPromptSubmit"),
+                      _meta(project="  my   project ", title="T" * 100))[-1]
+    assert update["project"] == "my project"
+    assert len(update["title"]) == ClaudeSessionTracker._LABEL_MAX
+
+
+def test_session_updates_are_drained_and_reset_forgets_sessions():
+    tracker = ClaudeSessionTracker()
+    tracker.feed(_ev("UserPromptSubmit"))
+    assert len(tracker.take_session_updates()) == 1
+    assert tracker.take_session_updates() == []
+    tracker.reset()
+    assert _updates(tracker, _ev("Stop")) == []
+
+
+def test_evicted_session_leaves_the_stage():
+    tracker = ClaudeSessionTracker()
+    for i in range(ClaudeSessionTracker._MAX_SESSIONS + 1):
+        tracker.feed(_ev("UserPromptSubmit", f"s{i}"))
+    updates = tracker.take_session_updates()
+    assert {"sessionId": "s0", "phase": "gone", "title": "", "project": ""} in updates
+
+
 def test_git_bash_lookup_is_windows_only(monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     assert ch.find_git_bash() is None
