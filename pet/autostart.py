@@ -12,7 +12,8 @@
 命令按运行形态自适应：
 - PyInstaller 打包（sys.frozen）：Windows 自启动先用 `start /D` 切到 exe 所在目录再启动 exe；
   macOS/Linux 指向 .app 内二进制自身 / onedir 内二进制自身；
-- 源码运行：Windows 用 `pythonw -m pet`，macOS/Linux 用 `python -m pet`（带工作目录）。
+- 源码运行：Windows 用 `BigFish.exe -m pet`（没生成过启动器时退回 `pythonw -m pet`），
+  macOS/Linux 用 `python -m pet`（带工作目录）。
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import shlex
 import sys
 from pathlib import Path
 
+from .app_identity import APP_NAME
 from .config import APP_DIR_NAME
 
 # macOS LaunchAgent 按变体隔离（plist 文件名/Label），避免多版本互覆盖
@@ -99,9 +101,38 @@ def _pythonw_path() -> str:
     return exe
 
 
+def _win_source_program() -> str:
+    """Windows 源码运行时自启动要启动的程序。
+
+    优先解释器旁边的 ``BigFish.exe``（``tools/make_launcher.py`` 生成的改名解释器，
+    任务管理器 / 任务栏里显示 BigFish 而不是 Python）；没生成过才用 pythonw.exe。
+    """
+    launcher = Path(sys.executable).parent / f"{APP_NAME}.exe"
+    if launcher.is_file():
+        return str(launcher)
+    return _pythonw_path()
+
+
+def _win_source_command(program: str) -> str:
+    return f'cmd /c start "" /D "{_project_root()}" "{program}" -m pet --slot 0'
+
+
 def _win_command_is_current(command: str) -> bool:
     """判断 Windows 自启命令是否已是“先切工作目录再启动”的新格式。"""
     return "cmd /c start" in command.lower()
+
+
+def _win_command_needs_upgrade(command: str) -> bool:
+    """已开启的自启命令是不是本程序此前写下的旧写法（需要换成现在的）。
+
+    - 打包运行：旧版直接指向 exe、没切工作目录；
+    - 源码运行：本检出此前写的 pythonw.exe 命令，而现在已有 BigFish.exe。只认
+      **本检出自己**的那一条——别的检出 / 变体写的命令不是我们的，不动。
+    """
+    if getattr(sys, "frozen", False):
+        return not _win_command_is_current(command)
+    legacy = _win_source_command(str(Path(sys.executable).parent / "pythonw.exe")).lower()
+    return command.lower() == legacy and _win_command().lower() != legacy
 
 
 def _iter_known_win_values() -> list[tuple[str, str]]:
@@ -169,13 +200,9 @@ def is_enabled() -> bool:
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
                 command, _ = winreg.QueryValueEx(key, VALUE_NAME)
-                # 兼容旧版：已开启但仍是旧命令（直接指向 exe，未切工作目录）时，
-                # 自动升级为新命令，避免开机自启因 CWD 不可写而解压失败。
-                if (
-                    getattr(sys, "frozen", False)
-                    and isinstance(command, str)
-                    and not _win_command_is_current(command)
-                ):
+                # 兼容旧版：已开启但仍是旧命令时自动升级为新命令——打包版避免开机自启
+                # 因 CWD 不可写而解压失败，源码版换成 BigFish.exe（见上）。
+                if isinstance(command, str) and _win_command_needs_upgrade(command):
                     try:
                         with winreg.OpenKey(
                             winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE
@@ -207,7 +234,7 @@ def _win_command() -> str:
         # 又不会让 cmd 窗口一直等待桌宠退出。开机自启固定指定 --slot 0。
         exe = Path(sys.executable).resolve()
         return f'cmd /c start "" /D "{exe.parent}" "{exe}" --slot 0'
-    return f'cmd /c start "" /D "{_project_root()}" "{_pythonw_path()}" -m pet --slot 0'
+    return _win_source_command(_win_source_program())
 
 
 def _mac_program_args() -> list[str]:
