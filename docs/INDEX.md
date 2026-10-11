@@ -28,6 +28,8 @@
 | [`../AGENTS.md`](../AGENTS.md) | 工程指南：项目结构、变更纪律、CI 成本纪律、"Context pointers" 触发表、agent skills 入口。 | 提交任何代码之前；尤其改动碰撞选举、ffmpeg 派生、打包、菜单、设置、PR 合并前，先查 "Context pointers"。 |
 | [`../CONTEXT.md`](../CONTEXT.md) | 领域术语表（Shared UX Contract / Settings System / Menu Action Model / Report Gate / Session-End Spawn Freeze 等）与禁用说法。 | 命名新概念、写设计文档、或需要确认"这个词在本项目里到底指什么"时；提案与既有术语冲突时必须先读。 |
 | [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) | 第三方素材与组件的授权声明。 | 新增/替换动画素材、图标、字体或第三方库时。 |
+| [`../prompts/README.md`](../prompts/README.md) | AI 生成素材用的提示词配方（动作视频的通用前缀 + 一百多个动作的按秒分解、成套通知图标）的用法、换角色时怎么改、来源与许可（上游素材禁止商用、须署名）。 | 做新动作 / 新角色、改提示词文件、或要引用 / 再分发这些配方之前。下一步见 [`../tools/asset_pipeline/README.md`](../tools/asset_pipeline/README.md)。 |
+| [`../tools/asset_pipeline/README.md`](../tools/asset_pipeline/README.md) | 素材生成链：绿幕源视频 → 水印填充 → 抠像 → 归一化 → 640×360 透明 webm → 装成角色包（含 `body_box` 测量）的五步用法、工作目录约定、相对上游的改动清单。 | **改 `tools/asset_pipeline/` 任一脚本、角色包规格（画布 / `FEET_Y` / `body_box` 口径）、或要从零做一套角色素材时必读**；提示词见 [`../prompts/README.md`](../prompts/README.md)，授权见 `THIRD_PARTY_NOTICES.md` §2a。 |
 
 ---
 
