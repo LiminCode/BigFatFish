@@ -118,9 +118,9 @@ def test_content_cache_key_covers_colors_and_style(tmp_path, monkeypatch):
     assert island.width() == width, "前提：主题色不改胶囊宽度"
     assert accent is not light, "主题色变化必须重建缓存"
 
-    island.set_pet_visible(False)  # 状态灯 绿 → 灰
-    assert island.width() == width, "前提：可见性不改胶囊宽度"
-    assert island._content_cache() is not accent, "状态灯颜色变化必须重建缓存"
+    island.set_api_status("ok")  # 状态图标 灰 → 绿
+    assert island.width() == width, "前提：API 状态不改胶囊宽度"
+    assert island._content_cache() is not accent, "状态图标变化必须重建缓存"
     island.deleteLater()
 
     # 信息色项：自定义峰谷标签同名 + 固定切换时间 → 文案两侧相同，
