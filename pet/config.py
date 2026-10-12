@@ -1648,6 +1648,12 @@ class Config:
 
         return mcp_servers_for(self.chat_settings(), provider)
 
+    def resolve_client_tools(self, provider):
+        """对话请求要带的本地工具（知识库）；没开、没同步过或不适用时是 None。"""
+        from .chat.knowledge_base import toolset_for
+
+        return toolset_for(self.chat_settings(), provider, self.dir)
+
     def _redacted_data(self) -> dict:
         """深拷贝待写盘数据，并剔除 chat.providers 下的明文 API Key。
 

@@ -227,7 +227,8 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 同日上调到 2396：GitHub 连接器的两行设置（控件、说明、保存都在
 # chat/ai_settings_page.py），这里只有「AI 与对话」页的分组登记 1 行。实测 2396。
 # 同日上调到 2397：「关于我」设置行（同样只有分组登记 1 行）。实测 2397。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2397
+# 同日上调到 2398：「知识库」分组（三行设置都在 chat/ai_settings_page.py，这里登记 1 行）。实测 2398。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2398
 
 
 def _read(name: str) -> str:

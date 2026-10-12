@@ -1841,6 +1841,7 @@ class ModernSettingsDialog(QDialog):
                         ),
                     ),
                     ("连接器", claim("github_connector", "github_token")),
+                    ("知识库", claim_prefix("knowledge_base_")),
                     (
                         "生成参数（高级）",
                         claim(

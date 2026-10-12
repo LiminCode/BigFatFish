@@ -1877,6 +1877,7 @@ class ChatWindow(QDialog):
         config = self.settings.active_config
         config.api_key = self.config.resolve_api_key(config)
         config.mcp_servers = self.config.resolve_mcp_servers(config)
+        config.client_tools = self.config.resolve_client_tools(config)
         messages = self.prompt_builder.build_messages(self.settings, self.character_id, self.session.messages[:-1], text)
         if image_payloads:
             messages[-1]["content"] = [{"type": "text", "text": text}, *image_payloads]

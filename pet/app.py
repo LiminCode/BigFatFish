@@ -1954,6 +1954,7 @@ class AppShell:
         self._sync_dynamic_island()
         self.instance._apply_spawn_offset()
         self._apply_balance_timer()
+        self._start_knowledge_sync()
         self._sync_todo_service()
         # 先同步节日服务：报时服务在 start() 里会立刻 tick 一次，那一刻就需要能问到
         # "本分钟是否让位"。顺序反了会出现"报时先响、节日后响"从而两者都出声。
@@ -2990,6 +2991,18 @@ class AppShell:
         """今日用量的定时刷新；没建过或已随岛销毁返回 None。"""
         monitor = getattr(self, "_usage_monitor", None)
         return monitor if monitor is not None and shiboken6.isValid(monitor) else None
+
+    def _start_knowledge_sync(self) -> None:
+        """本地知识库的每日同步（可选服务：无聊天打包变体没有 pet.chat，跳过）。"""
+        if not bool(getattr(self, "enable_chat", True)) or getattr(self, "_knowledge_sync", None) is not None:
+            return
+        try:
+            from .chat.knowledge_sync import KnowledgeBaseSync
+
+            self._knowledge_sync = KnowledgeBaseSync(self.config, parent=self.app)
+            self._knowledge_sync.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("知识库同步接线失败")
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""
