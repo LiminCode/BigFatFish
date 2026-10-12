@@ -1046,7 +1046,9 @@ class PetSprite(QObject):
     _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
     #: 配色 → (底色, 字色)
     _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
-    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36))}
+    #: 工作中淡绿；等你回复（做完了还没看）天蓝——与默认的深灰一眼分得开
+    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36)),
+                      "review": ((150, 200, 255, 240), (10, 44, 102))}
 
     def _caption_layout(self) -> tuple[QRect, str]:
         """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。

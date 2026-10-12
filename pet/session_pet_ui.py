@@ -404,6 +404,13 @@ class SessionPetActions(QObject):
             merged = self._detail_for_key(key) or detail
             card.show_detail(merged, self._controller.since(key))
 
+    def _refresh_card(self, key) -> None:
+        card = self._card
+        detail = self._detail_for_key(key)
+        if (detail is not None and card is not None and shiboken6.isValid(card)
+                and card.isVisible() and card.key == key):
+            card.show_detail(detail, self._controller.since(key))
+
     def close(self) -> None:
         card, self._card = self._card, None
         if card is not None and shiboken6.isValid(card):
@@ -426,6 +433,10 @@ class SessionPetActions(QObject):
         detail = self._detail_for_key(key)
         if detail is None:
             return False
+        if self._controller.acknowledge(key):
+            # 去看了：「等你回复」落回「休息中」，开着的卡片跟着换（下面的线程用的
+            # 还是上面那份 detail——跳转只要会话 ID / 路径，与阶段无关）
+            self._refresh_card(key)
         self._say(key, "正在切过去…")
 
         def work() -> None:

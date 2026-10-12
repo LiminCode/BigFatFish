@@ -361,6 +361,7 @@ def test_explorer_path_maps_wsl_paths_to_the_network_share():
 def shell(tmp_path, monkeypatch):
     monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
     monkeypatch.setattr(SessionPetController, "REST_CLIPS", ("idle1",))
+    monkeypatch.setattr(SessionPetController, "REVIEW_CLIPS", ("click1",))
     shell, _made = _make_persistent_shell(tmp_path, {"scale": 0.85})
     try:
         yield shell
@@ -452,6 +453,39 @@ def test_jump_reports_its_outcome_on_the_card(shell):
     assert seen == ["A"]
 
 
+def test_jumping_to_a_finished_session_marks_it_as_seen(shell):
+    """回合结束后是「等你回复」；点了「跳到对话」就算看过，落回「休息中」。"""
+    fish = _session(shell)
+    _session(shell, phase="resting")
+    actions = shell.session_actions
+    actions.loader = lambda detail: detail
+    actions.jumper = lambda detail, wsl_env=None: JumpResult(True, "已跳到 VS Code 里的这个对话")
+    actions.show_card(fish)
+    card = actions._card
+    assert card.status_label.text().startswith("等你回复 · 已")
+    assert fish.caption == "修登录 · 等你回复"
+
+    card.jump_btn.click()
+
+    assert fish.caption == "修登录 · 休息中"
+    assert card.status_label.text().startswith("休息中 · 已"), "开着的卡片跟着换"
+    assert _pump(lambda: card.result_label.text() == "已跳到 VS Code 里的这个对话")
+
+
+def test_the_menu_jump_also_marks_the_session_as_seen(shell):
+    fish = _session(shell)
+    _session(shell, phase="resting")
+    actions = shell.session_actions
+    actions.loader = lambda detail: detail
+    done = []
+    actions.jumper = lambda detail, wsl_env=None: (done.append(1), JumpResult(True, "ok"))[1]
+
+    assert actions.jump(fish) is True
+
+    assert fish.caption == "修登录 · 休息中"
+    assert _pump(lambda: bool(done))
+
+
 def test_copy_and_open_folder_use_the_sessions_own_data(shell):
     fish = _session(shell)
     actions = shell.session_actions
@@ -496,6 +530,7 @@ def test_status_and_elapsed_wording():
     waiting = si.SessionDetail(phase="waiting", tool="Bash")
     assert status_line(waiting, 1000.0, now=1300.0) == "在等你批准：Bash · 已 5 分钟"
     assert status_line(si.SessionDetail(phase="resting"), None) == ch.PHASE_TEXT["resting"]
+    assert status_line(si.SessionDetail(phase="review"), 1000.0, now=1660.0) == "等你回复 · 已 11 分钟"
 
 
 def test_transcript_is_found_by_session_id_when_the_hook_has_not_sent_its_path_yet(tmp_path):
