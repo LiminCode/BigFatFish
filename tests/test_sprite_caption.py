@@ -158,6 +158,14 @@ def test_caption_pill_is_grey_by_default_and_green_while_working():
     assert _pill_color(sprite) == grey, "不认识的色调退回默认底色"
 
 
+def test_caption_pill_is_blue_while_the_session_waits_for_a_reply():
+    """「等你回复」不能和「休息中」一个颜色——否则分不出哪些做完了还没看。"""
+    sprite = _sprite("dsh-pet · 等你回复")
+    sprite.caption_tone = "review"
+    blue = _pill_color(sprite)
+    assert blue.blue() > blue.red() + 40 and blue.blue() > blue.green() + 20
+
+
 def test_changing_the_tone_alone_rerenders_the_pill():
     sprite = _sprite("dsh-pet · 工作中")
     first = sprite.caption_pixmap().cacheKey()

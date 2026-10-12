@@ -622,6 +622,19 @@ def test_capsule_counts_follow_working_resting_waiting_and_skip_empty_phases():
     assert ch.session_counts([]) == []
 
 
+def test_sessions_waiting_for_a_reply_are_counted_apart_from_resting_ones():
+    """回合结束、用户还没去看的会话（review）：计数单列，汇总里排在「在干活」前面。"""
+    sessions = [
+        _s("claude", "working", project="busy"), _s("claude", "resting", project="old"),
+        _s("claude_wsl", "review", project="done"), _s("claude", "review", title="Fix login loop"),
+    ]
+    assert ch.session_counts(sessions) == [
+        ("working", "1 工作中"), ("resting", "1 休息中"), ("review", "2 待回复")]
+    headline, detail = ch.summarize_sessions(sessions)
+    assert headline == "Claude Code · 2 个等你回复 · 1 个在干活 · 1 个休息中"
+    assert detail == "done (WSL) · 等你回复 ｜ Fix login loop · 等你回复 等 4 个"
+
+
 def test_session_label_prefers_title_then_project_then_short_id():
     assert ch.session_label("claude", {"title": "T", "project": "P", "sessionId": "abc"}) == "T"
     assert ch.session_label("claude", {"title": "", "project": "P", "sessionId": "abc"}) == "P"

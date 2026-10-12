@@ -107,8 +107,8 @@ _API_STATUS_COLORS = {
     "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
     "unknown": QColor(130, 140, 155),  # 还没查过，或此版本没有 AI 对话
 }
-# 会话计数的字色：工作中绿、等待中橙（最需要人管），其余用次文字色
-_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24"}
+# 会话计数的字色：工作中绿、等待中橙（最需要人管）、待回复蓝，其余用次文字色
+_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24", "review": "#3b8fe8"}
 
 
 def spring_step(

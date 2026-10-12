@@ -140,6 +140,25 @@ def test_session_counts_are_drawn_on_the_capsule(tmp_path):
         island.deleteLater()
 
 
+def _blue_pixels(island) -> int:
+    image = island._content_cache().toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    return sum(
+        1 for y in range(image.height()) for x in range(image.width())
+        if (c := image.pixelColor(x, y)).alpha() >= 128
+        and c.blue() > c.red() + 60 and c.blue() > c.green() + 20)
+
+
+def test_sessions_waiting_for_a_reply_are_counted_in_blue(tmp_path):
+    island = _island(tmp_path)
+    try:
+        island.set_session_counts([("resting", "1 休息中")])
+        plain = _blue_pixels(island)           # 胶囊上别的内容（头像）本来就可能带蓝
+        island.set_session_counts([("review", "1 待回复")])
+        assert _blue_pixels(island) > plain + 20, "「休息中」用次文字色，「待回复」是蓝字"
+    finally:
+        island.deleteLater()
+
+
 def test_status_switch_hides_both_the_icon_and_the_counts(tmp_path):
     island = _island(tmp_path, show_status=False)
     try:

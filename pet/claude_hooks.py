@@ -337,13 +337,17 @@ class WslSettingsStore:
 
 # ---------------------------------------------------------------- 会话呈现文案
 
-#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）
-PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "resting": "休息中"}
-_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）。
+#: ``review``（回合结束、用户还没去看）不是收敛器报的：呈现层
+#: （``SessionPetController``）在 ``resting`` 上按「看过没有」分出来的。
+PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中"}
+_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "review": "{n} 个等你回复",
+                     "working": "{n} 个在干活", "resting": "{n} 个休息中"}
 #: 汇总时的排序：最需要人管的排最前
-_PHASE_ORDER = ("waiting", "working", "resting")
+_PHASE_ORDER = ("waiting", "review", "working", "resting")
 #: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
-_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("waiting", "等待中"))
+_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("review", "待回复"),
+                   ("waiting", "等待中"))
 #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
 CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
 
