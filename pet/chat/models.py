@@ -55,6 +55,9 @@ class ChatSettings:
     enabled: bool=True; active_provider: str='openai-main'; default_system_prompt: str='你是一只可爱的桌面宠物，请用自然、友善的中文和用户交流。'; history_message_limit: int=40; history_char_limit: int=24000; providers: dict[str,ProviderConfig]=field(default_factory=dict)
     # GitHub 连接器开关（默认关）；Token 在系统钥匙串里。见 pet/chat/connectors.py
     github_connector: bool=False
+    # 「关于我」：用户写给桌宠的说明（是谁、知识库在哪）。对话时追加在人设后面，
+    # 不随人设来源变化。见 PromptBuilder.build_messages
+    about_user: str=''
     @classmethod
     def defaults(cls):
         p=ProviderConfig('openai-main'); return cls(providers={p.provider_id:p})
@@ -63,9 +66,9 @@ class ChatSettings:
         raw=raw if isinstance(raw,dict) else {}; d=cls.defaults(); pr=raw.get('providers') if isinstance(raw.get('providers'),dict) else {}
         providers={str(k):ProviderConfig.from_dict(k,v) for k,v in pr.items() if isinstance(v,dict)} or d.providers
         active=str(raw.get('active_provider',next(iter(providers)))); active=active if active in providers else next(iter(providers))
-        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers,bool(raw.get('github_connector',False)))
+        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers,bool(raw.get('github_connector',False)),str(raw.get('about_user','') or '').strip())
     def to_dict(self,include_secrets=True):
-        return {'enabled':self.enabled,'github_connector':self.github_connector,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
+        return {'enabled':self.enabled,'github_connector':self.github_connector,'about_user':self.about_user,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
     @property
     def active_config(self): return self.providers[self.active_provider]
 

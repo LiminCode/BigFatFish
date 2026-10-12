@@ -73,6 +73,8 @@ class _AiSettingsPage(QWidget):
         self.key = _line_edit(password=True)
         self.prompt = QPlainTextEdit(self.settings.default_system_prompt)
         self.prompt.setMinimumSize(240, 80)
+        self.about_user = QPlainTextEdit(self.settings.about_user)
+        self.about_user.setMinimumSize(240, 80)
         self.timeout = BrowserSpinBox()
         self.timeout.setRange(1, 600)
         self.timeout.setSuffix(" 秒")
@@ -193,6 +195,11 @@ class _AiSettingsPage(QWidget):
             SettingRow("model", "模型", "发送请求时使用的模型标识。", self.model),
             SettingRow("api_key", "API Key", "凭据优先保存到系统钥匙串。", self.key),
             SettingRow("system_prompt", "System Prompt", "定义桌宠对话时的身份、语气和行为。", self.prompt, stacked=True),
+            SettingRow(
+                "about_user", "关于我",
+                "告诉桌宠你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
+                self.about_user, stacked=True,
+            ),
             SettingRow("connection_test", "连接测试", self.test_result.text(), self.test_button),
         ], self))
         root.addWidget(SettingsSection("系统通知", [
@@ -645,6 +652,7 @@ class _AiSettingsPage(QWidget):
         for pid in list(self.settings.providers):
             self._apply_draft_to_provider(pid)
         self.settings.default_system_prompt = self.prompt.toPlainText().strip()
+        self.settings.about_user = self.about_user.toPlainText().strip()
         github_enabled = self.github_connector.isChecked()
         github_token = self.github_token.text().strip()
         if github_token and not self._secret_store_type().set(self._github_token_ref, github_token):

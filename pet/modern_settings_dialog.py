@@ -1826,6 +1826,7 @@ class ModernSettingsDialog(QDialog):
                             "model",
                             "api_key",
                             "system_prompt",
+                            "about_user",
                             "connection_test",
                         ),
                     ),
