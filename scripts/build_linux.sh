@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 构建 dsh-pet-standalone Linux onedir（本地与 CI 共用的唯一构建入口）。
+# 构建 big-fat-fish Linux onedir（本地与 CI 共用的唯一构建入口）。
 #
 # CI（.github/workflows/build-linux.yml）与本脚本必须保持一致——构建逻辑
 # 只有这一份，CI 通过调用本脚本复用，不在 workflow 内联 PyInstaller 命令，
@@ -51,7 +51,7 @@ for variant in "${variant_list[@]}"; do
         gif)        entry="packaging/pet_entry_no_chat.py";    assets="assets/characters_gif";   excludes="pet.chat,keyring" ;;
         *) echo "未知变体: $variant" >&2; exit 1 ;;
     esac
-    name="dsh-pet-standalone-$variant"
+    name="big-fat-fish-$variant"
     printf "VARIANT = '%s'\n" "$variant" > packaging/build_variant.py
 
     args=(

@@ -407,7 +407,7 @@ tail（实测开销可忽略，目录发现已降频 30s）；Linux 自启路径
 
 ### 打包（frozen）验证（2026-08-27 收尾）
 - 按 WORKSPACE.md 命令完整 PyInstaller 打包（webm-chat 变体），产物在
-  `dist-onedir/dsh-pet-standalone-webm-chat/`；
+  `dist-onedir/big-fat-fish-webm-chat/`；
 - 打包版以 `--instance verify` 真实启动：Agent 监视器正常启动、注入事件后气泡真实弹出
   （截图实证），证明 frozen 环境下联动链路完整可用（hooks 已改纯 PowerShell 脚本，
   不依赖 sys.executable，打包版无此隐患）；
@@ -470,7 +470,7 @@ opus R3 明确通过。sol R3/dsh R3 确认中。
   _request_in_flight 致并发双请求（不清，靠代次+finally）、pet_opacity
   脏值启动崩溃（_float_or_default 兜底）。
 - 测试 360 passed / 5 skipped。
-- 用户配置虚惊事件：诊断脚本误用源码版数据目录（dsh-pet-standalone），
+- 用户配置虚惊事件：诊断脚本误用源码版数据目录（big-fat-fish），
   用户真实配置（webm-chat 目录）完好。注意排查时区分两个 APPDATA 目录。
 
 ### 第十七轮（2026-08-28 晚）：Agent 联动二期 + 独立评审修复批次

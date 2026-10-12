@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 <#
 .SYNOPSIS
-    dsh-pet-standalone onedir build + portable zip packaging.
+    big-fat-fish onedir build + portable zip packaging.
 
 .DESCRIPTION
     Builds a PyInstaller --onedir variant (no runtime extraction, no _MEI cache),
@@ -57,10 +57,10 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 
 $variants = @{
-    'webm-chat' = @{ Name = 'dsh-pet-standalone-webm-chat'; Entry = 'packaging\pet_entry.py' }
-    'webm'      = @{ Name = 'dsh-pet-standalone-webm';      Entry = 'packaging\pet_entry_no_chat.py'; NoChat = $true }
-    'gif-chat'  = @{ Name = 'dsh-pet-standalone-gif-chat';  Entry = 'packaging\pet_entry.py'; Gif = $true }
-    'gif'       = @{ Name = 'dsh-pet-standalone-gif';       Entry = 'packaging\pet_entry_no_chat.py'; Gif = $true; NoChat = $true }
+    'webm-chat' = @{ Name = 'big-fat-fish-webm-chat'; Entry = 'packaging\pet_entry.py' }
+    'webm'      = @{ Name = 'big-fat-fish-webm';      Entry = 'packaging\pet_entry_no_chat.py'; NoChat = $true }
+    'gif-chat'  = @{ Name = 'big-fat-fish-gif-chat';  Entry = 'packaging\pet_entry.py'; Gif = $true }
+    'gif'       = @{ Name = 'big-fat-fish-gif';       Entry = 'packaging\pet_entry_no_chat.py'; Gif = $true; NoChat = $true }
 }
 
 if (-not $variants.ContainsKey($Variant)) {
@@ -487,7 +487,7 @@ try {
     Wait-SmokeWindow -Process $settingsProc -Label '--settings' `
         -EarlyExitHint 'arg routing broken' `
         -NoWindowHint 'no settings window appeared'
-    # 配置目录名随打包变体走（= $name，如 dsh-pet-standalone-webm-chat），
+    # 配置目录名随打包变体走（= $name，如 big-fat-fish-webm-chat），
     # 写死基础名会让 webm-chat 等变体误报"没拿到锁"（实机踩过）
     $settingsLock = Join-Path (Join-Path $smokeBase $name) 'settings.lock'
     if (-not (Test-Path $settingsLock)) {

@@ -206,8 +206,9 @@ def external_character_dirs() -> list[Path]:
 
     顺序：
     1. exe 同目录 / 当前工作目录下的 characters/
-    2. 打包变体数据目录下的 characters/（变体感知，如 dsh-pet-standalone-webm-chat）
-    3. 旧目录 dsh-pet-standalone/characters/（兼容老用户已在旧目录放置的角色）
+    2. 打包变体数据目录下的 characters/（变体感知，如 big-fat-fish-webm-chat）
+    3. 非变体的共用目录、以及改名前的 dsh-pet-standalone[-变体]/characters/
+       （兼容老用户已在旧目录放置的角色）
 
     数据目录名复用 config.APP_DIR_NAME（延迟导入，避免与 config 顶层
     ``from . import catalog`` 构成循环依赖）。
@@ -220,11 +221,13 @@ def external_character_dirs() -> list[Path]:
     dirs.append(base / 'characters')
 
     from . import config as _config  # 延迟导入防环：config 顶层 import catalog
-    app_dir_name = getattr(_config, 'APP_DIR_NAME', 'dsh-pet-standalone')
-    dirs.extend(_data_character_dirs(app_dir_name))
-    # 非变体旧目录兜底：老用户已放入的角色不能因为变体拆分而丢
-    if app_dir_name != 'dsh-pet-standalone':
-        dirs.extend(_data_character_dirs('dsh-pet-standalone'))
+    app_dir_name = getattr(_config, 'APP_DIR_NAME', 'big-fat-fish')
+    # 兜底目录：老用户已放入的角色不能因为变体拆分或程序改名而丢
+    fallbacks = (getattr(_config, 'APP_DIR_BASE', 'big-fat-fish'),
+                 getattr(_config, 'LEGACY_APP_DIR_NAME', 'dsh-pet-standalone'),
+                 getattr(_config, 'LEGACY_APP_DIR_BASE', 'dsh-pet-standalone'))
+    for name in dict.fromkeys((app_dir_name, *fallbacks)):
+        dirs.extend(_data_character_dirs(name))
     return dirs
 
 

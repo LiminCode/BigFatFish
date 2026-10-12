@@ -30,7 +30,7 @@ import threading
 import urllib.request
 from pathlib import Path
 
-logger = logging.getLogger("dsh-pet-standalone")
+logger = logging.getLogger("big-fat-fish")
 
 CACHE_DIR_NAME = "self_talk_voice"
 DEFAULT_SERVER = "http://127.0.0.1:9880"

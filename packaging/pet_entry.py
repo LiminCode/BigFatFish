@@ -7,7 +7,7 @@ PyInstaller 打包入口。
 
 构建命令（项目根目录）：
     python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx ^
-        --name dsh-pet-standalone-webm ^
+        --name big-fat-fish-webm ^
         --collect-all imageio_ffmpeg ^
         --add-data "assets/characters;assets/characters" ^
         packaging/pet_entry.py

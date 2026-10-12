@@ -244,9 +244,9 @@ def _probe_cache_path() -> Path:
     """--no-open 探测结果的落盘缓存路径（桌宠数据目录下）。"""
     try:
         from . import config as _config_mod
-        app_dir = str(getattr(_config_mod, "APP_DIR_NAME", "dsh-pet-standalone"))
+        app_dir = str(getattr(_config_mod, "APP_DIR_NAME", "big-fat-fish"))
     except Exception:
-        app_dir = "dsh-pet-standalone"
+        app_dir = "big-fat-fish"
     if os.name == "nt":
         base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
     else:

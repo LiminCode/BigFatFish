@@ -1430,7 +1430,7 @@ class AppShell:
                 if channel.play_file(str(cached), log_tag="点击自言自语"):
                     # 落一条日志：本地播报与"偷偷回落到在线合成"必须能分辨，
                     # 否则文件名对不上时只会表现为"声音怎么变了"却查不出原因。
-                    logging.getLogger("dsh-pet-standalone").info(
+                    logging.getLogger("big-fat-fish").info(
                         "点击自言自语：播放预缓存台词 %s（本地，不走网络）", cached.name)
                     return True
             except Exception:
@@ -1461,7 +1461,7 @@ class AppShell:
             logging.exception("启动台词语音预缓存失败（不影响点击朗读）")
             return False
         if started:
-            logging.getLogger("dsh-pet-standalone").info(
+            logging.getLogger("big-fat-fish").info(
                 "已开始后台预缓存台词语音%s", f"（{reason}）" if reason else "")
         return started
 
@@ -3914,7 +3914,9 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
     app_identity.apply_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
 
-    # 确定配置根目录
+    # 确定配置根目录。改名迁移必须抢在第一次往新目录写东西（下面的进程门锁文件）之前
+    from .config import migrate_legacy_app_dir
+    migrated_data_dir = migrate_legacy_app_dir(_default_base())
     config_dir = _default_base() / APP_DIR_NAME
 
     # D4（PHASE4_DESIGN §4）overlay 拓扑单实例进程门：**先于** slot 竞争。
@@ -3959,8 +3961,12 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
         _mac_set_dock_icon_visible(bool(config.get("show_dock_icon", True)))
         _setup_logging(config)
 
-        logging.info("dsh-pet-standalone 启动 (slot: %s, instance: %s)", slot_id, instance_id)
+        logging.info("big-fat-fish 启动 (slot: %s, instance: %s)", slot_id, instance_id)
+        if migrated_data_dir:
+            logging.info("已把改名前的数据目录迁移到 %s", config_dir)
         _cleanup_stale_runtime_dirs()
+        if autostart_mod.adopt_legacy_entry():
+            logging.info("已把改名前的开机自启项换成新名字")
         stale_removed = autostart_mod.cleanup_stale_entries()
         if stale_removed:
             logging.info("已清理 %d 个指向不存在路径的开机自启项", stale_removed)
@@ -3971,7 +3977,7 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
             controller.start()
         except Exception as exc:
             logging.exception("启动失败")
-            _show_startup_error("dsh-pet-standalone", str(exc))
+            _show_startup_error("BigFatFish", str(exc))
             return 1
 
         logging.info("进入事件循环")

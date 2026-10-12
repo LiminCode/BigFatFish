@@ -27,7 +27,7 @@ not a package``）就继续构建，产物静默缺 TTS；用户拿到包后点�
   实际踩到的假红见 `_has_packable_source` 与 `import_closure` 的说明。
 
 用法：
-    python scripts/verify_bundle_tts.py --app-dir dist-onedir/dsh-pet-standalone-webm-chat
+    python scripts/verify_bundle_tts.py --app-dir dist-onedir/big-fat-fish-webm-chat
     python scripts/verify_bundle_tts.py --exe <path to exe>
 
 退出码：0 通过；2 目录/exe 缺失；3 清单读不出来；4 缺模块；5 打包机没装 edge-tts。

@@ -82,7 +82,7 @@ jobs:
       - name: Verify pet module collected
         run: |
           for VARIANT in webm-chat webm; do
-            APP="dsh-pet-standalone-$VARIANT"
+            APP="big-fat-fish-$VARIANT"
             WARN="$(find build -name "warn-$APP.txt" | head -1)"
             if [ -n "$WARN" ] && grep -q "missing module named pet" "$WARN"; then
               echo "::error::$APP pet 模块未被 PyInstaller 收集"; cat "$WARN"; exit 1
@@ -104,12 +104,12 @@ jobs:
         run: |
           cd dist
           for VARIANT in webm-chat webm; do
-            zip -r "dsh-pet-standalone-$VARIANT-linux-x86_64.zip" "dsh-pet-standalone-$VARIANT"
+            zip -r "big-fat-fish-$VARIANT-linux-x86_64.zip" "big-fat-fish-$VARIANT"
           done
 
       - name: Verify zip preserves executable permission
         run: |
-          for ZIP in dist/dsh-pet-standalone-*-linux-x86_64.zip; do
+          for ZIP in dist/big-fat-fish-*-linux-x86_64.zip; do
             rm -rf /tmp/verify && mkdir -p /tmp/verify
             cd /tmp/verify
             unzip -q "$GITHUB_WORKSPACE/$ZIP"
@@ -126,7 +126,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-pet-standalone-linux-x86_64
+          name: big-fat-fish-linux-x86_64
           path: dist/*.zip
           retention-days: 30
 

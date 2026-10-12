@@ -14,7 +14,7 @@
 3. 中文素材文件名（如 吃Token.webm）在包内必须存在。
 
 用法：
-    python scripts/check_bundle_encoding.py --dir dist-onedir/dsh-pet-standalone-webm-chat
+    python scripts/check_bundle_encoding.py --dir dist-onedir/big-fat-fish-webm-chat
 
 退出码：0 = 通过；1 = 发现乱码（构建脚本应中止并拒绝出包）。
 无 Qt 依赖；优先使用 PyInstaller 自带的 reader 解析 onedir exe/.app 内嵌的
@@ -290,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dir",
         required=True,
-        help="构建产物目录（如 dist-onedir/dsh-pet-standalone-webm-chat）",
+        help="构建产物目录（如 dist-onedir/big-fat-fish-webm-chat）",
     )
     args = parser.parse_args(argv)
 

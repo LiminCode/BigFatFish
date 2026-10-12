@@ -43,9 +43,9 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 
 | 平台 | 路径 |
 |---|---|
-| Windows | `%APPDATA%\dsh-pet-standalone[-变体]\agent-events\` |
-| macOS | `~/Library/Application Support/dsh-pet-standalone[-变体]/agent-events/` |
-| Linux | `~/.config/dsh-pet-standalone[-变体]/agent-events/` |
+| Windows | `%APPDATA%\big-fat-fish[-变体]\agent-events\` |
+| macOS | `~/Library/Application Support/big-fat-fish[-变体]/agent-events/` |
+| Linux | `~/.config/big-fat-fish[-变体]/agent-events/` |
 
 ### 2.2 JSON 行格式
 
