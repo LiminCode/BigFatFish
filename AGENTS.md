@@ -184,9 +184,12 @@ exact breakpoint there; see `docs/agents/handoff.md`.
   ffmpeg spawning (`webm_clip` reader/first-frame/meta/exe probes), warm
   scheduling, or anything that runs during Windows shutdown/logoff
   (`session_watcher`, `match_shutdown`, `AppShell._on_session_end`).
-- Read `docs/ONEDIR_PACKAGING.md` when changing PyInstaller specs, bundled
-  resources, or platform build scripts.
-- Read `docs/STABLE_BUILDS.md` when changing release/build workflows.
+- Packaging and release were removed on 2026-10-11: the project runs from
+  source only (`run.bat` / `python -m pet`). There are no build scripts,
+  installer, or release workflows. Read
+  `docs/PR-REPORT-REMOVE-PACKAGING-2026-10-11.md` before reintroducing any, and
+  note that runtime branches for packaged builds (`sys.frozen`,
+  `build_variant`) were deliberately left in place.
 - Read `docs/CONTEXT-MENU-RESEARCH-AND-REFACTOR-2026-08-25.md` when changing
   context-menu structure, styling, interaction, or platform behavior.
 - Read `docs/SETTINGS-CHANGE-GATES.md` before adding, moving, removing, or

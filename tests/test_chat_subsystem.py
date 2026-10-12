@@ -532,32 +532,6 @@ def test_follow_pet_option_registers_and_unregisters_position_listener(tmp_path:
     app.processEvents()
 
 
-def test_no_chat_packaging_uses_isolated_entrypoint():
-    no_chat_entry = Path("packaging/pet_entry_no_chat.py").read_text(encoding="utf-8")
-    assert "main(enable_chat=False)" in no_chat_entry
-    # spec 是构建产物（*.spec 已 gitignore）；干净检出时不存在则跳过，
-    # 存在时（本机构建过）校验无 Chat 变体必须排除 pet.chat。
-    for spec_name in (
-        "big-fat-fish.spec",
-        "big-fat-fish-hd.spec",
-        "big-fat-fish-gif.spec",
-        "big-fat-fish-webm.spec",
-    ):
-        spec_path = Path(spec_name)
-        if not spec_path.is_file():
-            continue
-        spec = spec_path.read_text(encoding="utf-8")
-        assert "pet_entry_no_chat.py" in spec
-        assert "'pet.chat'" in spec
-    for spec_name in ("big-fat-fish-gif-chat.spec", "big-fat-fish-webm-chat.spec"):
-        spec_path = Path(spec_name)
-        if not spec_path.is_file():
-            continue
-        chat_spec = spec_path.read_text(encoding="utf-8")
-        assert "pet_entry.py" in chat_spec
-        assert "pet_entry_no_chat.py" not in chat_spec
-
-
 def test_chat_window_uses_transparent_window_around_opaque_rounded_shell(tmp_path: Path):
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
