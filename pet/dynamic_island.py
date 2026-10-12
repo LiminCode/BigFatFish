@@ -5,7 +5,7 @@
   绿 = 对话 API 可用，红 = 不可用）；
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
 - 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
-  桌宠隐藏时（``hidden_chat`` 开启）单击改为弹岛对话气泡（island_chat.py）；
+  桌宠隐藏时也一样（卡片上的「显示桌宠」是恢复入口）；
 - 信息槽二选一：当前时间，或今日用量（Claude Code 今天用掉的 token，见 claude_usage）；
 - 事件动效（``event_effects``）：AI 回复/余额刷新时位移弹跳 +
   表面轻压 + 短暂呼吸，静止时完全无定时器开销；
@@ -237,7 +237,6 @@ class DynamicIsland(QWidget):
     history_activated = Signal(object)
     history_action = Signal(str, object)
     history_toggled = Signal(bool)
-    chat_requested = Signal()  # 桌宠隐藏时单击胶囊（hidden_chat 开启）：弹岛对话气泡
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -262,9 +261,6 @@ class DynamicIsland(QWidget):
         self._balance_tier_text = "余额峰谷 --"
         self._balance_text = "余额 --"
         self._pet_visible = True
-        # 本构建是否具备聊天能力（AppShell 按 enable_chat 喂入，默认 True
-        # 维持现状；纯桌宠版置 False 时 hidden_chat 单击路由回退展开卡片）
-        self._chat_available = True
         self._agent_active = False
         self._api_state = "unknown"
         self._api_detail = ""
@@ -361,10 +357,6 @@ class DynamicIsland(QWidget):
     def _click_action(self) -> str:
         return str(self._cfg.get("click_action") or "expand")
 
-    def _hidden_chat_enabled(self) -> bool:
-        """桌宠隐藏时的对话气泡开关（点击岛弹气泡 + 回复到达自动预览）。"""
-        return bool(self._cfg.get("hidden_chat", True))
-
     def _event_effects_enabled(self) -> bool:
         return bool(self._cfg.get("event_effects", True))
 
@@ -454,16 +446,6 @@ class DynamicIsland(QWidget):
                 pass
         self._sync_card_labels()
         self.update()
-
-    def set_chat_available(self, available: bool) -> None:
-        """写入本构建是否具备聊天能力（AppShell 按 enable_chat 喂入）。
-
-        纯桌宠版（无 pet.chat 的打包变体）置 False：hidden_chat 开且桌宠
-        隐藏时，单击路由回退为展开卡片——卡片的「显示桌宠」是该形态下
-        唯一的恢复入口；否则单击被路由到不存在的对话气泡，岛无任何
-        反应，桌宠永远回不来（纯桌宠版实机死锁）。
-        """
-        self._chat_available = bool(available)
 
     def set_api_status(self, state: str, detail: str = "") -> None:
         """对话 API 的体检结论（``api_key_monitor``）：ok 绿色连通 / bad 红色断开 /
@@ -1610,13 +1592,10 @@ class DynamicIsland(QWidget):
                 self._dock_back_timer.start()
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
-            elif self._hidden_chat_enabled() and not self._pet_visible and self._chat_available:
-                # 桌宠隐藏时岛是唯一常驻交互面：单击直接弹对话气泡
-                #（恢复桌宠的入口由气泡内的「显示桌宠」按钮承接）；
-                # 无聊天能力的构建（纯桌宠版）不进此分支——回退 else 展开
-                # 卡片，由卡片的「显示桌宠」按钮承接恢复入口
-                self.chat_requested.emit()
             else:
+                # 桌宠隐藏时也照常展开卡片（Claude Code 会话、最近的对话都在这里），
+                # 恢复桌宠的入口是卡片上的「显示桌宠」。此前隐藏时单击改弹岛对话
+                # 气泡，卡片就点不开了（2026-10-11 按用户要求去掉这条路由）。
                 self.expand_card()
         else:
             # 先夹回屏幕再判定停靠：拖出屏外的落点按夹后位置算距离

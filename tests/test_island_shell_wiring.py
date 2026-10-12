@@ -181,6 +181,33 @@ def test_toggle_pet_from_island_routes_to_overlay_shell():
     assert calls == [1]
 
 
+def test_show_pets_from_island_chat_routes_to_overlay_shell():
+    """实机 bug（2026-10-11）：隐藏桌宠后点岛弹出对话气泡，气泡里的「显示桌宠」
+    在 overlay 拓扑下只遍历 instances[].win（恒为 None）——桌宠没回来，岛却被
+    写成「已显示」。必须交给 OverlayShell.set_pet_visible(True)。"""
+    shell = AppShell.__new__(AppShell)
+    calls: list = []
+
+    class _OverlayShell:
+        def set_pet_visible(self, visible):
+            calls.append(visible)
+
+    class _Island:
+        marked: list = []
+
+        def set_pet_visible(self, visible):
+            self.marked.append(visible)
+
+    shell._overlay_shell = _OverlayShell()
+    shell._instances = []  # overlay 拓扑：win 全 None
+    shell.island = _Island()
+    shell.island_chat = None
+    AppShell._show_pets_from_island_chat(shell)
+    assert calls == [True]
+    # 岛的可见态由壳在真的显示之后同步；这里不许抢先写成「已显示」
+    assert _Island.marked == []
+
+
 def test_aggregate_pet_visible_reads_overlay_window():
     """聚合可见态在 overlay 拓扑读唯一合成窗（不再恒 False）。"""
     import types
@@ -644,6 +671,28 @@ def test_island_chat_button_opens_quick_chat_on_the_overlay(tmp_path):
 
     assert shell._overlay_shell.quick_chat_calls == 1
     assert shell.instance.full_chat_calls == 0
+
+
+def test_island_chat_button_opens_the_full_chat_window_while_hidden(tmp_path):
+    """桌宠隐藏时点卡片的「聊天」：快速气泡锚不到桌宠，直接开完整聊天窗。
+
+    此前这里改弹岛对话气泡；隐藏时单击岛已改回展开卡片（2026-10-11），卡片上的
+    「聊天」不该再绕回那个气泡。
+    """
+    from types import SimpleNamespace
+
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.instance = _FakeInstanceForChat()
+    shell._overlay_shell = _FakeOverlayForChat()
+    shell._overlay_shell.overlay = SimpleNamespace(isVisible=lambda: False)
+    shell.island_chat = None
+
+    shell._open_chat_from_island()
+
+    assert shell.instance.full_chat_calls == 1
+    assert shell._overlay_shell.quick_chat_calls == 0
+    assert shell.island_chat is None
 
 
 def test_island_chat_button_falls_back_to_the_full_chat_window(tmp_path):
