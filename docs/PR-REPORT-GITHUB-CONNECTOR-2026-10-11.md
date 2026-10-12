@@ -382,3 +382,233 @@ GitHub 上的 知识库仓库 最后一次提交是 2026-10-04，本地知识库
   （知识库的 GitHub 副本里有登录类笔记）。用户已知并选择保持现状。
 - 指引让桌宠在个人问题上多一次到几次工具调用，回答会比闲聊慢 2–10 秒。
 - 只作用于三个交互式对话入口；主动识屏、文件解读不带这段。
+
+---
+
+## 十、第三轮：本地知识库（同日追加，基线 `cef002e`）
+
+### 核心特性
+
+前两轮让桌宠经 GitHub 连接器去读知识库仓库，可用但每次都绕远：每条消息带约 1.23 万
+token 的 GitHub 工具定义，读一个文件要 Anthropic 服务器 → GitHub MCP 服务器走一趟。
+本轮新增「本地知识库」：把一个 GitHub 仓库每天同步成本机副本，对话时桌宠用三个本地
+工具只读这份副本。
+
+| # | 能力 | 说明 |
+|---|---|---|
+| 1 | 同步 | 下载仓库默认分支的 zip 包并解压，只留文本文件；整目录原子替换，失败保留旧副本 |
+| 2 | 每日自动 | 主进程里的定时器每 10 分钟看一眼是否到期（没有副本 / 换了仓库 / 超过 24 小时）；失败后 30 分钟内不重试 |
+| 3 | 本地工具 | `kb_read` / `kb_list` / `kb_search`，路径限制在副本目录内 |
+| 4 | 工具循环 | Claude 通道第一次有了客户端工具：模型要调用时在聊天工作线程里执行，结果接回去再请求 |
+| 5 | 设置 | 「AI 与对话 → 知识库」：开关、仓库、立即同步（带状态文字） |
+
+**与用户原话的两处差异（实现者的判断）**：用户说的是「每天 clone」。实现为下载 zip：
+不要求本机装 git，Token 只出现在 HTTPS 请求头里（不进进程命令行、不进 `.git/config`），
+也不新增子进程。副本里只留 `.md .markdown .txt .rst .org .csv .json .yaml .yml`，
+跳过图片、点开头的目录和文件（`.obsidian` 等）与单个超过 2 MB 的文件。
+
+**红线 / 不变量**
+
+- 开关关闭（默认）时请求与改动前相同：`toolset_for` 返回 `None`，`_open_stream` 不加
+  任何字段（上一轮的 `test_requests_without_connectors_are_unchanged` 仍然通过）。
+- 读取不出副本目录：`../`、绝对路径、盘符路径一律拒绝
+  （`test_reads_stay_inside_the_copy`）；zip 条目同样不能写到副本目录之外
+  （`test_archive_entries_cannot_escape_the_copy`）。
+- Token 不落盘：`state.json` 里没有它（`test_sync_keeps_text_files_only_and_records_the_state`）；
+  `ProviderConfig.client_tools` 是运行期字段，不进 `to_dict()`。
+- 工具出错不等于请求失败：错误以 `is_error` 回给模型，聊天线程不死。
+
+### 修改文件说明
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/chat/knowledge_base.py`（新增） | +370 / −0 | 不依赖 Qt 的全部逻辑。`parse_repo`（`owner/repo`、网址、克隆地址都认）；`sync`（下载 → 安全解压到 `incoming-<pid>` → `os.replace` 换成 `current` → 写 `state.json`；失败把原因记进状态并保留旧副本）；`needs_sync` / `has_copy` / `describe`；`KnowledgeBase`（list / read / search，路径沙箱，长文件截到 4 万字）；`KnowledgeToolset`（三个工具的定义、用法说明、执行入口）；`toolset_for`（开关开、Claude 通道、本地有该仓库副本才返回） |
+| `pet/chat/knowledge_sync.py`（新增） | +113 / −0 | `KnowledgeBaseSync(QObject)`：定时检查，到期在 daemon 线程里同步，结果经信号排队回 GUI 线程；结构照 `api_key_monitor.py`。每次检查重新读配置，所以不需要「设置改了」的通知 |
+| `pet/chat/anthropic_provider.py` | +48 / −7 | `_open_stream` 接受 `client_tools`，把定义并入 `tools`（可与 MCP toolset 并存）；只要带了工具就开顶层自动缓存。`stream` 的循环从「只续 `pause_turn`」扩成两种续跑：`pause_turn`（上限 4）与 `tool_use`（上限 8 轮）。新增 `_run_client_tools`：一轮内所有工具结果放进同一条 user 消息。工具的用法说明追加到 system 末尾 |
+| `pet/chat/models.py` | +11 / −3 | `ChatSettings.knowledge_base_enabled` / `knowledge_base_repo`；`ProviderConfig.client_tools`（运行期；`to_dict` 在 `asdict` 深拷贝前先摘掉它） |
+| `pet/config.py` | +6 / −0 | `Config.resolve_client_tools(provider)` |
+| `pet/chat/widgets.py`、`legacy_widgets.py`、`pet/quick_chat.py` | 各 +1 / −0 | 发送前填 `config.client_tools` |
+| `pet/chat/ai_settings_page.py` | +81 / −7 | 「知识库」分组三行与「立即同步」（daemon 线程 + `_safe_emit` 回信号，同「测试连接」的做法）。GitHub Token 行改为连接器或知识库任一打开就显示（私有仓库同步要它），说明文字相应改写 |
+| `pet/app.py` | +13 / −0 | `AppShell.start()` 里调 `_start_knowledge_sync()`：创建并启动定时器；无聊天打包变体跳过，异常不阻断启动 |
+| `pet/modern_settings_dialog.py` | +1 / −0 | 分组登记 1 行 |
+| `tests/test_architecture.py` | +2 / −1 | `modern_settings_dialog.py` 行数预算 2397 → 2398，理由同前两轮 |
+| `tests/test_knowledge_base.py`（新增） | +617 / −0 | 43 条：仓库名解析 9、同步 11（内容筛选、无 Token、路径逃逸、整目录替换、5 种失败、私有仓库提示、到期与退避）、本地读取 6、挂载条件与持久化 2、工具循环 6（执行并回填、工具出错、轮数上限、取消、与连接器并存、真 SDK 接口）、配置与三个对话入口 4、设置页 2、每日同步 3 |
+
+**先写了实现的那一部分**：`knowledge_base.py` 的纯逻辑是先写的，对应 29 条测试第一次
+运行就是绿的，没有「先红」的记录。其余 14 条（工具循环、配置接线、对话入口、设置页、
+每日同步）在实现前运行为红。
+
+**未改动**：`pet/chat/connectors.py`（GitHub 连接器原样保留，两者可同时开）；
+OpenAI 兼容通道（`providers.py`）没有工具循环，知识库在那里不生效。
+
+### 实现要点
+
+**为什么工具循环是手写的。** SDK 有现成的 tool runner，但这里要同时满足：逐段把文字
+交给界面、随时可取消、与服务端的 MCP 连接器共存、续跑 `pause_turn`。这些在既有的流式
+循环里加一个分支就够了，换成 runner 反而要绕开它。
+
+**一轮的结构。** 流结束后看 `stop_reason`：`tool_use` → 逐个执行本轮的 `tool_use` 块 →
+把 assistant 的整段 `content`（含 thinking 块，原样）和一条装着全部 `tool_result` 的 user
+消息接到历史末尾 → 再请求。
+
+**用法说明跟着工具走。** 「先读 INDEX.md」这段话在 `KnowledgeToolset.system_note` 里，
+由 provider 在带工具时追加到 system。没有本地副本就没有工具，也就不会出现「叫模型去查
+一个不存在的东西」。上一轮写进「关于我」的 GitHub 指引因此不再需要。
+
+**说明文字的措辞是测出来的。** 第一版写「通常先读 INDEX.md」，同一个问题模型先搜了
+三次中文关键词（笔记文件名是英文）才去读地图，共 6 次请求；改成「第一步用 kb_read 读
+根目录的 INDEX.md……找不到再用 kb_search」后两次复测都是 4 次请求（见下表）。
+
+**跨进程。** 设置窗口是独立进程，它的「立即同步」和主进程的定时同步写同一个目录：
+临时目录按 pid 取名，替换是 `os.replace`，状态文件先写临时文件再替换；主进程每次发送
+都重新读状态，不缓存。
+
+**设置准入记录**
+
+```text
+setting_id            knowledge_base_enabled / knowledge_base_repo（knowledge_base_sync 是命令按钮，不存值）
+domain_id / group_id  AI 与对话 / 知识库
+default               关 / 空
+capability            仅 Claude 通道生效（含经网关访问）；私有仓库依赖「连接器」分组里的 GitHub Token
+disclosure_level      primary
+dependency            仓库行、同步行依赖开关（关时隐藏）
+commit_policy         on_finish；「立即同步」用表单里的当前值，不要求先保存
+migration             新键 chat.knowledge_base_enabled / chat.knowledge_base_repo，无旧键
+recovery              关掉开关即回到改动前；副本在 <配置目录>/knowledge-base/，可直接删除
+```
+
+「立即同步」是命令而不是偏好，按 [`SETTINGS-CHANGE-GATES.md`](SETTINGS-CHANGE-GATES.md)
+本不该进设置页；放在这里是因为它是这组设置唯一的验证手段（仓库名、Token 填得对不对），
+与同页既有的「测试连接」同类。
+
+### 性能分析
+
+**方法**：真实配置的副本 + 真实 Key 与 Token，`claude-sonnet-5`，effort `medium`；
+消息由 `PromptBuilder.build_messages` 生成，经 `AnthropicProvider.stream`。同步用
+`knowledge_base.sync` 的默认下载器直连 `api.github.com`。环境同 §四。
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| 同步 `<owner>/<知识库仓库>`（仓库 105 个文件） | 0.83 s，留下 71 个文件 / 520,891 字节 | 新增，每天 1 次 |
+| 私有仓库不带 Token | 0.26 s 后失败：「找不到仓库……私有仓库需要先在「连接器」里填 GitHub Token」 | 新增 |
+| `kb_read INDEX.md`（n=20） | 中位 0.21 ms，最大 6.00 ms | 新增 |
+| `kb_search "<关键词>"`（71 个文件全扫，n=20） | 中位 8.04 ms，最大 732.84 ms（第一次，磁盘缓存是冷的） | 新增 |
+| `kb_list` 根目录（n=20） | 中位 0.47 ms，最大 1.01 ms | 新增 |
+| 闲聊一条，只开知识库（n=1） | 首段文字 3.1 s，1 次请求，未调用工具；输入 1,407 token（缓存写） | 新增 |
+| 「最需要盯紧的一件事」，只开知识库（n=1） | 首段文字 **4.2 s**，总计 6.1 s，2 次请求，读 `INDEX.md`；两次请求输入合计约 6,600 token（其中 1,418 走缓存读） | 新增 |
+| 同一问题，上一轮经 GitHub 连接器（n=1，§九） | 首段文字 5.1 s，总计 7.0 s；输入合计约 28,800 token | 对照 |
+| 「某个个人项目做到哪一步」，第一版说明（n=1） | 首段文字 9.9 s，总计 13.9 s，**6 次请求**（先搜 3 次） | 已改掉的措辞 |
+| 同一问题，现在的说明（n=2） | 首段文字 8.1 s / 6.1 s，总计 12.5 s / 10.3 s，**4 次请求** | 新增 |
+| 知识库 + GitHub 连接器同开，一问两头（n=1） | 首段文字 10.5 s，总计 21.4 s，3 次请求；同一轮里本地 `tool_use` 与 `mcp_tool_use` 并存，都正确返回 | 新增 |
+| 桌宠启动到自动同步完成 | 10 s（延时 8 s + 同步） | 新增 |
+| 新测试文件 | 43 条 2.9 s | — |
+
+**结论**
+
+1. **稳态开销（开关关）**：每次发送多一次 `chat_settings()` 解析和一次布尔判断，不读
+   磁盘、无网络。主进程多一个 10 分钟一次的定时器，关着时每次只解析一遍聊天配置。
+2. **新增路径**：开着时每次发送读一次 `state.json`（没有单独计时；同目录下读 9 KB 的
+   `INDEX.md` 中位 0.21 ms）。每条消息多三个工具定义加用法说明，共约 950 token（闲聊
+   输入 1,407 对比连接器全关时的 455），是 GitHub 连接器（约 12,300）的十三分之一。
+   个人问题每多读一步就多一次完整请求，首段文字因此比闲聊晚 1–5 s。
+3. **新的系统调用 / 网络 / 磁盘 / 线程**：有，都是本轮引入的——
+   网络：每天一次到 `api.github.com`（跳转 `codeload.github.com`）的 HTTPS 下载，走系统
+   代理（按 [`NETWORK-PROXY-AND-VPN-2026-09-22.md`](NETWORK-PROXY-AND-VPN-2026-09-22.md)
+   的约定，未特殊处理）。磁盘：`<配置目录>/knowledge-base/` 下一份副本（本例 0.5 MB）与
+   `state.json`。线程：同步期间一个 daemon 线程。没有新的子进程。
+4. **内存**：下载的 zip 整个读进内存后解压（上限 200 MB；本例解压出的文本共 0.5 MB，zip 大小没有单独记录），同步结束即
+   释放；没有常驻缓存，副本内容每次从磁盘读。
+
+样本量多为 n=1 或 2，只说明量级；没有做「知识库 vs 连接器」的多样本对照。
+
+### 实机运行记录
+
+**真实同步与本地读取**（临时配置目录，真实 Token）
+
+```text
+=== sync without token (private repo) ===
+sync failed after 0.26s: 找不到仓库 <owner>/<知识库仓库>（私有仓库需要先在「连接器」里填 GitHub Token）
+=== sync ===
+synced in 0.83s: files=71 bytes=520891
+describe: 上次同步 2026-10-11 21:49，71 个文件。之后每天自动同步一次。
+top level: （12 个顶层条目，名称从略）
+```
+
+`.obsidian`、`.gitignore`、两个 `.bak` 都没有进副本。
+
+**对话**（桌宠自己的代码路径）
+
+```text
+model=claude-sonnet-5 connector=[] kb_tools=True
+问：我最近最需要盯紧的一件事是什么？一句话。
+答：（回答内容来自用户的私人笔记，此处从略；与笔记里的记录一致）
+-- first_text=4.2s total=6.1s requests=2
+-- local tool calls: kb_read INDEX.md，随后按需 kb_list / kb_read 具体笔记（路径从略）
+-- stop tool_use | in 2 out 53 cache_write 1418 cache_read 0 | blocks ['tool_use']
+-- stop end_turn | in 2 out 85 cache_write 3769 cache_read 1418 | blocks ['text']
+```
+
+```text
+问：（一个需要查知识库才能回答的个人问题，内容从略）
+答：（回答内容来自用户的私人笔记，此处从略；与笔记里的记录一致）
+-- local tool calls: kb_read INDEX.md，随后按需 kb_list / kb_read 具体笔记（路径从略）
+-- requests=4，中间几轮的 blocks 含 'thinking'：带 thinking 块的内容原样回传被 API 接受
+```
+
+```text
+问：（一个需要查知识库才能回答的个人问题，内容从略）另外 LiminCode/BigFatFish 最近一次提交是什么？   （知识库 + 连接器）
+-- local tool calls: kb_read INDEX.md，随后按需 kb_list / kb_read 具体笔记（路径从略）
+-- stop tool_use | blocks ['thinking', 'tool_use', 'mcp_tool_use']          ← 同一轮里两种工具
+-- stop tool_use | blocks ['mcp_tool_result', 'thinking', 'tool_use', 'tool_use', 'tool_use']
+-- stop end_turn | blocks ['text']                                          ← 两个问题都答了，提交信息与 §五 一致
+```
+
+**真实桌宠**
+
+```text
+before: kb False '' | about chars 164 | connector True
+after: kb True '<owner>/<知识库仓库>' | about chars 0 | connector True
+2026-10-11 21:51:15 acquired pid=37912 …
+2026-10-11 21:51:25,112 INFO 知识库同步完成：<owner>/<知识库仓库>：71 个文件     ← 桌宠自己的日志：启动 10 s 后定时器自行同步
+state.json: {"repo": "<owner>/<知识库仓库>", "synced_at": 1791780684.23, "files": 71, "bytes": 520891, …, "error": ""}
+knowledge-base/: current, state.json                                       ← 没有残留的临时目录
+```
+
+**操作失误记录**：启用时把真实配置里的「关于我」清空了（它原本只有上一轮写入的 GitHub
+指引，与本地知识库的用法说明冲突）。清空前只核对了长度：164 字，而上一轮写入的是 162
+字——用户可能改过两个字符，改了什么没有留存，也没有备份可查。已告知用户并给出原文。
+
+**设置页**：真实 Windows 窗口截图（宽 1100 / 720，开关开），见下「测试与验证」。
+
+**没有自动验证的部分**
+
+- 仍然没有在真实聊天窗里打字（理由同 §五）。
+- **24 小时后的自动再同步**没有等到：只有替身时钟的测试（`test_daily_sync_runs_when_due…`）
+  和「启动后首次同步」这一次真实观察。
+- `AppShell.start()` 里的接线没有单元测试（启动整个壳太重），证据是上面那行真实日志。
+- 同步期间断网、磁盘满、路径超长：只有替身覆盖（5 种失败的参数化用例），没有实机制造。
+
+### 测试与验证
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests scripts`、`git diff --check` | 通过 |
+| 红 → 绿 | `pytest -q tests/test_knowledge_base.py` | 接线前 14 failed / 29 passed（见上「先写了实现的那一部分」）；完成后 43 passed |
+| 聚焦 + 相关 | 本轮与前两轮的测试文件 + `test_anthropic_provider` `test_architecture` `test_chat_subsystem` `test_file_interpret` `test_config_domains` `test_config_key_migration` `test_desktop_pet_features` `test_api_key_monitor` | 全部通过，除路径超 260 的基线项 |
+| 受影响时序族满载 3 遍 | `tests/test_knowledge_base.py` 里用到事件循环的 5 条（设置页同步 2、每日同步 3） | 3 遍均 `5 passed`（0.36–0.50 s）。当时全量套件在同一台机器上并行运行，没有另外把 CPU 打满 |
+| 全量 | 同 §六 的命令 | `4 failed, 4948 passed, 11 skipped in 425.27s`；4 个失败是 §六 列出的本机环境性基线项，没有其它失败。这次运行之后只改了工具用法说明的一句措辞（没有测试断言这句话的具体文字，`tests/test_knowledge_base.py` 单独重跑 43 passed）以及本报告与索引 |
+| 设置页截图 | 真实窗口，宽 1100 / 720 | 无裁切，横向滚动条最大值 0。第一次截图里仓库行的说明被截成一行，原因是截图脚本只处理了一轮事件、布局还没稳定；多处理几轮后该行说明高 32 px，等于所需的 32 px（两行）。截图未入库 |
+
+### 已知限制与后续
+
+- **GitHub 上的仓库旧，副本就旧。** 本例 GitHub 副本停在 2026-10-04，答案里引用的一个日期
+  已经过期。用法说明提醒了模型「内容截至同步时间」，但它不知道仓库本身多旧。
+- **只读默认分支**；不能选分支或子目录。
+- **只有 Claude 通道**；OpenAI 兼容通道没有工具循环。
+- **搜索是逐文件子串匹配**，不分词、没有索引。71 个文件 8 ms；上万个文件时要重做。
+- **读文件时界面仍然没有进度提示**（同 §七）；现在一个问题可能是 2–4 次请求。
+- **副本里有什么，模型就能读什么**，读到的内容随对话发给模型服务商。本例仓库里的
+  登录类笔记也在副本里；用户已知并选择保持现状。
+- 整包下载，没有增量；仓库超过 200 MB 直接拒绝。
+- 可以直接把知识库指向一个本地文件夹（例如已经在本机的 Obsidian 库），读取部分不用改，
+  本轮没有做这个入口。

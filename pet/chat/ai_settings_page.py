@@ -37,6 +37,7 @@ from .utils import _safe_emit
 
 class _AiSettingsPage(QWidget):
     test_done = Signal(bool, str)
+    kb_sync_done = Signal(bool, str)
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -46,12 +47,16 @@ class _AiSettingsPage(QWidget):
         from .models import ProviderConfig, SecretStore
         from .anthropic_provider import test_connection
         from .connectors import GITHUB_TOKEN_REF
+        from . import knowledge_base
 
         self.config = config
         self._provider_config_type = ProviderConfig
         self._secret_store_type = SecretStore
         self._test_connection = test_connection
         self._github_token_ref = GITHUB_TOKEN_REF
+        self._kb = knowledge_base
+        self._kb_sync = knowledge_base.sync
+        self._kb_sync_thread = None
         self.settings = config.chat_settings()
         provider = self.settings.active_config
         self._test_thread = None
@@ -59,6 +64,7 @@ class _AiSettingsPage(QWidget):
         self._deleted_provider_ids: set[str] = set()
         self._loading_provider = False
         self.test_done.connect(self._on_test_done)
+        self.kb_sync_done.connect(self._on_kb_sync_done)
 
         self.provider_combo = ModernSelect(self, width=230)
         self.add_provider_btn = QPushButton("添加", self)
@@ -112,6 +118,11 @@ class _AiSettingsPage(QWidget):
         self.github_connector = ToggleSwitch()
         self.github_connector.setChecked(bool(self.settings.github_connector))
         self.github_token = _line_edit(password=True)
+        self.knowledge_base = ToggleSwitch()
+        self.knowledge_base.setChecked(bool(self.settings.knowledge_base_enabled))
+        self.knowledge_base_repo = _line_edit(self.settings.knowledge_base_repo)
+        self.knowledge_base_sync = QPushButton("立即同步", self)
+        self.knowledge_base_sync.clicked.connect(self._run_kb_sync)
 
         self._background_themes = list(theme_names())
         self._background_values = {
@@ -221,7 +232,7 @@ class _AiSettingsPage(QWidget):
         self._update_vision_visibility(self.vision_same.isChecked())
         self._github_token_row = SettingRow(
             "github_token", "GitHub Token",
-            "Personal Access Token，保存到系统钥匙串；已保存的不回显，留空表示不修改。",
+            "Personal Access Token，连接器与知识库（私有仓库）共用；保存到系统钥匙串，已保存的不回显，留空表示不修改。",
             self.github_token,
         )
         root.addWidget(SettingsSection("连接器", [
@@ -233,8 +244,31 @@ class _AiSettingsPage(QWidget):
             ),
             self._github_token_row,
         ], self))
+        self._kb_rows = [
+            SettingRow(
+                "knowledge_base_repo", "GitHub 仓库",
+                "owner/repo 或仓库网址。只同步文本文件（.md / .txt 等），图片和点开头的目录不同步。",
+                self.knowledge_base_repo,
+            ),
+            SettingRow(
+                "knowledge_base_sync", "同步",
+                self._kb.describe(config.dir, self._kb.parse_repo(self.settings.knowledge_base_repo)),
+                self.knowledge_base_sync,
+            ),
+        ]
+        self.knowledge_base_status = self._kb_rows[1].hint_label
+        root.addWidget(SettingsSection("知识库", [
+            SettingRow(
+                "knowledge_base_enabled", "本地知识库",
+                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时桌宠只读本机这份副本。"
+                "仅 Claude 通道生效；读到的内容会随对话发给模型。",
+                self.knowledge_base,
+            ),
+            *self._kb_rows,
+        ], self))
         self.github_connector.toggled.connect(self._update_github_visibility)
-        self._update_github_visibility(self.github_connector.isChecked())
+        self.knowledge_base.toggled.connect(self._update_github_visibility)
+        self._update_github_visibility()
         # 用户拨动系统通知开关才置脏；连接晚于构造期 setChecked，程序化赋值不置脏。
         self.system_notify_check.toggled.connect(self._on_system_notify_edited)
         self._test_row = self.findChild(SettingRow, "settingRow_connection_test")
@@ -342,11 +376,48 @@ class _AiSettingsPage(QWidget):
         if isinstance(card, SettingsCard):
             card.refresh_separators()
 
-    def _update_github_visibility(self, enabled: bool) -> None:
-        self._github_token_row.setVisible(enabled)
-        card = self._github_token_row.parentWidget()
-        if isinstance(card, SettingsCard):
-            card.refresh_separators()
+    def _update_github_visibility(self, _checked: bool = False) -> None:
+        kb_on = self.knowledge_base.isChecked()
+        # Token 行两处共用：连接器要它，知识库同步私有仓库也要它
+        self._github_token_row.setVisible(self.github_connector.isChecked() or kb_on)
+        for row in self._kb_rows:
+            row.setVisible(kb_on)
+        for row in (self._github_token_row, self._kb_rows[0]):
+            card = row.parentWidget()
+            if isinstance(card, SettingsCard):
+                card.refresh_separators()
+
+    def _run_kb_sync(self) -> None:
+        if self._kb_sync_thread is not None and self._kb_sync_thread.is_alive():
+            return
+        repo = self._kb.parse_repo(self.knowledge_base_repo.text())
+        if not repo:
+            self.knowledge_base_status.setText("仓库写成 owner/repo 或 GitHub 网址。")
+            return
+        # 用表单里的值：刚填的仓库和 Token 不必先保存就能试
+        token = self.github_token.text().strip() or self._secret_store_type().get(self._github_token_ref)
+        self.knowledge_base_sync.setEnabled(False)
+        self.knowledge_base_sync.setText("同步中…")
+        self.knowledge_base_status.setText(f"正在从 GitHub 下载 {repo}…")
+        self._kb_sync_thread = threading.Thread(
+            target=self._run_kb_sync_worker, args=(self.config.dir, repo, token),
+            daemon=True, name="pet-settings-knowledge-sync",
+        )
+        self._kb_sync_thread.start()
+
+    def _run_kb_sync_worker(self, config_dir, repo: str, token: str) -> None:
+        try:
+            self._kb_sync(config_dir, repo, token)
+            result = (True, self._kb.describe(config_dir, repo))
+        except Exception as exc:  # noqa: BLE001 - 无论抛什么都要把按钮恢复回来
+            result = (False, f"同步失败：{exc}")
+        _safe_emit(self, "kb_sync_done", *result)   # 窗口可能已在同步途中关闭销毁
+
+    def _on_kb_sync_done(self, _ok: bool, message: str) -> None:
+        self.knowledge_base_sync.setEnabled(True)
+        self.knowledge_base_sync.setText("立即同步")
+        self.knowledge_base_status.setText(message)
+        self._kb_sync_thread = None
 
     def _background_style_label(self) -> str:
         """当前对话窗口风格的展示名（裁切行标签、编辑器标题共用）。"""
@@ -661,6 +732,9 @@ class _AiSettingsPage(QWidget):
             github_enabled = False
             QMessageBox.warning(self, "安全存储不可用", "无法使用系统安全存储，GitHub Token 没有保存，连接器保持关闭。")
         self.settings.github_connector = github_enabled
+        repo_text = self.knowledge_base_repo.text().strip()
+        self.settings.knowledge_base_enabled = self.knowledge_base.isChecked()
+        self.settings.knowledge_base_repo = self._kb.parse_repo(repo_text) or repo_text
         self.config.set("chat_ui_style", self.chat_ui_style.currentData())
         self._capture_background_value()
         # 按风格脏标记合并：只回写本窗口编辑过的风格，未触风格保持磁盘最新值
