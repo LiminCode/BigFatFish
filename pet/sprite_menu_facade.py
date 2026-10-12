@@ -643,6 +643,9 @@ class SpriteMenuFacade:
 
         self.cfg.set(CONFIG_KEY, normalize({**normalize(self.cfg.get(CONFIG_KEY)), **changes}))
         self._save()
+        controller = self._work_briefing()
+        if controller is not None:
+            controller.refresh_state()   # 灵动岛上的按钮跟着开关出现 / 收走
 
     def toggle_work_briefing(self, on: bool) -> None:
         """「工作日自动生成」：落盘；后台服务每分钟读一次配置，最迟一分钟生效。"""

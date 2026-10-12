@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime as dt
 
 from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTextBrowser, QVBoxLayout, QWidget
 
 from . import work_briefing as wb
@@ -25,9 +26,11 @@ _BUSY = "正在生成，大约一分钟…"
 # 颜色、圆角、字号取自设置页那一套（.agents/skills/desktop-pet-ui-style 的 visual-system）。
 _PALETTES = {
     False: {"window": "#fcfcfd", "card": "#ffffff", "border": "#e2e4e8", "title": "#171717",
-            "text": "#252525", "muted": "#777777", "hover": "#f4f5f6"},
+            "text": "#252525", "muted": "#777777", "hover": "#f4f5f6",
+            "link": "#0a6fd6", "chip": "#eceff3", "chip_text": "#3d4650"},
     True: {"window": "#202024", "card": "#2a2a30", "border": "#3a3a42", "title": "#f0f0f5",
-           "text": "#e0e0e6", "muted": "#9a9aa3", "hover": "#303036"},
+           "text": "#e0e0e6", "muted": "#9a9aa3", "hover": "#303036",
+           "link": "#6cb4ff", "chip": "#3d3d49", "chip_text": "#d8d8e0"},
 }
 _QSS = """
 QWidget#workBriefing {{ background: {window}; }}
@@ -64,7 +67,8 @@ class WorkBriefingWindow(QWidget):
         super().__init__(parent, Qt.Window)
         self.setObjectName("workBriefing")
         self.setWindowTitle("工作简报")
-        self.setStyleSheet(_QSS.format(**_PALETTES[bool(_system_dark())]))
+        self._colors = _PALETTES[bool(_system_dark())]
+        self.setStyleSheet(_QSS.format(**self._colors))
         self.resize(580, 660)
         self.setMinimumSize(380, 320)
 
@@ -75,7 +79,10 @@ class WorkBriefingWindow(QWidget):
         self.meta_label.setWordWrap(True)
         self.body = QTextBrowser(self)
         self.body.setObjectName("briefingBody")
-        self.body.setOpenExternalLinks(True)
+        self.body.setOpenExternalLinks(True)   # 工单 / PR / 消息的链接交给系统浏览器
+        link_palette = self.body.palette()
+        link_palette.setColor(QPalette.ColorRole.Link, QColor(self._colors["link"]))
+        self.body.setPalette(link_palette)
         self.body.setAccessibleName("简报全文")
         self.status_label = QLabel("", self)
         self.status_label.setObjectName("briefingStatus")
@@ -107,6 +114,7 @@ class WorkBriefingWindow(QWidget):
         else:
             self.meta_label.setText(_meta_line(briefing))
             self.body.setMarkdown(f"**{briefing.summary}**\n\n{briefing.markdown}")
+            self._decorate()
         self.regenerate_btn.setEnabled(not busy)
         if busy:
             self.status_label.setText(_BUSY)
@@ -114,14 +122,54 @@ class WorkBriefingWindow(QWidget):
             self.status_label.setText(f"上一次没生成出来：{error}" if error else "")
 
 
+    def _decorate(self) -> None:
+        """排好版之后再上色：链接用主题的链接色，行内代码（工单状态）画成小标签。
+
+        ``setMarkdown`` 之后做而不是靠样式表——Qt 的文档样式表只在导入 HTML 时生效。"""
+        document = self.body.document()
+        chips, links = [], []
+        block = document.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                fmt = fragment.charFormat()
+                if fmt.isAnchor():
+                    links.append((fragment.position(), fragment.length()))
+                elif fmt.fontFixedPitch():
+                    chips.append((fragment.position(), fragment.length()))
+                it += 1
+            block = block.next()
+        chip = QTextCharFormat()
+        chip.setBackground(QColor(self._colors["chip"]))
+        chip.setForeground(QColor(self._colors["chip_text"]))
+        chip.setFontFamilies(self.font().families())
+        chip.setFontFixedPitch(False)
+        link = QTextCharFormat()
+        link.setForeground(QColor(self._colors["link"]))
+        link.setFontUnderline(False)
+        cursor = QTextCursor(document)
+        for fmt, spans in ((chip, chips), (link, links)):
+            for position, length in spans:
+                cursor.setPosition(position)
+                cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(fmt)
+
+
 class WorkBriefingController(QObject):
-    """把服务的结果摆到宿主上；菜单的几个动作也落在这里。"""
+    """把服务的结果摆到宿主上；菜单的几个动作也落在这里。
+
+    ``state_changed(str)``：灵动岛上那个按钮该是什么样——``idle`` 或 ``unread``
+    （有一份生成好了、用户还没打开看过）。"""
+
+    state_changed = Signal(str)
 
     def __init__(self, host, service, parent: QObject | None = None) -> None:
         super().__init__(parent or service)
         self._host = host
         self.service = service
         self.window: WorkBriefingWindow | None = None
+        self._unread = False
         service.started.connect(self._on_started)
         service.finished.connect(self._on_finished)
 
@@ -140,6 +188,25 @@ class WorkBriefingController(QObject):
         self.window.show()
         self.window.raise_()
         self.window.activateWindow()
+        self._set_unread(False)
+
+    @property
+    def island_state(self) -> str:
+        """灵动岛上的按钮：没开自动生成、也从没生成过的人看不到它（``hidden``）。"""
+        if self._unread:
+            return "unread"
+        if self.service.settings()["enabled"] or self.service.latest() is not None:
+            return "idle"
+        return "hidden"
+
+    def refresh_state(self) -> None:
+        """设置变了（菜单里开 / 关了自动生成）：让岛重新问一次按钮该不该在。"""
+        self.state_changed.emit(self.island_state)
+
+    def _set_unread(self, unread: bool) -> None:
+        if unread != self._unread:
+            self._unread = unread
+            self.state_changed.emit(self.island_state)
 
     # ---------------------------------------------------------- 服务回调
     def _refresh_window(self) -> None:
@@ -157,6 +224,7 @@ class WorkBriefingController(QObject):
             return
         if self.window is not None and self.window.isVisible():
             return  # 用户正开着窗口看：内容已经换成新的了，不用再冒气泡
+        self._set_unread(True)   # 点「知道了」只是收起气泡；打开看过才算读了
         self._host.show_alert(
             briefing.summary, subtitle="今天的工作简报", sticky=True,
             buttons=[("查看", self._on_view), ("知道了", self._on_dismiss)],

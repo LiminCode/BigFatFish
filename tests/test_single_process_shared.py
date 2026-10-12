@@ -125,6 +125,9 @@ class _FakeIsland:
     def set_session_counts(self, counts):
         pass
 
+    def set_briefing_state(self, state):
+        pass
+
 
 def _make_shared_shell(tmp_path):
     config = Config(tmp_path)

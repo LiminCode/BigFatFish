@@ -448,8 +448,11 @@ def test_the_menu_offers_the_briefing_under_agent_link(briefing_shell):
 
     toggle = _find(entry.menu(), "工作日自动生成")
     assert toggle.isCheckable() and not toggle.isChecked()
+    island_states = []
+    briefing_shell.work_briefing.state_changed.connect(island_states.append)
     toggle.trigger()
     assert briefing_shell._config.get(wb.CONFIG_KEY)["enabled"] is True
+    assert island_states == ["idle"], "灵动岛上的按钮跟着出现"
 
     times = _find(entry.menu(), "生成时间").menu().actions()
     assert [a.text() for a in times if a.isChecked()] == ["09:00"]
