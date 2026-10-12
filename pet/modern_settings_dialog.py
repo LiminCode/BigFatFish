@@ -585,8 +585,8 @@ class ModernSettingsDialog(QDialog):
                     ),
                     *([SettingRow(
                         "dynamic_island_hidden_chat",
-                        "隐藏时对话气泡",
-                        "桌宠隐藏后岛变成对话入口：单击灵动岛弹出对话气泡，AI 回复到达时也会在岛上弹出预览（不抢焦点，超时自动收回）。",
+                        "隐藏时在岛上提醒",
+                        "桌宠隐藏后，Agent 联动的提醒和 AI 回复到达时在岛上弹出预览气泡（不抢焦点，超时自动收回）。单击灵动岛照常展开卡片。",
                         self.island_hidden_chat_check,
                     )] if _chat_feature_available() else []),
                     # 纯桌宠版（无 pet.chat 打包变体）不展示该开关：开了也没有

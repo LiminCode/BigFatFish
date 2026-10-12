@@ -56,37 +56,44 @@ def _teardown_island(island: DynamicIsland) -> None:
     island.deleteLater()
 
 
-def test_click_when_pet_hidden_emits_chat_requested(tmp_path):
-    """桌宠隐藏 + hidden_chat 开：单击胶囊发 chat_requested，不展开卡片。"""
+def test_click_when_pet_hidden_expands_the_card(tmp_path):
+    """桌宠隐藏时单击胶囊照常展开卡片（2026-10-11 用户要求）。
+
+    此前（hidden_chat 开）隐藏时单击改弹岛对话气泡，卡片上的 Claude Code 会话与
+    「最近的对话」就点不开了。恢复桌宠的入口是卡片上的「显示桌宠」。
+    """
     _qapp()
     island = _island(tmp_path)
     try:
         island.show()
         island.set_pet_visible(False)  # 聚合可见态：全部隐藏
-        chats, cards = [], []
-        island.chat_requested.connect(lambda: chats.append(1))
+        cards, toggles = [], []
         island.card_expanded.connect(lambda: cards.append(1))
+        island.toggle_pet_requested.connect(lambda: toggles.append(1))
         _click(island)
-        assert chats == [1]
-        assert cards == []
-        assert island._debug_state()["mode"] == "normal"  # 卡片未展开
+        island._finish_animations()
+        assert cards == [1]
+        assert island._debug_state()["mode"] == "expanded"
+        assert island._card_toggle_btn.text() == "显示桌宠"
+        island._card_toggle_btn.click()
+        assert toggles == [1]
+        assert not hasattr(island, "chat_requested"), "隐藏时弹对话气泡的路由已去掉"
     finally:
+        island.collapse_card()
         _teardown_island(island)
 
 
 def test_click_when_pet_visible_still_expands_card(tmp_path):
-    """桌宠可见：单击行为不变（展开卡片），不发 chat_requested。"""
+    """桌宠可见：单击展开卡片。"""
     _qapp()
     island = _island(tmp_path)
     try:
         island.show()
         island.set_pet_visible(True)
-        chats, cards = [], []
-        island.chat_requested.connect(lambda: chats.append(1))
+        cards = []
         island.card_expanded.connect(lambda: cards.append(1))
         _click(island)
         island._finish_animations()
-        assert chats == []
         assert cards == [1]
         assert island._debug_state()["mode"] == "expanded"
     finally:
@@ -101,29 +108,27 @@ def test_click_toggle_pet_action_unaffected(tmp_path):
     try:
         island.show()
         island.set_pet_visible(False)
-        clicked, chats = [], []
+        clicked, cards = [], []
         island.clicked.connect(lambda: clicked.append(1))
-        island.chat_requested.connect(lambda: chats.append(1))
+        island.card_expanded.connect(lambda: cards.append(1))
         _click(island)
         assert clicked == [1]
-        assert chats == []
+        assert cards == []
     finally:
         _teardown_island(island)
 
 
-def test_click_hidden_chat_disabled_falls_back_to_card(tmp_path):
-    """hidden_chat 关：桌宠隐藏时单击仍展开卡片（旧行为）。"""
+def test_click_hidden_chat_disabled_also_expands_card(tmp_path):
+    """hidden_chat 关：桌宠隐藏时单击同样展开卡片（开关不再影响单击）。"""
     _qapp()
     island = _island(tmp_path, hidden_chat=False)
     try:
         island.show()
         island.set_pet_visible(False)
-        chats, cards = [], []
-        island.chat_requested.connect(lambda: chats.append(1))
+        cards = []
         island.card_expanded.connect(lambda: cards.append(1))
         _click(island)
         island._finish_animations()
-        assert chats == []
         assert cards == [1]
     finally:
         island.collapse_card()
@@ -245,46 +250,26 @@ def test_island_chat_availability_gates(tmp_path):
         _teardown_shell(shell)
 
 
-def test_shell_click_toggles_island_chat_bubble(tmp_path):
-    """桌宠隐藏时 _chat_from_island：首次弹出（激活、锚定岛），再次收起。"""
-    app = _qapp()
-    shell = _make_shell(tmp_path)
-    try:
-        shell._sync_dynamic_island()
-        shell.island.set_pet_visible(False)
-        shell._chat_from_island()
-        bubble = shell.island_chat
-        assert bubble is not None and bubble.isVisible()
-        assert bubble._anchor is shell.island
-        # 再点一次 → 收起（开关语义）
-        shell._chat_from_island()
-        QApplication.processEvents()
-        assert not bubble.isVisible()
-    finally:
-        _teardown_shell(shell)
+def test_shell_no_longer_routes_a_hidden_click_to_the_chat_bubble(tmp_path):
+    """隐藏时单击岛由岛自己展开卡片；AppShell 不再有把它接到对话气泡的入口。
 
-
-def test_shell_click_when_no_chat_reshows_pets(tmp_path):
-    """纯桌宠版（打包时排除 `pet.chat`）：桌宠隐藏时单击岛必须把桌宠叫回来。
-
-    旧行为：岛按 `hidden_chat` 发 `chat_requested` → `_chat_from_island` →
-    `_show_island_chat` 因 `_island_chat_available()` 为假**直接返回**，整次点击
-    静默无响应（用户反馈「桌宠隐藏后点灵动岛没反应」，2026-09-23 修复）。
-    岛是纯桌宠版隐藏后唯一的常驻交互面，此时单击的合理语义就是「显示桌宠」。
+    纯桌宠版（打包时排除 `pet.chat`）此前靠这条入口把桌宠叫回来（2026-09-23 的
+    「点灵动岛没反应」修复）；现在所有构建都走卡片上的「显示桌宠」，那个死锁
+    的前提（单击被路由到不存在的气泡）不复存在。
     """
     _qapp()
     shell = _make_shell(tmp_path)
     try:
         shell._sync_dynamic_island()
-        shell.island.set_pet_visible(False)   # 桌宠已隐藏（隐藏时由 on_hidden 同步）
-        shell.enable_chat = False             # 无 chat 的打包变体
-        assert shell._island_chat_available() is False
-
-        shell._chat_from_island()
-
-        assert shell.island._pet_visible is True, "点击后桌宠仍未恢复可见"
-        assert shell.island_chat is None, "无 chat 变体不该去建对话气泡"
+        assert not hasattr(shell, "_chat_from_island")
+        shell.island.set_pet_visible(False)
+        shell.island.show()
+        _click(shell.island)
+        shell.island._finish_animations()
+        assert shell.island._debug_state()["mode"] == "expanded"
+        assert shell.island_chat is None, "单击不该再建对话气泡"
     finally:
+        shell.island.collapse_card()
         _teardown_shell(shell)
 
 

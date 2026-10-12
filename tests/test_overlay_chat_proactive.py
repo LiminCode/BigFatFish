@@ -210,6 +210,36 @@ def test_proactive_trigger_speaks_on_sprite_bubble(tmp_path, monkeypatch):
         shell._delete_runtime_marker()
 
 
+def test_island_chat_show_pets_brings_the_real_overlay_back(tmp_path):
+    """实机 bug（2026-10-11）：隐藏桌宠后在岛对话气泡里点「显示桌宠」，桌宠没回来。
+
+    用真实 OverlayShell 走一遍：隐藏 → AppShell 的气泡入口 → 合成窗必须重新可见，
+    且岛的可见态是壳在显示之后同步的（不是入口自己抢先写的）。
+    """
+    from pet.app import AppShell
+
+    shell, _ = _make_shell(tmp_path)
+    marks: list = []
+    app_shell = AppShell.__new__(AppShell)
+    app_shell._overlay_shell = shell
+    app_shell._instances = []
+    app_shell.island = None
+    app_shell.island_chat = None
+    shell._instance.shell = type("_Shell", (), {"island": type("_Island", (), {
+        "set_pet_visible": staticmethod(marks.append)})()})()
+    try:
+        shell.overlay.show()
+        shell.set_pet_visible(False)
+        assert shell.overlay.isVisible() is False and marks == [False]
+
+        app_shell._show_pets_from_island_chat()
+
+        assert shell.overlay.isVisible() is True
+        assert marks == [False, True]
+    finally:
+        shell._delete_runtime_marker()
+
+
 def test_hidden_overlay_blocks_proactive_probe(tmp_path, monkeypatch):
     """显隐 → G1 守卫：隐藏后 proactive 内部 tick 不得再取前台窗口信息。"""
     shell, config = _make_shell(tmp_path, _proactive_config())

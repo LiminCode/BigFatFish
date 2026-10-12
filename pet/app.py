@@ -2505,10 +2505,6 @@ class AppShell:
             from .dynamic_island import DynamicIsland
 
             self.island = DynamicIsland(self.config)
-            # 纯桌宠版（无聊天模块）：hidden_chat 的岛单击路由回退为展开卡片，
-            # 防"桌宠隐藏 → 岛点了没反应 → 无法恢复"的死锁。getattr 兼容
-            # __new__ 测试桩（property 内 AttributeError 时取默认 True）
-            self.island.set_chat_available(bool(getattr(self, "enable_chat", True)))
             # 岛图标默认取鱼本体头像（图片路径不碰 emoji 字体栈，见 dynamic_island
             # 的 _icon_pixmap 注释）；帧未就绪时岛侧只画底圈并稍后重试
             self.island.set_icon_provider(self._island_icon_pixmap)
@@ -2516,8 +2512,6 @@ class AppShell:
             self.island.toggle_pet_requested.connect(self._toggle_pet_from_island)
             self.island.open_chat_requested.connect(self._open_chat_from_island)
             self.island.open_settings_requested.connect(self._open_settings_from_island)
-            # 桌宠隐藏时单击岛：弹/收锚定岛的对话气泡（hidden_chat 开启时）
-            self.island.chat_requested.connect(self._chat_from_island)
             # 卡片展开 → 按卡片内容来源刷新：Claude Code 会话汇总，或静默刷新余额
             # （不冒泡、不播动画，只更新岛卡片）
             self.island.card_expanded.connect(self._refresh_island_card)
@@ -2626,9 +2620,10 @@ class AppShell:
             if island is not None and shiboken6.isValid(island):
                 island.bump(1.5, 0.0, -1.0)
             return
-        # 桌宠全部隐藏：快速气泡锚不到桌宠，改弹到岛上（岛是对话代理）
-        if not self._aggregate_pet_visible() and self._island_chat_available():
-            self._show_island_chat(activate=True)
+        # 桌宠全部隐藏：快速气泡锚不到桌宠，直接开完整聊天窗。（此前改弹岛对话气泡；
+        # 隐藏时单击岛已改回展开卡片，卡片上的「聊天」不再绕回那个气泡。）
+        if not self._aggregate_pet_visible():
+            self._open_full_chat_from_island_chat()
             return
         overlay = getattr(self, "_overlay_shell", None)
         if overlay is not None:
@@ -2676,23 +2671,6 @@ class AppShell:
         bubble.refresh_session()
         bubble.show_for_island(self.island, activate=activate, reply_text=reply_text)
 
-    def _chat_from_island(self) -> None:
-        """桌宠隐藏时单击岛：气泡已开则收起，否则弹出（交互式）。
-
-        **没有对话能力的变体（纯桌宠版，打包时排除 `pet.chat`）**走不到气泡：
-        岛是桌宠隐藏后唯一的常驻交互面，此时单击直接**把桌宠叫回来**。
-        旧行为是发完 `chat_requested` 后被 `_show_island_chat` 的可用性闸门
-        静默挡掉，用户点了完全没反应（2026-09-23 修复）。
-        """
-        if not self._island_chat_available():
-            self._show_pets_from_island_chat()
-            return
-        bubble = getattr(self, "island_chat", None)
-        if bubble is not None and shiboken6.isValid(bubble) and bubble.isVisible():
-            bubble.close()
-            return
-        self._show_island_chat(activate=True)
-
     def _open_full_chat_from_island_chat(self) -> None:
         inst = getattr(self, "instance", None)
         if inst is not None and callable(getattr(inst, "open_chat", None)):
@@ -2737,13 +2715,20 @@ class AppShell:
 
     def _show_pets_from_island_chat(self) -> None:
         """岛对话气泡里的「显示桌宠」：恢复全部窗并同步岛状态。"""
-        for inst in getattr(self, "_instances", []):
-            win = getattr(inst, "win", None)
-            if win is not None:
-                win.show()
-        island = getattr(self, "island", None)
-        if island is not None and shiboken6.isValid(island):
-            island.set_pet_visible(True)
+        overlay = getattr(self, "_overlay_shell", None)
+        if overlay is not None:
+            # overlay 拓扑：inst.win 恒为 None，下面的旧循环一只也显示不了，却把岛
+            # 写成「已显示」——桌宠没回来、按钮倒先变了（2026-10-11 实机）。交给壳：
+            # 它显示合成窗，并在真的显示之后自己同步岛状态。
+            overlay.set_pet_visible(True)
+        else:
+            for inst in getattr(self, "_instances", []):
+                win = getattr(inst, "win", None)
+                if win is not None:
+                    win.show()
+            island = getattr(self, "island", None)
+            if island is not None and shiboken6.isValid(island):
+                island.set_pet_visible(True)
         bubble = getattr(self, "island_chat", None)
         if bubble is not None and shiboken6.isValid(bubble):
             bubble.close()
@@ -3522,6 +3507,10 @@ class AppShell:
         menu = QMenu()
 
         def show_pet() -> None:
+            overlay = getattr(self, "_overlay_shell", None)
+            if overlay is not None:
+                overlay.set_pet_visible(True)  # overlay 拓扑没有 PetWindow，见岛气泡同名入口
+                return
             if self.instance is None:
                 return
             win = self.instance.win
