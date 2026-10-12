@@ -71,8 +71,10 @@ from .speech_bubble_text import (
     bubble_rect_for_anchor,
     bubble_wrap_width,
     clamp_bubble_text_scale,
+    clamp_image_max_edge,
     elide_bubble_text,
     list_self_talk_images,
+    natural_image_size,
     normalize_bubble_text,
     page_dots,
     page_dwell_ms,
@@ -136,6 +138,20 @@ SECTION_HINT_LABEL = "__pet_section_hint__"
 # （``overlay_shell.self_talk_image_cache_edge``）——两处共用同一份数字，
 # 免得缓存尺寸与显示尺寸各改一半（N2）。
 SELF_TALK_IMAGE_BOX_W = 220
+# 吐气水泡里能放配图的区域占画布的比例（实测值，见 _breath_size_for_content）
+_BREATH_IMAGE_SAFE_W = 0.55
+_BREATH_IMAGE_SAFE_H = 0.585
+
+
+def image_display_edge(max_edge: int, style_id: str) -> int:
+    """上限为 ``max_edge`` 时，配图实际画出来的长边最多多少（逻辑像素）。
+
+    标准气泡里图片可以画到上限那么大；吐气水泡的上限约束的是整个水泡，图片只占其中
+    的安全区（宽 55%）。解码缓存按这个值留像素就够了，不必按上限本身。"""
+    preset = BUBBLE_STYLE_PRESETS.get(str(style_id or ""), {})
+    if preset.get("shape") == "breath_bubble":
+        return max(1, int(ceil(max_edge * _BREATH_IMAGE_SAFE_W - 1e-6)))   # 扣掉浮点噪声再取整
+    return max(1, int(max_edge))
 SELF_TALK_IMAGE_BOX_H = 140
 
 
@@ -410,6 +426,8 @@ class PetSpeechBubble(QFrame):
         self._image_token = 0
         self._pet_scale: float | None = None
         self._image_scale: float = 1.0
+        # 配图尺寸上限（逻辑像素）；None = 旧的固定框口径（见 show_image）
+        self._image_max_edge: int | None = None
         self._text_scale: float = 1.0
         self.set_style(style_id)
         self._hide_timer = QTimer(self)
@@ -492,6 +510,8 @@ class PetSpeechBubble(QFrame):
         content_scale = (
             self._image_scale if self._content_kind == "image" else self._text_scale
         )
+        if self._content_kind == "image" and self._image_max_edge is not None:
+            content_scale = 1.0   # 按原始大小显示：水泡多大由图片决定，见 _breath_size_for_content
         if content_scale != 1.0:
             base_size = QSize(
                 int(base_size.width() * content_scale),
@@ -547,6 +567,17 @@ class PetSpeechBubble(QFrame):
         否则放大后的内容会顶出呼吸气泡的安全区被裁。
         """
         width = base_size.width()
+        if (self._content_kind == "image" and not self._source_pixmap.isNull()
+                and self._image_max_edge is not None):
+            # 按原始大小显示：水泡长到刚好装下图片，但整个水泡不超过上限。小图不撑大
+            # 水泡，保持与桌宠相称的基础尺寸。能放图的安全区实测是画布宽的 55%、高的
+            # 58.5%（_rebuild 几何里按水泡主体的外接框再内缩得到；240～600 宽下恒定）。
+            target = natural_image_size(
+                self._source_pixmap.size(), self._image_max_edge, self._image_scale)
+            needed = max(ceil(target.width() / _BREATH_IMAGE_SAFE_W),
+                         ceil(target.height() / (_BREATH_IMAGE_SAFE_H * 195 / 240)))
+            width = min(max(width, needed), self._image_max_edge)
+            return QSize(width, int(width * 195 / 240 + 0.5))
         if self._content_kind == "image" and not self._source_pixmap.isNull():
             target = self._source_pixmap.size()
             target.scale(QSize(150, 122), Qt.AspectRatioMode.KeepAspectRatio)
@@ -1024,7 +1055,10 @@ class PetSpeechBubble(QFrame):
         pet_scale: float | None = None,
         image_scale: float = 1.0,
         pixmap: QPixmap | None = None,
+        image_max_edge: int | None = None,
     ) -> bool:
+        # image_max_edge 给了：配图按原始大小（× image_scale）显示，长边超过它才缩小，
+        # 气泡跟着图片的大小走。没给：旧口径，图片缩放进固定的框再乘 image_scale。
         # pixmap 直供（调用方已解码/预热）：跳过同步磁盘读+解码——GUI 线程
         # 上的 QPixmap(str(path)) 是大图 100ms+ 级慢帧源（py-spy 实测）。
         self._stop_movie()
@@ -1049,18 +1083,22 @@ class PetSpeechBubble(QFrame):
         self._pet_scale = pet_scale
         # 用户可调的配图显示尺寸（self_talk_image_scale，百分比/100），双保险钳位
         self._image_scale = max(0.5, min(3.0, float(image_scale)))
+        self._image_max_edge = None if image_max_edge is None else clamp_image_max_edge(image_max_edge)
         self._reset_paging()
         self._subtitle_label.setText("")
         self._subtitle_label.hide()
         if self._preset.get("shape") == "breath_bubble":
             self._configure_breath_content(anchor_rect, pet_scale)
         else:
-            box = QSize(int(SELF_TALK_IMAGE_BOX_W * self._image_scale),
-                        int(SELF_TALK_IMAGE_BOX_H * self._image_scale))
-            target = pixmap.size()
-            target.scale(box, Qt.AspectRatioMode.KeepAspectRatio)
-            target.setWidth(max(int(96 * self._image_scale), target.width()))
-            target.setHeight(max(int(64 * self._image_scale), target.height()))
+            if self._image_max_edge is not None:
+                target = natural_image_size(pixmap.size(), self._image_max_edge, self._image_scale)
+            else:
+                box = QSize(int(SELF_TALK_IMAGE_BOX_W * self._image_scale),
+                            int(SELF_TALK_IMAGE_BOX_H * self._image_scale))
+                target = pixmap.size()
+                target.scale(box, Qt.AspectRatioMode.KeepAspectRatio)
+                target.setWidth(max(int(96 * self._image_scale), target.width()))
+                target.setHeight(max(int(64 * self._image_scale), target.height()))
             self.label.setFixedSize(target)
             self.label.setText("")
             self.label.show()
@@ -1467,6 +1505,12 @@ class PetSpeechBubble(QFrame):
             )
             target = self._source_pixmap.size()
             target.scale(safe.size().toSize(), Qt.AspectRatioMode.KeepAspectRatio)
+            if self._image_max_edge is not None:
+                # 只缩不放：小图不为了填满安全区被放大
+                natural = natural_image_size(
+                    self._source_pixmap.size(), self._image_max_edge, self._image_scale)
+                if target.width() > natural.width():
+                    target = natural
             image_rect = QRectF(0, 0, target.width(), target.height())
             image_rect.moveCenter(safe.center())
             rounded = QPainterPath()

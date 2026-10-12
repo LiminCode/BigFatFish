@@ -1298,6 +1298,7 @@ class ModernSettingsDialog(QDialog):
             "self_talk_texts",
             "self_talk_images",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
         )
         self._set_setting_rows_visible(keys, enabled)
@@ -2218,6 +2219,7 @@ class ModernSettingsDialog(QDialog):
         self.config.set("self_talk_texts", texts or list(DEFAULT_SELF_TALK_TEXTS))
         self.config.set("self_talk_image_dir", self.self_talk_image_dir_picker.text())
         self.config.set("self_talk_image_scale", self.self_talk_image_scale_spin.value())
+        self.config.set("self_talk_image_max_edge", self.self_talk_image_max_edge_spin.value())
         self.config.set("self_talk_image_chance", self.self_talk_image_chance_spin.value())
         self.config.set("bubble_text_scale", self.bubble_text_scale_spin.value())
         # Agent 联动：自定义 thinking 文案与音效（合并写回，不覆盖 agent_link 其他开关）

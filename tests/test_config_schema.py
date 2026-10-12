@@ -113,6 +113,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "self_talk_enabled",
         "self_talk_image_chance",
         "self_talk_image_dir",
+        "self_talk_image_max_edge",
         "self_talk_image_scale",
         "self_talk_max_interval",
         "self_talk_min_interval",

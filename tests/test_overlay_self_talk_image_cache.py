@@ -106,13 +106,13 @@ def test_cache_edge_tracks_display_box_scale_and_dpr():
 
 # ---------------------------------------------------------------- 2. 预热尺寸
 def test_warm_builds_cache_at_computed_edge(tmp_path):
-    """2000×1000 原图按现算长边落缓存：scale=150 + DPR=2 → 726×363（非 640）。"""
+    """2000×1000 原图按现算长边落缓存：上限 330 + DPR=2 → 726×363（330 × 2 × 1.1）。"""
     image_dir = tmp_path / "talk-images"
     path = _write_big_png(image_dir)
     shell, _config = _make_shell(
         tmp_path,
         st._talk_values(self_talk_image_dir=str(image_dir),
-                        self_talk_image_scale=150),
+                        self_talk_image_max_edge=330),
         dpr=2.0,
     )
     try:
@@ -124,13 +124,13 @@ def test_warm_builds_cache_at_computed_edge(tmp_path):
 
 
 def test_warm_target_shrinks_with_scale_on_low_dpr_screen(tmp_path):
-    """DPR=1 + scale=100 → 242×121：比旧固定 640 小一个数量级。"""
+    """DPR=1 + 上限 220 → 242×121：比旧固定 640 小一个数量级。"""
     image_dir = tmp_path / "talk-images"
     path = _write_big_png(image_dir)
     shell, _config = _make_shell(
         tmp_path,
         st._talk_values(self_talk_image_dir=str(image_dir),
-                        self_talk_image_scale=100),
+                        self_talk_image_max_edge=220),
         dpr=1.0,
     )
     try:
@@ -152,7 +152,7 @@ def test_dpr_change_rebuilds_cache_without_config_refresh(tmp_path):
     shell, _config = _make_shell(
         tmp_path,
         st._talk_values(self_talk_image_dir=str(image_dir),
-                        self_talk_image_scale=100),
+                        self_talk_image_max_edge=220),
         dpr=1.0,
     )
     try:
@@ -169,7 +169,7 @@ def test_dpr_change_rebuilds_cache_without_config_refresh(tmp_path):
         shell._refresh_self_talk_image_cache_for_dpr()
         assert shell._self_talk_image_cache is not cache_before
         assert _wait_for(lambda: shell._self_talk_image_cache)
-        assert _cached(shell, path).width() == 484  # 220 × 1.0 × 2.0 × 1.1
+        assert _cached(shell, path).width() == 484  # 上限 220 × DPR 2.0 × 1.1
     finally:
         st._cleanup(shell)
 
@@ -182,7 +182,7 @@ def test_same_signature_refresh_skips_redecode(tmp_path, monkeypatch):
     shell, config = _make_shell(
         tmp_path,
         st._talk_values(self_talk_image_dir=str(image_dir),
-                        self_talk_image_scale=150),
+                        self_talk_image_max_edge=330),
         dpr=1.0,
     )
     try:
@@ -204,13 +204,13 @@ def test_same_signature_refresh_skips_redecode(tmp_path, monkeypatch):
         assert decodes == [], "同签名的 refresh 不得重新解码配图"
         assert shell._self_talk_image_cache is cache_before
 
-        # 目标尺寸变了（配图大小热改 150 → 250）：必须按新尺寸重建
-        config.set("self_talk_image_scale", 250)
+        # 目标尺寸变了（配图尺寸上限热改 330 → 550）：必须按新尺寸重建
+        config.set("self_talk_image_max_edge", 550)
         shell.refresh_settings()
         assert shell._self_talk_image_cache is not cache_before
         assert _wait_for(lambda: decodes), "尺寸签名变化必须重新解码"
         assert _wait_for(lambda: shell._self_talk_image_cache)
         cached = _cached(shell, path)
-        assert (cached.width(), cached.height()) == (605, 302)  # 220 × 2.5 × 1.1
+        assert (cached.width(), cached.height()) == (605, 302)  # 550 × 1.1
     finally:
         st._cleanup(shell)

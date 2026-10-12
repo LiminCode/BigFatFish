@@ -327,7 +327,7 @@ def test_image_branch_uses_warm_cache_no_gui_disk_work(tmp_path):
         calls: dict = {}
         follower = shell._bubble_follower
         original = follower.show_image
-        follower.show_image = lambda path, ms, image_scale=1.0, pixmap=None: (
+        follower.show_image = lambda path, ms, image_scale=1.0, pixmap=None, image_max_edge=None: (
             calls.update(path=path, pixmap=pixmap), True)[1]
 
         assert shell._show_random_self_talk() is True
