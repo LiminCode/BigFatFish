@@ -79,8 +79,8 @@ _dp_ts=${EPOCHREALTIME:-}
 case $_dp_ts in *,*) _dp_ts="${_dp_ts%,*}.${_dp_ts#*,}" ;; esac
 { printf '{"ts":%s,"agent":"%s","event":"%s",%s}\n' \
     "$_dp_ts" "${DSH_PET_AGENT:-claude}" "${DSH_PET_EVENT:-unknown}" "$_dp_rec" >> "$DSH_PET_OUT"; } 2>/dev/null || :
-# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + transcript 里最后一个
-# ai-title。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
+# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + 会话的名字（用户改过名就是
+# 改的那个，否则是 transcript 里最后一个 ai-title）。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
 # 不连累上面的事件行。截到第一个反斜杠为止，所以片段里不会剩转义序列。
 case ${DSH_PET_EVENT:-} in
     UserPromptSubmit|Stop)
@@ -93,7 +93,12 @@ case ${DSH_PET_EVENT:-} in
             # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
             [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
             _dp_tail=$(tail -c 131072 "$_dp_path" 2>/dev/null)
+            # 用户给会话改过名（custom-title）就用它；改名之后自动标题（ai-title）照样
+            # 继续追加，所以不能简单地取「最后一个标题」。
             case $_dp_tail in
+                *'"customTitle":"'*)
+                    _dp_title=${_dp_tail##*\"customTitle\":\"}
+                    _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
                 *'"aiTitle":"'*)
                     _dp_title=${_dp_tail##*\"aiTitle\":\"}
                     _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
