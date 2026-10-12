@@ -34,6 +34,12 @@ class ProviderConfig:
     api_format: str='auto'
     # 思考力度（仅 Claude 通道）：low / medium / high / xhigh / max。越高想得越深、越慢、越贵。
     effort: str='medium'
+    # 这次请求要挂的 MCP 服务器（含 Token）。只在发送前由 Config.resolve_mcp_servers 填上，
+    # 不属于持久配置：to_dict 永远不写它。见 pet/chat/connectors.py
+    mcp_servers: list=field(default_factory=list)
+    # 这次请求要带的客户端工具（本地知识库，见 pet/chat/knowledge_base.py）。同样只在发送前
+    # 由 Config.resolve_client_tools 填上，不落盘。
+    client_tools: Any=None
     @classmethod
     def from_dict(cls,pid,raw):
         c = cls(str(pid), str(raw.get('name', pid)), str(raw.get('base_url', 'https://api.deepseek.com')), str(raw.get('chat_path', '/v1/chat/completions')), str(raw.get('model', 'deepseek-v4-flash')), str(raw.get('api_key_ref', f'provider/{pid}')), str(raw.get('api_key', '')), _safe_float(raw.get('timeout', 60), 60.0, lo=1.), _safe_float(raw.get('temperature', .7), 0.7, lo=0., hi=2.), _safe_int(raw.get('max_tokens', 2048), 2048, lo=1), verify_ssl=bool(raw.get('verify_ssl', True)))
@@ -43,13 +49,23 @@ class ProviderConfig:
         eff=str(raw.get('effort','medium') or 'medium').strip().lower(); c.effort=eff if eff in ('low','medium','high','xhigh','max') else 'medium'
         return c
     def to_dict(self,include_secret=True):
-        d=asdict(self); d.pop('provider_id',None)
+        tools,self.client_tools=self.client_tools,None      # asdict 会深拷贝字段：先摘掉运行期对象
+        try: d=asdict(self)
+        finally: self.client_tools=tools
+        for key in ('provider_id','mcp_servers','client_tools'): d.pop(key,None)
         if not include_secret: d.pop('api_key',None); d.pop('vision_api_key',None)
         return d
 
 @dataclass
 class ChatSettings:
     enabled: bool=True; active_provider: str='openai-main'; default_system_prompt: str='你是一只可爱的桌面宠物，请用自然、友善的中文和用户交流。'; history_message_limit: int=40; history_char_limit: int=24000; providers: dict[str,ProviderConfig]=field(default_factory=dict)
+    # GitHub 连接器开关（默认关）；Token 在系统钥匙串里。见 pet/chat/connectors.py
+    github_connector: bool=False
+    # 「关于我」：用户写给桌宠的说明（是谁、知识库在哪）。对话时追加在人设后面，
+    # 不随人设来源变化。见 PromptBuilder.build_messages
+    about_user: str=''
+    # 本地知识库：把这个 GitHub 仓库（owner/repo）每天同步到本地，对话时只读本地副本。
+    knowledge_base_enabled: bool=False; knowledge_base_repo: str=''
     @classmethod
     def defaults(cls):
         p=ProviderConfig('openai-main'); return cls(providers={p.provider_id:p})
@@ -58,9 +74,9 @@ class ChatSettings:
         raw=raw if isinstance(raw,dict) else {}; d=cls.defaults(); pr=raw.get('providers') if isinstance(raw.get('providers'),dict) else {}
         providers={str(k):ProviderConfig.from_dict(k,v) for k,v in pr.items() if isinstance(v,dict)} or d.providers
         active=str(raw.get('active_provider',next(iter(providers)))); active=active if active in providers else next(iter(providers))
-        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers)
+        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers,bool(raw.get('github_connector',False)),str(raw.get('about_user','') or '').strip(),bool(raw.get('knowledge_base_enabled',False)),str(raw.get('knowledge_base_repo','') or '').strip())
     def to_dict(self,include_secrets=True):
-        return {'enabled':self.enabled,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
+        return {'enabled':self.enabled,'github_connector':self.github_connector,'about_user':self.about_user,'knowledge_base_enabled':self.knowledge_base_enabled,'knowledge_base_repo':self.knowledge_base_repo,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
     @property
     def active_config(self): return self.providers[self.active_provider]
 
@@ -90,7 +106,11 @@ class ChatSession:
         self.custom_title = str(value or '')
 
 class SecretStore:
-    def __init__(self,service_name='dsh-pet-standalone'):
+    SERVICE_NAME='big-fat-fish'
+    # 2026-10-11 改名前的钥匙串服务名：新名字下读不到时回这里找，找到就抄到新名字下。
+    # 旧条目不删——回滚到旧版本时还读得到。
+    LEGACY_SERVICE_NAME='dsh-pet-standalone'
+    def __init__(self,service_name=SERVICE_NAME):
         self.service_name=service_name
         try: import keyring
         except Exception: keyring=None
@@ -99,8 +119,15 @@ class SecretStore:
     def available(self): return self._keyring is not None
     def get(self,ref):
         if not self._keyring or not ref: return ''
-        try: return str(self._keyring.get_password(self.service_name,ref) or '')
+        try: value=str(self._keyring.get_password(self.service_name,ref) or '')
         except Exception: return ''
+        if value or self.service_name!=self.SERVICE_NAME: return value
+        try: value=str(self._keyring.get_password(self.LEGACY_SERVICE_NAME,ref) or '')
+        except Exception: return ''
+        if value:
+            try: self._keyring.set_password(self.service_name,ref,value)
+            except Exception: pass
+        return value
     def set(self,ref,value):
         if not self._keyring or not ref: return False
         try: self._keyring.set_password(self.service_name,ref,value); return True

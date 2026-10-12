@@ -1430,7 +1430,7 @@ class AppShell:
                 if channel.play_file(str(cached), log_tag="点击自言自语"):
                     # 落一条日志：本地播报与"偷偷回落到在线合成"必须能分辨，
                     # 否则文件名对不上时只会表现为"声音怎么变了"却查不出原因。
-                    logging.getLogger("dsh-pet-standalone").info(
+                    logging.getLogger("big-fat-fish").info(
                         "点击自言自语：播放预缓存台词 %s（本地，不走网络）", cached.name)
                     return True
             except Exception:
@@ -1461,7 +1461,7 @@ class AppShell:
             logging.exception("启动台词语音预缓存失败（不影响点击朗读）")
             return False
         if started:
-            logging.getLogger("dsh-pet-standalone").info(
+            logging.getLogger("big-fat-fish").info(
                 "已开始后台预缓存台词语音%s", f"（{reason}）" if reason else "")
         return started
 
@@ -1944,6 +1944,7 @@ class AppShell:
                     FileInterpretController(self._overlay_shell).offer)
             except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
                 logging.exception("overlay: 拖文件解读接线失败")
+            self._start_work_briefing()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -1954,6 +1955,7 @@ class AppShell:
         self._sync_dynamic_island()
         self.instance._apply_spawn_offset()
         self._apply_balance_timer()
+        self._start_knowledge_sync()
         self._sync_todo_service()
         # 先同步节日服务：报时服务在 start() 里会立刻 tick 一次，那一刻就需要能问到
         # "本分钟是否让位"。顺序反了会出现"报时先响、节日后响"从而两者都出声。
@@ -2519,6 +2521,8 @@ class AppShell:
             self.island.history_activated.connect(self._on_island_history_activated)
             self.island.history_action.connect(self._on_island_history_action)
             self.island.history_toggled.connect(self._on_island_history_toggled)
+            # 胶囊最右边的「工作简报」按钮（有没有这个按钮由 _push_island_briefing_state 定）
+            self.island.briefing_requested.connect(self._open_work_briefing_from_island)
             # 进程级聊天完成订阅：AI 回复到达 → 岛播事件动效并记录最近消息。
             # 无聊天功能的打包变体会排除 pet.chat（参照 config.py 的同款守卫），
             # 那里跳过订阅即可，灵动岛本体照常可用。
@@ -2553,6 +2557,7 @@ class AppShell:
             monitor.start()
             monitor.refresh()  # 本方法也是配置应用路径：服务商 / Key 变了就重查
         self._push_island_session_counts()
+        self._push_island_briefing_state()
         # 批5.2a：灵动岛按**聚合**可见态同步（任一窗可见 = 可见），替代只看主窗。
         self.island.set_pet_visible(self._aggregate_pet_visible())
         self.island.show()
@@ -2990,6 +2995,51 @@ class AppShell:
         """今日用量的定时刷新；没建过或已随岛销毁返回 None。"""
         monitor = getattr(self, "_usage_monitor", None)
         return monitor if monitor is not None and shiboken6.isValid(monitor) else None
+
+    def _start_work_briefing(self) -> None:
+        """工作简报（可选服务）：靠 WSL 里的 Claude Code 生成，没有 WSL 就不接。"""
+        if self._overlay_shell is None or getattr(self, "_work_briefing", None) is not None:
+            return
+        try:
+            from . import claude_hooks
+
+            if not claude_hooks.wsl_exe():
+                return
+            from .work_briefing_service import WorkBriefingService
+            from .work_briefing_ui import WorkBriefingController
+
+            service = WorkBriefingService(self.config, parent=self.app)
+            self._work_briefing = WorkBriefingController(self._overlay_shell, service)
+            self._overlay_shell.work_briefing = self._work_briefing
+            self._work_briefing.state_changed.connect(self._push_island_briefing_state)
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("工作简报接线失败")
+
+    def _push_island_briefing_state(self, *_args) -> None:
+        """灵动岛上的「工作简报」按钮：没接简报服务就不显示，有没看过的那份就亮起来。"""
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        controller = getattr(self, "_work_briefing", None)
+        island.set_briefing_state(controller.island_state if controller is not None else "hidden")
+
+    def _open_work_briefing_from_island(self) -> None:
+        controller = getattr(self, "_work_briefing", None)
+        if controller is not None:
+            controller.open_window()
+
+    def _start_knowledge_sync(self) -> None:
+        """本地知识库的每日同步（可选服务：无聊天打包变体没有 pet.chat，跳过）。"""
+        if not bool(getattr(self, "enable_chat", True)) or getattr(self, "_knowledge_sync", None) is not None:
+            return
+        try:
+            from .chat.knowledge_sync import KnowledgeBaseSync
+
+            self._knowledge_sync = KnowledgeBaseSync(self.config, parent=self.app)
+            self._knowledge_sync.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("知识库同步接线失败")
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""
@@ -3901,7 +3951,9 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
     app_identity.apply_app_icon(app)
     app.setQuitOnLastWindowClosed(False)
 
-    # 确定配置根目录
+    # 确定配置根目录。改名迁移必须抢在第一次往新目录写东西（下面的进程门锁文件）之前
+    from .config import migrate_legacy_app_dir
+    migrated_data_dir = migrate_legacy_app_dir(_default_base())
     config_dir = _default_base() / APP_DIR_NAME
 
     # D4（PHASE4_DESIGN §4）overlay 拓扑单实例进程门：**先于** slot 竞争。
@@ -3946,8 +3998,12 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
         _mac_set_dock_icon_visible(bool(config.get("show_dock_icon", True)))
         _setup_logging(config)
 
-        logging.info("dsh-pet-standalone 启动 (slot: %s, instance: %s)", slot_id, instance_id)
+        logging.info("big-fat-fish 启动 (slot: %s, instance: %s)", slot_id, instance_id)
+        if migrated_data_dir:
+            logging.info("已把改名前的数据目录迁移到 %s", config_dir)
         _cleanup_stale_runtime_dirs()
+        if autostart_mod.adopt_legacy_entry():
+            logging.info("已把改名前的开机自启项换成新名字")
         stale_removed = autostart_mod.cleanup_stale_entries()
         if stale_removed:
             logging.info("已清理 %d 个指向不存在路径的开机自启项", stale_removed)
@@ -3958,7 +4014,7 @@ def main(argv: list[str] | None = None, enable_chat: bool = True) -> int:
             controller.start()
         except Exception as exc:
             logging.exception("启动失败")
-            _show_startup_error("dsh-pet-standalone", str(exc))
+            _show_startup_error("BigFatFish", str(exc))
             return 1
 
         logging.info("进入事件循环")

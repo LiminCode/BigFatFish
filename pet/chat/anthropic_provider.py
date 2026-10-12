@@ -19,6 +19,12 @@
 - **拒答要显式处理**：``stop_reason == "refusal"`` 时 HTTP 是 200，正文可能为空。
   对支持的模型默认开启服务端回退（``fallbacks: "default"``）——被拒的请求由
   Anthropic 推荐的备用模型重跑，按备用模型计费。
+- **连接器**：``config.mcp_servers`` 非空时请求带上 MCP 服务器与对应 toolset（MCP
+  connector，beta），由 Anthropic 的服务器替模型调用工具；回合以 ``pause_turn`` 收尾时
+  自动续跑。挂不挂、挂哪些由 ``pet/chat/connectors.py`` 决定，识屏不挂。
+- **本地工具**：``config.client_tools`` 非空时带上它的工具定义与用法说明；模型要调用时
+  （``stop_reason == "tool_use"``）在本线程执行，把结果接回去再请求，直到模型说完。
+  目前只有本地知识库（``pet/chat/knowledge_base.py``）。
 - **API Key 留空时**交给 SDK 从环境里找（``ANTHROPIC_API_KEY`` / ``ant auth login``
   的登录态），不是直接报「没配 Key」。
 
@@ -47,6 +53,11 @@ _MIN_MAX_TOKENS = 16000
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 #: 默认开启服务端拒答回退的模型（见模块说明）
 _FALLBACK_MODELS = frozenset({"claude-opus-5", "claude-fable-5-1"})
+_MCP_BETA = "mcp-client-2025-11-20"
+#: 一个回合最多续跑几次 pause_turn（服务端工具跑得久时 API 会分段返回）
+_MAX_PAUSE_RESUMES = 4
+#: 一个回合最多执行几轮本地工具（每轮是一次完整请求）
+_MAX_TOOL_ROUNDS = 8
 
 
 def uses_anthropic(config, base_url: str | None = None) -> bool:
@@ -184,7 +195,7 @@ def _effort_for(model: str, effort: str) -> str | None:
 
 
 def _open_stream(client, model: str, system: str, messages: list[dict], max_tokens: int,
-                 effort: str = DEFAULT_EFFORT):
+                 effort: str = DEFAULT_EFFORT, mcp_servers: list[dict] | None = None, client_tools=None):
     kwargs: dict[str, Any] = {"model": model, "max_tokens": max(int(max_tokens), _MIN_MAX_TOKENS),
                               "messages": messages}
     if system:
@@ -192,8 +203,25 @@ def _open_stream(client, model: str, system: str, messages: list[dict], max_toke
     level = _effort_for(model, effort)
     if level is not None:
         kwargs["output_config"] = {"effort": level}
+    betas: list[str] = []
     if model in _FALLBACK_MODELS:
-        return client.beta.messages.stream(betas=[_FALLBACK_BETA], fallbacks="default", **kwargs)
+        betas.append(_FALLBACK_BETA)
+        kwargs["fallbacks"] = "default"
+    if mcp_servers:
+        # 连接器（pet/chat/connectors.py）：服务器和它的 toolset 必须成对出现。工具定义
+        # 每次采样都带、体积大（GitHub 只读全套约 1.2 万 token），所以开两处提示缓存：
+        # toolset 上的断点让工具定义跨会话命中；顶层的自动缓存让同一会话的后续轮次、
+        # 以及工具调用后的续写命中。
+        betas.append(_MCP_BETA)
+        kwargs["mcp_servers"] = [dict(server) for server in mcp_servers]
+        kwargs["tools"] = [{"type": "mcp_toolset", "mcp_server_name": server["name"]} for server in mcp_servers]
+        kwargs["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+    if client_tools is not None:
+        kwargs["tools"] = [*kwargs.get("tools", []), *client_tools.definitions]
+    if "tools" in kwargs:      # 工具循环每一轮都重发整段前缀：顶层自动缓存让后续轮次命中
+        kwargs["cache_control"] = {"type": "ephemeral"}
+    if betas:
+        return client.beta.messages.stream(betas=betas, **kwargs)
     return client.messages.stream(**kwargs)
 
 
@@ -217,13 +245,35 @@ def _translate_error(sdk, exc: Exception, model: str) -> ProviderError:
         return ProviderError("请求过于频繁或额度不足，稍后再试", 429)
     if isinstance(exc, sdk.APIStatusError):
         status = getattr(exc, "status_code", None)
-        return ProviderError(str(getattr(exc, "message", "") or exc), status)
+        message = str(getattr(exc, "message", "") or exc)
+        if "mcp_servers" in message:      # 连接器的服务器连不上 / Token 被拒：整条请求 400
+            return ProviderError(f"连接器出错，请检查 Token 或先关掉连接器（设置 → AI 对话 → 连接器）：{message}",
+                                 status)
+        return ProviderError(message, status)
     if isinstance(exc, sdk.APIConnectionError):
         return ProviderError(f"网络连接失败：{exc}")
     if "authentication method" in str(exc):
         # 没有任何凭据时 SDK 抛的是 TypeError（不是它自己的异常基类），且要到发请求时才抛
         return ProviderError("没有配置 API Key（设置 → AI 对话），环境里也没有 Anthropic 凭据")
     return ProviderError(f"Claude 请求失败：{exc}")
+
+
+def _run_client_tools(client_tools, content) -> list[dict]:
+    """执行这一轮里模型要的所有本地工具；结果放进同一条 user 消息（拆开发会让模型不再并行调用）。
+
+    工具自己出错不是请求失败：把错误原样告诉模型（``is_error``），由它换个办法或如实说明。
+    """
+    results: list[dict] = []
+    for block in content:
+        if getattr(block, "type", None) != "tool_use":
+            continue
+        result: dict[str, Any] = {"type": "tool_result", "tool_use_id": block.id}
+        try:
+            result["content"] = str(client_tools.run(block.name, block.input))
+        except Exception as exc:  # noqa: BLE001 - 任何失败都要回给模型，不能让工作线程死掉
+            result["content"], result["is_error"] = f"工具执行失败：{exc}", True
+        results.append(result)
+    return results
 
 
 class AnthropicProvider:
@@ -237,18 +287,41 @@ class AnthropicProvider:
             raise ProviderError("没有可发送的消息")
         model = str(config.model or "").strip() or DEFAULT_MODEL
         client = _client(config.api_key, config.base_url, config.timeout, config.verify_ssl)
+        mcp_servers = list(getattr(config, "mcp_servers", None) or [])
+        client_tools = getattr(config, "client_tools", None)
+        note = str(getattr(client_tools, "system_note", "") or "").strip()
+        if note:
+            system = f"{system}\n\n{note}" if system else note
+        pauses = tool_rounds = 0
         try:
-            with _open_stream(client, model, system, convo, config.max_tokens,
-                              getattr(config, "effort", DEFAULT_EFFORT)) as stream:
-                if response_holder is not None:
-                    response_holder.append(stream)      # 取消时由 ChatService 调它的 close()
-                for text in stream.text_stream:
+            while pauses <= _MAX_PAUSE_RESUMES and tool_rounds <= _MAX_TOOL_ROUNDS:
+                with _open_stream(client, model, system, convo, config.max_tokens,
+                                  getattr(config, "effort", DEFAULT_EFFORT), mcp_servers, client_tools) as stream:
+                    if response_holder is not None:
+                        response_holder.append(stream)      # 取消时由 ChatService 调它的 close()
+                    for text in stream.text_stream:
+                        if cancel_event.is_set():
+                            return
+                        yield text
                     if cancel_event.is_set():
                         return
-                    yield text
-                if cancel_event.is_set():
+                    final = stream.get_final_message()
+                _check_final(final)
+                reason = getattr(final, "stop_reason", None)
+                if reason == "pause_turn":
+                    # 服务端工具（连接器）还没跑完：把这一段原样接回去，下一次请求从断点继续
+                    pauses += 1
+                    convo = [*convo, {"role": "assistant", "content": final.content}]
+                elif reason == "tool_use" and client_tools is not None:
+                    results = _run_client_tools(client_tools, final.content)
+                    if cancel_event.is_set():
+                        return
+                    tool_rounds += 1
+                    convo = [*convo, {"role": "assistant", "content": final.content},
+                             {"role": "user", "content": results}]
+                else:
                     return
-                _check_final(stream.get_final_message())
+            raise ProviderError("Claude 这一回合一直没有说完（工具调用过多），已停止")
         except ProviderError:
             raise
         except Exception as exc:

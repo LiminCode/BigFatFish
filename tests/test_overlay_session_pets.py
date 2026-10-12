@@ -123,6 +123,7 @@ def test_caption_setter_updates_the_sprite(shell):
 def controller(shell, monkeypatch):
     monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
     monkeypatch.setattr(SessionPetController, "REST_CLIPS", ("idle1",))
+    monkeypatch.setattr(SessionPetController, "REVIEW_CLIPS", ("click1",))
     state = {"on": True}
     ctl = SessionPetController(shell, enabled=lambda: state["on"])
     ctl.state = state
@@ -150,12 +151,57 @@ def test_session_gets_a_fish_that_follows_its_phase(shell, controller):
     assert shell.behavior.held(fish) == ("act1",), "等批准时姿势不变，只换标签"
 
     controller.on_session_update("claude", _update(phase="resting", title="Fix login loop", project="dsh-pet"))
-    assert fish.caption == "Fix login loop · 休息中", "有标题用标题，没有才用项目名"
-    assert fish.caption_tone == "resting"
-    assert shell.behavior.held(fish) == ("idle1",)
+    assert fish.caption == "Fix login loop · 等你回复", "有标题用标题，没有才用项目名"
+    assert fish.caption_tone == "review"
+    assert shell.behavior.held(fish) == ("click1",)
 
     controller.on_session_update("claude", _update(phase="gone"))
     assert _session_pets(shell) == []
+
+
+def test_a_finished_turn_waits_for_the_user_until_they_have_looked(shell, controller):
+    """回合结束 ≠ 休息：用户还没去看之前是「等你回复」，看过了才落回「休息中」。"""
+    key = ("claude", "A")
+    controller.on_session_update("claude", _update(project="p"))
+    (fish,) = _session_pets(shell)
+
+    controller.on_session_update("claude", _update(phase="resting", project="p"))
+    assert fish.caption == "p · 等你回复" and fish.caption_tone == "review"
+    assert controller.sessions()[0]["phase"] == "review", "灵动岛的清单也要看得出来"
+    finished = controller.since(key)
+
+    controller.on_session_update("claude", _update(phase="resting", title="T", project="p"))
+    assert fish.caption == "T · 等你回复", "回合结束后才到的标题不把它冲回休息中"
+    assert controller.retitle(key, "改过的名字") is True
+    assert fish.caption == "改过的名字 · 等你回复"
+
+    assert controller.acknowledge(key) is True
+    assert fish.caption == "改过的名字 · 休息中" and fish.caption_tone == "resting"
+    assert shell.behavior.held(fish) == ("idle1",)
+    assert controller.sessions()[0]["phase"] == "resting"
+    assert controller.since(key) == finished, "「已 N 分钟」仍从回合结束算起"
+    assert controller.acknowledge(key) is False, "已经看过了"
+
+    controller.on_session_update("claude", _update(phase="resting", title="又改了", project="p"))
+    assert fish.caption == "又改了 · 休息中", "看过之后不会自己变回等你回复"
+
+
+def test_the_next_prompt_clears_the_reminder_and_the_next_finish_raises_it_again(shell, controller):
+    controller.on_session_update("claude", _update(project="p"))
+    (fish,) = _session_pets(shell)
+    controller.on_session_update("claude", _update(phase="resting", project="p"))
+
+    controller.on_session_update("claude", _update(phase="working", project="p"))   # 用户直接回复了
+    assert fish.caption == "p · 工作中"
+    assert controller.acknowledge(("claude", "A")) is False
+
+    controller.on_session_update("claude", _update(phase="waiting", project="p"))
+    controller.on_session_update("claude", _update(phase="resting", project="p"))
+    assert fish.caption == "p · 等你回复"
+
+
+def test_acknowledging_an_unknown_session_is_harmless(shell, controller):
+    assert controller.acknowledge(("claude", "nope")) is False
 
 
 def test_sessions_and_channels_get_separate_fish(shell, controller):

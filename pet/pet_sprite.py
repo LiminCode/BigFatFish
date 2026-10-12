@@ -639,9 +639,7 @@ class PetSprite(QObject):
         clip = self._clip
         if clip is not None:
             self._disconnect_clip_signals(clip)
-            stop = getattr(clip, "stop", None)
-            if callable(stop):
-                stop()
+            self._stop_clip(clip)
         self._clip = None
         self._clip_name = None
         self._frame_sig = None
@@ -669,6 +667,38 @@ class PetSprite(QObject):
             except (TypeError, RuntimeError):
                 pass  # 未连接过/对象已毁：忽略
 
+    @staticmethod
+    def _stop_clip(clip) -> None:
+        """停掉一个 clip；它已经被自己的素材库销毁时当作已停（换绑 / 释放共用）。
+
+        换角色 = 换素材库：旧库 shutdown 后被回收，clip 的 C++ 对象跟着销毁，而
+        sprite 手上的 Python 包装还在。对它再 ``stop()`` 会抛 RuntimeError
+        （``Internal C++ object … already deleted``）——不接住的话换绑永远过不去，
+        桌宠卡死在旧角色的最后一帧，切回来也一样（2026-10-11 实机）。与上面
+        ``_disconnect_clip_signals`` 对「对象已毁」的口径一致。
+        """
+        stop = getattr(clip, "stop", None)
+        if not callable(stop):
+            return
+        try:
+            stop()
+        except RuntimeError:
+            pass  # 对象已毁：它的所有者已经把它停掉并销毁了
+
+    def detach_clip(self) -> None:
+        """放开手上的 clip，但不动别的（换素材库之前调）。
+
+        与 ``close`` 的区别：回调、位置、最后一帧画面都留着——新库的 clip 首帧
+        到货之前照旧画旧帧，不闪；下一次 ``bind_clip`` 从「手上没有 clip」开始。
+        """
+        clip = self._clip
+        if clip is None:
+            return
+        self._disconnect_clip_signals(clip)
+        self._stop_clip(clip)
+        self._clip = None
+        self._clip_name = None
+
     # ---------------------------------------------------------------- clip 绑定
     def bind_clip(self, name: str) -> bool:
         """绑定并起播一个动画 clip；旧 clip 断开信号并停止（不再后台解码）。
@@ -683,9 +713,7 @@ class PetSprite(QObject):
         """
         if self._clip is not None:
             self._disconnect_clip_signals(self._clip)
-            stop = getattr(self._clip, "stop", None)
-            if callable(stop):
-                stop()
+            self._stop_clip(self._clip)
         self._clip_name = name
         self._clip = self.library.movie(name)
         clip = self._clip
@@ -1018,7 +1046,9 @@ class PetSprite(QObject):
     _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
     #: 配色 → (底色, 字色)
     _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
-    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36))}
+    #: 工作中淡绿；等你回复（做完了还没看）天蓝——与默认的深灰一眼分得开
+    _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36)),
+                      "review": ((150, 200, 255, 240), (10, 44, 102))}
 
     def _caption_layout(self) -> tuple[QRect, str]:
         """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。

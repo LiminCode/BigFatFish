@@ -166,6 +166,7 @@ from . import settings_interaction
 from . import settings_music
 from . import settings_pet_controls
 from . import settings_save
+from . import settings_tray
 
 
 # 语言配置页只展示用户能理解的事件名称；内部 key 仍用于保存和渲染。
@@ -523,6 +524,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("stream_capture", "直播捕获兼容", settings_pet_controls.stream_capture_hint(), self.stream_capture_check),
                 ]
             )
+        window_rows.extend(settings_tray.tray_icon_rows(self))
         general_layout.addWidget(SettingsSection("窗口与系统", window_rows, general_content))
         # 拓扑收口：「单进程多开」实验开关已从设置页移除，4.4b 起配置键
         # `experimental_single_process_spawn` 本身也随多进程多宠退役层删除
@@ -1296,6 +1298,7 @@ class ModernSettingsDialog(QDialog):
             "self_talk_texts",
             "self_talk_images",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
         )
         self._set_setting_rows_visible(keys, enabled)
@@ -1730,7 +1733,7 @@ class ModernSettingsDialog(QDialog):
         general = page_content(
             [
                 ("应用启动", claim("autostart", "harness_autostart", "harness_launch_target")),
-                ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture")),
+                ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture", "tray_icon")),
                 # 「多开」分组已随拓扑收口 Phase A 隐藏（见上方注释）
             ]
         )
@@ -1826,6 +1829,7 @@ class ModernSettingsDialog(QDialog):
                             "model",
                             "api_key",
                             "system_prompt",
+                            "about_user",
                             "connection_test",
                         ),
                     ),
@@ -1839,6 +1843,8 @@ class ModernSettingsDialog(QDialog):
                             "vision_key",
                         ),
                     ),
+                    ("连接器", claim("github_connector", "github_token")),
+                    ("知识库", claim_prefix("knowledge_base_")),
                     (
                         "生成参数（高级）",
                         claim(
@@ -2213,6 +2219,7 @@ class ModernSettingsDialog(QDialog):
         self.config.set("self_talk_texts", texts or list(DEFAULT_SELF_TALK_TEXTS))
         self.config.set("self_talk_image_dir", self.self_talk_image_dir_picker.text())
         self.config.set("self_talk_image_scale", self.self_talk_image_scale_spin.value())
+        self.config.set("self_talk_image_max_edge", self.self_talk_image_max_edge_spin.value())
         self.config.set("self_talk_image_chance", self.self_talk_image_chance_spin.value())
         self.config.set("bubble_text_scale", self.bubble_text_scale_spin.value())
         # Agent 联动：自定义 thinking 文案与音效（合并写回，不覆盖 agent_link 其他开关）
@@ -2298,6 +2305,7 @@ class ModernSettingsDialog(QDialog):
             self.ai_page.save()
         settings_file_interpret.save_file_interpret_settings(self)
         settings_music.save_music_player_settings(self)
+        settings_tray.save_tray_icon_setting(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
             from .proactive import PRESET_DEFAULTS
 

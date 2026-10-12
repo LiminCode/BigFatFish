@@ -21,7 +21,12 @@ class PromptBuilder:
             if prompt.strip(): return prompt.strip()
         return settings.default_system_prompt.strip()
     def build_messages(self,settings,character_id,history,user_text,role_prompt=None):
-        return [{'role':'system','content':self.effective_system_prompt(settings,character_id,role_prompt)},*({'role':m.role,'content':m.content} for m in self.trim_history(history,settings.history_message_limit,settings.history_char_limit)),{'role':'user','content':user_text.strip()}]
+        # 人设三选一（调用方给的 > 角色包自带的 > 设置页的），「关于我」不属于人设：
+        # 无论用了哪一个都追加在后面。只在对话消息里加，effective_system_prompt 不变。
+        system=self.effective_system_prompt(settings,character_id,role_prompt)
+        about=str(getattr(settings,'about_user','') or '').strip()
+        if about: system=f'{system}\n\n{about}' if system else about
+        return [{'role':'system','content':system},*({'role':m.role,'content':m.content} for m in self.trim_history(history,settings.history_message_limit,settings.history_char_limit)),{'role':'user','content':user_text.strip()}]
     @staticmethod
     def trim_history(history,message_limit,char_limit):
         result=[]; used=0; limit=max(100,char_limit)

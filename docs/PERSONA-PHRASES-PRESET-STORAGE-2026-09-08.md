@@ -9,7 +9,7 @@
 | 内容 | 归属 | 位置 | 加载时机 |
 |---|---|---|---|
 | 内置预设文案（legacy / whale_maid） | **数据文件**，随代码分发 | 仓库 `pet/persona_presets/<mode>.json` | 启动/模块导入一次；重设/切回内置时重新读盘 |
-| 用户台词（custom） | **用户数据** | `%APPDATA%/dsh-pet-standalone/config.json` 的 `dialogue_phrases`（打包变体目录/多开 `config-<instance>.json` 同理） | 随 Config 加载/归一化 |
+| 用户台词（custom） | **用户数据** | `%APPDATA%/big-fat-fish/config.json` 的 `dialogue_phrases`（打包变体目录/多开 `config-<instance>.json` 同理） | 随 Config 加载/归一化 |
 | 便携模板（导出文档） | **运行时生成**，不落盘 | `pet/persona_template.py` `build_persona_template()` | 设置页导出时生成给用户复制 |
 
 原则：**台词文案不写死在代码里**。改内置口吻 = 改 `pet/persona_presets/` 下

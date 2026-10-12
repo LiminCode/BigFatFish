@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from . import catalog
+from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
+from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
+from .work_briefing import normalize as normalize_work_briefing
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
@@ -244,6 +247,8 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
+        "session_card_theme": DEFAULT_CARD_THEME,
         # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
         # 最多留几天（1~30）、几条（1~200）。见 pet/claude_session_history.py
         "session_history": True,
@@ -367,6 +372,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
         result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
+    result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
     for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
                            ("session_history_rows", 3, 20)):
         try:
@@ -476,7 +482,13 @@ def _default_base():
     return Path.home() / ".config"
 
 
-def _app_dir_name() -> str:
+APP_DIR_BASE = "big-fat-fish"
+#: 2026-10-11 改名前的名字。只用于认旧数据：数据目录、钥匙串服务名、开机自启项、
+#: 同机其它变体的配置发现。新写入一律用新名字。
+LEGACY_APP_DIR_BASE = "dsh-pet-standalone"
+
+
+def _app_dir_name(base: str = APP_DIR_BASE) -> str:
     """打包变体的独立数据目录名；源码运行时回退到共享目录。
 
     构建脚本（scripts/build_onedir.ps1）会在打包前生成
@@ -488,13 +500,70 @@ def _app_dir_name() -> str:
 
         name = str(VARIANT).strip()
         if name:
-            return f"dsh-pet-standalone-{name}"
+            return f"{base}-{name}"
     except Exception:
         pass
-    return "dsh-pet-standalone"
+    return base
 
 
 APP_DIR_NAME = _app_dir_name()
+LEGACY_APP_DIR_NAME = _app_dir_name(LEGACY_APP_DIR_BASE)
+#: 数据目录搬家后留下的待办标记：Claude Code 钩子里写死了旧目录的路径，由
+#: ``AgentLinkManager`` 在下次应用配置时改到新路径，改完删掉本文件。
+HOOKS_REFRESH_MARKER = "agent-hooks-refresh.pending"
+
+
+def _mark_hooks_for_refresh(new_dir: Path) -> None:
+    try:
+        (new_dir / HOOKS_REFRESH_MARKER).write_text(LEGACY_APP_DIR_NAME, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def migrate_legacy_app_dir(base) -> bool:
+    """改名迁移：把 ``<base>/dsh-pet-standalone[-变体]`` 搬成 ``<base>/big-fat-fish[-变体]``。
+
+    只在「旧目录有 config.json、新目录还没有」时做，所以只会发生一次，也绝不覆盖新数据。
+    新目录不存在就整目录改名；已经存在（启动早期先落了日志或锁文件）就逐项搬，新目录里
+    已有的同名项保留。config.json 最后搬——它是「迁移完成」的标记，中途被打断下次接着搬。
+    必须在任何代码往新目录写东西之前调用（见 ``app.main`` 与 ``Config.__init__``）。
+    """
+    new, legacy = Path(base) / APP_DIR_NAME, Path(base) / LEGACY_APP_DIR_NAME
+    try:
+        if (new / "config.json").exists() or not (legacy / "config.json").is_file():
+            return False
+        if not new.exists():
+            try:
+                os.replace(legacy, new)
+                _mark_hooks_for_refresh(new)
+                return True
+            except OSError:
+                pass  # 旧目录里有文件正被占用（比如钩子正往里写事件）：退回逐项搬
+        new.mkdir(parents=True, exist_ok=True)
+        for child in sorted(legacy.iterdir(), key=lambda p: p.name == "config.json"):
+            target = new / child.name
+            if target.exists():
+                continue
+            try:
+                os.replace(child, target)
+            except OSError:
+                try:
+                    if child.is_dir():
+                        shutil.copytree(child, target)
+                    else:
+                        shutil.copy2(child, target)
+                except OSError:
+                    continue
+        try:
+            legacy.rmdir()
+        except OSError:
+            pass
+        if not (new / "config.json").exists():
+            return False
+        _mark_hooks_for_refresh(new)
+        return True
+    except OSError:
+        return False
 
 
 def _float_or_default(value, default, minimum, maximum):
@@ -742,6 +811,7 @@ class Config:
         # 位置/大小/朝向等不再互相覆盖；不传时完全保持原行为。
         self.instance_id = (instance_id or os.environ.get("DSH_PET_INSTANCE", "") or "").strip()
         self.path = self.dir / f"config-{self.instance_id}.json" if self.instance_id else self.dir / "config.json"
+        migrate_legacy_app_dir(base)
         self._migrate_legacy_config(base)
         # 副槽落种仅在该槽位还没有个体配置时进行；已有存档的 slot（用户改过
         # 的）一律不动——「生小肥鱼」复用旧槽位时同样保留原槽设置。
@@ -761,6 +831,9 @@ class Config:
             "user_customized": False,  # 批 C：仅当用户在该子肥鱼自己的设置界面保存过才置真
             "on_top": True,
             "show_dock_icon": True,
+            "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
+            # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
+            "work_briefing": normalize_work_briefing(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -769,7 +842,9 @@ class Config:
             "self_talk_min_interval": DEFAULT_SELF_TALK_MIN_INTERVAL,
             "self_talk_max_interval": DEFAULT_SELF_TALK_MAX_INTERVAL,
             "self_talk_duration_seconds": DEFAULT_SELF_TALK_DURATION_SECONDS,
-            "self_talk_image_scale": 100,  # 气泡配图显示尺寸百分比（50~300，100 = 默认）
+            "self_talk_image_scale": 100,  # 气泡配图显示尺寸百分比（50~300，100 = 原始大小）
+            # 配图气泡的尺寸上限（160~800 逻辑像素）：配图按原始大小显示，长边超过它才缩小
+            "self_talk_image_max_edge": SELF_TALK_IMAGE_MAX_EDGE_DEFAULT,
             "self_talk_image_chance": DEFAULT_SELF_TALK_IMAGE_CHANCE,  # 出图概率百分比（0~100）
             "bubble_text_scale": 100,  # 气泡文字显示尺寸百分比（50~300，100 = 默认；气泡与字号一起放大）
             "self_talk_texts": list(DEFAULT_SELF_TALK_TEXTS),
@@ -910,15 +985,16 @@ class Config:
         self._normalize_pet_settings()
 
     def _migrate_legacy_config(self, base) -> None:
-        """旧版各变体共用 %APPDATA%/dsh-pet-standalone；升级后首次运行时
+        """旧版各变体共用一个目录（改名前叫 dsh-pet-standalone）；升级后首次运行时
         把该目录的 config.json 与 sessions/ 一次性复制到变体独立目录，
         避免用户设置与聊天会话“消失”。仅在新目录尚不存在时执行。"""
         if self.instance_id:
             return  # 多开实例不参与旧版迁移，避免把单开配置复制给每个实例
-        if APP_DIR_NAME == "dsh-pet-standalone" or self.path.exists():
+        if APP_DIR_NAME == APP_DIR_BASE or self.path.exists():
             return
-        legacy = base / "dsh-pet-standalone"
-        if not (legacy / "config.json").is_file():
+        legacy = next((d for d in (base / APP_DIR_BASE, base / LEGACY_APP_DIR_BASE)
+                       if (d / "config.json").is_file()), None)
+        if legacy is None:
             return
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
@@ -1026,6 +1102,8 @@ class Config:
             "scale",
             "on_top",
             "show_dock_icon",
+            "tray_icon",
+            "work_briefing",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1042,6 +1120,7 @@ class Config:
             "self_talk_duration_seconds",
             "self_talk_image_dir",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
             "bubble_text_scale",
             "self_talk_bubble_style",
@@ -1349,6 +1428,7 @@ class Config:
         )
         self.data["self_talk_image_dir"] = str(self.data.get("self_talk_image_dir") or "").strip()[:500]
         self.data["self_talk_image_scale"] = int(_float_or_default(self.data.get("self_talk_image_scale"), 100.0, 50.0, 300.0))
+        self.data["self_talk_image_max_edge"] = clamp_image_max_edge(self.data.get("self_talk_image_max_edge"))
         self.data["self_talk_image_chance"] = int(_float_or_default(self.data.get("self_talk_image_chance"), float(DEFAULT_SELF_TALK_IMAGE_CHANCE), 0.0, 100.0))
         self.data["bubble_text_scale"] = int(_float_or_default(self.data.get("bubble_text_scale"), 100.0, 50.0, 300.0))
         self.data["self_talk_enabled"] = bool(self.data.get("self_talk_enabled", False))
@@ -1412,6 +1492,7 @@ class Config:
         self.data["golden_spin_direct"] = _bool_or_default(self.data.get("golden_spin_direct"), False)
         self.data["edge_probe_enabled"] = _bool_or_default(self.data.get("edge_probe_enabled"), False)
         self.data["agent_link"] = _clean_agent_link_data(self.data.get("agent_link"))
+        self.data["work_briefing"] = normalize_work_briefing(self.data.get("work_briefing"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1558,6 +1639,7 @@ class Config:
             "self_talk_duration_seconds",
             "self_talk_image_dir",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
             "bubble_text_scale",
             "self_talk_bubble_style",
@@ -1641,6 +1723,18 @@ class Config:
         from .chat.models import SecretStore
 
         return SecretStore().get(provider.api_key_ref) or provider.api_key
+
+    def resolve_mcp_servers(self, provider) -> list[dict]:
+        """对话请求要挂的连接器（MCP 服务器）；没开或不适用时是空列表。"""
+        from .chat.connectors import mcp_servers_for
+
+        return mcp_servers_for(self.chat_settings(), provider)
+
+    def resolve_client_tools(self, provider):
+        """对话请求要带的本地工具（知识库）；没开、没同步过或不适用时是 None。"""
+        from .chat.knowledge_base import toolset_for
+
+        return toolset_for(self.chat_settings(), provider, self.dir)
 
     def _redacted_data(self) -> dict:
         """深拷贝待写盘数据，并剔除 chat.providers 下的明文 API Key。

@@ -39,6 +39,9 @@ HOOK_EVENTS = (
 )
 HOOK_FLAG = "x-dsh-pet"            # 本桌宠注入条目的结构化标记
 HOOK_SCRIPT_NAME = "claude_event_hook.sh"
+#: 桌宠自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
+#: 不落，这次运行不会冒出一只会话小鱼。
+HEADLESS_ENV = "BIG_FAT_FISH_HEADLESS"
 #: 无标记旧条目的兜底识别（早期版本注入）：命令里带这些脚本文件名才算我们的。
 _LEGACY_SCRIPT_MARKERS = ("claude_event_hook.ps1", "claude_event_hook.py", HOOK_SCRIPT_NAME)
 
@@ -50,6 +53,7 @@ if [ -n "${BASH_VERSION:-}" ]; then
 else
     _dp_in=$(head -c 4096)
 fi
+[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 桌宠自己起的无界面运行：不报
 _dp_pick() {
     case $_dp_in in
         *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;
@@ -79,8 +83,8 @@ _dp_ts=${EPOCHREALTIME:-}
 case $_dp_ts in *,*) _dp_ts="${_dp_ts%,*}.${_dp_ts#*,}" ;; esac
 { printf '{"ts":%s,"agent":"%s","event":"%s",%s}\n' \
     "$_dp_ts" "${DSH_PET_AGENT:-claude}" "${DSH_PET_EVENT:-unknown}" "$_dp_rec" >> "$DSH_PET_OUT"; } 2>/dev/null || :
-# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + transcript 里最后一个
-# ai-title。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
+# 回合边界（每回合两次）再补一行会话标签：项目文件夹名 + 会话的名字（用户改过名就是
+# 改的那个，否则是 transcript 里最后一个 ai-title）。单独成行——值是原样截出来的 JSON 字符串片段，万一拼坏只丢这一行，
 # 不连累上面的事件行。截到第一个反斜杠为止，所以片段里不会剩转义序列。
 case ${DSH_PET_EVENT:-} in
     UserPromptSubmit|Stop)
@@ -93,7 +97,12 @@ case ${DSH_PET_EVENT:-} in
             # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
             [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
             _dp_tail=$(tail -c 131072 "$_dp_path" 2>/dev/null)
+            # 用户给会话改过名（custom-title）就用它；改名之后自动标题（ai-title）照样
+            # 继续追加，所以不能简单地取「最后一个标题」。
             case $_dp_tail in
+                *'"customTitle":"'*)
+                    _dp_title=${_dp_tail##*\"customTitle\":\"}
+                    _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
                 *'"aiTitle":"'*)
                     _dp_title=${_dp_tail##*\"aiTitle\":\"}
                     _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
@@ -332,13 +341,17 @@ class WslSettingsStore:
 
 # ---------------------------------------------------------------- 会话呈现文案
 
-#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）
-PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "resting": "休息中"}
-_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+#: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）。
+#: ``review``（回合结束、用户还没去看）不是收敛器报的：呈现层
+#: （``SessionPetController``）在 ``resting`` 上按「看过没有」分出来的。
+PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中"}
+_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "review": "{n} 个等你回复",
+                     "working": "{n} 个在干活", "resting": "{n} 个休息中"}
 #: 汇总时的排序：最需要人管的排最前
-_PHASE_ORDER = ("waiting", "working", "resting")
+_PHASE_ORDER = ("waiting", "review", "working", "resting")
 #: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
-_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("waiting", "等待中"))
+_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("review", "待回复"),
+                   ("waiting", "等待中"))
 #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
 CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
 

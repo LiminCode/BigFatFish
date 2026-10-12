@@ -377,6 +377,36 @@ def add_proactive_menu(menu: QMenu, pet) -> None:
         add_action(sub, '打开设置…', None, open_settings, close_on_trigger=True)
 
 
+def add_work_briefing_menu(menu: QMenu, pet) -> None:
+    """「工作简报」子菜单：WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程。
+
+    只有装了 WSL、且宿主接了简报服务（overlay 壳）时才出现。"查看 / 现在生成"是命令，
+    "工作日自动生成 / 生成时间"是偏好，和会话小鱼的几个选项一样就地放在菜单里。"""
+    state_of = getattr(pet, "work_briefing_settings", None)
+    settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
+    if settings is None:
+        return
+    from ..work_briefing import TIME_CHOICES
+
+    sub = add_submenu(menu, "工作简报", None)
+    add_action(sub, "查看最近一份", None, pet.open_work_briefing, close_on_trigger=True)
+    add_action(sub, "现在生成", None, pet.generate_work_briefing, close_on_trigger=True)
+    sub.addSeparator()
+    act = sub.addAction("工作日自动生成")
+    act.setCheckable(True)
+    act.setChecked(bool(settings["enabled"]))
+    act.toggled.connect(lambda on: pet.toggle_work_briefing(on))
+    time_menu = add_submenu(sub, "生成时间", None)
+    group = QActionGroup(time_menu)
+    group.setExclusive(True)
+    for value in sorted({*TIME_CHOICES, settings["time"]}):
+        choice = time_menu.addAction(value)
+        choice.setCheckable(True)
+        choice.setChecked(value == settings["time"])
+        group.addAction(choice)
+        connect_action(choice, lambda value=value: pet.set_work_briefing_time(value))
+
+
 def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
     sub = add_submenu(menu, "Agent 联动", None)
@@ -415,6 +445,20 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(limit == current)
                 group.addAction(choice)
                 connect_action(choice, lambda limit=limit: set_limit(limit))
+        set_card_theme = getattr(pet, "set_session_card_theme", None)
+        if callable(set_card_theme):
+            from ..session_card_themes import CONFIG_KEY, normalize_theme_id, theme_choices
+
+            theme_menu = add_submenu(sub, "详情卡配色", None)
+            current_theme = normalize_theme_id(agent_cfg.get(CONFIG_KEY))
+            theme_group = QActionGroup(theme_menu)
+            theme_group.setExclusive(True)
+            for theme_id, label in theme_choices():
+                choice = theme_menu.addAction(label)
+                choice.setCheckable(True)
+                choice.setChecked(theme_id == current_theme)
+                theme_group.addAction(choice)
+                connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):
@@ -434,6 +478,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(rows == current_rows)
                 rows_group.addAction(choice)
                 connect_action(choice, lambda rows=rows: set_rows(rows))
+    add_work_briefing_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [

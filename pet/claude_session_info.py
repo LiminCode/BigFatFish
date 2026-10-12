@@ -101,7 +101,9 @@ def parse_transcript_tail(text: str) -> dict:
     第一行、格式变了的行）直接跳过。
     """
     found: dict[str, str] = {}
-    wanted = {"last_prompt", "title", "git_branch", "entrypoint", "version", "cwd"}
+    # custom_title 也在必须找齐的名单里：没改过名的会话永远找不到它，于是整段尾部都会
+    # 扫完——这是有意的，否则找齐其它字段提前收工时，可能还没扫到更靠前的那条改名记录。
+    wanted = {"last_prompt", "title", "custom_title", "git_branch", "entrypoint", "version", "cwd"}
     for line in reversed(text.splitlines()):
         if not line.startswith("{"):
             continue
@@ -116,6 +118,10 @@ def parse_transcript_tail(text: str) -> dict:
             found.setdefault("last_prompt", _clean(entry.get("lastPrompt"), PROMPT_MAX))
         elif kind == "ai-title":
             found.setdefault("title", _clean(entry.get("aiTitle"), 80))
+        elif kind == "custom-title":
+            # 用户在 Claude Code 里给会话改的名字。改名后 ai-title 照样继续追加，
+            # 所以它单独记，最后盖过自动标题。
+            found.setdefault("custom_title", _clean(entry.get("customTitle"), 80))
         for key, source in (("git_branch", "gitBranch"), ("entrypoint", "entrypoint"),
                             ("version", "version"), ("cwd", "cwd")):
             value = entry.get(source)
@@ -123,6 +129,8 @@ def parse_transcript_tail(text: str) -> dict:
                 found.setdefault(key, value)
         if wanted <= found.keys():
             break
+    if found.get("custom_title"):
+        found["title"] = found["custom_title"]      # 调用方只认 title：用户改的名字优先
     return {key: value for key, value in found.items() if value}
 
 
@@ -163,9 +171,17 @@ def apply_registry(detail: SessionDetail, entry: dict | None) -> None:
     detail.pid = entry.get("pid") if isinstance(entry.get("pid"), int) else None
     detail.entrypoint = str(entry.get("entrypoint") or detail.entrypoint)
     detail.name = str(entry.get("name") or "")
+    if entry.get("nameSource") == "user" and detail.name:
+        # 运行清单里的 name 多数是自动拼的（项目名-两位十六进制）；只有 nameSource 是
+        # user 的才是用户起的名字，这时它就是会话的标题。
+        detail.title = _clean(detail.name, 80)
+        detail.extra["title_by_user"] = True
     detail.version = str(entry.get("version") or detail.version)
     started = _number(entry.get("startedAt"))
     detail.started_at = started / 1000.0 if started else None
+    # 进程启动时所在的目录。会话中途 cd 走了之后 detail.cwd 跟着变，这个不变——
+    # VS Code 插件把进程起在工作区的第一个文件夹里，跳转时靠它分辨窗口。
+    detail.extra["start_cwd"] = str(entry.get("cwd") or "")
     if not detail.cwd:
         detail.cwd = str(entry.get("cwd") or "")
 
@@ -175,7 +191,10 @@ def apply_transcript(detail: SessionDetail, parsed: dict) -> None:
     detail.git_branch = parsed.get("git_branch", "")
     detail.entrypoint = detail.entrypoint or parsed.get("entrypoint", "")
     detail.version = detail.version or parsed.get("version", "")
-    detail.title = detail.title or parsed.get("title", "")
+    if parsed.get("custom_title"):
+        detail.title = parsed["custom_title"]          # 用户改的名字盖过 hook 报上来的自动标题
+    elif not detail.extra.get("title_by_user"):
+        detail.title = detail.title or parsed.get("title", "")
     detail.cwd = detail.cwd or parsed.get("cwd", "")
 
 

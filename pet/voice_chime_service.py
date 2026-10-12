@@ -31,6 +31,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from . import edge_tts_endpoint
 from .voice_chime import (
     DEFAULT_VOICE,
     VOICE_OPTIONS,
@@ -230,13 +231,24 @@ class _TTSWorker(threading.Thread):
         # 惰性导入：只在真的要合成的后台线程里付这笔 import 成本。
         import edge_tts
 
-        communicate = edge_tts.Communicate(
-            self._text,
-            voice,
-            rate=self._rate,
-            pitch=self._pitch,
-        )
-        await communicate.save(str(self._out_path))
+        async def save() -> None:
+            communicate = edge_tts.Communicate(
+                self._text,
+                voice,
+                rate=self._rate,
+                pitch=self._pitch,
+            )
+            await communicate.save(str(self._out_path))
+
+        try:
+            await save()
+        except Exception as exc:  # noqa: BLE001
+            # 握手被服务端拒绝（401 / 403）说明这个端点不收了：换另一个再试一次。
+            # 其它失败原样抛给上面的重试循环。见 pet/edge_tts_endpoint.py
+            if not (edge_tts_endpoint.is_rejected(exc) and edge_tts_endpoint.switch()):
+                raise
+            self._discard_partial()
+            await save()
 
 
 class _AudioBridge:

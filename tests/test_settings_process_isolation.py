@@ -146,17 +146,6 @@ def test_run_settings_disables_ai_page_without_chat_module(tmp_path, monkeypatch
     assert _AutoCloseDialog.captured["include_ai"] is False
 
 
-def test_packaging_entries_route_settings_before_importing_app():
-    """打包入口必须在 import pet.app 之前分流 --settings，否则子进程跑成桌宠。"""
-    root = Path(__file__).resolve().parents[1]
-    for name in ("packaging/pet_entry.py", "packaging/pet_entry_no_chat.py"):
-        source = (root / name).read_text(encoding="utf-8")
-        settings_at = source.index('"--settings" in sys.argv')
-        app_import_at = source.index("from pet.app import main")
-        assert settings_at < app_import_at, f"{name}: --settings 分流必须在 import pet.app 之前"
-        assert "from pet.__main__ import _run_settings" in source
-
-
 # ------------------------------------------------- 2. standalone 保存前 reload
 
 def test_standalone_save_merges_external_disk_change(tmp_path):

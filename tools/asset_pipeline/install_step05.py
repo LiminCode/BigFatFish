@@ -20,7 +20,7 @@
 「踏步 / 漂浮 / 奔跑」→ move。
 
 默认装到**用户数据目录**的外部角色根（Windows 是
-``%APPDATA%\\dsh-pet-standalone\\characters``）：右键桌宠重开菜单就能切过去，不用
+``%APPDATA%\\big-fat-fish\\characters``）：右键桌宠重开菜单就能切过去，不用
 重启也不动仓库。想随仓库 / 安装包分发，用 ``--dest assets/characters``。
 """
 from __future__ import annotations

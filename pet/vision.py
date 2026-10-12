@@ -27,7 +27,7 @@ from pathlib import Path
 # 顶层导入会导致 pet_entry_no_chat.py 启动即 ModuleNotFoundError。
 # 需要的地方在 ask_about_screen 内延迟导入。
 
-log = logging.getLogger('dsh-pet-standalone')
+log = logging.getLogger('big-fat-fish')
 
 CURSOR_SHOWING = 0x00000001
 CURSOR_SUPPRESSED = 0x00000002

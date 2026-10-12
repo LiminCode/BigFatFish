@@ -148,7 +148,7 @@ LOAD_PATH_CASES = [
 
 def _write_config(tmp_path, payload: dict) -> Config:
     """写一份 version=4 的配置文件并加载出 Config（走 reload 加载路径）。"""
-    cfg_dir = tmp_path / "dsh-pet-standalone"
+    cfg_dir = tmp_path / "big-fat-fish"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     (cfg_dir / "config.json").write_text(
         json.dumps({"version": 4, **payload}), encoding="utf-8"

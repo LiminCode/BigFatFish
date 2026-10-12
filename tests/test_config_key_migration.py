@@ -22,7 +22,7 @@ class FakeStore:
     shared: dict = {}
     set_ok: bool = True
 
-    def __init__(self, service_name="dsh-pet-standalone"):
+    def __init__(self, service_name="big-fat-fish"):
         self.service_name = service_name
 
     @property

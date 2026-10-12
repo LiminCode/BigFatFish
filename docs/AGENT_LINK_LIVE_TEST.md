@@ -100,7 +100,7 @@ python -m pet
 
 ### 5) 验证 DSH / OpenCode 手动注入（插件未装，先验证链路）
 1. 勾选 **DSH**；
-2. 手动向 `<APPDATA>\dsh-pet-standalone\agent-events\dsh.jsonl` 追加：
+2. 手动向 `<APPDATA>\big-fat-fish\agent-events\dsh.jsonl` 追加：
    ```json
    {"ts": 1750000000.1, "agent": "dsh", "session_id": "x", "event": "UserPromptSubmit", "state": "thinking"}
    ```

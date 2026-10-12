@@ -57,6 +57,11 @@ from .settings_widgets import (
     _line_edit,
 )
 from .speech_bubble import BUBBLE_STYLE_PRESETS
+from .speech_bubble_text import (
+    SELF_TALK_IMAGE_MAX_EDGE_MAX,
+    SELF_TALK_IMAGE_MAX_EDGE_MIN,
+    clamp_image_max_edge,
+)
 
 
 #: 「直播捕获兼容」基础文案（描述能力本身）；legacy 拓扑逐字用它。
@@ -431,6 +436,11 @@ def build_pet_controls(host) -> None:
     host.self_talk_image_scale_spin.setRange(50, 300)
     host.self_talk_image_scale_spin.setSuffix(" %")
     host.self_talk_image_scale_spin.setValue(int(host.config.get("self_talk_image_scale", 100)))
+    host.self_talk_image_max_edge_spin = BrowserSpinBox(host)
+    host.self_talk_image_max_edge_spin.setRange(SELF_TALK_IMAGE_MAX_EDGE_MIN, SELF_TALK_IMAGE_MAX_EDGE_MAX)
+    host.self_talk_image_max_edge_spin.setSingleStep(20)
+    host.self_talk_image_max_edge_spin.setSuffix(" 像素")
+    host.self_talk_image_max_edge_spin.setValue(clamp_image_max_edge(host.config.get("self_talk_image_max_edge")))
     host.self_talk_image_chance_spin = BrowserSpinBox(host)
     host.self_talk_image_chance_spin.setRange(0, 100)
     host.self_talk_image_chance_spin.setSuffix(" %")

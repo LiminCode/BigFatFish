@@ -230,7 +230,8 @@ class SpriteBubbleFollower:
             return False
 
     def show_image(self, image_path, duration_ms: int = 3200,
-                   image_scale: float = 1.0, pixmap=None) -> bool:
+                   image_scale: float = 1.0, pixmap=None,
+                   image_max_edge: int | None = None) -> bool:
         """播一张配图气泡（配图自言自语；``PetSpeechBubble.show_image`` 形参面）。
 
         形参对齐 ``speech_bubble.py:960`` 的 ``show_image(path, anchor,
@@ -246,7 +247,7 @@ class SpriteBubbleFollower:
             return bool(self.bubble.show_image(
                 image_path, self.anchor(), duration_ms,
                 pet_scale=getattr(self._sprite, "scale", None),
-                image_scale=image_scale, pixmap=pixmap))
+                image_scale=image_scale, pixmap=pixmap, image_max_edge=image_max_edge))
         except Exception:
             logger.debug("overlay: 气泡配图播放失败", exc_info=True)
             return False

@@ -224,7 +224,15 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 同日回调到 2406：在线更新整个移除，这里少了更新页的 import / 构造 / 域登记共 7 行。
 # 同日再回调到 2395：信息槽只留「当前时间 / 今日用量」，去掉「自定义短文本」那一行
 # 设置及其联动（输入框、设置行、信号接线、转发方法、保存回写共 11 行）。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2395
+# 同日上调到 2396：GitHub 连接器的两行设置（控件、说明、保存都在
+# chat/ai_settings_page.py），这里只有「AI 与对话」页的分组登记 1 行。实测 2396。
+# 同日上调到 2397：「关于我」设置行（同样只有分组登记 1 行）。实测 2397。
+# 同日上调到 2398：「知识库」分组（三行设置都在 chat/ai_settings_page.py，这里登记 1 行）。实测 2398。
+# 同日上调到 2401：「托盘图标」设置行（控件、提示、保存都在 settings_tray.py），这里只有
+# 接线——import 1 行、把行并进「窗口与系统」1 行、保存 1 行。实测 2401。
+# 2026-10-12 上调到 2403：「配图尺寸上限」设置行（控件在 settings_pet_controls、行在
+# settings_interaction），这里是依赖登记 1 行 + 保存 1 行。实测 2403。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2403
 
 
 def _read(name: str) -> str:

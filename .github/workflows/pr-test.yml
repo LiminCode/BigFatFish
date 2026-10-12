@@ -1,7 +1,7 @@
 name: PR Test Gate
 
-# PR/push 门禁：测试 + ruff。与三条 build-*.yml（tag/手动触发的打包发布）
-# 职责不同——本工作流给每个 PR 提供红绿判定，防止「测试只在本机是财富」。
+# PR/push 门禁：测试 + ruff。给每个 PR 提供红绿判定，防止「测试只在本机是财富」。
+# （打包发布的 build-*.yml 已于 2026-10-11 删除：项目只从源码运行。）
 
 on:
   pull_request:
@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # PySide6 在 Linux 上 import 需要系统 EGL/GL 等库（与 build-linux.yml 一致）
+      # PySide6 在 Linux 上 import 需要系统 EGL/GL 等库
       - name: Install system libraries (Linux)
         if: runner.os == 'Linux'
         run: |

@@ -293,6 +293,7 @@ class MovieLibrary(QObject):
         self.folder_files: dict[str, list[str]] = {}
         self._movies: dict[str, object] = {}
         self._paths: dict[str, Path] = {}
+        self._fallback_logged: set[str] = set()   # 已记过「缺动画用待机顶替」的名字
         # 帧序列世代映射（rescan_frameseq 填充；同角色共享同一份 dict 对象，
         # 见该方法"就地更新共享映射"说明）
         self._frameseq_dirs: dict[str, Path] = {}
@@ -1527,6 +1528,12 @@ class MovieLibrary(QObject):
         "不在播且 reader 已退出"的 clip，正在播的对象与本 clip 都不受影响。
         """
         if name not in self._movies:
+            if name not in self._paths and name not in self._frameseq_dirs:
+                # 保底：这个角色包里没有这段动画（只做了几段的新角色）——用待机顶上
+                fallback = self._fallback_name(name)
+                if fallback is None:
+                    raise KeyError(name)
+                return self.movie(fallback)
             try:
                 self.release_idle_frames()
             except Exception:
@@ -1543,6 +1550,23 @@ class MovieLibrary(QObject):
             else:
                 self._movies[name] = WebMClip(path, parent=self)
         return self._movies[name]
+
+    def _fallback_name(self, missing: str) -> str | None:
+        """角色包里没有 ``missing`` 这段动画时拿什么顶替：待机；连待机都没有就第一段。
+
+        顶替只发生在取 clip 的这一刻——``names()`` 与已建 clip 表里不会多出那个
+        名字，按素材清单做判断的地方（动作池、``play_once`` 的「没有就不播」）
+        行为不变。一个名字只记一次日志。空库返回 None（调用方照旧 KeyError）。
+        """
+        if not self._paths:
+            return None
+        fallback = catalog.IDLE if catalog.IDLE in self._paths else next(iter(self._paths))
+        logged = self.__dict__.setdefault('_fallback_logged', set())   # __new__ 出来的测试桩没走 __init__
+        if missing not in logged:
+            logged.add(missing)
+            logging.getLogger(__name__).info(
+                '角色 %s 没有动画「%s」，用「%s」顶替', self.character_id, missing, fallback)
+        return fallback
 
     def clip_path(self, name: str) -> Path | None:
         """只取素材路径、不创建 clip——供工作线程解码缩略图用。

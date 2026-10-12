@@ -33,9 +33,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from . import claude_hooks, claude_session_info, claude_session_jump
+from . import claude_hooks, claude_session_info, claude_session_jump, session_card_themes
 from .claude_session_info import SessionDetail
-from .speech_bubble import BUBBLE_STYLE_PRESETS
 from .ui_fonts import apply_family
 
 log = logging.getLogger(__name__)
@@ -76,12 +75,14 @@ def where_line(detail: SessionDetail) -> str:
     return " · ".join(parts)
 
 
-def _blend(front: str, back: str, weight: float) -> str:
-    """两个颜色按 ``weight``（前景占比）混合：次要文字用它，比正文淡但仍然读得清。"""
-    a, b = QColor(front), QColor(back)
-    mix = [round(x * weight + y * (1 - weight)) for x, y in
-           ((a.red(), b.red()), (a.green(), b.green()), (a.blue(), b.blue()))]
-    return QColor(*mix).name()
+def _configured_theme_id(config) -> str:
+    """配置里选的详情卡配色方案（``agent_link.session_card_theme``）。"""
+    try:
+        agent_cfg = config.get("agent_link", {}) or {}
+    except (AttributeError, TypeError):
+        agent_cfg = {}
+    value = agent_cfg.get(session_card_themes.CONFIG_KEY) if isinstance(agent_cfg, dict) else None
+    return session_card_themes.normalize_theme_id(value)
 
 
 def _card_scale(config) -> float:
@@ -106,8 +107,8 @@ class SessionDetailCard(QFrame):
                             | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._scale = _card_scale(config)
-        style_id = str(config.get("self_talk_bubble_style", "classic_top") or "classic_top")
-        self._preset = BUBBLE_STYLE_PRESETS.get(style_id, BUBBLE_STYLE_PRESETS["classic_top"])
+        self._theme_id = ""
+        self._theme = session_card_themes.card_theme(None)
         apply_family(self)   # 与桌宠气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
@@ -117,6 +118,33 @@ class SessionDetailCard(QFrame):
         self._deactivate_check_pending = False
         self.key: tuple[str, str] | None = None
         self._build()
+        self.apply_theme(_configured_theme_id(config))
+
+    def apply_theme(self, theme_id) -> None:
+        """换配色方案（``session_card_themes`` 里的 id）；与当前相同则什么都不做。
+
+        颜色全部取自方案本身，不再从气泡样式推导——按钮底、按钮字、悬停态各有各的
+        颜色，每个方案的对比度由测试逐项把关。"""
+        theme_id = session_card_themes.normalize_theme_id(theme_id)
+        if theme_id == self._theme_id:
+            return
+        self._theme_id, self._theme = theme_id, session_card_themes.CARD_THEMES[theme_id]
+        t, px = self._theme, self._px
+        self.setStyleSheet(f"""
+            QLabel {{ background: transparent; color: {t["text"]}; border: none; }}
+            QLabel#session-card-caption, QLabel#session-card-where,
+            QLabel#session-card-result {{ color: {t["muted"]}; }}
+            QPushButton {{
+                background: {t["button"]}; color: {t["button_text"]};
+                border: 1px solid {t["button_border"]}; border-radius: {px(8)}px;
+                padding: {px(3)}px {px(8)}px;
+            }}
+            QPushButton:hover {{
+                background: {t["hover"]}; color: {t["hover_text"]}; border-color: {t["hover"]};
+            }}
+            QPushButton:disabled {{ color: {t["disabled_text"]}; }}
+        """)
+        self.update()
 
     def _px(self, value: float) -> int:
         return int(round(value * self._scale))
@@ -183,20 +211,6 @@ class SessionDetailCard(QFrame):
         self.result_label.setVisible(False)
         layout.addWidget(self.result_label)
 
-        bg, fg, border = (self._preset["background"], self._preset["foreground"],
-                          self._preset["border"])
-        muted = _blend(fg, bg, 0.62)
-        self.setStyleSheet(f"""
-            QLabel {{ background: transparent; color: {fg}; border: none; }}
-            QLabel#session-card-caption, QLabel#session-card-where,
-            QLabel#session-card-result {{ color: {muted}; }}
-            QPushButton {{
-                background: {border}; color: {fg}; border: none; border-radius: {px(8)}px;
-                padding: {px(3)}px {px(8)}px;
-            }}
-            QPushButton:hover {{ background: {fg}; color: {bg}; }}
-            QPushButton:disabled {{ color: {bg}; }}
-        """)
 
     # ------------------------------------------------------------ 内容
     def show_detail(self, detail: SessionDetail, since: float | None, *,
@@ -266,10 +280,10 @@ class SessionDetailCard(QFrame):
         shadow = QPainterPath(body)
         shadow.translate(0, 2)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(self._preset.get("shadow", "#6b542b")))
+        painter.setBrush(QColor(self._theme["shadow"]))
         painter.drawPath(shadow)
-        painter.setBrush(QColor(self._preset["background"]))
-        painter.setPen(QPen(QColor(self._preset["border"]), 1))
+        painter.setBrush(QColor(self._theme["background"]))
+        painter.setPen(QPen(QColor(self._theme["border"]), 1))
         painter.drawPath(body)
         painter.end()
 
@@ -371,6 +385,8 @@ class SessionPetActions(QObject):
             card.folder_requested.connect(lambda: self._card_action(self.open_folder_key))
             card.copy_requested.connect(lambda: self._card_action(self.copy_resume_key))
             self._card = card
+        # 卡片是复用的：每次要用之前对一下配置里选的方案，菜单里改了下次打开就是新的
+        self._card.apply_theme(_configured_theme_id(self._shell._config))
         return self._card
 
     def _card_action(self, action) -> None:
@@ -379,12 +395,21 @@ class SessionPetActions(QObject):
             action(card.key)
 
     def _on_detail_ready(self, key, detail) -> None:
+        # 读回来的标题以会话记录 / 运行清单为准（含用户改的名字）：同步给小鱼头顶
+        self._controller.retitle(tuple(key), getattr(detail, "title", ""))
         self._cache[key] = detail
         card = self._card
         if (card is not None and shiboken6.isValid(card) and card.isVisible()
                 and card.key == key):
             merged = self._detail_for_key(key) or detail
             card.show_detail(merged, self._controller.since(key))
+
+    def _refresh_card(self, key) -> None:
+        card = self._card
+        detail = self._detail_for_key(key)
+        if (detail is not None and card is not None and shiboken6.isValid(card)
+                and card.isVisible() and card.key == key):
+            card.show_detail(detail, self._controller.since(key))
 
     def close(self) -> None:
         card, self._card = self._card, None
@@ -408,6 +433,10 @@ class SessionPetActions(QObject):
         detail = self._detail_for_key(key)
         if detail is None:
             return False
+        if self._controller.acknowledge(key):
+            # 去看了：「等你回复」落回「休息中」，开着的卡片跟着换（下面的线程用的
+            # 还是上面那份 detail——跳转只要会话 ID / 路径，与阶段无关）
+            self._refresh_card(key)
         self._say(key, "正在切过去…")
 
         def work() -> None:
@@ -541,6 +570,13 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
         item.setCheckable(True)
         item.setChecked(limit == current)
         item.triggered.connect(lambda _checked=False, n=limit: facade.set_session_pets_max(n))
+    theme_menu = add_submenu(settings, "详情卡配色")
+    current_theme = _configured_theme_id(facade.cfg)
+    for theme_id, label in session_card_themes.theme_choices():
+        item = theme_menu.addAction(label)
+        item.setCheckable(True)
+        item.setChecked(theme_id == current_theme)
+        item.triggered.connect(lambda _checked=False, t=theme_id: facade.set_session_card_theme(t))
     install_modern_check_indicators(menu)
     install_responsive_menu_style(menu)
     return menu

@@ -76,7 +76,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QBitmap, QIcon, QImage, QPixmap, QRegion
+from PySide6.QtGui import QIcon, QImage, QPixmap, QRegion
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 from . import autostart as autostart_mod
@@ -86,6 +86,7 @@ from . import overlay_settings_command
 from . import overlay_spawn_state
 from .overlay_session_pets import SessionPetController
 from . import slot_manager
+from . import tray_icon as tray_icon_mod
 from . import window_alerts
 from .context_menus.shared import release_menu_tree
 from .physics import throw_speed_cap
@@ -100,8 +101,10 @@ from .overlay_peripherals import FullscreenCursorWatcher
 from .overlay_window import OverlayWindow
 from .pet_sprite import INTERACTION_DRAG, INTERACTION_THROWN, PetSprite
 from .session_watcher import install_session_watcher
+from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from .speech_bubble import (
     SELF_TALK_IMAGE_BOX_H,
+    image_display_edge,
     SELF_TALK_IMAGE_BOX_W,
     list_self_talk_images,
 )
@@ -158,6 +161,17 @@ def self_talk_image_cache_edge(image_scale: float, dpr: float = 1.0) -> int:
     # 取整前扣掉浮点噪声：220×1.1 在二进制下是 242.00000000000003，直接 ceil
     # 会凭空多要一整像素（内存上无所谓，但边界语义要稳、断言要能复现）。
     return int(math.ceil(box * _SELF_TALK_IMAGE_CACHE_SLACK - 1e-6))
+
+
+def self_talk_image_cache_edge_for_limit(max_edge: int, dpr: float = 1.0, style_id: str = "") -> int:
+    """配图按原始大小显示时的缓存目标长边 ＝ 实际能画到的长边 × DPR × 余量。
+
+    显示时长边不会超过上限（吐气水泡样式下只到上限的 55%，见
+    ``speech_bubble.image_display_edge``），再多的像素画不出来，纯占内存——实测 72 张图
+    在上限 420、DPR 1.25 下，按上限留是 77 MB，按水泡里实际画到的尺寸留是 25 MB 左右。
+    解码线程只缩不放，所以比这小的图在缓存里保持原始尺寸。"""
+    edge = image_display_edge(clamp_image_max_edge(max_edge), style_id) * max(1.0, float(dpr))
+    return int(math.ceil(edge * _SELF_TALK_IMAGE_CACHE_SLACK - 1e-6))
 
 
 def _resolve_self_talk_image_dir(raw: str) -> str:
@@ -359,6 +373,7 @@ PER_SLOT_SETTING_KEYS = frozenset({
     # 气泡 / 自言自语族
     "self_talk_enabled", "self_talk_texts", "self_talk_duration_seconds",
     "self_talk_image_dir", "self_talk_image_scale", "self_talk_image_chance",
+    "self_talk_image_max_edge",
     "self_talk_min_interval", "self_talk_max_interval",
     "self_talk_speak_enabled", "self_talk_bubble_style", "bubble_text_scale",
     "click_show_balance", "click_show_self_talk",
@@ -546,6 +561,7 @@ class _SpriteSelfTalkHost:
             _resolve_self_talk_image_dir(self._self_talk_image_dir))
         self._self_talk_image_scale = _clamped_float(
             cfg.get("self_talk_image_scale"), 100, 50.0, 300.0) / 100.0
+        self._self_talk_image_max_edge = clamp_image_max_edge(cfg.get("self_talk_image_max_edge"))
         self._self_talk_min_interval = max(5.0, _clamped_float(
             cfg.get("self_talk_min_interval"),
             DEFAULT_SELF_TALK_MIN_INTERVAL, 0.0, 86400.0))
@@ -628,7 +644,8 @@ class _SpriteSelfTalkHost:
                 return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
-                pixmap=QPixmap.fromImage(image))
+                pixmap=QPixmap.fromImage(image),
+                image_max_edge=self._self_talk_image_max_edge)
         self._last_self_talk_text = value
         return self._show_self_talk_text(value)
 
@@ -698,13 +715,7 @@ def _crop_icon_pixmap(pm: QPixmap, size: int) -> QPixmap:
     动画帧是整张视频画布，直接缩放会把角色缩成几个像素（``context_menus/icons``
     记录了同一个坑）；托盘与灵动岛头像共用这一份裁剪语义，不另造第二套。
     """
-    image = pm.toImage()
-    bounds = QRegion(QBitmap.fromImage(image.createAlphaMask())).boundingRect()
-    if bounds.isValid() and not bounds.isEmpty():
-        pm = QPixmap.fromImage(image.copy(bounds))
-    return pm.scaled(size, size,
-                     Qt.AspectRatioMode.KeepAspectRatio,
-                     Qt.TransformationMode.SmoothTransformation)
+    return tray_icon_mod.fit_icon_pixmap(pm, size)
 
 
 class ShellOverlayWindow(OverlayWindow):
@@ -1605,6 +1616,7 @@ class OverlayShell(QObject):
             _resolve_self_talk_image_dir(self._self_talk_image_dir))
         self._self_talk_image_scale = max(
             0.5, min(3.0, float(config.get("self_talk_image_scale", 100)) / 100.0))
+        self._self_talk_image_max_edge = clamp_image_max_edge(config.get("self_talk_image_max_edge"))
         self._self_talk_min_interval = max(
             5.0, float(config.get(
                 "self_talk_min_interval", DEFAULT_SELF_TALK_MIN_INTERVAL)))
@@ -1942,10 +1954,13 @@ class OverlayShell(QObject):
         now = time.monotonic()
         if now - getattr(self, "_self_talk_images_checked_at", 0.0) > 60.0:
             self._self_talk_images_checked_at = now
-            live_images = [path for path in self._self_talk_images
-                           if path.is_file()]
-            if len(live_images) != len(self._self_talk_images):
+            # 整个目录重新列一遍：既能发现被删掉的图，也能把运行期间新放进去的图收进来
+            live_images = list_self_talk_images(
+                _resolve_self_talk_image_dir(self._self_talk_image_dir)) or [
+                    path for path in self._self_talk_images if path.is_file()]
+            if live_images != self._self_talk_images:
                 self._self_talk_images = live_images
+                self._warm_self_talk_images()
                 # 清单变了：图片缓存按新清单裁剪（decode 在 worker，
                 # 见 _warm_self_talk_images）
                 cache = getattr(self, "_self_talk_image_cache", None)
@@ -1982,7 +1997,8 @@ class OverlayShell(QObject):
                 return self._show_self_talk_text(text)
             return follower.show_image(
                 value, duration_ms, image_scale=self._self_talk_image_scale,
-                pixmap=QPixmap.fromImage(image))
+                pixmap=QPixmap.fromImage(image),
+                image_max_edge=self._self_talk_image_max_edge)
         self._last_self_talk_text = value
         return self._show_self_talk_text(value)
 
@@ -2040,9 +2056,13 @@ class OverlayShell(QObject):
             return 1.0
 
     def _self_talk_image_cache_edge(self) -> int:
-        """本壳当前配置下的配图缓存目标长边（像素）。"""
-        return self_talk_image_cache_edge(
-            getattr(self, "_self_talk_image_scale", 1.0), self._self_talk_screen_dpr())
+        """本壳当前配置下的配图缓存目标长边（像素）。
+
+        配图按原始大小显示、长边不超过上限，所以缓存也只需要留到「上限 × DPR」。"""
+        return self_talk_image_cache_edge_for_limit(
+            getattr(self, "_self_talk_image_max_edge", SELF_TALK_IMAGE_MAX_EDGE_DEFAULT),
+            self._self_talk_screen_dpr(),
+            str(self._config.get("self_talk_bubble_style", "") or ""))
 
     def _self_talk_image_cache_signature(self) -> tuple:
         """配图缓存签名：(（路径, mtime_ns, size) 清单, 目标长边)。
@@ -3133,8 +3153,9 @@ class OverlayShell(QObject):
         return vector_menu_icon(QWidget(), "pet", 64)
 
     def _tray_icon(self):
-        """托盘图标取鱼本体当前帧（idle 首帧兜底）；取不到回退爪印占位图标。"""
-        pm = self.icon_pixmap(64)
+        """托盘图标：用户指定的图片优先；否则取鱼本体当前帧（idle 首帧兜底），
+        再取不到回退爪印占位图标。"""
+        pm = self._custom_tray_pixmap() or self.icon_pixmap(64)
         if pm is not None:
             return QIcon(pm)
         return self._tray_placeholder_icon()
@@ -3182,12 +3203,26 @@ class OverlayShell(QObject):
             timer.stop()
 
     def _refresh_tray_icon_once(self) -> bool:
-        """能拿到角色帧就把托盘图标换成它；返回是否已换（拿到帧）。"""
-        pm = self.icon_pixmap(64)
+        """能拿到图就把托盘图标换成它；返回是否已换。
+
+        自定义图片不依赖角色帧：有它就直接算换好了，轮询随之停表，之后也不会被
+        角色头像顶掉。"""
+        pm = self._custom_tray_pixmap() or self.icon_pixmap(64)
         if pm is None or self.tray is None:
             return False
         self.tray.setIcon(QIcon(pm))
         return True
+
+    def _custom_tray_pixmap(self):
+        """设置项 ``tray_icon`` 指定的图片；没填或用不了返回 ``None``（见 ``pet/tray_icon.py``）。"""
+        return tray_icon_mod.load_custom_pixmap(self._config.get(tray_icon_mod.CONFIG_KEY, ""), 64)
+
+    def _apply_tray_icon_setting(self) -> None:
+        """设置改了之后把托盘图标换成当前该用的那张（自定义 / 角色头像）。"""
+        if self.tray is None:
+            return
+        if not self._refresh_tray_icon_once():
+            self._arm_tray_icon_refresh()   # 清空了自定义而角色帧还没就绪：回到轮询等首帧
 
     # ---------------------------------------------------------------- 图标面
     def _idle_first_frame_pixmap(self):
@@ -3230,6 +3265,7 @@ class OverlayShell(QObject):
     def refresh_settings(self) -> None:
         """外部配置变更应用点（AppShell._apply_external_config_change 扇出）。"""
         self._apply_window_capabilities()
+        self._apply_tray_icon_setting()
         # self_talk 族热改：重读字段并按新口径重排程（schedule_self_talk
         # 先停表再按 enabled 早退，开/关/改间隔都收敛到这一条路径）。
         self._load_self_talk_settings()
@@ -4661,6 +4697,9 @@ class OverlayShell(QObject):
             save()
         old_lib = self.lib
         self.lib = new_lib
+        # 先放开旧库的 clip 再换库：旧库马上要 shutdown 并被回收，sprite 不能还攥着它的
+        # clip（见 PetSprite._stop_clip 的说明）
+        self.sprite.detach_clip()
         self.sprite.library = new_lib
         self.behavior.forget(self.sprite)
         # 换库 = 换 body_box：锚点取材于 ``catalog.character_body_box``（体框变了
@@ -4707,6 +4746,7 @@ class OverlayShell(QObject):
                 user_customized=True)
         old_lib = self._spawned_libs.get(sprite)
         self._spawned_libs[sprite] = new_lib
+        sprite.detach_clip()          # 同主宠：旧库收尾之前先放开它的 clip
         sprite.library = new_lib
         self.behavior.forget(sprite)
         self._invalidate_sprite_configs()

@@ -25,27 +25,33 @@ import sys
 from pathlib import Path
 
 from .app_identity import APP_NAME
-from .config import APP_DIR_NAME
+from .config import APP_DIR_BASE, APP_DIR_NAME, LEGACY_APP_DIR_BASE, LEGACY_APP_DIR_NAME
 
 # macOS LaunchAgent 按变体隔离（plist 文件名/Label），避免多版本互覆盖
-_APP_BASE_ID = "com.merzlin.dsh-pet-standalone"
+_APP_BASE_ID = "com.limincode.big-fat-fish"
 PLIST_LABEL = (
     _APP_BASE_ID
-    if APP_DIR_NAME == "dsh-pet-standalone"
+    if APP_DIR_NAME == APP_DIR_BASE
     else f"{_APP_BASE_ID}.{APP_DIR_NAME}"
 )
-# Windows 自启注册表值名按变体隔离（如 dsh-pet-standalone-webm-chat）。
+# Windows 自启注册表值名按变体隔离（如 big-fat-fish-webm-chat）。
 # 每个变体只管理自己的值，避免“关无 Chat 版把 Chat 版也关了”。
 VALUE_NAME = APP_DIR_NAME
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-# 历史/各变体可能写入过的值名；仅用于启动时清理“指向已不存在路径”的失效项，
-# 不影响其他仍有效的变体自启。
-KNOWN_VALUE_NAMES = (
-    "dsh-pet-standalone",
-    "dsh-pet-standalone-webm",
-    "dsh-pet-standalone-webm-chat",
-    "dsh-pet-standalone-gif",
-    "dsh-pet-standalone-gif-chat",
+# 2026-10-11 改名前（dsh-pet-standalone）本变体用的自启标识：``adopt_legacy_entry`` 把
+# 属于本程序的旧项换成新名字，免得开机时新旧两条各启动一次。
+_LEGACY_BASE_ID = "com.merzlin.dsh-pet-standalone"
+LEGACY_VALUE_NAME = LEGACY_APP_DIR_NAME
+LEGACY_PLIST_LABEL = (
+    _LEGACY_BASE_ID
+    if LEGACY_APP_DIR_NAME == LEGACY_APP_DIR_BASE
+    else f"{_LEGACY_BASE_ID}.{LEGACY_APP_DIR_NAME}"
+)
+_VARIANT_SUFFIXES = ("", "-webm", "-webm-chat", "-gif", "-gif-chat")
+# 历史/各变体可能写入过的值名（新旧两个名字）；仅用于启动时清理“指向已不存在路径”的
+# 失效项，不影响其他仍有效的变体自启。
+KNOWN_VALUE_NAMES = tuple(
+    f"{base}{suffix}" for base in (APP_DIR_BASE, LEGACY_APP_DIR_BASE) for suffix in _VARIANT_SUFFIXES
 )
 
 _IS_WIN = sys.platform == "win32"
@@ -85,7 +91,7 @@ def _linux_desktop_content() -> str:
     return (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        f"Name=dsh-pet ({APP_DIR_NAME})\n"
+        f"Name=BigFatFish ({APP_DIR_NAME})\n"
         f"Exec={command}\n"
         "Terminal=false\n"
         "X-GNOME-Autostart-enabled=true\n"
@@ -136,7 +142,7 @@ def _win_command_needs_upgrade(command: str) -> bool:
 
 
 def _iter_known_win_values() -> list[tuple[str, str]]:
-    """读取注册表里所有已知 dsh-pet 自启值，返回 [(name, command), ...]。"""
+    """读取注册表里所有已知的本程序自启值（新旧名字），返回 [(name, command), ...]。"""
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             found = []
@@ -172,7 +178,7 @@ def cleanup_stale_entries() -> int:
 
     用户“更新后直接删除旧目录但忘了关自启”时，HKCU Run 里会残留指向
     已删除路径的命令，导致每次开机弹终端报“找不到文件夹”。这里只删除
-    路径已失效的已知 dsh-pet 项，不影响其他仍有效的变体自启。
+    路径已失效的已知本程序自启项，不影响其他仍有效的变体自启。
     """
     if not _IS_WIN:
         return 0
@@ -194,8 +200,58 @@ def cleanup_stale_entries() -> int:
     return removed
 
 
+def _win_command_is_ours(command: str) -> bool:
+    """这条自启命令是不是本程序（这份检出 / 这个安装目录）写的。"""
+    anchor = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else _project_root()
+    return str(anchor).lower() in str(command or "").lower()
+
+
+def adopt_legacy_entry() -> bool:
+    """把改名前写下的自启项换成新名字；返回是否处理了一条旧项。
+
+    只认属于本程序的旧项（Windows 看命令里的目录；macOS / Linux 的旧文件名本身就按变体
+    区分）。新项已经在时不覆盖它，只把旧的那条删掉。
+    """
+    if _IS_WIN:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+                try:
+                    legacy, _ = winreg.QueryValueEx(key, LEGACY_VALUE_NAME)
+                except FileNotFoundError:
+                    return False
+                if not _win_command_is_ours(str(legacy or "")):
+                    return False
+                try:
+                    winreg.QueryValueEx(key, VALUE_NAME)
+                    has_new = True
+                except FileNotFoundError:
+                    has_new = False
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                if not has_new:
+                    winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, _win_command())
+                winreg.DeleteValue(key, LEGACY_VALUE_NAME)
+            return True
+        except OSError:
+            return False
+    if _IS_MAC or _IS_LINUX:
+        current = _plist_path() if _IS_MAC else _desktop_path()
+        legacy_path = current.with_name(current.name.replace(PLIST_LABEL, LEGACY_PLIST_LABEL))
+        if legacy_path == current or not legacy_path.exists():
+            return False
+        if not current.exists() and not enable():
+            return False
+        try:
+            legacy_path.unlink()
+        except OSError:
+            return False
+        return True
+    return False
+
+
 def is_enabled() -> bool:
     """当前变体是否已注册开机自启（只查当前变体自己的注册表值）。"""
+    if not _IS_WIN:
+        adopt_legacy_entry()
     if _IS_WIN:
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
@@ -216,7 +272,8 @@ def is_enabled() -> bool:
                 return True
         except FileNotFoundError:
             # 只认当前变体自己的值；其他变体的自启状态互不影响。
-            return False
+            # 例外：改名前本程序自己写的那一条，换成新名字后算作已开启。
+            return adopt_legacy_entry()
     if _IS_MAC:
         return _plist_path().exists()
     if _IS_LINUX:

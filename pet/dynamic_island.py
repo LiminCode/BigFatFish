@@ -21,14 +21,14 @@ import sys
 import time
 
 from PySide6.QtCore import (
-    QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
+    QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter, QPainterPath,
     QPen, QPixmap, QTextLayout, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QPushButton, QToolTip, QVBoxLayout, QWidget,
 )
 
 from . import catalog
@@ -102,13 +102,19 @@ _ICON_STRIP_PX = 16  # 左右停靠细条里的头像尺寸
 # 状态区：API 连接图标（自绘「链接」，不走 emoji 字体栈）+ 会话计数
 _LINK_ICON_W = 18
 _LINK_ICON_H = 10
+# 「工作简报」按钮：连接图标右边的一个小文档图标（见 set_briefing_state）
+_BRIEF_ICON_W = 13
+_BRIEF_ICON_H = 15
+_BRIEF_GAP = 10
+_BRIEF_UNREAD_COLOR = QColor("#3b8fe8")
+_BRIEF_TOOLTIPS = {"idle": "工作简报", "unread": "工作简报 · 有一份新的"}
 _API_STATUS_COLORS = {
     "ok": QColor(80, 220, 120),        # 对话 API 可用
     "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
     "unknown": QColor(130, 140, 155),  # 还没查过，或此版本没有 AI 对话
 }
-# 会话计数的字色：工作中绿、等待中橙（最需要人管），其余用次文字色
-_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24"}
+# 会话计数的字色：工作中绿、等待中橙（最需要人管）、待回复蓝，其余用次文字色
+_SESSION_COUNT_COLORS = {"working": "#30a46c", "waiting": "#dc8a24", "review": "#3b8fe8"}
 
 
 def spring_step(
@@ -237,6 +243,7 @@ class DynamicIsland(QWidget):
     history_activated = Signal(object)
     history_action = Signal(str, object)
     history_toggled = Signal(bool)
+    briefing_requested = Signal()  # 点了胶囊最右边的「工作简报」按钮
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -264,6 +271,7 @@ class DynamicIsland(QWidget):
         self._agent_active = False
         self._api_state = "unknown"
         self._api_detail = ""
+        self._briefing_state = "hidden"   # hidden 不画 / idle / unread 有一份没看过的
         # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
         self._usage_text = "今日 --"
         self._usage_detail = ""
@@ -456,6 +464,58 @@ class DynamicIsland(QWidget):
         if state != self._api_state:
             self._api_state = state
             self.update()
+
+    def set_briefing_state(self, state: str) -> None:
+        """「工作简报」按钮：``hidden`` 不显示（没有这个功能时）/ ``idle`` / ``unread``
+        （有一份还没看过的：换成蓝色并带一个小圆点）。画在连接图标右边，自己占一格。"""
+        state = state if state in _BRIEF_TOOLTIPS else "hidden"
+        if state != self._briefing_state:
+            self._briefing_state = state
+            self._sync_card_labels()    # 胶囊宽度变了：卡片文字按新宽度重排
+            self._refresh()
+
+    def briefing_tooltip(self) -> str:
+        return _BRIEF_TOOLTIPS.get(self._briefing_state, "")
+
+    def _briefing_icon_left(self) -> float | None:
+        """按钮图标的左边界；不显示返回 None。排法与 ``_content_cache`` 逐项一致。"""
+        if self._briefing_state == "hidden":
+            return None
+        icon, name, info, status = self._visible_parts()
+        fm = self.fontMetrics()
+        x = _CAPSULE_INSET + 13.0
+        if icon:
+            x += 26 + 8
+        if name:
+            x += fm.horizontalAdvance(self._character_name()) + 8
+        if info:
+            x += fm.horizontalAdvance(self._info_text()) + 8
+        if status:
+            for _tone, text in self._session_counts:
+                x += fm.horizontalAdvance(text) + 8
+            x += _LINK_ICON_W + _BRIEF_GAP
+        return x
+
+    def briefing_button_rect(self) -> QRectF | None:
+        """按钮的可点区域（比图标大一圈，整条胶囊高度）；不显示返回 None。"""
+        left = self._briefing_icon_left()
+        if left is None:
+            return None
+        right = min(float(self.width()), left + _BRIEF_ICON_W + 8)
+        return QRectF(left - _BRIEF_GAP / 2, 0, right - (left - _BRIEF_GAP / 2), _CAPSULE_HEIGHT)
+
+    def _briefing_hit(self, pos) -> bool:
+        if self._mode == "docked" and not self._hover_peek:
+            return False  # 停靠成细条时胶囊没画出来
+        rect = self.briefing_button_rect()
+        return rect is not None and rect.contains(QPointF(pos))
+
+    def event(self, event) -> bool:  # noqa: N802
+        # 悬停在简报按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
+        if event.type() == QEvent.Type.ToolTip and self._briefing_hit(event.pos()):
+            QToolTip.showText(event.globalPos(), self.briefing_tooltip(), self)
+            return True
+        return super().event(event)
 
     def set_usage_info(self, text: str, detail: str = "") -> None:
         """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
@@ -1016,6 +1076,8 @@ class DynamicIsland(QWidget):
             for _tone, text in self._session_counts:
                 width += fm.horizontalAdvance(text) + 8
             width += _LINK_ICON_W
+        if self._briefing_state != "hidden":
+            width += _BRIEF_GAP + _BRIEF_ICON_W
         return max(120, width + _CAPSULE_INSET * 2)
 
     def _update_size(self) -> None:
@@ -1229,6 +1291,25 @@ class DynamicIsland(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
+    def _paint_briefing_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+        """「工作简报」图标：一页纸，上面三行字；有没看过的那份时右上角多一个圆点。"""
+        w, h, stroke = float(_BRIEF_ICON_W), float(_BRIEF_ICON_H), 1.5
+        unread = self._briefing_state == "unread"
+        pen = QPen(_BRIEF_UNREAD_COLOR if unread else color, stroke)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(QRectF(x + stroke / 2, y + stroke / 2, w - stroke, h - stroke), 2.5, 2.5)
+        pen.setWidthF(1.2)
+        painter.setPen(pen)
+        for fraction, right in ((0.30, w - 3.6), (0.50, w - 3.6), (0.70, w * 0.55)):
+            painter.drawLine(QPointF(x + 3.6, y + h * fraction), QPointF(x + right, y + h * fraction))
+        if unread:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(_BRIEF_UNREAD_COLOR)
+            painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1365,6 +1446,7 @@ class DynamicIsland(QWidget):
             primary_color.name() if name else "",
             info_color.name() if info else "",
             (self._api_state, tuple(self._session_counts), secondary_color.name()) if status else (),
+            (self._briefing_state, secondary_color.name()),
             self.font().toString(), dpr, self.width(),
         )
         if self._content_pixmap is not None and self._content_cache_key == key:
@@ -1437,6 +1519,10 @@ class DynamicIsland(QWidget):
                 )
                 x += advance + 8
             self._paint_link_icon(painter, x, (_CAPSULE_HEIGHT - _LINK_ICON_H) / 2)
+        briefing_x = self._briefing_icon_left()
+        if briefing_x is not None:
+            self._paint_briefing_icon(painter, briefing_x, (_CAPSULE_HEIGHT - _BRIEF_ICON_H) / 2,
+                                      secondary_color)
         painter.end()
         self._content_pixmap = pm
         self._content_cache_key = key
@@ -1590,6 +1676,8 @@ class DynamicIsland(QWidget):
                 self._hover_peek = True
                 self._animate_to(self._target_rect())
                 self._dock_back_timer.start()
+            elif self._briefing_hit(event.position()):
+                self.briefing_requested.emit()
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
             else:

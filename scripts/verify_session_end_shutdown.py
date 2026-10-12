@@ -113,7 +113,7 @@ def _ffmpeg_pids() -> set:
 
 def _pet_log_dir() -> Path:
     base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "dsh-pet-standalone-webm-chat"
+    return Path(base) / "big-fat-fish-webm-chat"
 
 
 def main() -> int:

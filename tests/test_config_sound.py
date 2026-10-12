@@ -11,7 +11,7 @@ from pet import window as window_mod
 def test_legacy_click_sound_path_migration(tmp_path: Path):
     """旧配置迁移：只包含旧字段 click_sound_path 时迁移到 click_sound_pack。"""
     root = tmp_path / "appdata"
-    cfg_dir = root / "dsh-pet-standalone"
+    cfg_dir = root / "big-fat-fish"
     cfg_dir.mkdir(parents=True)
     custom_path = "C:/path/to/custom_sound.mp3"
     (cfg_dir / "config.json").write_text(
@@ -34,7 +34,7 @@ def test_legacy_click_sound_path_migration(tmp_path: Path):
 def test_legacy_click_sound_path_empty_migrates_to_builtin(tmp_path: Path):
     """旧配置 click_sound_path 为空时迁移为 builtin default。"""
     root = tmp_path / "appdata"
-    cfg_dir = root / "dsh-pet-standalone"
+    cfg_dir = root / "big-fat-fish"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "config.json").write_text(
         json.dumps({"version": 4, "click_sound_path": ""}),
@@ -53,7 +53,7 @@ def test_legacy_click_sound_path_empty_migrates_to_builtin(tmp_path: Path):
 def test_explicit_click_sound_pack_precedence(tmp_path: Path):
     """新配置已有合法 click_sound_pack 时不受 click_sound_path 影响。"""
     root = tmp_path / "appdata"
-    cfg_dir = root / "dsh-pet-standalone"
+    cfg_dir = root / "big-fat-fish"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "config.json").write_text(
         json.dumps({
@@ -76,7 +76,7 @@ def test_explicit_click_sound_pack_precedence(tmp_path: Path):
 def test_invalid_sound_and_physics_config_normalization(tmp_path: Path):
     """异常或脏配置的归一化处理。"""
     root = tmp_path / "appdata"
-    cfg_dir = root / "dsh-pet-standalone"
+    cfg_dir = root / "big-fat-fish"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "config.json").write_text(
         json.dumps({

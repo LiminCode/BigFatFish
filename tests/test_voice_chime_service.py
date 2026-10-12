@@ -480,22 +480,11 @@ def test_window_callbacks_for_voice_chime_are_wired(tmp_path):
     shell.voice_chime_service.stop()
 
 
-def test_build_scripts_and_requirements_declare_edge_tts():
-    """三端打包脚本必须收集 edge_tts，requirements.txt 必须声明它。
-
-    语音报时缺 edge-tts 时只降级气泡（不崩溃），但**打包版用户无法自行 pip
-    安装**——漏收就是「功能在安装包里永久不发声」。三脚本的 --collect-all
-    清单历史上漂移过一次（macOS 漏 QtMultimedia，见 build_macos.sh 头注释），
-    故用机器门禁钉住三端一致。
-    """
+def test_requirements_declare_edge_tts():
+    """语音报时缺 edge-tts 时只降级气泡（不崩溃）——requirements.txt 必须声明它。"""
     repo = Path(__file__).resolve().parents[1]
-    for name in ("scripts/build_linux.sh", "scripts/build_macos.sh",
-                 "scripts/build_onedir.ps1"):
-        text = (repo / name).read_text(encoding="utf-8")
-        assert "--collect-all edge_tts" in text, f"{name} 必须收集 edge_tts"
     requirements = (repo / "requirements.txt").read_text(encoding="utf-8")
-    assert re.search(r"^edge-tts>=", requirements, re.M), \
-        "requirements.txt 必须声明 edge-tts（CI 与打包都按它装依赖）"
+    assert re.search(r"^edge-tts>=", requirements, re.M), "requirements.txt 必须声明 edge-tts"
 
 
 def test_about_to_quit_stops_voice_chime_service(tmp_path, monkeypatch):

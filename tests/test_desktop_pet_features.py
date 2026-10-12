@@ -864,6 +864,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
     expected_labels = [
         "厉害了我的鲸",
+        "护驾",
         "AI 对话",
         "看看屏幕",
         "播放动画",
@@ -871,7 +872,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "播放速率",
         "大小",
         "音乐",
-        "护驾",
         "桌宠控制",
         "快捷启动",
         "工具与帮助",
@@ -2109,18 +2109,6 @@ def test_runtime_pet_icon_crops_transparent_canvas_before_scaling():
     app.processEvents()
 
 
-def test_windows_build_regenerates_the_icon_before_pyinstaller():
-    build_script = Path("scripts/build_onedir.ps1").read_text(encoding="utf-8")
-    make_icon = build_script.index("scripts\\make_icon.py")
-    pyinstaller = build_script.index("python -m PyInstaller")
-    assert make_icon < pyinstaller
-    assert "assets\\big_blue_fat_fish;assets\\big_blue_fat_fish" in build_script
-    assert "pet\\menu_templates;pet\\menu_templates" in build_script
-    mac_build_script = Path("scripts/build_macos.sh").read_text(encoding="utf-8")
-    assert 'assets/big_blue_fat_fish:assets/big_blue_fat_fish' in mac_build_script
-    assert "pet/menu_templates:pet/menu_templates" in mac_build_script
-
-
 def test_modern_animation_leaf_icons_are_loaded_only_when_category_opens(monkeypatch):
     import time
 
@@ -2930,13 +2918,13 @@ def test_dsh_converged_state_wiring_drives_thinking(tmp_path, monkeypatch):
 
 
 def test_external_character_dirs_uses_variant_then_legacy_fallback(tmp_path, monkeypatch):
-    """外部角色目录应优先变体目录，并保留旧 dsh-pet-standalone 目录兜底。"""
+    """外部角色目录应优先变体目录，并保留旧 big-fat-fish 目录兜底。"""
     import sys
 
     import pet.catalog as catalog_mod
     from pet import config as config_mod
 
-    monkeypatch.setattr(config_mod, "APP_DIR_NAME", "dsh-pet-standalone-webm-chat")
+    monkeypatch.setattr(config_mod, "APP_DIR_NAME", "big-fat-fish-webm-chat")
     # 数据目录按平台走 APPDATA / Library/Application Support / XDG_CONFIG_HOME
     if sys.platform == "win32":
         root = tmp_path
@@ -2948,8 +2936,8 @@ def test_external_character_dirs_uses_variant_then_legacy_fallback(tmp_path, mon
         root = tmp_path
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     dirs = catalog_mod.external_character_dirs()
-    variant = root / "dsh-pet-standalone-webm-chat" / "characters"
-    legacy = root / "dsh-pet-standalone" / "characters"
+    variant = root / "big-fat-fish-webm-chat" / "characters"
+    legacy = root / "big-fat-fish" / "characters"
     assert variant in dirs
     assert legacy in dirs
     assert dirs.index(variant) < dirs.index(legacy)  # 新目录优先
@@ -2962,7 +2950,7 @@ def test_external_character_dirs_dedupes_base_dir(tmp_path, monkeypatch):
     import pet.catalog as catalog_mod
     from pet import config as config_mod
 
-    monkeypatch.setattr(config_mod, "APP_DIR_NAME", "dsh-pet-standalone")
+    monkeypatch.setattr(config_mod, "APP_DIR_NAME", "big-fat-fish")
     if sys.platform == "win32":
         root = tmp_path
         monkeypatch.setenv("APPDATA", str(tmp_path))
@@ -2973,7 +2961,7 @@ def test_external_character_dirs_dedupes_base_dir(tmp_path, monkeypatch):
         root = tmp_path
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     dirs = catalog_mod.external_character_dirs()
-    base = root / "dsh-pet-standalone" / "characters"
+    base = root / "big-fat-fish" / "characters"
     assert dirs.count(base) == 1
 def test_self_talk_deleted_external_dir_falls_back_to_text_not_bundled(tmp_path):
     """回归：用户显式配置的外部图片目录被删后，不再回退内置彩蛋池

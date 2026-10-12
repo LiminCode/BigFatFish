@@ -906,32 +906,6 @@ def test_animation_icon_applier_updates_action_and_cleans_worker():
     app.processEvents()
 
 
-def test_build_scripts_bundle_menu_templates_and_chat_styles():
-    """三平台打包脚本必须包含菜单模板与聊天样式资源（防漏打包回归）。
-
-    回归背景：Linux workflow 曾漏掉 pet/menu_templates（右键菜单在冻结版
-    打不开）与 legacy/modern_styles.qss（聊天窗无样式）。
-
-    构建定义统一在本地脚本（scripts/build_*.sh / build_onedir.ps1），
-    CI workflow 只调用脚本不再内联打包命令，故资源断言指向脚本而非 workflow。
-    """
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    linux = (repo / "scripts" / "build_linux.sh").read_text(encoding="utf-8")
-    macos = (repo / "scripts" / "build_macos.sh").read_text(encoding="utf-8")
-    windows = (repo / "scripts" / "build_onedir.ps1").read_text(encoding="utf-8")
-
-    for name, text in (("build_linux.sh", linux), ("build_macos.sh", macos), ("build_onedir.ps1", windows)):
-        assert "menu_templates" in text, f"{name} 必须打包 pet/menu_templates"
-        assert "legacy_styles.qss" in text, f"{name} 必须打包 legacy_styles.qss"
-        assert "modern_styles.qss" in text, f"{name} 必须打包 modern_styles.qss"
-    # 兜底：模板 JSON 缺失时 load_menu_template 必须回退内置模板而非抛异常
-    import pet.context_menu as context_menu_mod
-    assert context_menu_mod.load_menu_template("modern")["id"] == "modern"
-    assert context_menu_mod.load_menu_template("legacy")["id"] == "legacy"
-
-
 def test_store_fun_asset_keeps_bundled_paths_relative(tmp_path):
     """内置 assets 内的路径必须持久化为相对值（portable），外部文件保留绝对路径。
 

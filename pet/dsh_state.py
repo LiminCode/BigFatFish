@@ -34,7 +34,7 @@ import time
 from enum import Enum
 from typing import Optional
 
-log = logging.getLogger("dsh-pet-standalone")
+log = logging.getLogger("big-fat-fish")
 
 # 审批锁存兜底：若 approval/decided 长时间未到，强制解除审批态回 working，
 # 避免桌宠卡死在 waiting_approval（DSH 异常漏发 decided 的防线）。
