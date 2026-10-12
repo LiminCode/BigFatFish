@@ -499,6 +499,7 @@ class TestAgentLinkManager:
             "custom_agents": [],
             "session_pets": True,
             "session_pets_max": 6,
+            "session_card_theme": "sea",
             "session_history": True,
             "session_history_days": 7,
             "session_history_max": 30,

@@ -415,6 +415,20 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(limit == current)
                 group.addAction(choice)
                 connect_action(choice, lambda limit=limit: set_limit(limit))
+        set_card_theme = getattr(pet, "set_session_card_theme", None)
+        if callable(set_card_theme):
+            from ..session_card_themes import CONFIG_KEY, normalize_theme_id, theme_choices
+
+            theme_menu = add_submenu(sub, "详情卡配色", None)
+            current_theme = normalize_theme_id(agent_cfg.get(CONFIG_KEY))
+            theme_group = QActionGroup(theme_menu)
+            theme_group.setExclusive(True)
+            for theme_id, label in theme_choices():
+                choice = theme_menu.addAction(label)
+                choice.setCheckable(True)
+                choice.setChecked(theme_id == current_theme)
+                theme_group.addAction(choice)
+                connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):
