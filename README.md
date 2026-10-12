@@ -122,6 +122,7 @@ python -m venv .venv
 | 移除了什么 | 原因 |
 |---|---|
 | **在线更新**：设置页「更新」页、右键菜单「检查更新」「夸克网盘下载」、托盘「检查更新」 | 它检查和安装的是上游的发布版，装上只会多出一个不含本项目改动的程序。同步上游改动请用 git。 |
+| **打包与发布**：三个平台的构建脚本、Inno Setup 安装包、GitHub Actions 的构建 / 发布工作流、产物校验脚本 | 本项目只从源码在本机运行（`run.bat` / `python -m pet`），不出安装包也不发版。下面保留的上游文档里关于下载、安装包、构建的章节，以及它链接的 `docs/ONEDIR_PACKAGING.md`，在本项目里都不适用。 |
 | 灵动岛信息槽的 **「余额峰谷」「余额数值」** | 这两项是给 DeepSeek 计费用的。已有配置自动回落为「当前时间」。 |
 | 灵动岛信息槽的 **「自定义短文本」** | 随信息槽精简一并去掉。信息槽现在二选一：当前时间，或今日用量。 |
 | 桌宠隐藏后 **单击灵动岛弹出对话气泡** | 隐藏时单击改为照常展开卡片，这样 Claude Code 会话、最近的对话和「显示桌宠」都还点得到。隐藏时点卡片上的「聊天」会打开完整聊天窗。 |
@@ -175,7 +176,7 @@ python -m venv .venv
 
 - 项目沿革：[PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) → [MerZlin/dsh-pet-indesktop](https://github.com/MerZlin/dsh-pet-indesktop) → 本项目。感谢两位原作者和上游的各位贡献者。
 - 许可证沿用上游的 **MIT License**（见 `LICENSE`）；第三方素材与组件的声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
-- 程序在系统里的名字是 `big-fat-fish`（2026-10-11 起，此前沿用上游的 `dsh-pet-standalone`）：数据目录 `%APPDATA%\big-fat-fish\`、钥匙串服务名、开机自启项、打包产物名（`big-fat-fish-<变体>`）都用它。从旧名字升级时，数据目录、已保存的 Key、开机自启项和 Claude Code 钩子里的路径在首次启动时自动迁移。**下面保留的上游文档里出现的 `dsh-pet-standalone…`，在本项目里都对应 `big-fat-fish…`。**
+- 程序在系统里的名字是 `big-fat-fish`（2026-10-11 起，此前沿用上游的 `dsh-pet-standalone`）：数据目录 `%APPDATA%\big-fat-fish\`、钥匙串服务名、开机自启项都用它（打包产物名当时也改了，打包部分随后整体删除，见「移除的功能」）。从旧名字升级时，数据目录、已保存的 Key、开机自启项和 Claude Code 钩子里的路径在首次启动时自动迁移。**下面保留的上游文档里出现的 `dsh-pet-standalone…`，在本项目里都对应 `big-fat-fish…`。**
 - 逐文件的改动说明、实测数字和验证记录见 [`docs/PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md`](docs/PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md)。
 
 ---

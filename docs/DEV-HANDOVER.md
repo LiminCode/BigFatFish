@@ -526,7 +526,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-
 - **配置键变更**：同步三处（第三章 3.3）。
 - **菜单变更**：同步四件套（第三章 3.5）。
 - **行数预算变更**：优先拆分；确需校准则带日期 + 理由注释 + PR 说明（第三章 3.1）。
-- **改前必读的 context pointers**（`AGENTS.md`）：`docs/WINDOW_PY_SPLIT_GUIDE.md`（动 `window.py`）、`docs/SETTINGS-CHANGE-GATES.md`（动设置）、`docs/ONEDIR_PACKAGING.md`（动打包）、`docs/ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md`（动 ffmpeg/关机路径）等。
+- **改前必读的 context pointers**（`AGENTS.md`）：`docs/WINDOW_PY_SPLIT_GUIDE.md`（动 `window.py`）、`docs/SETTINGS-CHANGE-GATES.md`（动设置）、`docs/ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md`（动 ffmpeg/关机路径）等。
 
 ---
 
@@ -609,6 +609,6 @@ explorer "%APPDATA%\big-fat-fish-webm-chat"
 | 菜单模板节点 | `pet/menu_templates/modern-default-v1.json` |
 | 行数预算常量 | `tests/test_architecture.py`（`WINDOW_PY_LINE_BUDGET` / `MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET`） |
 | 构建脚本 | `scripts/build_onedir.ps1`、`scripts/slim_bundle.py`、`scripts/check_bundle_encoding.py`、`scripts/verify_bundle_qt.py` |
-| 相关工程文档 | `docs/ONEDIR_PACKAGING.md`、`docs/SETTINGS-CHANGE-GATES.md`、`docs/WINDOW_PY_SPLIT_GUIDE.md`、`docs/PR-REPORT-VOICE-CHIME-2026-09-15.md`、`docs/PR-MERGE-LESSONS-2026-09-12.md` |
+| 相关工程文档 | `docs/SETTINGS-CHANGE-GATES.md`、`docs/WINDOW_PY_SPLIT_GUIDE.md`、`docs/PR-REPORT-VOICE-CHIME-2026-09-15.md`、`docs/PR-MERGE-LESSONS-2026-09-12.md` |
 
 *（内容由AI生成，仅供参考）*

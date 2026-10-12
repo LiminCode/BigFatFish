@@ -37,8 +37,6 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
-| [`ONEDIR_PACKAGING.md`](ONEDIR_PACKAGING.md) | onedir 打包流水线：绿色版 zip + Inno Setup 安装包，目标是运行期零解压、不产生 `_MEI` 缓存。 | **改 PyInstaller spec、打包资源、或平台构建脚本（`scripts/build_onedir.ps1` / `build_macos.sh` / `build_linux.sh`）时必读**（AGENTS.md 口径）。 |
-| [`STABLE_BUILDS.md`](STABLE_BUILDS.md) | 稳定版构建冻结记录：受保护文件名、构建隔离规则、防止误覆盖稳定版产物。 | **改发布/构建工作流时必读**（AGENTS.md 口径）。注意其冻结对象是 onefile 时代的 `dist/*.exe`，现行发布形态已是 onedir（见文末过时清单）。 |
 | [`BUILD-CI-FAILURE-NOTES-2026-08.md`](BUILD-CI-FAILURE-NOTES-2026-08.md) | 三平台打包/CI 反复踩坑与最终解法汇总（持续更新）：脚本统一入口、资源漏收集、依赖只在叶子模块导入导致整族用例红等。 | CI 连续两轮红、或遇到"本机红 CI 绿"的依赖类假红时；动手重试之前先查这里是否已有同类记录。 |
 | [`ACCEPTANCE_TESTS.md`](ACCEPTANCE_TESTS.md) | 验收测试文件清单：设置窗口、DSH Bridge、Qt 生命周期/全量三条验收路径的精确命令与当前实测基线。 | 提 PR 前跑验收、或需要确认"这个改动该跑哪几个测试文件"时；改动测试边界后必须同步更新本文基线数字。 |
 | [`RELEASE-v4.2.0.md`](RELEASE-v4.2.0.md) | v4.1.0 → v4.2.0 的完整功能与修复汇总（含全部合入 PR 与各平台产物清单）。 | 写发布说明、回答"这个功能从哪个版本开始有"、或判断某行为是哪个 PR 引入时；**v4.2.0 之后的变更改看 [`RELEASE-v4.2.1.md`](RELEASE-v4.2.1.md)**。 |
@@ -135,6 +133,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-REMOVE-PACKAGING-2026-10-11.md`](PR-REPORT-REMOVE-PACKAGING-2026-10-11.md) | 删除打包与发布部分：项目只从源码在本机运行，去掉三个平台的构建脚本、安装包定义、打包入口、四条构建 / 发布工作流、产物校验脚本与对应测试、两份打包指南（共 25 个文件）。列出了**故意留下**的东西：运行期里给打包版准备的分支（`sys.frozen`、`build_variant` 变体目录、无聊天变体的延迟导入约束）、`uninstall_cleanup`、PR 测试工作流。 | 想恢复打包 / 发布、或看到代码里的 `sys.frozen` / `build_variant` 分支想知道还有没有用时必读；找不到 `docs/ONEDIR_PACKAGING.md` / `STABLE_BUILDS.md` 或 `scripts/build_*` 时。 |
 | [`PR-REPORT-BIG-FAT-FISH-RENAME-2026-10-11.md`](PR-REPORT-BIG-FAT-FISH-RENAME-2026-10-11.md) | 程序在系统里的名字从上游的 `dsh-pet-standalone` 改为 `big-fat-fish`：数据目录、钥匙串服务名、开机自启项、打包产物名、日志器名。重点是升级迁移——数据目录首次启动整目录改名（新目录已存在则逐项搬，绝不覆盖新数据）、钥匙串按需从旧服务名抄过来、属于本程序的旧自启项换名、已注入的 Claude Code 钩子（本机 + WSL）改到新路径（靠迁移留下的待办标记触发，平时不碰用户的 settings.json）。含真机迁移记录（167 个文件 1.4 ms、钩子 18 处全部切换、正在运行的 Claude Code 会话无需重启）与「打包 / CI / macOS / Linux 未验证」的登记。 | 改 `config.APP_DIR_NAME` / `migrate_legacy_app_dir`、`SecretStore` 的服务名、`autostart` 的标识与收编逻辑、`ClaudeCodeMonitor.refresh_hooks` 之前必读；用户反馈「升级后设置没了 / Key 要重填 / 开机启动两次 / 会话小鱼不动了」时必读；读旧报告遇到 `dsh-pet-standalone` 路径想知道现在对应什么时。 |
 | [`PR-REPORT-GITHUB-CONNECTOR-2026-10-11.md`](PR-REPORT-GITHUB-CONNECTOR-2026-10-11.md) | GitHub 连接器：桌宠对话经 Messages API 的 MCP connector 只读查询 GitHub（仓库 / 提交 / Issue / PR），由 Anthropic 服务器去连 GitHub 官方远程 MCP 服务器，桌宠本地不跑 MCP 客户端。设置页「AI 与对话 → 连接器」一个开关 + Token（存系统钥匙串），默认关；只在直连 Claude API 的三个交互式对话入口生效，识屏等后台请求不挂。含实测：首段文字晚约 0.66 s、每条消息多约 1.23 万 token 缓存读、为什么要在 toolset 上单独打缓存断点、Token 失效时整条请求 400 的现场输出，以及「真实聊天窗打字未验证 / `pause_turn` 无实机样本」的登记。§九 追加「关于我」设置：一段用户写的说明（是谁、知识库在哪个仓库）追加在人设后面，三种人设来源下都保留；含「设置页 System Prompt 何时会被角色包人设整段顶替」的说明。§十 追加本地知识库：GitHub 仓库每天同步成本机副本（下载 zip、只留文本文件、原子替换），对话时用 `kb_read` / `kb_list` / `kb_search` 三个本地工具只读副本；Claude 通道第一次有了客户端工具循环。含与连接器的实测对比（输入约 6,600 对 28,800 token）。 | 改 `pet/chat/connectors.py`、`anthropic_provider._open_stream` 的工具 / beta / 缓存参数、对话入口的发送前准备、`PromptBuilder.build_messages` 的 system 消息拼接之前必读；改 `pet/chat/knowledge_base.py` / `knowledge_sync.py`、给 Claude 通道加新的本地工具、要接第二个连接器（Drive / Slack）、开放写工具、或遇到「开了连接器后对话全部 400」时必读。 |
 | [`PR-REPORT-BIGFISH-AUTOSTART-README-ASSETS-2026-10-11.md`](PR-REPORT-BIGFISH-AUTOSTART-README-ASSETS-2026-10-11.md) | 三件小事的报告：源码运行的开机自启改用 `BigFish.exe`（已有的 `pythonw.exe` 条目在 `is_enabled()` 里自动升级，只认本检出自己写的那条）、主页 README 改写为 BigFatFish 的说明（上游原文保留在后）、13 张配图与 4 个原始素材入库（24.87 MB，网络收集、授权未逐张核实）。含全量测试 3 遍里 2 遍原生崩溃的记录与判断 | 改 `pet/autostart.py` 的命令或升级条件前；全量测试原生崩溃、想知道是不是新问题时；要动配图池或 README 开头时 |
@@ -222,7 +221,7 @@
 
 ### 疑似过时
 
-1. **`STABLE_BUILDS.md`** — 冻结对象是 onefile 时代的 `dist/dsh-pet-standalone-webm.exe` / `gif.exe`，而当前工作树连 `dist/` 目录都不存在，发布形态早已是 onedir 目录 + `dist-onedir/*-portable.zip` + Inno Setup 安装包；基线提交 `420f20a` 也远早于当前 HEAD。冻结规则本身仍有价值，但其「当前基线」与文件名已与现状不符。
+1. **`STABLE_BUILDS.md`** — 已于 2026-10-11 随打包发布部分一并删除（见 [`PR-REPORT-REMOVE-PACKAGING-2026-10-11.md`](PR-REPORT-REMOVE-PACKAGING-2026-10-11.md)）。
 2. **`BUILD_ARTIFACTS-2026-08-22.md`** — 记录的产物路径（`dist/*.exe`）与哈希对应已不再产生的 onefile 构建；同一文档内的测试基线为 29 passed / 137 passed，与当前测试规模差两个数量级。README 仍引用此路径，属悬空引用。
 3. **`PROACTIVE_SCREEN_IMPLEMENTATION_MANUAL.md`** — 首段自标「方案已确认，代码未动工」，基线为 v3.1.1 / 130 passed；而识屏相关模块（`pet/proactive.py`、`proactive_limiter.py`、`proactive_memory.py`、`vision.py`、`window_screen.py`）均已存在并有对应 PR 报告，其"待动工"前提已完全失效。
 4. **`PROACTIVE_SCREEN_PLAN.md`** — 同上，v1 设计稿的有效性判断（"当前基线 130 passed / 4 skipped"）远落后于现状；作为**设计依据与出处**仍有价值，但作为"待实施计划"已过时。
