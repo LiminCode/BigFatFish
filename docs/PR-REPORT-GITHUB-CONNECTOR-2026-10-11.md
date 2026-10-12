@@ -245,7 +245,7 @@ after: True | servers: ['github']              ← 真实 config.json 的 chat.g
 （`_open_stream` 1 行 + 对应断言）、行数预算校准（测试常量）、本报告与索引登记。
 这三处之后只重跑了相关文件：`tests/test_architecture.py tests/test_pr_report_discipline.py
 tests/test_github_connector.py tests/test_anthropic_provider.py tests/test_desktop_pet_features.py`
-→ `1 failed, 243 passed`，失败的是上面的路径超 260 基线项。合并前应在最终树上再跑一遍全量。
+→ `1 failed, 243 passed`，失败的是上面的路径超 260 基线项。**后续**：§九 的全量运行覆盖了这三处改动（4 failed 均为基线，4905 passed）。
 
 ## 七、已知限制与后续
 
@@ -275,3 +275,110 @@ tests/test_github_connector.py tests/test_anthropic_provider.py tests/test_deskt
 - **回滚**：`git revert` 后配置里残留 `chat.github_connector`，无害；钥匙串里的 Token
   不会被自动删除，需要在 Windows 凭据管理器里手动删掉 `connector/github`，并建议到
   GitHub 撤销该 PAT。
+
+---
+
+## 九、第二轮：「关于我」设置（同日追加，基线 `82a7594`）
+
+### 核心特性
+
+连接器让桌宠**能**查 GitHub，但它不知道该查哪个仓库：问「我最近最需要盯紧的一件事是
+什么」，回答是「能告诉我是哪个仓库/组织吗」。用户的个人知识库在私有仓库
+`<owner>/<知识库仓库>`（约 540 KB Markdown，根目录 `INDEX.md` 是地图），整库放进提示词
+不现实。新增设置「关于我」：一段用户自己写的说明（是谁、资料在哪），对话时追加在人设
+后面，桌宠据此按需去读。
+
+**为什么不直接写进 System Prompt。** `PromptBuilder.effective_system_prompt` 的人设是
+三选一：调用方给的 > 角色包 `manifest.json` 里的 `chat.system_prompt` > 设置页的
+System Prompt，前者存在时后者**整段不用**。当前两个内置角色（`claude`、`shenshen`）都
+没有自带人设，所以设置页那段现在是生效的；但只要换上一个自带人设的角色包，写在里面的
+知识库指引就会跟着消失。「关于我」不属于人设，三种来源下都追加。
+
+**不变量**：「关于我」为空（默认）时，发出的消息与改动前逐字相同
+（`test_blank_about_user_leaves_the_prompt_untouched`）；`effective_system_prompt` 的
+返回值不变，文件解读、会话建档等直接用它的地方不受影响
+（`test_the_persona_itself_does_not_include_about_user`）。
+
+### 修改文件说明
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/chat/prompt.py` | +6 / −1 | `build_messages`：取到人设后，`settings.about_user` 非空则以空行隔开追加。只改这一处——三个交互式对话入口都经它组消息；文件解读走 `effective_system_prompt`，不带工具，不追加 |
+| `pet/chat/models.py` | +5 / −2 | `ChatSettings.about_user`（默认空串，读写 `chat.about_user`，读入时去首尾空白） |
+| `pet/chat/ai_settings_page.py` | +8 / −0 | 「模型与连接」分组里 System Prompt 下方新增一行多行输入框 `about_user`；保存时写回 |
+| `pet/modern_settings_dialog.py` | +1 / −0 | 分组登记 1 行 |
+| `tests/test_architecture.py` | +2 / −1 | `modern_settings_dialog.py` 行数预算 2396 → 2397，理由同上一轮（只多 1 行登记） |
+| `tests/test_about_user_prompt.py`（新增） | +141 / −0 | 8 条：三种人设来源下都追加、空值不改消息、人设本身不含它、持久化、设置页编辑与回显、聊天窗发出的 system 消息以它结尾 |
+
+设置准入记录：`about_user`，域 / 组「AI 与对话 / 模型与连接」，默认空，`primary`，无依赖，
+随设置窗保存（`on_finish`），新键 `chat.about_user`、无旧键，清空即恢复原行为。
+
+### 性能分析
+
+方法同 §四（真实配置副本、真实 Key 与 Token、`claude-sonnet-5`），消息由
+`PromptBuilder.build_messages` 从配置生成；「关于我」为 162 字。
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| system 消息长度 | 431 → 595 字符 | 新增 |
+| 闲聊一条的未命中缓存 token（`cache_write`），无 / 有「关于我」 | 594 / 739（+145，n=1） | 新增 |
+| 闲聊首段文字，有「关于我」（n=1） | 3.1 s，未调用工具 | 与 §四 连接器开时的 3.4–3.9 s 同量级 |
+| 个人问题（读 `INDEX.md`，1 次工具调用，n=1） | 首段文字 5.1 s，总计 7.0 s；`cache_write 16342 / cache_read 12474`，输出 199 | 新增 |
+| 个人问题（读 3 个文件，n=1，指引文字相同、经环境变量注入） | 首段文字 10.1 s，总计 14.0 s；`cache_write 7829 / cache_read 57457`，输出 693 | 新增 |
+| 新测试文件 | 8 条（与相关文件合计 358 条共 18.0 s） | — |
+
+结论：① 「关于我」为空时没有任何变化；② 非空时每条消息多出这段文字的 token（本例约
+145），并且**它会让桌宠在个人问题上主动读仓库**——成本主要来自被读文件的内容，上表两例
+输入合计约 2.9 万 / 6.5 万 token（大部分走缓存读），随问题而变；③ 没有新的系统调用、
+网络目的地、磁盘或线程；④ 没有新增缓存或常驻对象。样本都是 n=1，只说明量级。
+
+### 实机运行记录
+
+```text
+before: about chars 0 | connector True
+after: about chars 162 | connector True | persona chars 431      ← 写入真实 config.json 的 chat.about_user
+2026-10-11 21:27:04 acquired pid=55396 …                         ← 桌宠用新代码重启
+```
+
+```text
+system chars: 595 | ends with about: True
+问：我最近最需要盯紧的一件事是什么？一句话。
+答：（回答内容来自用户的私人笔记，此处从略；与笔记里的记录一致）
+-- stop_reason end_turn | blocks ['mcp_tool_use', 'mcp_tool_result', 'text']
+
+system chars: 431 | ends with about: False          ← 同一问题，去掉「关于我」
+答：嗯……这个问题我得先知道盯哪儿呀~ 我没有你具体要关注的 GitHub 仓库或项目信息，能告诉我是哪个仓库/组织吗？
+-- stop_reason end_turn | blocks ['thinking', 'text']
+
+问：给我讲个冷笑话。                                 ← 有「关于我」的闲聊
+-- stop_reason end_turn | blocks ['thinking', 'text']   ← 没有去读仓库
+```
+
+**答案里暴露的现实问题**：回答里引用的那个日期是仓库里 9 月的记录，今天是 10 月 11 日。
+GitHub 上的 知识库仓库 最后一次提交是 2026-10-04，本地知识库（Google Drive 上的 Obsidian
+库，不是 git 工作区）在那之后的内容桌宠读不到——另一次实测问到个人项目时漏掉了
+10 月 9 日才加的那个项目。同步由用户自行处理，不在本改动范围内。
+
+设置页：真实 Windows 窗口截图 2 张（宽 1100 / 720），新行在 System Prompt 与连接测试
+之间，无裁切，横向滚动条最大值 0。截图未入库。
+
+**没有自动验证的部分**：仍然没有在真实聊天窗里打字提问（理由同 §五）。实测期间用户有
+一个 21:17 打开的设置窗口（旧代码的独立进程）没有关；在那个窗口里点保存会用旧快照
+覆盖聊天设置并丢掉 `chat.about_user`，已告知用户关掉重开。
+
+### 测试与验证
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests scripts`、`git diff --check` | 通过 |
+| 红 → 绿 | `pytest -q tests/test_about_user_prompt.py` | 改动前 5 failed / 3 passed（通过的 3 条是「不变」类断言）；改动后 8 passed |
+| 聚焦 + 相关 | 上一轮的文件集 + `tests/test_about_user_prompt.py tests/test_architecture.py tests/test_desktop_pet_features.py` | 356 passed, 1 skipped, 1 failed（路径超 260 的基线项） |
+| 受影响时序族满载 3 遍 | — | 不适用：新测试全部同步断言 |
+| 全量 | 同 §六 的命令，在包含两轮全部代码改动的文件树上 | `4 failed, 4905 passed, 11 skipped in 395.32s`；4 个失败就是 §六 列出的本机环境性基线项，没有其它失败。这次运行之后只改了本报告与索引（`tests/test_pr_report_discipline.py` 单独重跑通过） |
+
+### 已知限制
+
+- 「关于我」是提示，不是权限：里面写「不要读取凭据」拦不住模型去读仓库里的登录笔记
+  （知识库的 GitHub 副本里有登录类笔记）。用户已知并选择保持现状。
+- 指引让桌宠在个人问题上多一次到几次工具调用，回答会比闲聊慢 2–10 秒。
+- 只作用于三个交互式对话入口；主动识屏、文件解读不带这段。
