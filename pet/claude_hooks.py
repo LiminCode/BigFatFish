@@ -39,6 +39,9 @@ HOOK_EVENTS = (
 )
 HOOK_FLAG = "x-dsh-pet"            # 本桌宠注入条目的结构化标记
 HOOK_SCRIPT_NAME = "claude_event_hook.sh"
+#: 桌宠自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
+#: 不落，这次运行不会冒出一只会话小鱼。
+HEADLESS_ENV = "BIG_FAT_FISH_HEADLESS"
 #: 无标记旧条目的兜底识别（早期版本注入）：命令里带这些脚本文件名才算我们的。
 _LEGACY_SCRIPT_MARKERS = ("claude_event_hook.ps1", "claude_event_hook.py", HOOK_SCRIPT_NAME)
 
@@ -50,6 +53,7 @@ if [ -n "${BASH_VERSION:-}" ]; then
 else
     _dp_in=$(head -c 4096)
 fi
+[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 桌宠自己起的无界面运行：不报
 _dp_pick() {
     case $_dp_in in
         *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;

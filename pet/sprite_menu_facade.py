@@ -628,6 +628,39 @@ class SpriteMenuFacade:
         self.cfg.set("agent_link", ag_data)
         self._save()
 
+    # ---- 工作简报（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
+    def _work_briefing(self):
+        return getattr(self._shell, "work_briefing", None)
+
+    def work_briefing_settings(self) -> dict | None:
+        """菜单用：当前的简报设置；宿主没接简报服务时返回 None（菜单不出这一项）。"""
+        from .work_briefing import CONFIG_KEY, normalize
+
+        return normalize(self.cfg.get(CONFIG_KEY)) if self._work_briefing() is not None else None
+
+    def _set_work_briefing(self, **changes) -> None:
+        from .work_briefing import CONFIG_KEY, normalize
+
+        self.cfg.set(CONFIG_KEY, normalize({**normalize(self.cfg.get(CONFIG_KEY)), **changes}))
+        self._save()
+
+    def toggle_work_briefing(self, on: bool) -> None:
+        """「工作日自动生成」：落盘；后台服务每分钟读一次配置，最迟一分钟生效。"""
+        self._set_work_briefing(enabled=bool(on))
+
+    def set_work_briefing_time(self, value: str) -> None:
+        self._set_work_briefing(time=str(value))
+
+    def open_work_briefing(self) -> None:
+        controller = self._work_briefing()
+        if controller is not None:
+            controller.open_window()
+
+    def generate_work_briefing(self) -> None:
+        controller = self._work_briefing()
+        if controller is not None:
+            controller.generate_now()
+
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """Agent 联动子项（window.py ``_toggle_agent_link`` 等价，含拒绝回滚）。
 
