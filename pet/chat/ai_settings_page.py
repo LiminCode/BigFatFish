@@ -45,11 +45,13 @@ class _AiSettingsPage(QWidget):
         # No-chat bundles exclude pet.chat and never construct this optional page.
         from .models import ProviderConfig, SecretStore
         from .anthropic_provider import test_connection
+        from .connectors import GITHUB_TOKEN_REF
 
         self.config = config
         self._provider_config_type = ProviderConfig
         self._secret_store_type = SecretStore
         self._test_connection = test_connection
+        self._github_token_ref = GITHUB_TOKEN_REF
         self.settings = config.chat_settings()
         provider = self.settings.active_config
         self._test_thread = None
@@ -105,6 +107,9 @@ class _AiSettingsPage(QWidget):
         self.vision_model = _line_edit(provider.vision_model)
         self.vision_url = _line_edit(provider.vision_base_url)
         self.vision_key = _line_edit(password=True)
+        self.github_connector = ToggleSwitch()
+        self.github_connector.setChecked(bool(self.settings.github_connector))
+        self.github_token = _line_edit(password=True)
 
         self._background_themes = list(theme_names())
         self._background_values = {
@@ -207,6 +212,22 @@ class _AiSettingsPage(QWidget):
         self._vision_override_rows = vision_rows[1:]
         self.vision_same.toggled.connect(self._update_vision_visibility)
         self._update_vision_visibility(self.vision_same.isChecked())
+        self._github_token_row = SettingRow(
+            "github_token", "GitHub Token",
+            "Personal Access Token，保存到系统钥匙串；已保存的不回显，留空表示不修改。",
+            self.github_token,
+        )
+        root.addWidget(SettingsSection("连接器", [
+            SettingRow(
+                "github_connector", "GitHub（只读）",
+                "让桌宠在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
+                "Token 会随请求发给 Anthropic，由它去连 GitHub。",
+                self.github_connector,
+            ),
+            self._github_token_row,
+        ], self))
+        self.github_connector.toggled.connect(self._update_github_visibility)
+        self._update_github_visibility(self.github_connector.isChecked())
         # 用户拨动系统通知开关才置脏；连接晚于构造期 setChecked，程序化赋值不置脏。
         self.system_notify_check.toggled.connect(self._on_system_notify_edited)
         self._test_row = self.findChild(SettingRow, "settingRow_connection_test")
@@ -311,6 +332,12 @@ class _AiSettingsPage(QWidget):
         for row in self._vision_override_rows:
             row.setVisible(not reuse_chat_model)
         card = self._vision_override_rows[0].parentWidget() if self._vision_override_rows else None
+        if isinstance(card, SettingsCard):
+            card.refresh_separators()
+
+    def _update_github_visibility(self, enabled: bool) -> None:
+        self._github_token_row.setVisible(enabled)
+        card = self._github_token_row.parentWidget()
         if isinstance(card, SettingsCard):
             card.refresh_separators()
 
@@ -618,6 +645,14 @@ class _AiSettingsPage(QWidget):
         for pid in list(self.settings.providers):
             self._apply_draft_to_provider(pid)
         self.settings.default_system_prompt = self.prompt.toPlainText().strip()
+        github_enabled = self.github_connector.isChecked()
+        github_token = self.github_token.text().strip()
+        if github_token and not self._secret_store_type().set(self._github_token_ref, github_token):
+            # 与 API Key 不同，这里不留「仅本次运行」的内存兜底：开着却没有 Token 的连接器
+            # 什么都不会做，不如明说没存上。
+            github_enabled = False
+            QMessageBox.warning(self, "安全存储不可用", "无法使用系统安全存储，GitHub Token 没有保存，连接器保持关闭。")
+        self.settings.github_connector = github_enabled
         self.config.set("chat_ui_style", self.chat_ui_style.currentData())
         self._capture_background_value()
         # 按风格脏标记合并：只回写本窗口编辑过的风格，未触风格保持磁盘最新值

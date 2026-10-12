@@ -1839,6 +1839,7 @@ class ModernSettingsDialog(QDialog):
                             "vision_key",
                         ),
                     ),
+                    ("连接器", claim("github_connector", "github_token")),
                     (
                         "生成参数（高级）",
                         claim(

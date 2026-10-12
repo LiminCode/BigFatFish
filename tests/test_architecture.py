@@ -224,7 +224,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 同日回调到 2406：在线更新整个移除，这里少了更新页的 import / 构造 / 域登记共 7 行。
 # 同日再回调到 2395：信息槽只留「当前时间 / 今日用量」，去掉「自定义短文本」那一行
 # 设置及其联动（输入框、设置行、信号接线、转发方法、保存回写共 11 行）。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2395
+# 同日上调到 2396：GitHub 连接器的两行设置（控件、说明、保存都在
+# chat/ai_settings_page.py），这里只有「AI 与对话」页的分组登记 1 行。实测 2396。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2396
 
 
 def _read(name: str) -> str:

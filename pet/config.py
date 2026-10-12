@@ -1642,6 +1642,12 @@ class Config:
 
         return SecretStore().get(provider.api_key_ref) or provider.api_key
 
+    def resolve_mcp_servers(self, provider) -> list[dict]:
+        """对话请求要挂的连接器（MCP 服务器）；没开或不适用时是空列表。"""
+        from .chat.connectors import mcp_servers_for
+
+        return mcp_servers_for(self.chat_settings(), provider)
+
     def _redacted_data(self) -> dict:
         """深拷贝待写盘数据，并剔除 chat.providers 下的明文 API Key。
 

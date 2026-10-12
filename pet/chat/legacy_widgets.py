@@ -957,6 +957,7 @@ class ChatWindow(QDialog):
         self.store.save(self.session)
         config = self.settings.active_config
         config.api_key = self.config.resolve_api_key(config)
+        config.mcp_servers = self.config.resolve_mcp_servers(config)
         messages = self.prompt_builder.build_messages(self.settings, self.character_id, self.session.messages[:-1], text)
         self._active_request_id = self.service.send(messages, config)
         self._bottom()
