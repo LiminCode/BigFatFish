@@ -185,8 +185,78 @@ pet-overlay-gate.log 新增一行：
 - 一张动图一遍 12.08 秒，超过气泡 12 秒的上限 0.08 秒。
 - 打包版的自启命令没有变化，也不涉及 `BigFish.exe`。
 
+## 第二轮：隐藏桌宠后灵动岛的两处改动（2026-10-11 追加）
+
+> 这一轮在 PR 开出之后追加，对应一个提交。前面各节保持原样。
+
+### 核心特性
+
+| # | 能力 | 说明 |
+|---|---|---|
+| 1 | 修复：岛对话气泡里的「显示桌宠」没有把桌宠叫回来 | 用户实机报告：隐藏桌宠后点「显示桌宠」，按钮变了、桌宠没出现，之后按钮又变回「显示桌宠」。根因是 `AppShell._show_pets_from_island_chat` 只遍历 `instances[].win`，而 overlay 拓扑下它恒为 `None`——一只也没显示，却把岛写成了「已显示」；岛下次同步时又按真实状态改回去。与此前「岛卡片的聊天按钮没反应」（`9dca392`）是同一类。 |
+| 2 | 改动：隐藏桌宠后单击灵动岛照常展开卡片 | 用户要求。此前隐藏时单击改弹岛对话气泡，卡片上的 Claude Code 会话与「最近的对话」就点不开了。现在单击一律展开卡片，恢复入口是卡片上的「显示桌宠」；隐藏时点卡片的「聊天」直接开完整聊天窗。 |
+
+**没有删的**：`pet/island_chat.py` 与配置键 `dynamic_island.hidden_chat` 都还在。桌宠隐藏期间，
+Agent 联动的提醒和 AI 回复到达时仍用这个气泡在岛上弹预览；更要紧的是，隐藏期间联动监视器
+不暂停的条件（`_island_feedback_available`）挂在这个开关上，删掉它灵动岛上的 Claude Code 状态
+在隐藏期间会停止更新。设置页的行名由「隐藏时对话气泡」改为「隐藏时在岛上提醒」，说明同步。
+
+### 修改文件说明
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/app.py` | +22 / −33 | `_show_pets_from_island_chat`：overlay 拓扑下改调 `OverlayShell.set_pet_visible(True)`（它显示合成窗，并在显示之后自己同步岛状态），旧拓扑分支不变。macOS Dock 菜单的「显示桌宠」同样先走 overlay。`_open_chat_from_island`：桌宠隐藏时改开完整聊天窗。删除 `_chat_from_island`、`chat_requested` 的接线、`set_chat_available` 的调用。 |
+| `pet/dynamic_island.py` | +4 / −25 | 单击分支去掉「隐藏 + `hidden_chat` 开 → 发 `chat_requested`」；随之删除 `chat_requested` 信号、`_hidden_chat_enabled`、`_chat_available` 与 `set_chat_available`（它们只服务于这条路由）。 |
+| `pet/modern_settings_dialog.py` | +2 / −2 | `dynamic_island_hidden_chat` 这一行的名字与说明改成现在的含义。行数不变。 |
+| `pet/config.py` | +1 / −1 | `hidden_chat` 默认值旁的注释同步。 |
+| `README.md` | +1 / −0 | 「移除的功能」表加一行。 |
+| `tests/test_island_shell_wiring.py` | +49 / −0 | 「显示桌宠」在 overlay 拓扑下必须交给壳、且不许抢先把岛写成已显示；隐藏时卡片的「聊天」开完整聊天窗。 |
+| `tests/test_overlay_chat_proactive.py` | +30 / −0 | 用真实 `OverlayShell` 走「隐藏 → 气泡里的显示桌宠」，断言合成窗重新可见、岛状态先 `False` 后 `True`。 |
+| `tests/test_island_chat.py` | +37 / −52 | 隐藏时单击展开卡片、卡片按钮是「显示桌宠」且能发出切换请求；删掉两条测 `_chat_from_island` 的用例，换成「AppShell 不再有这条入口」。 |
+| `tests/test_dynamic_island_revamp.py` | +8 / −29 | 两条按构建分支的用例合成一条：隐藏时单击在所有构建都展开卡片。 |
+
+去掉产品改动（`git stash` 掉 `pet/app.py`）重跑：新增的两条「显示桌宠」用例都失败；恢复后通过。
+
+**故意没动**：`PetInstance.open_quick_chat` 里「隐藏时改弹岛气泡」的分支只在旧拓扑（`PetWindow`）下
+可达，按 `AGENTS.md` 对该面「只修崩溃」的约定没有改。
+
+### 性能分析
+
+**方法**：临时脚本，真实 `DynamicIsland` / `IslandChatBubble`，`QT_QPA_PLATFORM=offscreen`，同上环境。
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| 隐藏时单击 → 展开卡片（`expand_card` + 动画收尾） | 中位 0.577 ms，最大 1.754 ms（n=200） | 既有路径，现在隐藏时也走它 |
+| 改动前：首次构造岛对话气泡 | 5.49 ms（1 次） | 不再由单击触发 |
+| 改动前：弹出已构造的气泡 | 中位 0.054 ms，最大 0.942 ms（n=200） | 不再由单击触发 |
+
+**结论**：① 稳态开销无变化，没有新增定时器；② 隐藏时每次单击多约 0.5 ms（展开卡片比弹出一个
+已建好的气泡贵），触发频率是用户点击；展开卡片会触发既有的卡片刷新（会话汇总、最近的对话的
+后台回填，一分钟内不重复）；③ 没有新的系统调用、网络、磁盘或线程；④ 内存：单击不再构造
+对话气泡，只有隐藏期间真的来了提醒才会构造。
+
+### 实机运行记录
+
+- **根因的现场确认**：用户本机配置 `dynamic_island.click_action = "expand"`、`hidden_chat = true`
+  （读自 `%APPDATA%\dsh-pet-standalone\config.json`），即隐藏后单击走的正是对话气泡这条路由；
+  桌宠以 overlay 拓扑运行（`pet-overlay-gate.log` 有 `acquired` 记录）。
+- **修复后**：桌宠已重启到新代码（`2026-10-11 17:50:07 acquired pid=4916`）。
+- **没有验证的**：没有在真实桌面上用鼠标走一遍「隐藏 → 点岛 → 显示桌宠」。自动化点击会抢走用户
+  正在使用的鼠标，这一步交给用户确认。macOS Dock 菜单的改动没有 Mac 可测。
+
+### 测试与验证
+
+| 门 | 结果 |
+|---|---|
+| ruff（`pet tests scripts tools`） | All checks passed |
+| 聚焦（岛 / 岛对话 / 岛接线） | 71 passed |
+| 全量（`-X faulthandler`，完整输出保留） | **4871 passed, 4 failed, 11 skipped**，没有崩溃；4 个失败是本机既有的环境性失败 |
+
+到此全量一共跑了 4 遍完整的：2 遍跑完、2 遍原生崩溃（见第六节）。
+
 ## 八、风险与回滚
 
+- **第二轮**：`hidden_chat` 键与默认值不变，没有配置迁移；回滚后隐藏时单击恢复为弹对话气泡。
 - **影响面**：仅 Windows、仅源码运行的开机自启命令。没有新增配置键，没有配置迁移。
 - **落盘状态**：升级会改写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下本变体的值。
   `git revert` 之后这个值**不会自动改回** `pythonw.exe`；它仍然有效（`BigFish.exe` 还在），

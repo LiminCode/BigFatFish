@@ -571,7 +571,7 @@ def _default_dynamic_island_data() -> dict:
         # 图片；其余字符串=文字/emoji（用户主动选择，愿意付首次绘制的一次性税额）
         "icon": "auto",
         "click_action": "expand",  # expand（展开卡片）/ toggle_pet（切换显隐，旧行为）
-        "hidden_chat": True,  # 桌宠隐藏时：单击岛弹对话气泡；AI 回复到达时岛上弹预览
+        "hidden_chat": True,  # 桌宠隐藏时：联动提醒 / AI 回复到达时岛上弹预览（单击岛照常展开卡片）
         "event_effects": True,  # 事件动效：AI 回复/余额刷新弹跳
         "edge_dock": True,  # 拖到屏幕边缘收成细条，鼠标靠近滑出
         "dock_edge": "none",  # none / top / bottom / left / right（拖拽落点写入）
