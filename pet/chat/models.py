@@ -34,6 +34,9 @@ class ProviderConfig:
     api_format: str='auto'
     # 思考力度（仅 Claude 通道）：low / medium / high / xhigh / max。越高想得越深、越慢、越贵。
     effort: str='medium'
+    # 这次请求要挂的 MCP 服务器（含 Token）。只在发送前由 Config.resolve_mcp_servers 填上，
+    # 不属于持久配置：to_dict 永远不写它。见 pet/chat/connectors.py
+    mcp_servers: list=field(default_factory=list)
     @classmethod
     def from_dict(cls,pid,raw):
         c = cls(str(pid), str(raw.get('name', pid)), str(raw.get('base_url', 'https://api.deepseek.com')), str(raw.get('chat_path', '/v1/chat/completions')), str(raw.get('model', 'deepseek-v4-flash')), str(raw.get('api_key_ref', f'provider/{pid}')), str(raw.get('api_key', '')), _safe_float(raw.get('timeout', 60), 60.0, lo=1.), _safe_float(raw.get('temperature', .7), 0.7, lo=0., hi=2.), _safe_int(raw.get('max_tokens', 2048), 2048, lo=1), verify_ssl=bool(raw.get('verify_ssl', True)))
@@ -43,13 +46,15 @@ class ProviderConfig:
         eff=str(raw.get('effort','medium') or 'medium').strip().lower(); c.effort=eff if eff in ('low','medium','high','xhigh','max') else 'medium'
         return c
     def to_dict(self,include_secret=True):
-        d=asdict(self); d.pop('provider_id',None)
+        d=asdict(self); d.pop('provider_id',None); d.pop('mcp_servers',None)
         if not include_secret: d.pop('api_key',None); d.pop('vision_api_key',None)
         return d
 
 @dataclass
 class ChatSettings:
     enabled: bool=True; active_provider: str='openai-main'; default_system_prompt: str='你是一只可爱的桌面宠物，请用自然、友善的中文和用户交流。'; history_message_limit: int=40; history_char_limit: int=24000; providers: dict[str,ProviderConfig]=field(default_factory=dict)
+    # GitHub 连接器开关（默认关）；Token 在系统钥匙串里。见 pet/chat/connectors.py
+    github_connector: bool=False
     @classmethod
     def defaults(cls):
         p=ProviderConfig('openai-main'); return cls(providers={p.provider_id:p})
@@ -58,9 +63,9 @@ class ChatSettings:
         raw=raw if isinstance(raw,dict) else {}; d=cls.defaults(); pr=raw.get('providers') if isinstance(raw.get('providers'),dict) else {}
         providers={str(k):ProviderConfig.from_dict(k,v) for k,v in pr.items() if isinstance(v,dict)} or d.providers
         active=str(raw.get('active_provider',next(iter(providers)))); active=active if active in providers else next(iter(providers))
-        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers)
+        return cls(bool(raw.get('enabled',True)),active,str(raw.get('default_system_prompt',d.default_system_prompt)),_safe_int(raw.get('history_message_limit',40),40,lo=1),_safe_int(raw.get('history_char_limit',24000),24000,lo=100),providers,bool(raw.get('github_connector',False)))
     def to_dict(self,include_secrets=True):
-        return {'enabled':self.enabled,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
+        return {'enabled':self.enabled,'github_connector':self.github_connector,'active_provider':self.active_provider,'default_system_prompt':self.default_system_prompt,'history_message_limit':self.history_message_limit,'history_char_limit':self.history_char_limit,'providers':{k:v.to_dict(include_secrets) for k,v in self.providers.items()}}
     @property
     def active_config(self): return self.providers[self.active_provider]
 
