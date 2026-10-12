@@ -302,7 +302,8 @@ class _Desk:
             focus=lambda hwnd: (self.log.append(("focus", hwnd)), focus_ok)[1],
             chain=lambda pid: list(chain),
             uri=lambda uri: (self.log.append(("uri", uri)), True)[1],
-            vscode=lambda detail: (self.log.append(("code", detail.cwd)), True)[1],
+            vscode=lambda detail, target="": (self.log.append(("code", target or detail.cwd)), True)[1],
+            workspaces=lambda: [],       # 不读真实的 VS Code 窗口记录（那一路见 test_session_jump_workspaces）
             sleep=lambda seconds: None)
 
 
