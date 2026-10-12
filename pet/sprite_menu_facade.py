@@ -619,6 +619,15 @@ class SpriteMenuFacade:
         self.cfg.set("agent_link", ag_data)
         self._save()
 
+    def set_session_card_theme(self, theme_id: str) -> None:
+        """会话小鱼详情卡的配色方案：落盘；下次打开详情卡时生效。"""
+        from .session_card_themes import CONFIG_KEY, normalize_theme_id
+
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data[CONFIG_KEY] = normalize_theme_id(theme_id)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """Agent 联动子项（window.py ``_toggle_agent_link`` 等价，含拒绝回滚）。
 

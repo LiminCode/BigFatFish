@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import catalog
+from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
@@ -244,6 +245,8 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
+        "session_card_theme": DEFAULT_CARD_THEME,
         # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
         # 最多留几天（1~30）、几条（1~200）。见 pet/claude_session_history.py
         "session_history": True,
@@ -367,6 +370,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
         result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
+    result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
     for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
                            ("session_history_rows", 3, 20)):
         try:
