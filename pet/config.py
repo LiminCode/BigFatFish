@@ -17,6 +17,7 @@ from typing import Any
 
 from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
+from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
@@ -838,7 +839,9 @@ class Config:
             "self_talk_min_interval": DEFAULT_SELF_TALK_MIN_INTERVAL,
             "self_talk_max_interval": DEFAULT_SELF_TALK_MAX_INTERVAL,
             "self_talk_duration_seconds": DEFAULT_SELF_TALK_DURATION_SECONDS,
-            "self_talk_image_scale": 100,  # 气泡配图显示尺寸百分比（50~300，100 = 默认）
+            "self_talk_image_scale": 100,  # 气泡配图显示尺寸百分比（50~300，100 = 原始大小）
+            # 配图气泡的尺寸上限（160~800 逻辑像素）：配图按原始大小显示，长边超过它才缩小
+            "self_talk_image_max_edge": SELF_TALK_IMAGE_MAX_EDGE_DEFAULT,
             "self_talk_image_chance": DEFAULT_SELF_TALK_IMAGE_CHANCE,  # 出图概率百分比（0~100）
             "bubble_text_scale": 100,  # 气泡文字显示尺寸百分比（50~300，100 = 默认；气泡与字号一起放大）
             "self_talk_texts": list(DEFAULT_SELF_TALK_TEXTS),
@@ -1113,6 +1116,7 @@ class Config:
             "self_talk_duration_seconds",
             "self_talk_image_dir",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
             "bubble_text_scale",
             "self_talk_bubble_style",
@@ -1420,6 +1424,7 @@ class Config:
         )
         self.data["self_talk_image_dir"] = str(self.data.get("self_talk_image_dir") or "").strip()[:500]
         self.data["self_talk_image_scale"] = int(_float_or_default(self.data.get("self_talk_image_scale"), 100.0, 50.0, 300.0))
+        self.data["self_talk_image_max_edge"] = clamp_image_max_edge(self.data.get("self_talk_image_max_edge"))
         self.data["self_talk_image_chance"] = int(_float_or_default(self.data.get("self_talk_image_chance"), float(DEFAULT_SELF_TALK_IMAGE_CHANCE), 0.0, 100.0))
         self.data["bubble_text_scale"] = int(_float_or_default(self.data.get("bubble_text_scale"), 100.0, 50.0, 300.0))
         self.data["self_talk_enabled"] = bool(self.data.get("self_talk_enabled", False))
@@ -1629,6 +1634,7 @@ class Config:
             "self_talk_duration_seconds",
             "self_talk_image_dir",
             "self_talk_image_scale",
+            "self_talk_image_max_edge",
             "self_talk_image_chance",
             "bubble_text_scale",
             "self_talk_bubble_style",

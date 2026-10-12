@@ -118,7 +118,13 @@ def build_self_talk_rows(dialog) -> list[SettingRow]:
             dialog.self_talk_image_dir_picker,
             stacked=True,
         ),
-        SettingRow("self_talk_image_scale", "配图大小", "气泡里配图的显示尺寸（100% 为默认）。", dialog.self_talk_image_scale_spin),
+        SettingRow("self_talk_image_scale", "配图大小", "气泡里的图片和动图相对原始大小的比例（100% = 原始大小）。", dialog.self_talk_image_scale_spin),
+        SettingRow(
+            "self_talk_image_max_edge", "配图尺寸上限",
+            "配图气泡最大多大。图片长边超过这个值时等比缩小，比它小的保持原样；"
+            "吐气水泡样式下指整个水泡的宽度。数值越大，配图占用的内存越多。",
+            dialog.self_talk_image_max_edge_spin,
+        ),
         SettingRow(
             "self_talk_image_chance",
             "配图概率",

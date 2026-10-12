@@ -26,6 +26,35 @@ SELF_TALK_IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff",
 }
 
+# 配图气泡的尺寸上限（设置项 ``self_talk_image_max_edge``，逻辑像素）：配图按原始大小
+# 显示，长边超过它才等比缩小。吐气水泡样式下它约束的是整个水泡的宽度。
+SELF_TALK_IMAGE_MAX_EDGE_DEFAULT = 420
+SELF_TALK_IMAGE_MAX_EDGE_MIN = 160
+SELF_TALK_IMAGE_MAX_EDGE_MAX = 800
+
+
+def clamp_image_max_edge(value) -> int:
+    """把配置里的上限收到可用区间；读不懂的值回默认。"""
+    try:
+        edge = int(round(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return SELF_TALK_IMAGE_MAX_EDGE_DEFAULT
+    return max(SELF_TALK_IMAGE_MAX_EDGE_MIN, min(SELF_TALK_IMAGE_MAX_EDGE_MAX, edge))
+
+
+def natural_image_size(source: QSize, max_edge: int, scale: float = 1.0) -> QSize:
+    """配图的显示尺寸：原始大小 × ``scale``，长边超过 ``max_edge`` 才等比缩小。
+
+    一个图片像素对应一个逻辑像素（与浏览器显示图片的口径相同）。只缩不放：比上限小的
+    图保持自己的大小，不为了填满气泡被放大。任一边至少 1 像素。"""
+    factor = max(0.0, float(scale))
+    width = max(1.0, source.width() * factor)
+    height = max(1.0, source.height() * factor)
+    longest = max(width, height)
+    if longest > max_edge > 0:
+        width, height = width * max_edge / longest, height * max_edge / longest
+    return QSize(max(1, int(round(width))), max(1, int(round(height))))
+
 # 气泡文本列的基础像素宽（短文案列宽，也是气泡整体宽度的由来），以及 label
 # 矩形相对最长行的余量。换行预算必须是 ``列宽 - 余量``：整型 horizontalAdvance
 # 累加与绘制时的自然（分数）宽度有亚像素差，余量同时吸收这个差，行尾才不会切字。

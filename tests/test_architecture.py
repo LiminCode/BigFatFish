@@ -230,7 +230,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 同日上调到 2398：「知识库」分组（三行设置都在 chat/ai_settings_page.py，这里登记 1 行）。实测 2398。
 # 同日上调到 2401：「托盘图标」设置行（控件、提示、保存都在 settings_tray.py），这里只有
 # 接线——import 1 行、把行并进「窗口与系统」1 行、保存 1 行。实测 2401。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2401
+# 2026-10-12 上调到 2403：「配图尺寸上限」设置行（控件在 settings_pet_controls、行在
+# settings_interaction），这里是依赖登记 1 行 + 保存 1 行。实测 2403。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2403
 
 
 def _read(name: str) -> str:
