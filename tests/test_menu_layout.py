@@ -13,6 +13,7 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
     assert [node["id"] for node in layout["nodes"]] == [
         "ojingjing",
         "default.separator-profile",
+        "rally_pets",
         "chat",
         "look_screen",
         "default.separator-interaction",
@@ -22,7 +23,6 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "size",
         "music",
         "default.separator-playback",
-        "rally_pets",
         "pet_controls",
         "quick_launch",
         "default.separator-pet",
@@ -354,6 +354,7 @@ def test_missing_user_layout_resolves_versioned_default():
     assert result.diagnostics == ()
     assert [node["id"] for node in result.nodes if node["type"] != "separator"] == [
         "ojingjing",
+        "rally_pets",
         "chat",
         "look_screen",
         "animations_hub",
@@ -361,7 +362,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "playback_speed",
         "size",
         "music",
-        "rally_pets",
         "pet_controls",
         "quick_launch",
         "tools_help",
@@ -516,6 +516,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     root = [action.text() for action in menu.actions() if not action.isSeparator()]
     expected_root = [
         "厉害了我的鲸",
+        "护驾",
         "AI 对话",
         "看看屏幕",
         "播放动画",
@@ -523,7 +524,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "播放速率",
         "大小",
         "音乐",
-        "护驾",
         "桌宠控制",
         "快捷启动",
         "工具与帮助",
@@ -541,9 +541,9 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     rendered = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
     expected_rendered = [
         "厉害了我的鲸", "|",
-        "AI 对话", "看看屏幕", "|",
+        "护驾", "AI 对话", "看看屏幕", "|",
         "播放动画", "切换角色", "播放速率", "大小", "音乐", "|",
-        "护驾", "桌宠控制", "快捷启动", "|",
+        "桌宠控制", "快捷启动", "|",
         "工具与帮助", "Agent 联动", "|",
         "桌宠设置", "退出",
     ]
