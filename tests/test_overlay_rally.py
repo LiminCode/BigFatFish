@@ -227,4 +227,6 @@ def test_modern_menu_puts_护驾_at_the_top_level(shell):
     shell.spawn_session_pet()
     menu = build_sprite_full_menu(shell)
     shell.keep_alive = menu
-    assert "护驾" in {a.text() for a in menu.actions()}, "右键一眼看得到，不用翻子菜单"
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "护驾" in labels, "右键一眼看得到，不用翻子菜单"
+    assert labels.index("护驾") == 1, f"常用：紧跟在最上面的头像行后面，排在所有别的入口之前：{labels[:4]}"

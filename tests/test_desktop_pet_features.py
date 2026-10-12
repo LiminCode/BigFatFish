@@ -864,6 +864,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
     expected_labels = [
         "厉害了我的鲸",
+        "护驾",
         "AI 对话",
         "看看屏幕",
         "播放动画",
@@ -871,7 +872,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "播放速率",
         "大小",
         "音乐",
-        "护驾",
         "桌宠控制",
         "快捷启动",
         "工具与帮助",
