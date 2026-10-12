@@ -144,6 +144,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "voice_chime_schedule",
         "voice_chime_show_bubble",
         "voice_chime_show_quote",
+        "work_briefing",
         "festival_custom_quotes_cn",
         "festival_custom_quotes_west",
         "festival_reminder_cn",

@@ -18,6 +18,7 @@ from typing import Any
 from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
+from .work_briefing import normalize as normalize_work_briefing
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
@@ -831,6 +832,8 @@ class Config:
             "on_top": True,
             "show_dock_icon": True,
             "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
+            # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
+            "work_briefing": normalize_work_briefing(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1100,6 +1103,7 @@ class Config:
             "on_top",
             "show_dock_icon",
             "tray_icon",
+            "work_briefing",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1488,6 +1492,7 @@ class Config:
         self.data["golden_spin_direct"] = _bool_or_default(self.data.get("golden_spin_direct"), False)
         self.data["edge_probe_enabled"] = _bool_or_default(self.data.get("edge_probe_enabled"), False)
         self.data["agent_link"] = _clean_agent_link_data(self.data.get("agent_link"))
+        self.data["work_briefing"] = normalize_work_briefing(self.data.get("work_briefing"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开

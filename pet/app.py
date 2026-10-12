@@ -1944,6 +1944,7 @@ class AppShell:
                     FileInterpretController(self._overlay_shell).offer)
             except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
                 logging.exception("overlay: 拖文件解读接线失败")
+            self._start_work_briefing()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -2991,6 +2992,25 @@ class AppShell:
         """今日用量的定时刷新；没建过或已随岛销毁返回 None。"""
         monitor = getattr(self, "_usage_monitor", None)
         return monitor if monitor is not None and shiboken6.isValid(monitor) else None
+
+    def _start_work_briefing(self) -> None:
+        """工作简报（可选服务）：靠 WSL 里的 Claude Code 生成，没有 WSL 就不接。"""
+        if self._overlay_shell is None or getattr(self, "_work_briefing", None) is not None:
+            return
+        try:
+            from . import claude_hooks
+
+            if not claude_hooks.wsl_exe():
+                return
+            from .work_briefing_service import WorkBriefingService
+            from .work_briefing_ui import WorkBriefingController
+
+            service = WorkBriefingService(self.config, parent=self.app)
+            self._work_briefing = WorkBriefingController(self._overlay_shell, service)
+            self._overlay_shell.work_briefing = self._work_briefing
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("工作简报接线失败")
 
     def _start_knowledge_sync(self) -> None:
         """本地知识库的每日同步（可选服务：无聊天打包变体没有 pet.chat，跳过）。"""
