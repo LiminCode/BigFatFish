@@ -85,6 +85,18 @@ class SessionPetController(QObject):
         self._retire(key)
         return True
 
+    def retitle(self, key: tuple[str, str], title: str) -> bool:
+        """把一个在场会话的标题改成 ``title``（头顶的名字、灵动岛清单随之更新）。
+
+        用在「读会话记录时发现用户改过名」：hook 要到下一轮对话才会把新名字报上来，
+        会话空闲期间改的名字先由这里补上。返回是否真的改了。"""
+        info = self._sessions.get(key)
+        title = str(title or "").strip()
+        if info is None or not title or info.get("title") == title:
+            return False
+        self.on_session_update(key[0], {**info, **self._extras.get(key, {}), "title": title})
+        return True
+
     def sessions(self) -> list[dict]:
         """在用的会话：``{"agent", "sessionId", "phase", "title", "project"}``，按出场先后。"""
         return [{"agent": key[0], **info} for key, info in self._sessions.items()]
