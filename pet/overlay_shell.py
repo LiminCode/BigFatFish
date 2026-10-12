@@ -4661,6 +4661,9 @@ class OverlayShell(QObject):
             save()
         old_lib = self.lib
         self.lib = new_lib
+        # 先放开旧库的 clip 再换库：旧库马上要 shutdown 并被回收，sprite 不能还攥着它的
+        # clip（见 PetSprite._stop_clip 的说明）
+        self.sprite.detach_clip()
         self.sprite.library = new_lib
         self.behavior.forget(self.sprite)
         # 换库 = 换 body_box：锚点取材于 ``catalog.character_body_box``（体框变了
@@ -4707,6 +4710,7 @@ class OverlayShell(QObject):
                 user_customized=True)
         old_lib = self._spawned_libs.get(sprite)
         self._spawned_libs[sprite] = new_lib
+        sprite.detach_clip()          # 同主宠：旧库收尾之前先放开它的 clip
         sprite.library = new_lib
         self.behavior.forget(sprite)
         self._invalidate_sprite_configs()
