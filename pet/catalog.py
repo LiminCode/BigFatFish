@@ -78,7 +78,7 @@ def half_scale(scale: float) -> float:
 # ---------------------------------------------------------------- 多形象
 # 当前内置形象与未来扩展形象 ID（目录名建议使用稳定 ASCII）
 DEFAULT_CHARACTER = 'shenshen'
-CHARACTERS = ('shenshen',)
+CHARACTERS = ('shenshen', 'claude')
 MANIFEST_FILENAME = 'manifest.json'
 # videos 下的分类子目录
 DIR_IDLE = 'idle'
