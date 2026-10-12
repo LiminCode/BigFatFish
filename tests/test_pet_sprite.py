@@ -426,3 +426,73 @@ def test_mirror_frame_falls_back_to_mirrored_without_flipped(monkeypatch):
     assert sprite._rebuild_pixmap() is True
 
     assert sprite._hit_image == with_flipped, "回退分支必须与 flipped 逐像素一致"
+
+
+# ---------------------------------------------------------------- 旧 clip 已被素材库销毁
+class DestroyedClip(FakeClip):
+    """素材库 shutdown 之后的 clip：C++ 侧已销毁，再 stop() 就抛 RuntimeError。
+
+    真实形态是 ``FrameSeqClip.stop`` 里的 ``self._timer.stop()``——
+    ``libshiboken: Internal C++ object (PySide6.QtCore.QTimer) already deleted``。
+    """
+
+    def stop(self):
+        raise RuntimeError("libshiboken: Internal C++ object already deleted.")
+
+
+def test_bind_clip_survives_a_clip_destroyed_by_its_library():
+    """实机 bug（2026-10-11）：切换角色后桌宠卡死，切回来也没用。
+
+    换角色 = 换素材库，旧库 shutdown 把 clip 销毁了，sprite 手上却还攥着它；
+    下一次换绑要先「停掉旧 clip」，这一步抛异常，新的 clip 永远绑不上。
+    """
+    dead = DestroyedClip()
+    sprite = _make_sprite(dead)
+    assert sprite.bind_clip("idle") is True
+
+    fresh = FakeClip()
+    sprite.library = FakeLibrary(fresh)
+
+    assert sprite.bind_clip("idle") is True
+    assert sprite._clip is fresh
+    assert fresh.start_count == 1
+
+
+def test_close_survives_a_clip_destroyed_by_its_library():
+    sprite = _make_sprite(DestroyedClip())
+    sprite.bind_clip("idle")
+
+    sprite.close()
+
+    assert sprite._clip is None
+
+
+def test_detach_clip_lets_go_of_the_clip_but_keeps_the_last_frame():
+    """换素材库之前放开旧 clip：信号断开、clip 停掉，画面与回调原样留着（不闪、不丢接线）。"""
+    old = FakeClip()
+    sprite = _make_sprite(old)
+    dirty = _dirty_recorder(sprite)
+    sprite.bind_clip("idle")
+    sprite.advance(0.0)                    # 让第一帧落进 _pixmap
+    frame = sprite._pixmap
+
+    sprite.detach_clip()
+
+    assert sprite._clip is None and sprite._clip_name is None
+    assert old.stop_count == 1
+    assert sprite._pixmap is frame, "旧帧要留到新 clip 的首帧到货"
+    assert sprite._dirty_cb is not None, "脏区回调不能被顺手清掉（close 才清）"
+    old.frameChanged.emit(1)               # 旧 clip 之后再发帧：不该再打到这只 sprite 上
+    assert sprite._clip is None
+    del dirty
+
+    fresh = FakeClip()
+    sprite.library = FakeLibrary(fresh)
+    assert sprite.bind_clip("idle") is True
+    assert sprite._clip is fresh
+
+
+def test_detach_clip_without_a_clip_is_a_no_op():
+    sprite = PetSprite(FakeLibrary(FakeClip()), pos=QPointF(0, 0), scale=0.5)
+    sprite.detach_clip()
+    assert sprite._clip is None
