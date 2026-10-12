@@ -476,7 +476,13 @@ def _default_base():
     return Path.home() / ".config"
 
 
-def _app_dir_name() -> str:
+APP_DIR_BASE = "big-fat-fish"
+#: 2026-10-11 改名前的名字。只用于认旧数据：数据目录、钥匙串服务名、开机自启项、
+#: 同机其它变体的配置发现。新写入一律用新名字。
+LEGACY_APP_DIR_BASE = "dsh-pet-standalone"
+
+
+def _app_dir_name(base: str = APP_DIR_BASE) -> str:
     """打包变体的独立数据目录名；源码运行时回退到共享目录。
 
     构建脚本（scripts/build_onedir.ps1）会在打包前生成
@@ -488,13 +494,70 @@ def _app_dir_name() -> str:
 
         name = str(VARIANT).strip()
         if name:
-            return f"dsh-pet-standalone-{name}"
+            return f"{base}-{name}"
     except Exception:
         pass
-    return "dsh-pet-standalone"
+    return base
 
 
 APP_DIR_NAME = _app_dir_name()
+LEGACY_APP_DIR_NAME = _app_dir_name(LEGACY_APP_DIR_BASE)
+#: 数据目录搬家后留下的待办标记：Claude Code 钩子里写死了旧目录的路径，由
+#: ``AgentLinkManager`` 在下次应用配置时改到新路径，改完删掉本文件。
+HOOKS_REFRESH_MARKER = "agent-hooks-refresh.pending"
+
+
+def _mark_hooks_for_refresh(new_dir: Path) -> None:
+    try:
+        (new_dir / HOOKS_REFRESH_MARKER).write_text(LEGACY_APP_DIR_NAME, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def migrate_legacy_app_dir(base) -> bool:
+    """改名迁移：把 ``<base>/dsh-pet-standalone[-变体]`` 搬成 ``<base>/big-fat-fish[-变体]``。
+
+    只在「旧目录有 config.json、新目录还没有」时做，所以只会发生一次，也绝不覆盖新数据。
+    新目录不存在就整目录改名；已经存在（启动早期先落了日志或锁文件）就逐项搬，新目录里
+    已有的同名项保留。config.json 最后搬——它是「迁移完成」的标记，中途被打断下次接着搬。
+    必须在任何代码往新目录写东西之前调用（见 ``app.main`` 与 ``Config.__init__``）。
+    """
+    new, legacy = Path(base) / APP_DIR_NAME, Path(base) / LEGACY_APP_DIR_NAME
+    try:
+        if (new / "config.json").exists() or not (legacy / "config.json").is_file():
+            return False
+        if not new.exists():
+            try:
+                os.replace(legacy, new)
+                _mark_hooks_for_refresh(new)
+                return True
+            except OSError:
+                pass  # 旧目录里有文件正被占用（比如钩子正往里写事件）：退回逐项搬
+        new.mkdir(parents=True, exist_ok=True)
+        for child in sorted(legacy.iterdir(), key=lambda p: p.name == "config.json"):
+            target = new / child.name
+            if target.exists():
+                continue
+            try:
+                os.replace(child, target)
+            except OSError:
+                try:
+                    if child.is_dir():
+                        shutil.copytree(child, target)
+                    else:
+                        shutil.copy2(child, target)
+                except OSError:
+                    continue
+        try:
+            legacy.rmdir()
+        except OSError:
+            pass
+        if not (new / "config.json").exists():
+            return False
+        _mark_hooks_for_refresh(new)
+        return True
+    except OSError:
+        return False
 
 
 def _float_or_default(value, default, minimum, maximum):
@@ -742,6 +805,7 @@ class Config:
         # 位置/大小/朝向等不再互相覆盖；不传时完全保持原行为。
         self.instance_id = (instance_id or os.environ.get("DSH_PET_INSTANCE", "") or "").strip()
         self.path = self.dir / f"config-{self.instance_id}.json" if self.instance_id else self.dir / "config.json"
+        migrate_legacy_app_dir(base)
         self._migrate_legacy_config(base)
         # 副槽落种仅在该槽位还没有个体配置时进行；已有存档的 slot（用户改过
         # 的）一律不动——「生小肥鱼」复用旧槽位时同样保留原槽设置。
@@ -910,15 +974,16 @@ class Config:
         self._normalize_pet_settings()
 
     def _migrate_legacy_config(self, base) -> None:
-        """旧版各变体共用 %APPDATA%/dsh-pet-standalone；升级后首次运行时
+        """旧版各变体共用一个目录（改名前叫 dsh-pet-standalone）；升级后首次运行时
         把该目录的 config.json 与 sessions/ 一次性复制到变体独立目录，
         避免用户设置与聊天会话“消失”。仅在新目录尚不存在时执行。"""
         if self.instance_id:
             return  # 多开实例不参与旧版迁移，避免把单开配置复制给每个实例
-        if APP_DIR_NAME == "dsh-pet-standalone" or self.path.exists():
+        if APP_DIR_NAME == APP_DIR_BASE or self.path.exists():
             return
-        legacy = base / "dsh-pet-standalone"
-        if not (legacy / "config.json").is_file():
+        legacy = next((d for d in (base / APP_DIR_BASE, base / LEGACY_APP_DIR_BASE)
+                       if (d / "config.json").is_file()), None)
+        if legacy is None:
             return
         try:
             self.dir.mkdir(parents=True, exist_ok=True)

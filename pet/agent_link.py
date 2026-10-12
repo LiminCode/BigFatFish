@@ -53,7 +53,7 @@ from .persona_phrases import PhrasePicker
 from .persona_template import CONDITIONAL_PARAMETERS, LEGACY_HIDDEN_PARAMETERS
 from .speech_bubble_text import truncate_bubble_text
 
-log = logging.getLogger("dsh-pet-standalone")
+log = logging.getLogger("big-fat-fish")
 
 _LIVE_AGENT_LINK_MANAGERS: weakref.WeakSet = weakref.WeakSet()
 _LIVE_AGENT_MONITORS: weakref.WeakSet = weakref.WeakSet()
@@ -1723,7 +1723,7 @@ class DshMonitor(BaseAgentMonitor):
 
     def __init__(self, agent_key: str, config_dir: Path, parent=None) -> None:
         super().__init__(agent_key, config_dir, parent)
-        # 桥目录与变体无关：config_dir = <base>/dsh-pet-standalone[-variant] → parent = <base>
+        # 桥目录与变体无关：config_dir = <base>/big-fat-fish[-variant] → parent = <base>
         # 不变量：插件写 <base>/dsh-pet-bridge/（win32 即 %APPDATA%），
         # 若未来数据目录支持自定义根，两侧必须同步改（当前 Config 结构保证 parent==base）。
         self.events_dir = self.config_dir.parent / "dsh-pet-bridge"
@@ -2184,6 +2184,26 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
             return False
 
     @classmethod
+    def refresh_hooks(cls, events_file: Path) -> bool:
+        """已注入的 hooks 指向的不是现在的事件文件（数据目录搬了家）→ 换成现在的。
+
+        返回是否改写了 settings.json。从没注入过的不动：注入要经用户同意
+        （``AgentLinkManager.set_enabled``），刷新只更新已经同意过的那几条。"""
+        try:
+            data = json.loads(cls.get_settings_path().read_text(encoding="utf-8"))
+            hooks = data.get("hooks") if isinstance(data, dict) else None
+            ours = [group for groups in (hooks or {}).values() if isinstance(groups, list)
+                    for group in groups if claude_hooks.is_our_entry(group)]
+        except (OSError, ValueError):
+            return False
+        if not ours:
+            return False
+        expected = list(cls._local_entries(events_file).values())
+        if len(ours) == len(expected) and all(group in expected for group in ours):
+            return False
+        return cls.install_hooks(events_file)
+
+    @classmethod
     def uninstall_hooks(cls) -> bool:
         """关闭联动时移除本桌宠注入的 hooks 条目（仅带标记的，用户自有条目不碰）。"""
         settings_path = cls.get_settings_path()
@@ -2544,7 +2564,11 @@ def other_instances_use_agent(config, agent_key: str) -> bool:
     try:
         candidates.append(config_dir / "config.json")
         candidates.extend(config_dir.glob("config-*.json"))
-        candidates.extend(config_dir.parent.glob("dsh-pet-standalone*/config*.json"))
+        # 同机的其它变体可能还在用改名前的目录名
+        from .config import APP_DIR_BASE, LEGACY_APP_DIR_BASE
+
+        for prefix in (APP_DIR_BASE, LEGACY_APP_DIR_BASE):
+            candidates.extend(config_dir.parent.glob(f"{prefix}*/config*.json"))
     except OSError:
         pass
     for path in candidates:
@@ -2792,6 +2816,51 @@ class AgentLinkManager(QObject):
                     monitor.schedule_link_refresh_check()
             elif not should_run and monitor._running:
                 monitor.stop()
+        self._refresh_moved_hooks(agent_cfg)
+
+    def _refresh_moved_hooks(self, agent_cfg: dict) -> None:
+        """数据目录搬过家（程序改名迁移）后，把已注入的 Claude Code hooks 改到新路径。
+
+        只在迁移留下待办标记时才做：平时的配置应用不读写用户的 ~/.claude/settings.json。
+        本机通道直接改；WSL 通道每步都要起 wsl.exe，放后台线程，没成功就留着标记下次再试。
+        """
+        from .config import HOOKS_REFRESH_MARKER
+
+        marker = Path(self.config_dir) / HOOKS_REFRESH_MARKER
+        if not marker.exists():
+            return
+        if agent_cfg.get("claude", False):
+            try:
+                if ClaudeCodeMonitor.refresh_hooks(self.monitors["claude"].events_file):
+                    log.info("Claude Code hooks 已改到新的数据目录")
+            except Exception:  # noqa: BLE001 - 附加步骤，失败不影响联动本身
+                log.exception("更新 Claude Code hooks 路径失败")
+        if not agent_cfg.get("claude_wsl", False):
+            marker.unlink(missing_ok=True)
+            return
+        running = getattr(self, "_hooks_refresh_thread", None)
+        if running is not None and running.is_alive():
+            return
+        events_file = self.monitors["claude_wsl"].events_file
+
+        def run() -> None:
+            ok, message = ClaudeCodeMonitor.install_wsl_hooks(events_file)
+            if ok:
+                marker.unlink(missing_ok=True)
+                log.info("WSL 里的 Claude Code hooks 已改到新的数据目录")
+            else:
+                log.warning("更新 WSL 里的 Claude Code hooks 路径失败（下次启动再试）：%s", message)
+
+        self._hooks_refresh_thread = threading.Thread(target=run, daemon=True, name="pet-wsl-hooks-refresh")
+        self._hooks_refresh_thread.start()
+
+    def wait_for_hooks_refresh(self, timeout: float | None = None) -> bool:
+        """等后台的 WSL hooks 路径更新结束（测试与收口用）；没在跑时立即返回 True。"""
+        thread = getattr(self, "_hooks_refresh_thread", None)
+        if thread is None:
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
 
     def _install_dsh_worker(self, token: int) -> None:
         """后台线程：安装 DSH 桥接插件，完成后信号回主线程。"""

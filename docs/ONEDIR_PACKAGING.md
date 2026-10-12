@@ -30,8 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-
 产物：
 
 ```
-dist-onedir\dsh-pet-standalone-webm-chat\          ← onedir 目录（绿色版 = 整个文件夹）
-dist-onedir\dsh-pet-standalone-webm-chat-portable.zip
+dist-onedir\big-fat-fish-webm-chat\          ← onedir 目录（绿色版 = 整个文件夹）
+dist-onedir\big-fat-fish-webm-chat-portable.zip
 ```
 
 绿色版用法：解压 zip 到任意盘（E:\、D:\、U 盘均可），双击 exe 即用；无安装、无缓存。
@@ -44,7 +44,7 @@ dist-onedir\dsh-pet-standalone-webm-chat-portable.zip
 - **安全校验**：移除前做依赖闭包校验（pefile 反向 import 检测，保留的二进制若仍引用待删文件即中止）与必需清单校验（核心运行文件齐全），任一失败即中止构建；
 - **效果**：onedir 目录 309 MB → 256 MB，portable zip 176.2 MB → 146.5 MB（−12.8%）；
 - 后续需要完整 Qt 栈（例如启用 QML 界面）时加 `-SkipSlim`；
-- 冒烟建议：把配置切到 `voice_chime_schedule=every_minute` 启动 exe，确认 `%APPDATA%\dsh-pet-standalone-<variant>\voice_chime_cache` 新增 mp3（edge-tts 合成落盘），验证完恢复配置。
+- 冒烟建议：把配置切到 `voice_chime_schedule=every_minute` 启动 exe，确认 `%APPDATA%\big-fat-fish-<variant>\voice_chime_cache` 新增 mp3（edge-tts 合成落盘），验证完恢复配置。
 
 ## 二、Inno Setup 安装包（正式分发）
 
@@ -56,13 +56,13 @@ dist-onedir\dsh-pet-standalone-webm-chat-portable.zip
 E:\tools\InnoSetup6\ISCC.exe packaging\dsh-pet.iss
 
 # webm
-E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=dsh-pet-standalone-webm /DMyAppExeName=dsh-pet-standalone-webm.exe /DMyAppDir=..\dist-onedir\dsh-pet-standalone-webm "/DMyAppId={{ED2590E4-A968-4E8D-B7C4-75DFE012D0E9}}" "/DMyAppDisplay=dsh-pet-standalone (WebM)" packaging\dsh-pet.iss
+E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=big-fat-fish-webm /DMyAppExeName=big-fat-fish-webm.exe /DMyAppDir=..\dist-onedir\big-fat-fish-webm "/DMyAppId={{ED2590E4-A968-4E8D-B7C4-75DFE012D0E9}}" "/DMyAppDisplay=big-fat-fish (WebM)" packaging\dsh-pet.iss
 
 # gif-chat
-E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=dsh-pet-standalone-gif-chat /DMyAppExeName=dsh-pet-standalone-gif-chat.exe /DMyAppDir=..\dist-onedir\dsh-pet-standalone-gif-chat "/DMyAppId={{7FE1EEDD-91DB-4F4B-834D-894DFE782256}}" "/DMyAppDisplay=dsh-pet-standalone (GIF Chat)" packaging\dsh-pet.iss
+E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=big-fat-fish-gif-chat /DMyAppExeName=big-fat-fish-gif-chat.exe /DMyAppDir=..\dist-onedir\big-fat-fish-gif-chat "/DMyAppId={{7FE1EEDD-91DB-4F4B-834D-894DFE782256}}" "/DMyAppDisplay=big-fat-fish (GIF Chat)" packaging\dsh-pet.iss
 
 # gif
-E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=dsh-pet-standalone-gif /DMyAppExeName=dsh-pet-standalone-gif.exe /DMyAppDir=..\dist-onedir\dsh-pet-standalone-gif "/DMyAppId={{308454BF-3FD5-4A30-B0FF-1D23BF31DCF1}}" "/DMyAppDisplay=dsh-pet-standalone (GIF)" packaging\dsh-pet.iss
+E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=big-fat-fish-gif /DMyAppExeName=big-fat-fish-gif.exe /DMyAppDir=..\dist-onedir\big-fat-fish-gif "/DMyAppId={{308454BF-3FD5-4A30-B0FF-1D23BF31DCF1}}" "/DMyAppDisplay=big-fat-fish (GIF)" packaging\dsh-pet.iss
 ```
 
 产物：`dist-onedir\<shortname>-setup.exe`

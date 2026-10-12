@@ -64,7 +64,7 @@ D:\dsh-pet\
 ├── README.md                     # 用户向说明 + 开发结构 + 测试与验证 + 打包发布
 ├── requirements.txt / pyproject.toml / pytest.ini
 ├── run.bat                       # 本地源码启动脚本
-├── dsh-pet-standalone-webm-chat.spec   # PyInstaller 规格（onedir）
+├── big-fat-fish-webm-chat.spec   # PyInstaller 规格（onedir）
 ├── pet\                          # 应用源码（112 个 .py，含子包）
 │   ├── __main__.py               # 入口：python -m pet
 │   ├── app.py                    # AppShell / PetInstance：进程级与每窗装配（3258 行）
@@ -91,7 +91,7 @@ D:\dsh-pet\
 └── dist-onedir\                  # 构建产物（绿色版目录 + portable zip）
 ```
 
-**profile 产物默认位置**：运行期配置与语音缓存位于 `%APPDATA%\dsh-pet-standalone-<variant>\`（例如 `%APPDATA%\dsh-pet-standalone-webm-chat\voice_chime_cache`）。
+**profile 产物默认位置**：运行期配置与语音缓存位于 `%APPDATA%\big-fat-fish-<variant>\`（例如 `%APPDATA%\big-fat-fish-webm-chat\voice_chime_cache`）。
 
 ---
 
@@ -253,7 +253,7 @@ modern_settings_dialog.py
 
 - `pet/config.py` 的 `Config` 负责读取、清洗、迁移、持久化；键以**顶层平铺**为主，复杂功能用嵌套 dict（chat / agent_link / proactive_screen / collision / menu）。
 - `pet/config_domains.py` 提供只读域 facade：`ChatConfig`、`AgentLinkConfig`、`ProactiveConfig`、`CollisionConfig`、`MenuConfig`，`normalize` 全部复用 `config.py` 既有清洗函数。
-- 配置落盘位置：运行期 `config.dir/config.json`（打包版为 `%APPDATA%\dsh-pet-standalone-<variant>\`）；仓库内 `pet/persona_presets/*.json` 属角色台词预设，不属运行期配置。
+- 配置落盘位置：运行期 `config.dir/config.json`（打包版为 `%APPDATA%\big-fat-fish-<variant>\`）；仓库内 `pet/persona_presets/*.json` 属角色台词预设，不属运行期配置。
 
 ### 4.2 语音报时配置键（本项目的主要定制，11 个）
 
@@ -351,7 +351,7 @@ _on_tick(now)
 
 ### 5.6 缓存与清理策略
 
-- 目录：`<config.dir>/voice_chime_cache/<16位哈希>.mp3`（打包版即 `%APPDATA%\dsh-pet-standalone-<variant>\voice_chime_cache`）。
+- 目录：`<config.dir>/voice_chime_cache/<16位哈希>.mp3`（打包版即 `%APPDATA%\big-fat-fish-<variant>\voice_chime_cache`）。
 - 上限：`MAX_CACHE_FILES = 200`，超出按 `mtime` 从旧到新删除。
 - 节流：`_prune_cache()` 全量 glob+stat 属纯 IO，`_PRUNE_MIN_INTERVAL_S = 300`（5 分钟）内最多执行一次；服务启动时也会清一次。
 - 缓存目录不可访问（权限/磁盘）时静默降级（`logger.debug`），不影响报时逻辑与气泡。
@@ -429,8 +429,8 @@ pip install pyinstaller
 powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-chat
 ```
 
-- 入口与规格：`packaging/pet_entry.py`（Chat 版）、`packaging/pet_entry_no_chat.py`（无 Chat 版）、`dsh-pet-standalone-webm-chat.spec`。
-- 产物：`dist-onedir\dsh-pet-standalone-webm-chat\`（目录）+ `dist-onedir\dsh-pet-standalone-webm-chat-portable.zip`（绿色版，实测约 146.5 MB）。
+- 入口与规格：`packaging/pet_entry.py`（Chat 版）、`packaging/pet_entry_no_chat.py`（无 Chat 版）、`big-fat-fish-webm-chat.spec`。
+- 产物：`dist-onedir\big-fat-fish-webm-chat\`（目录）+ `dist-onedir\big-fat-fish-webm-chat-portable.zip`（绿色版，实测约 146.5 MB）。
 - 其他平台/变体：`scripts/build_linux.sh`、`scripts/build_macos.sh`；GIF 变体用 `scripts/convert_to_gif.py` 同步生成；安装包用 Inno Setup 脚本 `packaging/dsh-pet.iss`（`/D` 参数选变体，免管理员）。
 - **onedir 特性**：运行期零解压，**不产生 `_MEI` 临时缓存**；历史 onefile 版遗留缓存可用 `scripts/cleanup_mei_cache.py` 检查/清理。
 
@@ -462,7 +462,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-
 
 1. 启动进程存活 >8 秒，无新增 `_MEI`。
 2. 设置页可见「语音报时」域全部行（含**试听按钮**）——这是 `SettingRow` 收集机制的历史事故点。
-3. 把 `voice_chime_schedule` 临时设为 `every_minute`，观察 1-2 分钟内：`%APPDATA%\dsh-pet-standalone-<variant>\voice_chime_cache\` 出现 mp3，气泡与语音内容一致，随后缓存文件数随裁剪策略收敛。
+3. 把 `voice_chime_schedule` 临时设为 `every_minute`，观察 1-2 分钟内：`%APPDATA%\big-fat-fish-<variant>\voice_chime_cache\` 出现 mp3，气泡与语音内容一致，随后缓存文件数随裁剪策略收敛。
 4. 语音报时/节日四项默认不在右键菜单（模板 `visible:false`）；经菜单编辑器加回后「立即报时」「启用/关闭语音报时」可用且状态同步。
 5. 断网（或卸载 edge-tts）时仍有气泡、无崩溃。
 
@@ -587,10 +587,10 @@ python -m compileall pet packaging scripts
 
 # 打包
 powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-chat
-# 产物：dist-onedir\dsh-pet-standalone-webm-chat-portable.zip
+# 产物：dist-onedir\big-fat-fish-webm-chat-portable.zip
 
 # 运行期目录（配置 + 语音缓存）
-explorer "%APPDATA%\dsh-pet-standalone-webm-chat"
+explorer "%APPDATA%\big-fat-fish-webm-chat"
 ```
 
 ## 附录 B：关键位置索引

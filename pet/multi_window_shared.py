@@ -32,7 +32,7 @@ from .agent_link import AgentLinkManager
 from .overlay_settings_command import is_overlay_topology
 from .proactive import ProactiveScreenWatcher
 
-log = logging.getLogger("dsh-pet-standalone")
+log = logging.getLogger("big-fat-fish")
 
 # 存活共享子系统注册表（测试收口用，与 agent_link._LIVE_* 同纪律）。共享
 # proactive 的 QTimer / bridge 在多窗代理下 parent 为 None，其 timeout/frame

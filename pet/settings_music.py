@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QMessageBox, QPushButton
 from . import music_players
 from .settings_widgets import ResourcePathPicker, SettingRow
 
-log = logging.getLogger("dsh-pet-standalone")
+log = logging.getLogger("big-fat-fish")
 
 PLAYER_KEYS = ("netease", "qqmusic")
 EXE_NAME_FILTER = "可执行文件 (*.exe);;所有文件 (*)"

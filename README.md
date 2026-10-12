@@ -175,7 +175,7 @@ python -m venv .venv
 
 - 项目沿革：[PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) → [MerZlin/dsh-pet-indesktop](https://github.com/MerZlin/dsh-pet-indesktop) → 本项目。感谢两位原作者和上游的各位贡献者。
 - 许可证沿用上游的 **MIT License**（见 `LICENSE`）；第三方素材与组件的声明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
-- 配置目录沿用上游的名字 `%APPDATA%\dsh-pet-standalone\`。
+- 程序在系统里的名字是 `big-fat-fish`（2026-10-11 起，此前沿用上游的 `dsh-pet-standalone`）：数据目录 `%APPDATA%\big-fat-fish\`、钥匙串服务名、开机自启项、打包产物名（`big-fat-fish-<变体>`）都用它。从旧名字升级时，数据目录、已保存的 Key、开机自启项和 Claude Code 钩子里的路径在首次启动时自动迁移。**下面保留的上游文档里出现的 `dsh-pet-standalone…`，在本项目里都对应 `big-fat-fish…`。**
 - 逐文件的改动说明、实测数字和验证记录见 [`docs/PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md`](docs/PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md)。
 
 ---

@@ -132,7 +132,7 @@ def test_other_instances_use_agent_detects_peers(tmp_path):
 def test_other_instances_use_agent_cross_variant(tmp_path):
     this_cfg = _config(tmp_path)
     # 另一个变体目录（如 webm）开启了 dsh——桥接插件是跨变体共享的，必须识别
-    variant_dir = tmp_path / "dsh-pet-standalone-webm"
+    variant_dir = tmp_path / "big-fat-fish-webm"
     variant_dir.mkdir()
     (variant_dir / "config.json").write_text(
         json.dumps({"agent_link": {"dsh": True}}), encoding="utf-8"

@@ -147,7 +147,7 @@ def redirect_hidden_bubble(host, text: str, *, subtitle: str = "",
     try:
         return bool(redirect(str(text), subtitle=str(subtitle or ""), duration_ms=int(duration_ms)))
     except Exception:
-        logging.getLogger("dsh-pet-standalone").exception("隐藏期气泡改道到灵动岛失败")
+        logging.getLogger("big-fat-fish").exception("隐藏期气泡改道到灵动岛失败")
         return False
 
 
@@ -185,7 +185,7 @@ def show_alert(host, text: str, *, subtitle: str = "", duration_ms: int = 0,
         for key in ("sessionId", "riskScore", "riskReasons", "targetCount", "targets"):
             if key in metadata:
                 item[key] = metadata[key]
-    logging.getLogger("dsh-pet-standalone").info(
+    logging.getLogger("big-fat-fish").info(
         "alert enqueue alertType=%s priority=%s alertId=%s preemptedAlertId=%s",
         item["alertType"], item["priority"], item["id"], item["preemptedAlertId"],
     )
@@ -218,7 +218,7 @@ def show_alert(host, text: str, *, subtitle: str = "", duration_ms: int = 0,
         host._sticky_bubble_active = False
         host._speech_bubble.dismiss()
         item["preemptedAlertId"] = old.get("id", "")
-        logging.getLogger("dsh-pet-standalone").info(
+        logging.getLogger("big-fat-fish").info(
             "alert preempted alertType=%s priority=%s alertId=%s by=%s",
             old.get("alertType", ""), old.get("priority", 3), old.get("id", ""), item.get("id", ""),
         )
@@ -535,7 +535,7 @@ def speak_click_self_talk(host, text: str) -> None:
     try:
         speaker(stripped)
     except Exception:
-        logging.getLogger("dsh-pet-standalone").exception("点击自言自语语音播报失败")
+        logging.getLogger("big-fat-fish").exception("点击自言自语语音播报失败")
 
 
 def show_click_self_talk(host, click_name: str) -> bool:

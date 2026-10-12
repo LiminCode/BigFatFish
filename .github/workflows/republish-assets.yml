@@ -27,10 +27,10 @@ on:
         description: '要覆盖的附件文件名（每行一个，支持通配；留空=纯桌宠版 4 件）'
         required: false
         default: |
-          dsh-pet-standalone-webm-portable.zip
-          dsh-pet-standalone-webm-setup.exe
-          dsh-pet-standalone-webm-macos-arm64.zip
-          dsh-pet-standalone-webm-linux-x86_64.zip
+          big-fat-fish-webm-portable.zip
+          big-fat-fish-webm-setup.exe
+          big-fat-fish-webm-macos-arm64.zip
+          big-fat-fish-webm-linux-x86_64.zip
 
 permissions:
   contents: write    # 覆盖 Release 附件

@@ -106,7 +106,11 @@ class ChatSession:
         self.custom_title = str(value or '')
 
 class SecretStore:
-    def __init__(self,service_name='dsh-pet-standalone'):
+    SERVICE_NAME='big-fat-fish'
+    # 2026-10-11 改名前的钥匙串服务名：新名字下读不到时回这里找，找到就抄到新名字下。
+    # 旧条目不删——回滚到旧版本时还读得到。
+    LEGACY_SERVICE_NAME='dsh-pet-standalone'
+    def __init__(self,service_name=SERVICE_NAME):
         self.service_name=service_name
         try: import keyring
         except Exception: keyring=None
@@ -115,8 +119,15 @@ class SecretStore:
     def available(self): return self._keyring is not None
     def get(self,ref):
         if not self._keyring or not ref: return ''
-        try: return str(self._keyring.get_password(self.service_name,ref) or '')
+        try: value=str(self._keyring.get_password(self.service_name,ref) or '')
         except Exception: return ''
+        if value or self.service_name!=self.SERVICE_NAME: return value
+        try: value=str(self._keyring.get_password(self.LEGACY_SERVICE_NAME,ref) or '')
+        except Exception: return ''
+        if value:
+            try: self._keyring.set_password(self.service_name,ref,value)
+            except Exception: pass
+        return value
     def set(self,ref,value):
         if not self._keyring or not ref: return False
         try: self._keyring.set_password(self.service_name,ref,value); return True

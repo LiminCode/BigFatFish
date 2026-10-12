@@ -94,11 +94,11 @@ jobs:
           & ISCC.exe packaging\dsh-pet.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC webm-chat failed" }
           $webm = @(
-            '/DMyAppShortName=dsh-pet-standalone-webm',
-            '/DMyAppExeName=dsh-pet-standalone-webm.exe',
-            '/DMyAppDir=..\dist-onedir\dsh-pet-standalone-webm',
+            '/DMyAppShortName=big-fat-fish-webm',
+            '/DMyAppExeName=big-fat-fish-webm.exe',
+            '/DMyAppDir=..\dist-onedir\big-fat-fish-webm',
             '/DMyAppId={{3424d6cc-af3c-4383-8797-ab520b923aa6}',
-            '/DMyAppDisplay=dsh-pet-standalone (WebM)',
+            '/DMyAppDisplay=big-fat-fish (WebM)',
             "/DMyAppVersion=$version",
             'packaging\dsh-pet.iss'
           )
@@ -109,7 +109,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-pet-standalone-windows-x86_64
+          name: big-fat-fish-windows-x86_64
           path: |
             dist-onedir/*-portable.zip
             dist-onedir/*-setup.exe

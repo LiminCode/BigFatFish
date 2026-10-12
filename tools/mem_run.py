@@ -37,7 +37,7 @@ SCRATCH = ROOT / '.scratch' / 'mem-probe'
 SKIP_DIRS = {
     'sessions', 'sessions-slot-1', 'sessions-slot-2', 'sessions-slot-3',
     'slots', 'screenshots', 'perfstats', 'agent-events', 'lyrics_cache',
-    'voice_chime_cache', 'sounds_cache', 'dsh-pet-standalone',
+    'voice_chime_cache', 'sounds_cache', 'big-fat-fish',
 }
 SKIP_SUFFIXES = ('.log', '.lock', '.tmp')
 SKIP_NAMES = {
@@ -90,7 +90,7 @@ def main() -> int:
     parser.add_argument('--override', action='append', default=[],
                         help='config.json 覆盖 KEY.PATH=JSON，可重复')
     parser.add_argument('--source', default=str(
-        Path(os.environ.get('APPDATA', '')) / 'dsh-pet-standalone-webm-chat'))
+        Path(os.environ.get('APPDATA', '')) / 'big-fat-fish-webm-chat'))
     parser.add_argument('--sample-s', type=float, default=2.0)
     parser.add_argument('--snap-s', type=float, default=20.0)
     parser.add_argument('--python', default=sys.executable)
@@ -117,8 +117,8 @@ def main() -> int:
         shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 源码运行的 APP_DIR_NAME 恒为 dsh-pet-standalone（无 build_variant）。
-    config_dir = appdata / 'dsh-pet-standalone'
+    # 源码运行的 APP_DIR_NAME 恒为 big-fat-fish（无 build_variant）。
+    config_dir = appdata / 'big-fat-fish'
     copied = _copy_config(source, config_dir)
 
     if args.override:

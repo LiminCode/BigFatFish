@@ -7,7 +7,7 @@
 故本脚本只做进程外采样：WS / PrivateBytes / 子进程数 / 句柄，2s 一行。
 
     .venv/Scripts/python.exe tools/ext_ws_probe.py --label pkg-overlay \
-        --exe dist-onedir/dsh-pet-standalone-webm-chat/dsh-pet-standalone-webm-chat.exe \
+        --exe dist-onedir/big-fat-fish-webm-chat/big-fat-fish-webm-chat.exe \
         --seconds 180
 
 产物落在 ``.scratch/mem-probe/<label>/``（ext_ws.csv / summary.json），与
@@ -69,8 +69,8 @@ def main() -> int:
     parser.add_argument('--sample-s', type=float, default=2.0)
     parser.add_argument('--env', action='append', default=[])
     parser.add_argument('--source', default=str(
-        Path(os.environ.get('APPDATA', '')) / 'dsh-pet-standalone-webm-chat'))
-    parser.add_argument('--app-dir-name', default='dsh-pet-standalone-webm-chat')
+        Path(os.environ.get('APPDATA', '')) / 'big-fat-fish-webm-chat'))
+    parser.add_argument('--app-dir-name', default='big-fat-fish-webm-chat')
     parser.add_argument('--keep-active-pets', action='store_true',
                         help='保留真实 active-pets 清单（多宠复现用；默认跑单宠）')
     args = parser.parse_args()

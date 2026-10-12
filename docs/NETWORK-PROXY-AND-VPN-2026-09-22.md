@@ -64,7 +64,7 @@ for url in ["https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=test&format=jso
 PY
 ```
 
-日志关键字（`%APPDATA%\dsh-pet-standalone\pet-<pid>.log`）：
+日志关键字（`%APPDATA%\big-fat-fish\pet-<pid>.log`）：
 
 | 想定位的功能 | 日志信号 |
 |---|---|

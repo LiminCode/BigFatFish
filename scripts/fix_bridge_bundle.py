@@ -18,7 +18,7 @@ envelope 手写在 index.js 内，与 dsh createUserMessage 形状对齐）。�
      都会让构建失败，而不是在用户机器上炸掉 dsh。
 
 用法（在构建脚本的 PyInstaller 之后调用）：
-    python scripts/fix_bridge_bundle.py --app-dir dist-onedir/dsh-pet-standalone-webm-chat
+    python scripts/fix_bridge_bundle.py --app-dir dist-onedir/big-fat-fish-webm-chat
 """
 import argparse
 import json

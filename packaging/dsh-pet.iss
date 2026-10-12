@@ -1,33 +1,33 @@
 ; -*- mode: ini -*-
-; Generic dsh-pet-standalone onedir installer (Inno Setup 6)
+; Generic big-fat-fish onedir installer (Inno Setup 6)
 ;
 ; Compile (defaults build the webm-chat variant):
 ;   E:\tools\InnoSetup6\ISCC.exe packaging\dsh-pet.iss
 ;
 ; Other variants (override defines on the command line):
-;   E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=dsh-pet-standalone-webm `
-;       /DMyAppExeName=dsh-pet-standalone-webm.exe `
-;       /DMyAppDir=..\dist-onedir\dsh-pet-standalone-webm `
+;   E:\tools\InnoSetup6\ISCC.exe /DMyAppShortName=big-fat-fish-webm `
+;       /DMyAppExeName=big-fat-fish-webm.exe `
+;       /DMyAppDir=..\dist-onedir\big-fat-fish-webm `
 ;       /DMyAppId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx `
-;       /DMyAppDisplay="dsh-pet-standalone (WebM)" packaging\dsh-pet.iss
+;       /DMyAppDisplay="big-fat-fish (WebM)" packaging\dsh-pet.iss
 ;
 ; Output: dist-onedir\<shortname>-setup.exe
 
 #ifndef MyAppShortName
-#define MyAppShortName "dsh-pet-standalone-webm-chat"
+#define MyAppShortName "big-fat-fish-webm-chat"
 #endif
 #ifndef MyAppExeName
-#define MyAppExeName "dsh-pet-standalone-webm-chat.exe"
+#define MyAppExeName "big-fat-fish-webm-chat.exe"
 #endif
 #ifndef MyAppDir
-#define MyAppDir "..\dist-onedir\dsh-pet-standalone-webm-chat"
+#define MyAppDir "..\dist-onedir\big-fat-fish-webm-chat"
 #endif
 #ifndef MyAppId
 ; NOTE: value must include the double-brace escaping required by AppId ({{GUID})
 #define MyAppId "{{3424d6cc-af3c-4383-8797-ab520b923aa6}"
 #endif
 #ifndef MyAppDisplay
-#define MyAppDisplay "dsh-pet-standalone (WebM Chat)"
+#define MyAppDisplay "big-fat-fish (WebM Chat)"
 #endif
 #ifndef MyAppVersion
 ; 默认版本与 pet/__init__.py 的 __version__ 一致；CI 构建时通过
