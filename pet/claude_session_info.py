@@ -179,6 +179,9 @@ def apply_registry(detail: SessionDetail, entry: dict | None) -> None:
     detail.version = str(entry.get("version") or detail.version)
     started = _number(entry.get("startedAt"))
     detail.started_at = started / 1000.0 if started else None
+    # 进程启动时所在的目录。会话中途 cd 走了之后 detail.cwd 跟着变，这个不变——
+    # VS Code 插件把进程起在工作区的第一个文件夹里，跳转时靠它分辨窗口。
+    detail.extra["start_cwd"] = str(entry.get("cwd") or "")
     if not detail.cwd:
         detail.cwd = str(entry.get("cwd") or "")
 
