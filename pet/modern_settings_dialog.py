@@ -166,6 +166,7 @@ from . import settings_interaction
 from . import settings_music
 from . import settings_pet_controls
 from . import settings_save
+from . import settings_tray
 
 
 # 语言配置页只展示用户能理解的事件名称；内部 key 仍用于保存和渲染。
@@ -523,6 +524,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("stream_capture", "直播捕获兼容", settings_pet_controls.stream_capture_hint(), self.stream_capture_check),
                 ]
             )
+        window_rows.extend(settings_tray.tray_icon_rows(self))
         general_layout.addWidget(SettingsSection("窗口与系统", window_rows, general_content))
         # 拓扑收口：「单进程多开」实验开关已从设置页移除，4.4b 起配置键
         # `experimental_single_process_spawn` 本身也随多进程多宠退役层删除
@@ -1730,7 +1732,7 @@ class ModernSettingsDialog(QDialog):
         general = page_content(
             [
                 ("应用启动", claim("autostart", "harness_autostart", "harness_launch_target")),
-                ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture")),
+                ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture", "tray_icon")),
                 # 「多开」分组已随拓扑收口 Phase A 隐藏（见上方注释）
             ]
         )
@@ -2301,6 +2303,7 @@ class ModernSettingsDialog(QDialog):
             self.ai_page.save()
         settings_file_interpret.save_file_interpret_settings(self)
         settings_music.save_music_player_settings(self)
+        settings_tray.save_tray_icon_setting(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
             from .proactive import PRESET_DEFAULTS
 

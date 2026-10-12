@@ -132,6 +132,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "throw_strength",
         "todo_reminder_enabled",
         "todo_reminder_lead_minutes",
+        "tray_icon",
         "user_customized",
         "voice_chime_custom_quotes_en",
         "voice_chime_custom_quotes_zh",

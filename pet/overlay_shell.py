@@ -76,7 +76,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QBitmap, QIcon, QImage, QPixmap, QRegion
+from PySide6.QtGui import QIcon, QImage, QPixmap, QRegion
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 from . import autostart as autostart_mod
@@ -86,6 +86,7 @@ from . import overlay_settings_command
 from . import overlay_spawn_state
 from .overlay_session_pets import SessionPetController
 from . import slot_manager
+from . import tray_icon as tray_icon_mod
 from . import window_alerts
 from .context_menus.shared import release_menu_tree
 from .physics import throw_speed_cap
@@ -698,13 +699,7 @@ def _crop_icon_pixmap(pm: QPixmap, size: int) -> QPixmap:
     动画帧是整张视频画布，直接缩放会把角色缩成几个像素（``context_menus/icons``
     记录了同一个坑）；托盘与灵动岛头像共用这一份裁剪语义，不另造第二套。
     """
-    image = pm.toImage()
-    bounds = QRegion(QBitmap.fromImage(image.createAlphaMask())).boundingRect()
-    if bounds.isValid() and not bounds.isEmpty():
-        pm = QPixmap.fromImage(image.copy(bounds))
-    return pm.scaled(size, size,
-                     Qt.AspectRatioMode.KeepAspectRatio,
-                     Qt.TransformationMode.SmoothTransformation)
+    return tray_icon_mod.fit_icon_pixmap(pm, size)
 
 
 class ShellOverlayWindow(OverlayWindow):
@@ -3133,8 +3128,9 @@ class OverlayShell(QObject):
         return vector_menu_icon(QWidget(), "pet", 64)
 
     def _tray_icon(self):
-        """托盘图标取鱼本体当前帧（idle 首帧兜底）；取不到回退爪印占位图标。"""
-        pm = self.icon_pixmap(64)
+        """托盘图标：用户指定的图片优先；否则取鱼本体当前帧（idle 首帧兜底），
+        再取不到回退爪印占位图标。"""
+        pm = self._custom_tray_pixmap() or self.icon_pixmap(64)
         if pm is not None:
             return QIcon(pm)
         return self._tray_placeholder_icon()
@@ -3182,12 +3178,26 @@ class OverlayShell(QObject):
             timer.stop()
 
     def _refresh_tray_icon_once(self) -> bool:
-        """能拿到角色帧就把托盘图标换成它；返回是否已换（拿到帧）。"""
-        pm = self.icon_pixmap(64)
+        """能拿到图就把托盘图标换成它；返回是否已换。
+
+        自定义图片不依赖角色帧：有它就直接算换好了，轮询随之停表，之后也不会被
+        角色头像顶掉。"""
+        pm = self._custom_tray_pixmap() or self.icon_pixmap(64)
         if pm is None or self.tray is None:
             return False
         self.tray.setIcon(QIcon(pm))
         return True
+
+    def _custom_tray_pixmap(self):
+        """设置项 ``tray_icon`` 指定的图片；没填或用不了返回 ``None``（见 ``pet/tray_icon.py``）。"""
+        return tray_icon_mod.load_custom_pixmap(self._config.get(tray_icon_mod.CONFIG_KEY, ""), 64)
+
+    def _apply_tray_icon_setting(self) -> None:
+        """设置改了之后把托盘图标换成当前该用的那张（自定义 / 角色头像）。"""
+        if self.tray is None:
+            return
+        if not self._refresh_tray_icon_once():
+            self._arm_tray_icon_refresh()   # 清空了自定义而角色帧还没就绪：回到轮询等首帧
 
     # ---------------------------------------------------------------- 图标面
     def _idle_first_frame_pixmap(self):
@@ -3230,6 +3240,7 @@ class OverlayShell(QObject):
     def refresh_settings(self) -> None:
         """外部配置变更应用点（AppShell._apply_external_config_change 扇出）。"""
         self._apply_window_capabilities()
+        self._apply_tray_icon_setting()
         # self_talk 族热改：重读字段并按新口径重排程（schedule_self_talk
         # 先停表再按 enabled 早退，开/关/改间隔都收敛到这一条路径）。
         self._load_self_talk_settings()

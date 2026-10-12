@@ -825,6 +825,7 @@ class Config:
             "user_customized": False,  # 批 C：仅当用户在该子肥鱼自己的设置界面保存过才置真
             "on_top": True,
             "show_dock_icon": True,
+            "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1091,6 +1092,7 @@ class Config:
             "scale",
             "on_top",
             "show_dock_icon",
+            "tray_icon",
             "no_move",
             "character",
             "spawn_inherit_size",
