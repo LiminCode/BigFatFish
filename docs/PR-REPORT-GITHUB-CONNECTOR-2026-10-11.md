@@ -1,6 +1,6 @@
 # PR 报告：GitHub 连接器（桌宠对话里只读查询 GitHub）
 
-> **基线**：`183fb63`（feat(character): 新增内置角色 Claude）
+> **基线**：`3031682`（feat(character): 新增内置角色 Claude）
 > **分支**：`feature/claude-session-fish`　**日期**：`2026-10-11`
 > **范围**：13 个文件（实现 9、测试 2、文档 2 含本报告）
 > **关联**：Claude 通道见 [`PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md`](PR-REPORT-CLAUDE-CODE-SESSION-FISH-2026-10-11.md)；
@@ -33,7 +33,7 @@ Personal Access Token 后，对话请求会带上 GitHub 官方远程 MCP 服务
 
 ## 二、修改文件说明
 
-增删行数取自 `git diff --numstat`（相对基线 `183fb63`）。
+增删行数取自 `git diff --numstat`（相对基线 `3031682`）。
 
 ### 实现
 
@@ -171,14 +171,14 @@ stop_reason=end_turn elapsed=5.3s first_text=4.1s
 [text] LiminCode/BigFatFish 仓库 main 分支最近 3 条提交的标题：1. Merge pull request #3 … 2. merge: 把 main（PR #2 的压缩合并）并回分支 3. fix(island): …
 ```
 
-返回的三条提交与本地 `git log origin/main -3`（`6706302` / `22f0502` / `23147ea`）一致。classic PAT 可用，未要求 Copilot 订阅。
+返回的三条提交与本地 `git log origin/main -3`（`be21086` / `1fc0a36` / `352ee95`）一致。classic PAT 可用，未要求 Copilot 订阅。
 
 **改动后，走桌宠自己的代码路径**（`Config` → `connectors` → `AnthropicProvider.stream`，
 系统提示用配置里的角色设定）
 
 ```text
 问：我 GitHub 上 LiminCode/BigFatFish 这个仓库现在有几个打开的 PR 和 issue？最近一次提交是什么？
-答：打开的 PR：0 个；打开的 Issue：0 个；最近一次提交：SHA 6706302，作者 Limin Wang，
+答：打开的 PR：0 个；打开的 Issue：0 个；最近一次提交：SHA be21086，作者 Limin Wang，
     时间 2026-10-12 01:10:01 UTC，内容：合并 PR #3「灵动岛：隐藏桌宠后「显示桌宠」…」
 -- first_text=6.9s total=10.8s requests=1
 -- stop_reason end_turn | blocks ['thinking', 'mcp_tool_use'×3, 'mcp_tool_result'×3, 'text']
@@ -278,7 +278,7 @@ tests/test_github_connector.py tests/test_anthropic_provider.py tests/test_deskt
 
 ---
 
-## 九、第二轮：「关于我」设置（同日追加，基线 `82a7594`）
+## 九、第二轮：「关于我」设置（同日追加，基线 `6e142a4`）
 
 ### 核心特性
 
