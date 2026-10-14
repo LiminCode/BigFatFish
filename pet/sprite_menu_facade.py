@@ -686,6 +686,40 @@ class SpriteMenuFacade:
         if controller is not None:
             controller.generate_now()
 
+    # ---- Slack 关注（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
+    def _slack_watch(self):
+        return getattr(self._shell, "slack_watch", None)
+
+    def slack_watch_settings(self) -> dict | None:
+        from .slack_watch import CONFIG_KEY, normalize
+
+        return normalize(self.cfg.get(CONFIG_KEY)) if self._slack_watch() is not None else None
+
+    def _set_slack_watch(self, **changes) -> None:
+        from .slack_watch import CONFIG_KEY, normalize
+
+        self.cfg.set(CONFIG_KEY, normalize({**normalize(self.cfg.get(CONFIG_KEY)), **changes}))
+        self._save()
+        controller = self._slack_watch()
+        if controller is not None:
+            controller.refresh_state()
+
+    def toggle_slack_watch(self, on: bool) -> None:
+        self._set_slack_watch(enabled=bool(on))
+
+    def set_slack_watch_interval(self, minutes: int) -> None:
+        self._set_slack_watch(interval_minutes=int(minutes))
+
+    def open_slack_watch(self) -> None:
+        controller = self._slack_watch()
+        if controller is not None:
+            controller.open_window()
+
+    def check_slack_now(self) -> None:
+        controller = self._slack_watch()
+        if controller is not None:
+            controller.check_now()
+
     # ---- VS Code 工作区（右键菜单子项；条目与点击见 pet/vscode_workspaces.py）----
     def vscode_workspace_entries(self) -> list:
         from .vscode_workspaces import CONFIG_KEY, list_workspaces

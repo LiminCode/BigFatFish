@@ -20,6 +20,7 @@ from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from . import i18n
 from .notification_center import normalize as normalize_notifications
+from .slack_watch import normalize as normalize_slack_watch
 from .work_briefing import normalize as normalize_work_briefing
 
 
@@ -858,6 +859,8 @@ class Config:
             "vscode_workspaces": {"workspace_dir": "", "wsl_dirs": {}, "menu_limit": 12},
             # 通知中心（Windows 通知中心里的 Slack 通知铺进灵动岛），见 pet/notification_center.py
             "notifications": normalize_notifications(None),
+            # Slack 关注（电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack），见 pet/slack_watch.py
+            "slack_watch": normalize_slack_watch(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1133,6 +1136,7 @@ class Config:
             "work_briefing",
             "vscode_workspaces",
             "notifications",
+            "slack_watch",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1527,6 +1531,7 @@ class Config:
 
         self.data["vscode_workspaces"] = normalize_vscode_workspaces(self.data.get("vscode_workspaces"))
         self.data["notifications"] = normalize_notifications(self.data.get("notifications"))
+        self.data["slack_watch"] = normalize_slack_watch(self.data.get("slack_watch"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1716,6 +1721,7 @@ class Config:
             "dynamic_island",
             "ui_language",
             "notifications",
+            "slack_watch",
         }:
             self._normalize_pet_settings()
 

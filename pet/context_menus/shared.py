@@ -407,6 +407,35 @@ def add_work_briefing_menu(menu: QMenu, pet) -> None:
         connect_action(choice, lambda value=value: pet.set_work_briefing_time(value))
 
 
+def add_slack_watch_menu(menu: QMenu, pet) -> None:
+    """「Slack 关注」子菜单：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。
+
+    和「工作简报」同一个条件才出现（装了 WSL、宿主接了服务）。"""
+    state_of = getattr(pet, "slack_watch_settings", None)
+    settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
+    if settings is None:
+        return
+    from ..slack_watch import INTERVAL_CHOICES
+
+    sub = add_submenu(menu, "Slack 关注", None)
+    add_action(sub, "查看最近一次", None, pet.open_slack_watch, close_on_trigger=True)
+    add_action(sub, "现在检查", None, pet.check_slack_now, close_on_trigger=True)
+    sub.addSeparator()
+    act = sub.addAction("电脑在用时自动检查")
+    act.setCheckable(True)
+    act.setChecked(bool(settings["enabled"]))
+    act.toggled.connect(lambda on: pet.toggle_slack_watch(on))
+    interval_menu = add_submenu(sub, "检查间隔", None)
+    group = QActionGroup(interval_menu)
+    group.setExclusive(True)
+    for value in sorted({*INTERVAL_CHOICES, settings["interval_minutes"]}):
+        choice = interval_menu.addAction(f"每 {value} 分钟")
+        choice.setCheckable(True)
+        choice.setChecked(value == settings["interval_minutes"])
+        group.addAction(choice)
+        connect_action(choice, lambda value=value: pet.set_slack_watch_interval(value))
+
+
 def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
     sub = add_submenu(menu, "Agent 联动", None)
@@ -490,6 +519,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 rows_group.addAction(choice)
                 connect_action(choice, lambda rows=rows: set_rows(rows))
     add_work_briefing_menu(sub, pet)
+    add_slack_watch_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [

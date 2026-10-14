@@ -63,16 +63,18 @@ class WorkBriefingWindow(QWidget):
 
     regenerate_requested = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, title: str = "工作简报", regenerate_label: str = "重新生成",
+                 empty_text: str = _EMPTY, busy_text: str = _BUSY) -> None:
         super().__init__(parent, Qt.Window)
         self.setObjectName("workBriefing")
-        self.setWindowTitle("工作简报")
+        self.setWindowTitle(title)
+        self._empty_text, self._busy_text = empty_text, busy_text
         self._colors = _PALETTES[bool(_system_dark())]
         self.setStyleSheet(_QSS.format(**self._colors))
         self.resize(580, 660)
         self.setMinimumSize(380, 320)
 
-        self.title_label = QLabel("工作简报", self)
+        self.title_label = QLabel(title, self)
         self.title_label.setObjectName("briefingTitle")
         self.meta_label = QLabel("", self)
         self.meta_label.setObjectName("briefingMeta")
@@ -87,7 +89,7 @@ class WorkBriefingWindow(QWidget):
         self.status_label = QLabel("", self)
         self.status_label.setObjectName("briefingStatus")
         self.status_label.setWordWrap(True)
-        self.regenerate_btn = QPushButton("重新生成", self)
+        self.regenerate_btn = QPushButton(regenerate_label, self)
         self.regenerate_btn.setAccessibleDescription("让 WSL 里的 Claude Code 重新读一遍并总结，大约一分钟")
         self.regenerate_btn.clicked.connect(self.regenerate_requested)
         self.close_btn = QPushButton("关闭", self)
@@ -110,14 +112,14 @@ class WorkBriefingWindow(QWidget):
         """摆上最近一份；``busy`` 时按钮变灰，``error`` 是最近一次失败的原因。"""
         if briefing is None:
             self.meta_label.setText("")
-            self.body.setPlainText(_BUSY if busy else _EMPTY)
+            self.body.setPlainText(self._busy_text if busy else self._empty_text)
         else:
             self.meta_label.setText(_meta_line(briefing))
             self.body.setMarkdown(f"**{briefing.summary}**\n\n{briefing.markdown}")
             self._decorate()
         self.regenerate_btn.setEnabled(not busy)
         if busy:
-            self.status_label.setText(_BUSY)
+            self.status_label.setText(self._busy_text)
         else:
             self.status_label.setText(f"上一次没生成出来：{error}" if error else "")
 

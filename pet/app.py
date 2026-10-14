@@ -1947,6 +1947,7 @@ class AppShell:
             except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
                 logging.exception("overlay: 拖文件解读接线失败")
             self._start_work_briefing()
+            self._start_slack_watch()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -3033,6 +3034,25 @@ class AppShell:
             service.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("工作简报接线失败")
+
+    def _start_slack_watch(self) -> None:
+        """Slack 关注（可选服务）：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。"""
+        if self._overlay_shell is None or getattr(self, "_slack_watch", None) is not None:
+            return
+        try:
+            from . import claude_hooks
+
+            if not claude_hooks.wsl_exe():
+                return
+            from .slack_watch_service import SlackWatchService
+            from .slack_watch_ui import SlackWatchController
+
+            service = SlackWatchService(self.config, parent=self.app)
+            self._slack_watch = SlackWatchController(self._overlay_shell, service)
+            self._overlay_shell.slack_watch = self._slack_watch
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("Slack 关注接线失败")
 
     def _push_island_briefing_state(self, *_args) -> None:
         """灵动岛上的「工作简报」按钮：没接简报服务就不显示，有没看过的那份就亮起来。"""
