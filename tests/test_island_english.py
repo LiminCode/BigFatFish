@@ -45,7 +45,7 @@ def test_capsule_counts_and_card_headline_in_english(english):
     assert detail == "web · Working ｜ api (WSL) · Napping and 3 in all"
     assert ch.summarize_sessions([]) == ("Claude Code · nobody's on duty",
                                          "Sessions show up here once you ask them something")
-    assert ch.PHASE_TEXT["waiting"] == "Needs your OK" and "review" in ch.PHASE_TEXT
+    assert ch.PHASE_TEXT["waiting"] == "Needs OK" and ch.PHASE_TEXT["review"] == "Your turn"
 
 
 def test_the_same_functions_still_say_exactly_what_they_used_to_in_chinese():

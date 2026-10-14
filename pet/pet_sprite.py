@@ -1071,9 +1071,10 @@ class PetSprite(QObject):
             font = QFont(self._CAPTION_FONT_FAMILY) if self._CAPTION_FONT_FAMILY else QFont()
             font.setPixelSize(self._CAPTION_FONT_PX)
             metrics = QFontMetrics(font)
-            # 中间省略：开头是会话名、结尾是状态，两头都得看得见
-            text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideMiddle,
-                                      max(1, rect.width() - 2 * self._CAPTION_PAD_X - badge_w - 2))
+            # 省略只落在会话名那一段：结尾的状态词（「· 等你回复」）必须完整——它比名字重要。
+            # 名字本身太长时省略它的中间（开头与结尾都留一点）。
+            available = max(1, rect.width() - 2 * self._CAPTION_PAD_X - badge_w - 2)
+            text = self._elide_caption(metrics, self.caption, available)
             cached = (key, text, font,
                       min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X + badge_w),
                       metrics.height() + 2 * self._CAPTION_PAD_Y)
@@ -1087,6 +1088,19 @@ class PetSprite(QObject):
         else:
             y = max(rect.top(), body.top() - height - 2)
         return QRect(x, y, width, height), text
+
+    _CAPTION_SEP = " · "
+
+    @classmethod
+    def _elide_caption(cls, metrics: QFontMetrics, caption: str, available: int) -> str:
+        """``名字 · 状态`` 放不下时只省略名字；没有分隔符或状态自己都放不下时退回整句中间省略。"""
+        head, sep, status = caption.rpartition(cls._CAPTION_SEP)
+        if sep:
+            tail = sep + status
+            room = available - metrics.horizontalAdvance(tail)
+            if room >= metrics.horizontalAdvance("…") + metrics.averageCharWidth() * 2:
+                return metrics.elidedText(head, Qt.TextElideMode.ElideMiddle, room) + tail
+        return metrics.elidedText(caption, Qt.TextElideMode.ElideMiddle, available)
 
     def caption_rect(self) -> QRect:
         """标签胶囊在 overlay 局部坐标系下的矩形（无标签为空矩形）。"""
