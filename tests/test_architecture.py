@@ -238,7 +238,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 插进「常规」1 行、领域认领 1 行、保存 1 行。实测 2399。
 # 2026-10-14 上调到 2401：「通知中心」一节（控件、提示、保存都在 settings_notifications.py），这里是
 # 插进「自动化与联动」1 行、保存 1 行（import 并进 settings_vscode 那一行）。实测 2401。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2401
+# 2026-10-14 上调到 2403：「Slack 关注」一节（控件、提示、保存都在 settings_slack_watch.py），这里是
+# 插进「自动化与联动」1 行、保存 1 行（import 并进同一行）。实测 2403。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2403
 
 
 def _read(name: str) -> str:
