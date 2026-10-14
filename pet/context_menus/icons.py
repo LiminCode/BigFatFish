@@ -236,6 +236,17 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
     elif name == "template":
         painter.drawRoundedRect(QRectF(1.5, 2.0, 5.0, 12.0), 1.0, 1.0)
         painter.drawRoundedRect(QRectF(8.0, 2.0, 6.5, 5.0), 1.0, 1.0); painter.drawRoundedRect(QRectF(8.0, 8.5, 6.5, 5.5), 1.0, 1.0)
+    elif name == "vscode":
+        # 两道折角的尖括号：VS Code 里开的会话
+        path.moveTo(6.0, 3.5); path.lineTo(2.0, 8.0); path.lineTo(6.0, 12.5)
+        path.moveTo(10.0, 3.5); path.lineTo(14.0, 8.0); path.lineTo(10.0, 12.5)
+        painter.drawPath(path)
+    elif name == "terminal":
+        # 窗 + 提示符 >_：本机终端（PowerShell / Windows Terminal）
+        painter.drawRoundedRect(QRectF(1.5, 2.5, 13.0, 11.0), 1.6, 1.6)
+        painter.drawLine(QPointF(4.2, 6.0), QPointF(6.8, 8.0))
+        painter.drawLine(QPointF(6.8, 8.0), QPointF(4.2, 10.0))
+        painter.drawLine(QPointF(8.2, 10.6), QPointF(11.8, 10.6))
     elif name == "windows":
         # 四格窗：本机工作区。描边语言与其余图标一致，不用品牌色
         for x, y in ((2.2, 2.2), (8.6, 2.2), (2.2, 8.6), (8.6, 8.6)):

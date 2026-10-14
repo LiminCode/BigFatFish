@@ -2935,7 +2935,7 @@ class AppShell:
 
         now, live = time.time(), self._live_session_keys()
         island.set_session_history([
-            {"key": entry.key, "label": entry.label, "where": entry.where, "path": entry.cwd,
+            {"key": entry.key, "label": entry.label, "where": entry.where, "host": entry.host, "path": entry.cwd,
              "ago": ago_text(now - entry.last_seen), "live": entry.key in live}
             for entry in history.entries()], is_open=history.ui_open,
             max_rows=(self.config.get("agent_link") or {}).get("session_history_rows", 10))

@@ -4,6 +4,11 @@
 给它几行数据（``set_rows``），它报用户点了什么（``activated`` / ``action_requested``）；
 数据从哪来、点了之后做什么都不归它管（见 ``session_history_service`` 与 AppShell）。
 
+样子（2026-10-14 起，照 Windows Phone 那种平铺卡片）：表头是一块方角的卡片；每一行也是
+一块卡片，卡片之间留 2px 的缝；行的左边一个小图标说明从哪开的（VS Code / 本机终端 /
+WSL 终端 / 脚本），进行中的行左缘一道主题色竖条。没有圆角、没有描边、没有阴影，靠
+底色深浅和留白分层。卡片底色随岛的配色：浅字（深底）用浅色薄膜，深字用深色薄膜。
+
 一行 = 标题 + 多久以前，下面一行小字「从哪开的 · 路径」。点一行 = 默认动作，右键出
 菜单。行数多了在框里滚动，卡片不跟着无限长高。
 
@@ -14,18 +19,24 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont, QFontMetrics
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-ROW_HEIGHT = 36
+ROW_HEIGHT = 40          # 一行占的高度：38 的卡片 + 2 的缝
+_ROW_GAP = 2
 #: 列表最多露几行（缺省值；超出的在框里滚动）。5 行实机反馈太短
 MAX_VISIBLE_ROWS = 10
-_HEADER_HEIGHT = 24
-_ROW_PAD_X = 6
+_HEADER_HEIGHT = 28
+_ROW_PAD_X = 8
+_ICON_PX = 16
+_ICON_SLOT = 22          # 图标占的宽度（没有图标也留着，文字对齐）
+_LIVE_BAR_PX = 3
 _SCROLLBAR_PX = 6
 _TITLE_PX, _SMALL_PX = 12, 10
 _STATUS_MS = 4000
 LIVE_TEXT = "进行中"
+#: 从哪开的 → 图标名（``context_menus.icons``）
+HOST_ICONS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
 #: 右键菜单：(动作名, 文案)；None = 分隔线
 _MENU = (("terminal", "在终端里恢复"), ("vscode", "在 VS Code 里打开"), ("folder", "打开文件夹"), None,
          ("copy_path", "复制路径"), ("copy_resume", "复制恢复命令"), None,
@@ -39,8 +50,15 @@ def _font(base: QFont, pixels: int, *, bold: bool = False) -> QFont:
     return font
 
 
+def tile_colors(primary: str) -> tuple[str, str]:
+    """(卡片底色, 悬停底色)：按主文字色的明暗判断岛是深底还是浅底。"""
+    if QColor(primary).lightness() >= 128:
+        return "rgba(255, 255, 255, 18)", "rgba(255, 255, 255, 34)"
+    return "rgba(0, 0, 0, 14)", "rgba(0, 0, 0, 26)"
+
+
 class _HistoryRow(QFrame):
-    """一行会话。左键点 = ``clicked``，右键 = ``menu_requested``。"""
+    """一行会话（一块卡片）。左键点 = ``clicked``，右键 = ``menu_requested``。"""
 
     clicked = Signal(object)
     menu_requested = Signal(object, QPoint)
@@ -51,28 +69,39 @@ class _HistoryRow(QFrame):
         self._press: QPoint | None = None
         self.setObjectName("historyRow")
         self.setFixedHeight(ROW_HEIGHT)
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        grid = QGridLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, _ROW_GAP)          # 卡片之间的缝
+        outer.setSpacing(0)
+        self.tile = QFrame(self)
+        self.tile.setObjectName("historyTile")
+        self.tile.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        outer.addWidget(self.tile)
+        grid = QGridLayout(self.tile)
         grid.setContentsMargins(_ROW_PAD_X, 3, _ROW_PAD_X, 3)
-        grid.setHorizontalSpacing(8)
+        grid.setHorizontalSpacing(6)
         grid.setVerticalSpacing(0)
-        self.title, self.ago, self.path = QLabel(self), QLabel(self), QLabel(self)
+        self.icon = QLabel(self.tile)
+        self.icon.setFixedSize(_ICON_SLOT, ROW_HEIGHT - _ROW_GAP - 6)
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title, self.ago, self.path = QLabel(self.tile), QLabel(self.tile), QLabel(self.tile)
         self.ago.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        for label in (self.title, self.ago, self.path):
+        for label in (self.icon, self.title, self.ago, self.path):
             label.setTextFormat(Qt.TextFormat.PlainText)     # 标题 / 路径是外来内容：不当富文本
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.title.setFont(_font(self.font(), _TITLE_PX))
+        self.title.setFont(_font(self.font(), _TITLE_PX, bold=True))
         self.ago.setFont(_font(self.font(), _SMALL_PX))
         self.path.setFont(_font(self.font(), _SMALL_PX))
-        grid.addWidget(self.title, 0, 0)
-        grid.addWidget(self.ago, 0, 1)
-        grid.addWidget(self.path, 1, 0, 1, 2)
-        grid.setColumnStretch(0, 1)
+        grid.addWidget(self.icon, 0, 0, 2, 1)
+        grid.addWidget(self.title, 0, 1)
+        grid.addWidget(self.ago, 0, 2)
+        grid.addWidget(self.path, 1, 1, 1, 2)
+        grid.setColumnStretch(1, 1)
 
     def set_data(self, row: dict, width: int, *, accent: str, secondary: str) -> None:
         self.key = row.get("key")
-        inner = max(40, width - 2 * _ROW_PAD_X)
+        inner = max(40, width - 2 * _ROW_PAD_X - _ICON_SLOT - 6)
         live = bool(row.get("live"))
         ago = LIVE_TEXT if live else str(row.get("ago") or "")
         ago_width = QFontMetrics(self.ago.font()).horizontalAdvance(ago) + 2
@@ -85,6 +114,19 @@ class _HistoryRow(QFrame):
         self.path.setText(QFontMetrics(self.path.font()).elidedText(
             f"{where} · {path}" if where else path, Qt.TextElideMode.ElideMiddle, inner))
         self.setToolTip(path)
+        self._set_icon(str(row.get("host") or ""))
+        self.tile.setProperty("live", live)
+        self.tile.style().unpolish(self.tile)
+        self.tile.style().polish(self.tile)
+
+    def _set_icon(self, host: str) -> None:
+        name = HOST_ICONS.get(host)
+        if not name:
+            self.icon.clear()
+            return
+        from .context_menus.icons import vector_widget_icon
+
+        self.icon.setPixmap(vector_widget_icon(self, name, _ICON_PX).pixmap(_ICON_PX, _ICON_PX))
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         self._press = event.position().toPoint()
@@ -120,11 +162,11 @@ class SessionHistoryPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(_ROW_GAP)
         self.header = QPushButton(self)
         self.header.setObjectName("historyHeader")
         self.header.setFixedHeight(_HEADER_HEIGHT)
-        self.header.setFont(_font(self.font(), 11))
+        self.header.setFont(_font(self.font(), 11, bold=True))
         self.header.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.header.setAutoDefault(False)
         self.header.clicked.connect(self._on_header_clicked)
@@ -162,17 +204,23 @@ class SessionHistoryPanel(QWidget):
 
     def _restyle(self) -> None:
         c = self._colors
+        tile, hover = tile_colors(c["primary"])
         self.setStyleSheet(
-            f"QPushButton#historyHeader {{ color: {c['secondary']}; background: transparent; border: none;"
-            f" text-align: left; padding: 0 2px; }}"
-            f"QPushButton#historyHeader:hover {{ color: {c['primary']}; }}"
-            f"QFrame#historyRow {{ background: transparent; border-radius: 6px; }}"
-            f"QFrame#historyRow:hover {{ background: rgba(128, 128, 128, 46); }}"
-            f"QFrame#historyRow QLabel {{ color: {c['secondary']}; background: transparent; }}"
+            # 表头：一块方角卡片，粗体，左对齐；悬停加亮
+            f"QPushButton#historyHeader {{ color: {c['primary']}; background: {tile}; border: none;"
+            f" border-radius: 0; text-align: left; padding: 0 {_ROW_PAD_X}px; }}"
+            f"QPushButton#historyHeader:hover {{ background: {hover}; }}"
+            # 行：外框透明（只负责留缝），里面那块是卡片；进行中的行左缘一道主题色竖条
+            f"QFrame#historyRow {{ background: transparent; border: none; }}"
+            f"QFrame#historyTile {{ background: {tile}; border: none; border-radius: 0;"
+            f" border-left: {_LIVE_BAR_PX}px solid transparent; }}"
+            f"QFrame#historyTile:hover {{ background: {hover}; }}"
+            f"QFrame#historyTile[live=\"true\"] {{ border-left: {_LIVE_BAR_PX}px solid {c['accent']}; }}"
+            f"QFrame#historyTile QLabel {{ color: {c['secondary']}; background: transparent; }}"
             f"QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; }}"
             # 细滚动条：系统默认那种带箭头的粗条在卡片里太抢眼
             f"QScrollBar:vertical {{ background: transparent; width: {_SCROLLBAR_PX}px; margin: 2px 0; }}"
-            f"QScrollBar::handle:vertical {{ background: rgba(128, 128, 128, 120); border-radius: 3px;"
+            f"QScrollBar::handle:vertical {{ background: rgba(128, 128, 128, 120); border-radius: 0;"
             f" min-height: 24px; }}"
             f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
             f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}")
@@ -228,7 +276,7 @@ class SessionHistoryPanel(QWidget):
         else:
             text = f"最近的对话 ({len(self._rows)}) · {'收起' if self._open else '展开'}"
         self.header.setText(QFontMetrics(self.header.font()).elidedText(
-            text, Qt.TextElideMode.ElideRight, max(40, self._width - 6)))
+            text, Qt.TextElideMode.ElideRight, max(40, self._width - 2 * _ROW_PAD_X - 4)))
 
     # ---------------------------------------------------------------- 折叠
     def is_open(self) -> bool:

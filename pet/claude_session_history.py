@@ -137,6 +137,17 @@ class HistoryEntry:
         return text
 
     @property
+    def host(self) -> str:
+        """在哪开的，给列表挑图标：``vscode`` / ``terminal``（本机）/ ``wsl``（WSL 终端）/ ``script`` / 空。"""
+        if self.entrypoint == ENTRY_VSCODE:
+            return "vscode"
+        if self.entrypoint == "sdk-cli":
+            return "script"
+        if self.is_wsl:
+            return "wsl"
+        return "terminal" if self.entrypoint == ENTRY_CLI else ""
+
+    @property
     def resume_command(self) -> str:
         return f"claude --resume {self.session_id}"
 
