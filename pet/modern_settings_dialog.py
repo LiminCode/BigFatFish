@@ -166,6 +166,7 @@ from . import settings_interaction
 from . import settings_music
 from . import settings_pet_controls
 from . import settings_save
+from . import settings_language
 from . import settings_tray
 from . import settings_vscode
 
@@ -508,6 +509,7 @@ class ModernSettingsDialog(QDialog):
                     self.dock_icon_check,
                 )
             )
+        general_layout.addWidget(SettingsSection("语言 / Language", settings_language.language_rows(self), general_content))
         general_layout.addWidget(SettingsSection("应用启动", launch_rows, general_content))
         window_rows = [
             SettingRow("on_top", "窗口置顶", "始终将桌宠保持在其他窗口上方。", self.on_top_check),
@@ -1733,6 +1735,7 @@ class ModernSettingsDialog(QDialog):
 
         general = page_content(
             [
+                ("语言 / Language", claim("ui_language")),
                 ("应用启动", claim("autostart", "harness_autostart", "harness_launch_target")),
                 ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture", "tray_icon")),
                 # 「多开」分组已随拓扑收口 Phase A 隐藏（见上方注释）
@@ -2297,6 +2300,7 @@ class ModernSettingsDialog(QDialog):
         settings_file_interpret.save_file_interpret_settings(self)
         settings_music.save_music_player_settings(self)
         settings_tray.save_tray_icon_setting(self)
+        settings_language.save_language_setting(self)
         settings_vscode.save_workspace_settings(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
             from .proactive import PRESET_DEFAULTS

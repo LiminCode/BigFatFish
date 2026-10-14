@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import catalog
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,16 @@ _BRIEF_ICON_W = 13
 _BRIEF_ICON_H = 15
 _BRIEF_GAP = 10
 _BRIEF_UNREAD_COLOR = QColor("#3b8fe8")
-_BRIEF_TOOLTIPS = {"idle": "工作简报", "unread": "工作简报 · 有一份新的"}
+_BRIEF_TOOLTIPS = {"idle": "island.briefing.idle", "unread": "island.briefing.unread"}   # i18n 键
+_PLACEHOLDER_KEYS = {"island.balance.placeholder": "余额 --", "island.tier.placeholder": "余额峰谷 --",
+                     "island.usage.placeholder": "今日 --"}
+
+
+def _all_placeholder_texts(key: str) -> set[str]:
+    """这个占位键在各语言里的写法（判断「现在显示的还是占位值」用）。"""
+    from . import i18n
+
+    return {i18n.table(code).get(key, "") for code in i18n.LANGUAGES} - {""}
 _API_STATUS_COLORS = {
     "ok": QColor(80, 220, 120),        # 对话 API 可用
     "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
@@ -265,15 +275,15 @@ class DynamicIsland(QWidget):
         self._drag_offset: QPoint | None = None
         self._dragging = False
         self._press_global: QPoint | None = None
-        self._balance_tier_text = "余额峰谷 --"
-        self._balance_text = "余额 --"
+        self._balance_tier_text = t("island.tier.placeholder")
+        self._balance_text = t("island.balance.placeholder")
         self._pet_visible = True
         self._agent_active = False
         self._api_state = "unknown"
         self._api_detail = ""
         self._briefing_state = "hidden"   # hidden 不画 / idle / unread 有一份没看过的
         # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
-        self._usage_text = "今日 --"
+        self._usage_text = t("island.usage.placeholder")
         self._usage_detail = ""
         self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
@@ -439,8 +449,8 @@ class DynamicIsland(QWidget):
         self.update()
 
     def set_balance_info(self, tier_text: str, balance_text: str) -> None:
-        self._balance_tier_text = str(tier_text or "余额峰谷 --")
-        self._balance_text = str(balance_text or "余额 --")
+        self._balance_tier_text = str(tier_text or t("island.tier.placeholder"))
+        self._balance_text = str(balance_text or t("island.balance.placeholder"))
         self._sync_card_labels()
         self._refresh()
 
@@ -475,7 +485,8 @@ class DynamicIsland(QWidget):
             self._refresh()
 
     def briefing_tooltip(self) -> str:
-        return _BRIEF_TOOLTIPS.get(self._briefing_state, "")
+        key = _BRIEF_TOOLTIPS.get(self._briefing_state)
+        return t(key) if key else ""
 
     def _briefing_icon_left(self) -> float | None:
         """按钮图标的左边界；不显示返回 None。排法与 ``_content_cache`` 逐项一致。"""
@@ -519,7 +530,7 @@ class DynamicIsland(QWidget):
 
     def set_usage_info(self, text: str, detail: str = "") -> None:
         """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
-        text = str(text or "今日 --")
+        text = str(text or t("island.usage.placeholder"))
         changed = text != self._usage_text
         self._usage_text, self._usage_detail = text, str(detail or "")
         self._sync_tooltip()
@@ -592,6 +603,7 @@ class DynamicIsland(QWidget):
         old_edge = self.dock_edge
         old_icon = self._icon_spec()
         self._cfg = _cfg_dict(self.config)
+        self._relabel_placeholders()
         self._sync_tooltip()             # 信息槽换了内容：提示里要不要带用量跟着变
         self._sync_card_labels()
         # 头像必须跟着刷新作废：provider 取的是**当前形象**的帧，而角色热切换
@@ -608,6 +620,15 @@ class DynamicIsland(QWidget):
             self._apply_fixed_size()
             self._apply_position()
         self._refresh()
+
+    def _relabel_placeholders(self) -> None:
+        """语言换了：还是占位值的几处（余额 -- / 今日 --）按新语言重写；有真实数据的不动。"""
+        placeholders = {t_zh: key for key, t_zh in _PLACEHOLDER_KEYS.items()}
+        for attr, key in (("_balance_text", "island.balance.placeholder"),
+                          ("_balance_tier_text", "island.tier.placeholder"),
+                          ("_usage_text", "island.usage.placeholder")):
+            if placeholders.get(getattr(self, attr)) == key or getattr(self, attr) in _all_placeholder_texts(key):
+                setattr(self, attr, t(key))
 
     def _refresh(self) -> None:
         """内容变化后立即重算尺寸、夹回屏幕并重绘。"""
@@ -656,9 +677,9 @@ class DynamicIsland(QWidget):
         layout.addSpacing(2)
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
-        self._card_toggle_btn = QPushButton("显隐桌宠", self._card_box)
-        self._card_chat_btn = QPushButton("聊天", self._card_box)
-        self._card_settings_btn = QPushButton("设置", self._card_box)
+        self._card_toggle_btn = QPushButton(t("island.card.toggle"), self._card_box)
+        self._card_chat_btn = QPushButton(t("island.card.chat"), self._card_box)
+        self._card_settings_btn = QPushButton(t("island.card.settings"), self._card_box)
         self._card_toggle_btn.clicked.connect(self._on_card_toggle)
         self._card_chat_btn.clicked.connect(self._on_card_chat)
         self._card_settings_btn.clicked.connect(self._on_card_settings)
@@ -695,6 +716,7 @@ class DynamicIsland(QWidget):
         # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
         self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
                                      width=self._card_width() - 2 * _CARD_MARGIN_X)
+        self._history_panel.retranslate()      # 语言可能刚换过；没换时只是重填一遍文字
         text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2
         for label, text, max_lines in (
                 (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
@@ -705,7 +727,9 @@ class DynamicIsland(QWidget):
             label.setText("\n".join(lines))
             if label is not self._card_message_label:   # 最近消息在聊天窗里看全文，不挂提示
                 label.setToolTip(text if lines and lines[-1].endswith("…") else "")
-        self._card_toggle_btn.setText("隐藏桌宠" if self._pet_visible else "显示桌宠")
+        self._card_toggle_btn.setText(t("island.card.hide_pet") if self._pet_visible else t("island.card.show_pet"))
+        self._card_chat_btn.setText(t("island.card.chat"))          # 语言可能刚换过
+        self._card_settings_btn.setText(t("island.card.settings"))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

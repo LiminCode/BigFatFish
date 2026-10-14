@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable
 
 from . import claude_hooks, claude_session_info
+from .i18n import t
 from .claude_session_info import ENTRY_CLI, ENTRY_VSCODE
 
 log = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ SCAN_LIMIT = 80
 
 WSL_AGENT = "claude_wsl"
 #: 入口 → 列表里的说法
-_WHERE_TEXT = {ENTRY_VSCODE: "VS Code", ENTRY_CLI: "终端", "sdk-cli": "脚本"}
+_WHERE_KEYS = {ENTRY_VSCODE: "history.where.vscode", ENTRY_CLI: "history.where.terminal", "sdk-cli": "history.where.script"}
 #: 会话 ID 会拼进命令行：只放行 UUID 用得到的字符
 _SESSION_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z-]{7,63}$")
 #: transcript 文件名：会话 ID（UUID）。同目录下 ``agent-*.jsonl`` 之类的不是会话
@@ -84,14 +85,14 @@ def ago_text(seconds: float) -> str:
     """多久以前（列表右侧那一栏）。"""
     seconds = max(0.0, float(seconds))
     if seconds < 60:
-        return "刚刚"
+        return t("ago.now")
     if seconds < 3600:
-        return f"{int(seconds // 60)} 分钟前"
+        return t("ago.minutes", n=int(seconds // 60))
     if seconds < _DAY_S:
-        return f"{int(seconds // 3600)} 小时前"
+        return t("ago.hours", n=int(seconds // 3600))
     if seconds < 2 * _DAY_S:
-        return "昨天"
-    return f"{int(seconds // _DAY_S)} 天前"
+        return t("ago.yesterday")
+    return t("ago.days", n=int(seconds // _DAY_S))
 
 
 @dataclass
@@ -131,9 +132,10 @@ class HistoryEntry:
     @property
     def where(self) -> str:
         """从哪开的：「终端」「VS Code」「终端 · WSL」。"""
-        text = _WHERE_TEXT.get(self.entrypoint, "")
+        key = _WHERE_KEYS.get(self.entrypoint)
+        text = t(key) if key else ""
         if self.is_wsl:
-            return f"{text} · WSL" if text else "WSL"
+            return t("history.where.wsl_suffix", text=text) if text else t("history.where.wsl")
         return text
 
     @property

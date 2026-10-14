@@ -22,6 +22,8 @@ from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
+from .i18n import t
+
 ROW_HEIGHT = 40          # 一行占的高度：38 的卡片 + 2 的缝
 _ROW_GAP = 2
 #: 列表最多露几行（缺省值；超出的在框里滚动）。5 行实机反馈太短
@@ -35,13 +37,13 @@ _SCROLLBAR_PX = 6
 _TITLE_PX, _SMALL_PX = 12, 10
 _STATUS_MS = 4000
 _ICON_WARM_DELAY_MS = 2500
-LIVE_TEXT = "进行中"
+LIVE_TEXT_KEY = "history.live"
 #: 从哪开的 → 图标名（``context_menus.icons``）
 HOST_ICONS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
 #: 右键菜单：(动作名, 文案)；None = 分隔线
-_MENU = (("terminal", "在终端里恢复"), ("vscode", "在 VS Code 里打开"), ("folder", "打开文件夹"), None,
-         ("copy_path", "复制路径"), ("copy_resume", "复制恢复命令"), None,
-         ("remove", "从列表移除"), ("clear", "清空列表"))
+_MENU = (("terminal", "history.menu.terminal"), ("vscode", "history.menu.vscode"), ("folder", "history.menu.folder"),
+         None, ("copy_path", "history.menu.copy_path"), ("copy_resume", "history.menu.copy_resume"), None,
+         ("remove", "history.menu.remove"), ("clear", "history.menu.clear"))
 
 
 def _font(base: QFont, pixels: int, *, bold: bool = False) -> QFont:
@@ -104,7 +106,7 @@ class _HistoryRow(QFrame):
         self.key = row.get("key")
         inner = max(40, width - 2 * _ROW_PAD_X - _ICON_SLOT - 6)
         live = bool(row.get("live"))
-        ago = LIVE_TEXT if live else str(row.get("ago") or "")
+        ago = t(LIVE_TEXT_KEY) if live else str(row.get("ago") or "")
         ago_width = QFontMetrics(self.ago.font()).horizontalAdvance(ago) + 2
         self.ago.setText(ago)
         self.ago.setFixedWidth(ago_width)
@@ -285,9 +287,15 @@ class SessionHistoryPanel(QWidget):
         if self._status:
             text = self._status
         else:
-            text = f"最近的对话 ({len(self._rows)}) · {'收起' if self._open else '展开'}"
+            text = t("history.header.open" if self._open else "history.header.closed", n=len(self._rows))
+        self.header_text = text          # 未省略的全文（省略只为显示；测试与悬停提示看这个）
+        self.header.setToolTip(text)
         self.header.setText(QFontMetrics(self.header.font()).elidedText(
             text, Qt.TextElideMode.ElideRight, max(40, self._width - 2 * _ROW_PAD_X - 4)))
+
+    def retranslate(self) -> None:
+        """界面语言换了：表头、「进行中」这些由面板自己写的字按新语言重写（行数据由 app 重推）。"""
+        self._refill()
 
     # ---------------------------------------------------------------- 折叠
     def is_open(self) -> bool:
@@ -323,8 +331,8 @@ class SessionHistoryPanel(QWidget):
             if item is None:
                 menu.addSeparator()
                 continue
-            name, text = item
-            menu.addAction(text).triggered.connect(
+            name, text_key = item
+            menu.addAction(t(text_key)).triggered.connect(
                 lambda _checked=False, name=name: self.action_requested.emit(name, key))
         return menu
 

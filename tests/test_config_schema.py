@@ -134,6 +134,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "todo_reminder_enabled",
         "todo_reminder_lead_minutes",
         "tray_icon",
+        "ui_language",
         "user_customized",
         "voice_chime_custom_quotes_en",
         "voice_chime_custom_quotes_zh",

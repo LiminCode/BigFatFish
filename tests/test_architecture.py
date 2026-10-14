@@ -234,7 +234,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # settings_interaction），这里是依赖登记 1 行 + 保存 1 行。实测 2403。
 # 2026-10-13 上调到 2406：「VS Code 工作区」一节（控件、提示、保存都在 settings_vscode.py），这里是
 # import 1 行、插进「自动化与联动」1 行、保存 1 行。实测 2406。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2406
+# 2026-10-14 上调到 2399：「界面语言」一节（控件、提示、保存都在 settings_language.py），这里是 import 1 行、
+# 插进「常规」1 行、领域认领 1 行、保存 1 行。实测 2399。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2399
 
 
 def _read(name: str) -> str:

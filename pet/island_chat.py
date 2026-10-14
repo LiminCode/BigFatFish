@@ -22,6 +22,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 
 from .quick_chat import QuickChatBubble
+from .i18n import t
 
 # 预览式弹出的自动收回时长（与展开卡片 _CARD_AUTO_COLLAPSE_MS 同口径）
 _AUTO_COLLAPSE_MS = 15_000
@@ -37,9 +38,9 @@ class IslandChatBubble(QuickChatBubble):
         self._anchor: QWidget | None = None
         # 预览式弹出不激活窗口：显式声明，避免 Windows 上 show() 抢前台焦点
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.title_label.setText("灵动岛对话")
+        self.title_label.setText(t("island.chat.title"))
 
-        self.show_pet_btn = QPushButton("显示桌宠")
+        self.show_pet_btn = QPushButton(t("island.card.show_pet"))
         self.show_pet_btn.setObjectName("quick-chat-send")
         # 样式表已生效后才创建的子控件不会自动跟上气泡放大后的字号，显式给一次
         self.show_pet_btn.setFont(self.font())

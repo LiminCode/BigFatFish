@@ -18,6 +18,7 @@ from typing import Any
 from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
+from . import i18n
 from .work_briefing import normalize as normalize_work_briefing
 
 
@@ -844,6 +845,7 @@ class Config:
             "on_top": True,
             "show_dock_icon": True,
             "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
+            "ui_language": i18n.DEFAULT_LANGUAGE,  # 界面语言（zh / en），目前只覆盖灵动岛，见 pet/i18n.py
             # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
             "work_briefing": normalize_work_briefing(None),
             # 右键菜单「VS Code 工作区」：工作区文件目录 + 菜单条数，见 pet/vscode_workspaces.py
@@ -1091,6 +1093,8 @@ class Config:
         previous_providers = previous_chat.get("providers") if isinstance(previous_chat, dict) else None
         merged_chat = _merge_chat_data(merged)
         self.data["chat"] = merged_chat
+        # 外部（设置窗口）改了语言：重载这一步就切，岛随后的刷新读到的已是新语言
+        self.data["ui_language"] = i18n.set_language(self.data.get("ui_language"))
         if isinstance(previous_providers, dict):
             raw_providers = merged.get("providers")
             raw_providers = raw_providers if isinstance(raw_providers, dict) else {}
@@ -1117,6 +1121,7 @@ class Config:
             "on_top",
             "show_dock_icon",
             "tray_icon",
+            "ui_language",
             "work_briefing",
             "vscode_workspaces",
             "no_move",
@@ -1403,6 +1408,7 @@ class Config:
                     stack.append(value)
 
     def _normalize_pet_settings(self):
+        self.data["ui_language"] = i18n.set_language(self.data.get("ui_language"))
         target = str(self.data.get("harness_launch_target") or "auto").strip().lower()
         self.data["harness_launch_target"] = target if target in ("auto", "web", "desktop") else "auto"
         dialogue_mode = str(self.data.get("dialogue_mode") or "legacy").lower()
@@ -1698,6 +1704,7 @@ class Config:
             "character_profiles",
             "chat_always_on_top",
             "dynamic_island",
+            "ui_language",
         }:
             self._normalize_pet_settings()
 

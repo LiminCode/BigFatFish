@@ -36,6 +36,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from . import autostart as autostart_mod
+from .i18n import t
 from . import catalog
 from . import click_sound
 from . import overlay_instance_gate as overlay_gate_mod
@@ -109,7 +110,7 @@ class _QuietBalanceBridge(_BackgroundResult):
         if ok:
             owner._update_island_balance(payload, animate=False)
         else:
-            island.set_balance_info(owner._island_tier_hint(), "余额查询失败")
+            island.set_balance_info(owner._island_tier_hint(), t("balance.failed"))
 
 
 def _persona_picker(win):
@@ -1549,6 +1550,7 @@ class AppShell:
             if callable(refresh):
                 refresh()  # overlay 拓扑的窗口能力重应用（4.1b）
         self._sync_dynamic_island()
+        self._repush_island_texts()
         self._apply_balance_timer()
         # Phase 1/2：设置保存后按配置同步可选服务（todo 懒启停）与动画预热
         self._sync_todo_service()
@@ -2923,6 +2925,16 @@ class AppShell:
             return set()
         return {(str(s.get("agent") or ""), str(s.get("sessionId") or "")) for s in registry.sessions()}
 
+    def _repush_island_texts(self) -> None:
+        """配置重载后把岛上由 app 算好的文字再推一遍：语言换了，岛自己重画不够。"""
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        self._push_island_session_counts()
+        self._push_island_history()
+        if island.mode == "expanded":
+            self._refresh_island_card()
+
     def _push_island_history(self) -> None:
         island = getattr(self, "island", None)
         if island is None or not shiboken6.isValid(island):
@@ -2967,7 +2979,7 @@ class AppShell:
         if entry.key in self._live_session_keys():
             jumper = getattr(getattr(self, "_overlay_shell", None), "session_actions", None)
             jumped = jumper is not None and bool(jumper.jump_key(entry.key))
-            self._say_island_history("正在切到这个对话…" if jumped else "找不到这个对话的窗口")
+            self._say_island_history(t("history.status.jumping") if jumped else t("history.status.no_window"))
             return
         self._say_island_history(self._history_actions().activate(entry))
 
@@ -3056,9 +3068,9 @@ class AppShell:
             return
         if self._island_card_source() == "claude":
             return  # 卡片正在显示 Claude 会话：余额自动刷新的结果不许把它顶掉
-        text = "余额 --"
+        text = t("island.balance.placeholder")
         if isinstance(payload, dict):
-            text = str(payload.get("text") or "余额 --")
+            text = str(payload.get("text") or t("island.balance.placeholder"))
         self.island.set_balance_info(self._island_tier_hint(), text)
         if animate:
             self.island.notify_event("balance")
@@ -3067,13 +3079,13 @@ class AppShell:
         """灵动岛卡片展开时的静默余额刷新：不冒泡、不播动画，只更新岛卡片。
 
         30s 内存/文件缓存命中直接用；否则后台查询（60s 节流，查询忙时跳过）。
-        未配置 API Key 时明确提示，不再停留 "余额 --"。
+        未配置 API Key 时明确提示，不再停留 t("island.balance.placeholder")。
         """
         island = getattr(self, "island", None)
         if island is None or getattr(self, "_quiet_balance_busy", False):
             return
         if not getattr(self, "enable_chat", True):
-            island.set_balance_info(self._island_tier_hint(), "此版本无余额查询")
+            island.set_balance_info(self._island_tier_hint(), t("balance.unsupported"))
             return
         now = time.monotonic()
         import hashlib
@@ -3082,12 +3094,12 @@ class AppShell:
         from .chat import anthropic_provider
         if anthropic_provider.uses_anthropic(provider):
             # Claude API 没有余额查询接口，DeepSeek 的峰谷提示对它也不适用
-            island.set_balance_info("用量与余额请到 Anthropic 控制台查看", "Claude API")
+            island.set_balance_info(t("balance.claude_console"), "Claude API")
             return
         provider.api_key = self.config.resolve_api_key(provider)
         if not provider.api_key:
             island.set_balance_info(
-                self._island_tier_hint(), "未配置 API Key（设置 → 聊天）")
+                self._island_tier_hint(), t("balance.no_key"))
             return
         key_digest = hashlib.sha256(str(provider.api_key or '').encode()).hexdigest()[:12]
         provider_key = '|'.join([
@@ -3107,10 +3119,10 @@ class AppShell:
         last = getattr(self, "_quiet_balance_last", None)
         if not force and last is not None and now - last < 60.0:
             # 节流命中且缓存已过期：明示状态，不停留在旧值上装死
-            island.set_balance_info(self._island_tier_hint(), "刚刚查询过，稍后自动更新")
+            island.set_balance_info(self._island_tier_hint(), t("balance.just_checked"))
             return
         self._quiet_balance_last = now
-        island.set_balance_info(self._island_tier_hint(), "查询中…")
+        island.set_balance_info(self._island_tier_hint(), t("balance.checking"))
         bridge = _QuietBalanceBridge(owner=self)
         self._quiet_balance_bridge = bridge
         self._quiet_balance_busy = True  # 独立忙标志：不占显式查询的闸门

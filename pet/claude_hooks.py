@@ -25,11 +25,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable
+
+from .i18n import t
 
 #: 注入的 hook 事件。Stop / StopFailure 是回合边界；Notification 用来感知
 #: 「在等用户批准」；SessionEnd 让关掉的会话不再占着「忙」。
@@ -344,14 +347,28 @@ class WslSettingsStore:
 #: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）。
 #: ``review``（回合结束、用户还没去看）不是收敛器报的：呈现层
 #: （``SessionPetController``）在 ``resting`` 上按「看过没有」分出来的。
-PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中"}
-_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "review": "{n} 个等你回复",
-                     "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+class _PhaseText(Mapping):
+    """阶段 → 当前语言的状态文案（``session.phase.*``）。像字典一样用，但每次取都按当前语言。"""
+
+    _PHASES = ("working", "waiting", "review", "resting")
+
+    def __getitem__(self, phase: str) -> str:
+        if phase not in self._PHASES:
+            raise KeyError(phase)
+        return t(f"session.phase.{phase}")
+
+    def __iter__(self):
+        return iter(self._PHASES)
+
+    def __len__(self) -> int:
+        return len(self._PHASES)
+
+
+PHASE_TEXT: Mapping[str, str] = _PhaseText()
 #: 汇总时的排序：最需要人管的排最前
 _PHASE_ORDER = ("waiting", "review", "working", "resting")
-#: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
-_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("review", "待回复"),
-                   ("waiting", "等待中"))
+#: 灵动岛胶囊上的计数：阶段，按显示顺序（短标签见 ``session.capsule.*``）
+_CAPSULE_PHASES = ("working", "resting", "review", "waiting")
 #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
 CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
 
@@ -368,8 +385,8 @@ def session_counts(sessions: list[dict]) -> list[tuple[str, str]]:
 
     灵动岛胶囊用：一眼看出几个在干活、几个歇着、几个在等你。
     """
-    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase, _ in _CAPSULE_PHASES}
-    return [(phase, f"{counts[phase]} {text}") for phase, text in _CAPSULE_PHASES if counts[phase]]
+    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase in _CAPSULE_PHASES}
+    return [(phase, f"{counts[phase]} {t(f'session.capsule.{phase}')}") for phase in _CAPSULE_PHASES if counts[phase]]
 
 
 def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[str, str]:
@@ -379,16 +396,16 @@ def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[st
     """
     live = [s for s in sessions if s.get("phase") in PHASE_TEXT]
     if not live:
-        return "Claude Code · 没有在用的会话", "会话提问后会出现在这里"
+        return t("session.none"), t("session.none_hint")
     counts = {phase: sum(1 for s in live if s["phase"] == phase) for phase in _PHASE_ORDER}
     headline = "Claude Code · " + " · ".join(
-        _PHASE_COUNT_TEXT[phase].format(n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
+        t(f"session.count.{phase}", n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
     ordered = sorted(live, key=lambda s: _PHASE_ORDER.index(s["phase"]))
     detail = " ｜ ".join(
         f"{session_label(str(s.get('agent') or ''), s)} · {PHASE_TEXT[s['phase']]}"
         for s in ordered[:detail_max])
     if len(ordered) > detail_max:
-        detail += f" 等 {len(ordered)} 个"
+        detail += t("session.more", n=len(ordered))
     return headline, detail
 
 
