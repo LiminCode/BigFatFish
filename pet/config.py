@@ -87,7 +87,15 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 # 同名 action id 若将来重新引入，删掉这里即可。
 # 2026-10-11：在线更新整个移除（从源码运行的 fork，查的是上游发布版、装的是上游
 # 安装包），「检查更新」「夸克网盘下载」同样在此剔除。
-_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"})
+_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"}) | frozenset({
+    # 2026-10-13 「音乐」从右键菜单下线（功能本身保留在设置页）
+    "music_pause", "music_next", "music_prev", "music_quit", "music_lyric_align",
+    "music_open_netease", "music_open_qqmusic",
+})
+
+
+#: 整组下线的子菜单：连壳一起清掉（否则老布局里留一个只剩分隔线的空壳）
+_MENU_LAYOUT_DROPPED_SUBMENUS = frozenset({"music"})
 
 
 def _drop_removed_menu_actions(nodes):
@@ -96,8 +104,10 @@ def _drop_removed_menu_actions(nodes):
         if not isinstance(node, dict):
             kept.append(node)
             continue
-        if (node.get("type") == "action"
-                and str(node.get("id") or "") in _MENU_LAYOUT_DROPPED_ACTIONS):
+        node_id = str(node.get("id") or "")
+        if node.get("type") == "action" and node_id in _MENU_LAYOUT_DROPPED_ACTIONS:
+            continue
+        if node.get("type") == "submenu" and node_id in _MENU_LAYOUT_DROPPED_SUBMENUS:
             continue
         children = node.get("children")
         if isinstance(children, list):
@@ -834,6 +844,8 @@ class Config:
             "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
             # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
             "work_briefing": normalize_work_briefing(None),
+            # 右键菜单「VS Code 工作区」：工作区文件目录 + 菜单条数，见 pet/vscode_workspaces.py
+            "vscode_workspaces": {"workspace_dir": "", "menu_limit": 12},
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1104,6 +1116,7 @@ class Config:
             "show_dock_icon",
             "tray_icon",
             "work_briefing",
+            "vscode_workspaces",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1493,6 +1506,9 @@ class Config:
         self.data["edge_probe_enabled"] = _bool_or_default(self.data.get("edge_probe_enabled"), False)
         self.data["agent_link"] = _clean_agent_link_data(self.data.get("agent_link"))
         self.data["work_briefing"] = normalize_work_briefing(self.data.get("work_briefing"))
+        from .vscode_workspaces import normalize as normalize_vscode_workspaces  # 惰性：它依赖会话跳转模块
+
+        self.data["vscode_workspaces"] = normalize_vscode_workspaces(self.data.get("vscode_workspaces"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开

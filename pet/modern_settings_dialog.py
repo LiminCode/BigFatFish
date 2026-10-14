@@ -167,6 +167,7 @@ from . import settings_music
 from . import settings_pet_controls
 from . import settings_save
 from . import settings_tray
+from . import settings_vscode
 
 
 # 语言配置页只展示用户能理解的事件名称；内部 key 仍用于保存和渲染。
@@ -1927,6 +1928,7 @@ class ModernSettingsDialog(QDialog):
         cost_section = SettingsSection("消费统计", agent_cost_rows, automation)
         automation_layout.insertWidget(0, cost_section)
         automation_layout.insertWidget(1, agent_box)
+        automation_layout.insertWidget(2, SettingsSection("VS Code 工作区", settings_vscode.workspace_rows(self), automation))
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
@@ -2306,6 +2308,7 @@ class ModernSettingsDialog(QDialog):
         settings_file_interpret.save_file_interpret_settings(self)
         settings_music.save_music_player_settings(self)
         settings_tray.save_tray_icon_setting(self)
+        settings_vscode.save_workspace_settings(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
             from .proactive import PRESET_DEFAULTS
 

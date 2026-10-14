@@ -42,9 +42,11 @@ OverlayShell + 被点 sprite + 行为控制器，使**两套建造器原样复�
 """
 from __future__ import annotations
 
+import threading
 import logging
 
 from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QInputDialog, QMenu
 
 from . import catalog
@@ -664,6 +666,35 @@ class SpriteMenuFacade:
         if controller is not None:
             controller.generate_now()
 
+    # ---- VS Code 工作区（右键菜单子项；条目与点击见 pet/vscode_workspaces.py）----
+    def vscode_workspace_entries(self) -> list:
+        from .vscode_workspaces import CONFIG_KEY, list_workspaces
+
+        try:
+            return list_workspaces(self.cfg.get(CONFIG_KEY))
+        except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是列不出来，不能让菜单打不开
+            logging.exception("VS Code 工作区：读取列表失败")
+            return []
+
+    def open_vscode_workspace(self, entry) -> None:
+        """切过去 / 打开：找窗口和起 code 命令要几百毫秒，放后台线程；结果经信号回 GUI 线程冒泡。"""
+        from .vscode_workspaces import activate
+
+        bridge = _notice_bridge(self._shell)
+
+        def run() -> None:
+            try:
+                _ok, message = activate(entry)
+            except Exception as exc:  # noqa: BLE001 - 后台线程不许带病退出
+                logging.exception("VS Code 工作区：打开失败")
+                message = f"打不开 {entry.label}：{type(exc).__name__}"
+            try:
+                bridge.notice.emit(message)
+            except RuntimeError:
+                pass  # 应用正在退出
+
+        threading.Thread(target=run, name="vscode-workspace", daemon=True).start()
+
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """Agent 联动子项（window.py ``_toggle_agent_link`` 等价，含拒绝回滚）。
 
@@ -701,11 +732,6 @@ class SpriteMenuFacade:
         return None
 
     @property
-    def music_service_available(self) -> bool:
-        """音乐服务是否可达（不可达 → 整组「音乐」子菜单不注入）。"""
-        return self._music_host() is not None
-
-    @property
     def _music_lyric(self):
         host = self._music_host()
         return getattr(host, "_music_lyric", None) if host is not None else None
@@ -729,33 +755,6 @@ class SpriteMenuFacade:
         reopen = getattr(window, "reopen_context_menu", None)
         if callable(reopen) and menu is not None:
             reopen(menu)
-
-
-def _is_music_group(submenu: QMenu) -> bool:
-    """「音乐」子菜单判定：标题或内容任一命中。
-
-    用户编排（``context_menu_layout``）允许给子菜单改别名，只按标题匹配会漏；
-    两个模板的播放器条目文案都是「打开…给主人放歌」（``shared._music_player_builder``），
-    故内容兜底是稳定的。
-    """
-    if submenu.title() == "音乐":
-        return True
-    for action in submenu.actions():
-        text = action.text()
-        if text.startswith("打开") and text.endswith("给主人放歌"):
-            return True
-    return False
-
-
-def _drop_music_group(menu: QMenu) -> None:
-    """摘掉「音乐」子菜单（服务不可达时的整组隐藏）。"""
-    for action in list(menu.actions()):
-        submenu = action.menu()
-        if submenu is None or not _is_music_group(submenu):
-            continue
-        menu.removeAction(action)
-        submenu.deleteLater()
-        return
 
 
 def _move_before_quit(menu: QMenu, action) -> None:
@@ -786,13 +785,30 @@ def _move_after_label(menu: QMenu, label: str, action) -> bool:
     return False
 
 
+class _NoticeBridge(QObject):
+    """后台线程 → GUI 线程的一句话提示（挂在壳上长期存活，门面本身随菜单建了又丢）。"""
+
+    notice = Signal(str)
+
+
+def _notice_bridge(shell) -> _NoticeBridge:
+    bridge = getattr(shell, "_menu_notice_bridge", None)
+    if bridge is None:
+        bridge = _NoticeBridge()
+        show = getattr(shell, "show_bubble", None)
+        if callable(show):
+            bridge.notice.connect(lambda text: show(text, 3200))
+        shell._menu_notice_bridge = bridge
+    return bridge
+
+
 def build_sprite_full_menu(shell, sprite=None) -> QMenu:
     """overlay 全量右键菜单：按 ``context_menu_template`` 走 legacy/modern 建造器。
 
     ``sprite`` = 被点中的那一条（4.2c D13 由 ``ShellOverlayWindow.contextMenuEvent``
     透传）；动作面里作用于"某一只"的入口（桌宠设置 / 退出这只）按它路由。
 
-    条件显示与 legacy 窗侧逐点一致（聊天门 / win32+聊天门 / 音乐服务门），
+    条件显示与 legacy 窗侧逐点一致（聊天门 / win32+聊天门），
     ``tests/test_sprite_menu_parity.py`` 用真实 PetWindow 的同条件菜单树锁死。
     """
     facade = SpriteMenuFacade(shell, sprite)
@@ -824,9 +840,6 @@ def build_sprite_full_menu(shell, sprite=None) -> QMenu:
         install_modern_check_indicators(menu)
         install_responsive_menu_style(menu)
         install_stay_open_interaction(menu)
-    if not facade.music_service_available:
-        # 音乐服务不存在 → 整组隐藏（legacy 建造器无条件注入该组，故在此收口）
-        _drop_music_group(menu)
     # 「退出这只」只在多宠时出现（legacy parity：单窗不注入该入口，只有 app.quit
     # 语义的「退出」）——没有子肥鱼时它等价于「退出」，不重复列出
     if getattr(shell, "_spawned", None):

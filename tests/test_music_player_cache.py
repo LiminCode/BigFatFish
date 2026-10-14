@@ -175,12 +175,10 @@ def test_cold_cache_menu_build_never_scans_filesystem(monkeypatch):
         assert searches == [], "GUI 线程构建菜单时调用了会扫描的搜索入口"
         assert iterdir_calls == [], f"GUI 线程构建菜单时枚举了目录：{iterdir_calls}"
 
-        by_text = {action.text(): action for action in _menu_actions(menu)}
-        for label in ("打开网易云音乐给主人放歌", "打开QQ音乐给主人放歌"):
-            action = by_text[label]
-            assert action.isEnabled() is True, f"冷缓存下应乐观启用：{label}"
-            assert "找不到" not in action.toolTip(), "冷缓存不等于「找不到」，不该挂禁用理由"
-        assert warms == ["netease", "qqmusic"], "冷缓存下每个播放器各触发一次幂等后台预热"
+        # 2026-10-13 起「音乐」子菜单不在右键菜单上（功能本身保留在设置页）：菜单里没有
+        # 播放器条目可查，也不再由菜单构建触发预热；预热只剩启动时那一次。
+        assert all(not action.text().endswith("给主人放歌") for action in _menu_actions(menu))
+        assert warms == [], "菜单里没有播放器条目了，构建菜单不该再触发预热"
     finally:
         # 定向同步销毁（docs/QT-LIFECYCLE-FULL-SUITE-STABILIZATION-2026-09.md §3.4）：
         # 菜单测试不许把 DeferredDelete / 排队事件留给后续用例的 processEvents。

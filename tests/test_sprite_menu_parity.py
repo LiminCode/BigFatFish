@@ -14,11 +14,11 @@
 覆盖：
 1. legacy 模板 ≡ build_legacy_menu(PetWindow)（条件显示项对齐：聊天门/win32 门）；
 2. modern 模板 ≡ build_modern_menu(PetWindow)（注册表 + 用户编排 + 图标分组）；
-3. 显式清单：用户点名的缺失条目（AI 对话/黄金回旋/显示本轮消费/音乐子菜单/
+3. 显式清单：用户点名的缺失条目（AI 对话/黄金回旋/显示本轮消费/
    边缘探头/大小/DeepSeek Harness/打开网页版 DeepSeek/主动识屏/Agent 联动/
    切换菜单模板）逐项在树里；
 4. 无聊天变体：聊天门条目在两侧一起消失；
-5. 音乐服务不可达 → 整组隐藏；
+5. （「音乐」子菜单 2026-10-13 已从右键菜单下线，见 test_menu_music_entries_removed）；
 6. 点击路由：每项落到与 legacy 窗侧同一服务方法（等价性见 sprite_menu_facade
    的方法 docstring）；
 7. close_on_trigger 命令在菜单关闭后必须派发（overlay 此前整类静默失效）。
@@ -65,14 +65,15 @@ POOLS = {
 # 「记录最近的对话」：灵动岛卡片里的那个列表由 overlay 壳的历史服务供数。
 # 「详情卡配色」：会话小鱼详情卡的配色方案，同样只有 overlay 有会话小鱼。
 ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼", "会话小鱼上限", "护驾",
-                            "记录最近的对话", "最近的对话显示行数", "详情卡配色"})
+                            "记录最近的对话", "最近的对话显示行数", "详情卡配色",
+                            # 「VS Code 工作区」：条目来自壳的门面回调，旧 PetWindow 没有
+                            "VS Code 工作区"})
 
 # 用户点名的缺失条目（legacy 清单 → overlay 菜单必须逐项存在）
 REQUIRED_LABELS = (
     "AI 对话",
     "黄金回旋",
     "显示本轮消费",
-    "音乐",
     "边缘探头",
     "大小",
     "DeepSeek Harness",
@@ -80,14 +81,6 @@ REQUIRED_LABELS = (
     "主动识屏",
     "Agent 联动",
     "切换到新版菜单",
-)
-MUSIC_LABELS = (
-    "让人家歇一会儿嘛（暂停 / 播放）",
-    "给主人换一首（切歌）",
-    "人家想再听刚才那首（上一首）",
-    "人家今天不唱了（退出音乐模式）",
-    "打开网易云音乐给主人放歌",
-    "打开QQ音乐给主人放歌",
 )
 CHAT_GATED_LABELS = ("AI 对话", "AI 设置", "看看屏幕", "主动识屏", "DeepSeek 余额")
 # Windows 专有项：主动识屏 v1 依赖 win32 前台窗口/截屏能力（vision.py /
@@ -340,11 +333,6 @@ def test_legacy_template_missing_entries_all_present(tmp_path):
         # overlay 侧保留的、legacy.py 没有的三个入口（删掉就是实机可见回退）
         for label in ("桌宠设置", "隐藏桌宠"):
             assert label in labels, f"legacy 模板缺项：{label}"
-        music = _find(menu, "音乐").menu()
-        assert music is not None
-        music_labels = [a.text() for a in music.actions() if not a.isSeparator()]
-        for label in MUSIC_LABELS:
-            assert label in music_labels, f"音乐子菜单缺项：{label}"
     finally:
         shell._delete_runtime_marker()
 
@@ -354,7 +342,7 @@ def test_modern_template_exposes_same_capabilities(tmp_path):
     try:
         menu = build_sprite_full_menu(shell)
         labels = _all_labels(menu)
-        for label in ("AI 对话", "播放动画", "切换角色", "播放速率", "大小", "音乐",
+        for label in ("AI 对话", "播放动画", "切换角色", "播放速率", "大小",
                       "拖动物理", "边缘探头", "黄金回旋", "显示本轮消费", "桌宠设置"):
             assert label in labels, f"modern 模板缺项：{label}"
         controls = _find(menu, "桌宠控制").menu()
@@ -421,22 +409,10 @@ def test_chat_gated_entries_follow_chat_availability(tmp_path):
         shell._delete_runtime_marker()
 
 
-# ---------------------------------------------------------------- 5. 音乐服务门
-def test_music_group_hidden_when_service_unavailable(tmp_path, monkeypatch):
-    shell, _instance, _config = _make_overlay(tmp_path, template="legacy")
-    try:
-        assert "音乐" in _all_labels(build_sprite_full_menu(shell))
-        monkeypatch.setattr(SpriteMenuFacade, "_music_host", lambda self: None)
-        assert "音乐" not in _all_labels(build_sprite_full_menu(shell))
-    finally:
-        shell._delete_runtime_marker()
-
-
 def test_music_service_host_is_the_overlay_shell(tmp_path):
     shell, _instance, _config = _make_overlay(tmp_path, template="legacy")
     try:
         facade = SpriteMenuFacade(shell)
-        assert facade.music_service_available is True
         controller = facade.install_music_lyric()
         assert controller is shell._music_lyric
         assert shell.install_music_lyric() is controller      # 幂等

@@ -18,14 +18,8 @@ from .shared import (
     add_deepseek_web,
     add_edge_probe,
     add_agent_cost,
-    add_submenu,
     add_golden_spin,
-    add_music_next,
-    add_music_open_netease,
-    add_music_open_qqmusic,
-    add_music_pause,
-    add_music_prev,
-    add_music_quit,
+    add_vscode_workspaces_menu,
     add_harness,
     add_no_move,
     add_on_top,
@@ -70,14 +64,9 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     add_golden_spin(menu, pet, icons=False)
     add_agent_cost(menu, pet, icons=False)
     # legacy 布局约定无图标（测试 test_legacy_config_value_dispatches_legacy_layout 守着）
-    music_menu = add_submenu(menu, "音乐")
-    add_music_pause(music_menu, pet, icons=False)
-    add_music_next(music_menu, pet, icons=False)
-    add_music_prev(music_menu, pet, icons=False)
-    add_music_quit(music_menu, pet, icons=False)
-    music_menu.addSeparator()
-    add_music_open_netease(music_menu, pet, icons=False)
-    add_music_open_qqmusic(music_menu, pet, icons=False)
+    # 「音乐」子菜单 2026-10-13 从右键菜单下线（歌词气泡 / 唱歌联动保留，入口在设置页），
+    # 它的位置给了「VS Code 工作区」
+    add_vscode_workspaces_menu(menu, pet, icons=False)
     add_edge_probe(menu, pet, icons=False)
     build_size_menu(menu, pet, icons=False)
 

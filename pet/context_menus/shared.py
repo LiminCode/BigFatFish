@@ -835,6 +835,28 @@ def _launch_player_and_play(player_key: str, pet) -> None:
     threading.Thread(target=worker, name="music-launch", daemon=True).start()
 
 
+def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
+    """「VS Code 工作区」子菜单：开着的（带 ●）、最近用过的、用户目录里的；点一条切过去或打开。
+
+    宿主没有这两个回调（旧 PetWindow）就不出这一项。条目在菜单弹出时现算
+    （``pet.vscode_workspace_entries``，读几个小文件，十几毫秒）。"""
+    entries_of = getattr(pet, "vscode_workspace_entries", None)
+    opener = getattr(pet, "open_vscode_workspace", None)
+    if not callable(entries_of) or not callable(opener):
+        return None
+    sub = add_submenu(menu, "VS Code 工作区", "application" if icons else None)
+    entries = list(entries_of() or [])
+    if not entries:
+        hint = sub.addAction("还没有开过的工作区；可在设置里指定工作区文件目录")
+        hint.setEnabled(False)
+        return sub
+    for entry in entries:
+        label = f"{'● ' if entry.open else ''}{entry.label}{' [WSL]' if entry.wsl else ''}"
+        action = add_action(sub, label, None, lambda entry=entry: opener(entry), close_on_trigger=True)
+        action.setToolTip(entry.target)
+    return sub
+
+
 def _run_off_main(callable_) -> None:
     """把播放器控制丢到后台线程执行。
 

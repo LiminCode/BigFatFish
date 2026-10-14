@@ -29,13 +29,6 @@ from .shared import (
     add_hide_pet,
     add_look_screen,
     add_agent_cost,
-    add_music_lyric_align,
-    add_music_next,
-    add_music_open_netease,
-    add_music_open_qqmusic,
-    add_music_pause,
-    add_music_prev,
-    add_music_quit,
     add_no_move,
     add_on_top,
     add_proactive_menu,
@@ -44,6 +37,7 @@ from .shared import (
     add_return_corner,
     add_spawn_pet,
     add_submenu,
+    add_vscode_workspaces_menu,
     build_animation_categories,
     build_character_menu,
     build_size_menu,
@@ -60,11 +54,7 @@ ACTION_LABELS = {
     "spawn_pet": "生小肥鱼", "clear_spawned_pets": "退出子肥鱼",
     "rally_pets": "护驾",
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
-    "music": "音乐", "music_pause": "暂停 / 播放", "music_next": "切歌",
-    "music_prev": "上一首",
-    "music_quit": "退出音乐模式", "music_open_netease": "打开网易云并播放",
-    "music_open_qqmusic": "打开QQ音乐并播放",
-    "music_lyric_align": "歌词对齐",
+    "vscode_workspaces": "VS Code 工作区",
     "agent_cost": "显示本轮消费",
     "quick_launch": "快捷启动", "balance": "DeepSeek 余额",
     "harness": "启动 DeepSeek Harness", "deepseek_web": "打开网页版 DeepSeek",
@@ -88,9 +78,7 @@ ACTION_ICONS = {
     "spawn_pet": "spawn", "clear_spawned_pets": "clear",
     "rally_pets": "interaction",
     "golden_spin": "play", "edge_probe": "corner",
-    "music_next": "play", "music_prev": "play", "music_quit": "stop", "agent_cost": "balance",
-    "music": "play", "music_pause": "pause", "music_open_netease": "play",
-    "music_open_qqmusic": "play", "music_lyric_align": "play",
+    "agent_cost": "balance", "vscode_workspaces": "application",
     "quick_launch": "application", "balance": "balance", "harness": "harness",
     "deepseek_web": "web", "github_project": "web", "agent_link": "automation",
     "proactive_screen": "screen", "todo_panel": "todo",
@@ -120,31 +108,6 @@ class MenuActionSpec:
 
 def _callback_available(name: str) -> Availability:
     return lambda pet: callable(getattr(pet, name, None))
-
-
-def _music_lyric_configured(pet) -> bool:
-    """音乐相关菜单项是否出现：只看设置里有没有开启歌词功能。
-
-    刻意**不**依赖实时播放状态——否则菜单结构会随"此刻有没有在放歌"变来变去
-    （测试也会因此依赖机器状态）。没在播时改为置灰（见 enabled）。
-    """
-    return bool(pet.cfg.get("music_lyric_enabled", False))
-
-
-def _music_align_ready(pet) -> bool:
-    """「歌词对齐」是否可用：只有位置靠本地时钟估算时才有意义。
-
-    播放器报了真实进度（Chrome / QQ 音乐）时位置本来就跟着快进走，手动对齐
-    只会跟真值打架；还没有歌词可对齐时同理。**必须 isinstance 校验**——宿主
-    可能用 ``__getattr__`` 兜底返回任意对象（测试替身就这么干），只判 None 会
-    把无关对象当成控制器（同 ``shared._music_controller`` 的教训）。
-    """
-    from ..music_lyric_controller import MusicLyricController
-
-    controller = getattr(pet, "_music_lyric", None)
-    if not isinstance(controller, MusicLyricController):
-        return False
-    return bool(controller.align_available())
 
 
 def _build_chat(menu, pet):
@@ -251,20 +214,9 @@ class MenuActionRegistry:
                 enabled=lambda pet: bool(getattr(pet, "has_small_pets", False)),
                 disabled_reason="还没有小肥鱼",
             ),
-            # 始终可用：消费统计与歌词无关，不该被歌词开关卡住。
             "agent_cost": MenuActionSpec(add_agent_cost),
-            "music_pause": MenuActionSpec(add_music_pause, _music_lyric_configured),
-            "music_next": MenuActionSpec(add_music_next, _music_lyric_configured),
-            "music_prev": MenuActionSpec(add_music_prev, _music_lyric_configured),
-            "music_quit": MenuActionSpec(add_music_quit, _music_lyric_configured),
-            "music_lyric_align": MenuActionSpec(
-                add_music_lyric_align,
-                _music_lyric_configured,
-                enabled=_music_align_ready,
-                disabled_reason="当前不需要手动对齐（播放器会上报进度，或还没有歌词）",
-            ),
-            "music_open_netease": MenuActionSpec(add_music_open_netease),
-            "music_open_qqmusic": MenuActionSpec(add_music_open_qqmusic),
+            "vscode_workspaces": MenuActionSpec(add_vscode_workspaces_menu,
+                                                _callback_available("open_vscode_workspace")),
             "golden_spin": MenuActionSpec(
                 add_golden_spin,
                 _callback_available("trigger_golden_spin"),
