@@ -22,6 +22,7 @@ WSL 通道的两处文件在发行版里，经一次 ``wsl.exe`` 调用一并取
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 from dataclasses import dataclass, field
@@ -65,6 +66,8 @@ class SessionDetail:
     started_at: float | None = None    # Unix 秒
     alive: bool | None = None
     distro: str = ""                   # WSL 发行版名（仅 WSL 通道）
+    model: str = ""                    # 最近一轮实际用的模型 id（会话记录 assistant.message.model）
+    effort: str = ""                   # 最近一轮的 effort（perTurnEffort，没有就会话级的 effort）
     extra: dict = field(default_factory=dict)
 
     @property
@@ -103,7 +106,8 @@ def parse_transcript_tail(text: str) -> dict:
     found: dict[str, str] = {}
     # custom_title 也在必须找齐的名单里：没改过名的会话永远找不到它，于是整段尾部都会
     # 扫完——这是有意的，否则找齐其它字段提前收工时，可能还没扫到更靠前的那条改名记录。
-    wanted = {"last_prompt", "title", "custom_title", "git_branch", "entrypoint", "version", "cwd"}
+    wanted = {"last_prompt", "title", "custom_title", "git_branch", "entrypoint", "version", "cwd",
+              "model", "effort"}
     for line in reversed(text.splitlines()):
         if not line.startswith("{"):
             continue
@@ -122,6 +126,11 @@ def parse_transcript_tail(text: str) -> dict:
             # 用户在 Claude Code 里给会话改的名字。改名后 ai-title 照样继续追加，
             # 所以它单独记，最后盖过自动标题。
             found.setdefault("custom_title", _clean(entry.get("customTitle"), 80))
+        elif kind == "assistant" and not entry.get("isSidechain"):
+            # 主对话最近一轮用的模型与 effort（子代理的记录 isSidechain 为真，不算）
+            message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+            found.setdefault("model", _clean(message.get("model") or entry.get("requestedModel"), 60))
+            found.setdefault("effort", _clean(entry.get("perTurnEffort") or entry.get("effort"), 20))
         for key, source in (("git_branch", "gitBranch"), ("entrypoint", "entrypoint"),
                             ("version", "version"), ("cwd", "cwd")):
             value = entry.get(source)
@@ -132,6 +141,18 @@ def parse_transcript_tail(text: str) -> dict:
     if found.get("custom_title"):
         found["title"] = found["custom_title"]      # 调用方只认 title：用户改的名字优先
     return {key: value for key, value in found.items() if value}
+
+
+_MODEL_ID_RE = re.compile(r"^claude-(?P<name>[a-z]+)-(?P<major>\d+)-(?P<minor>\d+)(?:-|$)")
+
+
+def model_label(model_id: str) -> str:
+    """``claude-fable-5-1`` → ``Fable 5.1``；认不出的原样给。"""
+    text = str(model_id or "")
+    match = _MODEL_ID_RE.match(text)
+    if not match:
+        return text
+    return f"{match.group('name').capitalize()} {match.group('major')}.{match.group('minor')}"
 
 
 def _clean(value, limit: int) -> str:
@@ -189,6 +210,8 @@ def apply_registry(detail: SessionDetail, entry: dict | None) -> None:
 def apply_transcript(detail: SessionDetail, parsed: dict) -> None:
     detail.last_prompt = parsed.get("last_prompt", "")
     detail.git_branch = parsed.get("git_branch", "")
+    detail.model = parsed.get("model", "")
+    detail.effort = parsed.get("effort", "")
     detail.entrypoint = detail.entrypoint or parsed.get("entrypoint", "")
     detail.version = detail.version or parsed.get("version", "")
     if parsed.get("custom_title"):

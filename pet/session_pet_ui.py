@@ -61,6 +61,11 @@ def status_line(detail: SessionDetail, since: float | None, now: float | None = 
     text = claude_hooks.PHASE_TEXT.get(detail.phase, "")
     if detail.phase == "waiting" and detail.tool:
         text = f"{_WAIT_TEXT}：{detail.tool}"
+    # 在用的模型与 effort（会话记录里读到才有）：「Fable 5.1 · high」
+    model = claude_session_info.model_label(detail.model)
+    for part in (model, detail.effort if model else ""):
+        if part:
+            text = f"{text} · {part}" if text else part
     if since:
         text = f"{text} · 已 {elapsed_text((now or time.time()) - since)}" if text else ""
     return text
@@ -343,7 +348,7 @@ class SessionPetActions(QObject):
         cached = self._cache.get(key)
         if cached is not None:
             for name in ("last_prompt", "git_branch", "entrypoint", "version", "name", "pid",
-                         "started_at", "alive", "distro", "extra"):
+                         "started_at", "alive", "distro", "model", "effort", "extra"):
                 setattr(detail, name, getattr(cached, name))
             detail.cwd = detail.cwd or cached.cwd
         return detail
