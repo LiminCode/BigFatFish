@@ -147,6 +147,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "voice_chime_show_quote",
         "work_briefing",
         "vscode_workspaces",
+        "notifications",
         "festival_custom_quotes_cn",
         "festival_custom_quotes_west",
         "festival_reminder_cn",

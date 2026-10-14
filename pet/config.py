@@ -19,6 +19,7 @@ from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from . import i18n
+from .notification_center import normalize as normalize_notifications
 from .work_briefing import normalize as normalize_work_briefing
 
 
@@ -855,6 +856,8 @@ class Config:
             "work_briefing": normalize_work_briefing(None),
             # 右键菜单「VS Code 工作区」：工作区文件目录 + 菜单条数，见 pet/vscode_workspaces.py
             "vscode_workspaces": {"workspace_dir": "", "wsl_dirs": {}, "menu_limit": 12},
+            # 通知中心（Windows 通知中心里的 Slack 通知铺进灵动岛），见 pet/notification_center.py
+            "notifications": normalize_notifications(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1129,6 +1132,7 @@ class Config:
             "ui_language",
             "work_briefing",
             "vscode_workspaces",
+            "notifications",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1522,6 +1526,7 @@ class Config:
         from .vscode_workspaces import normalize as normalize_vscode_workspaces  # 惰性：它依赖会话跳转模块
 
         self.data["vscode_workspaces"] = normalize_vscode_workspaces(self.data.get("vscode_workspaces"))
+        self.data["notifications"] = normalize_notifications(self.data.get("notifications"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1710,6 +1715,7 @@ class Config:
             "chat_always_on_top",
             "dynamic_island",
             "ui_language",
+            "notifications",
         }:
             self._normalize_pet_settings()
 

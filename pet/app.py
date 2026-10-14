@@ -2525,6 +2525,11 @@ class AppShell:
             self.island.history_toggled.connect(self._on_island_history_toggled)
             # 胶囊最右边的「工作简报」按钮（有没有这个按钮由 _push_island_briefing_state 定）
             self.island.briefing_requested.connect(self._open_work_briefing_from_island)
+            # 「通知」铃铛与卡片里的通知框（有没有由 _sync_notification_center 定）
+            self.island.notifications_requested.connect(self._on_island_notifications_opened)
+            self.island.notification_activated.connect(self._on_island_notification_activated)
+            self.island.notification_action.connect(self._on_island_notification_action)
+            self.island.notification_toggled.connect(self._on_island_notification_toggled)
             # 进程级聊天完成订阅：AI 回复到达 → 岛播事件动效并记录最近消息。
             # 无聊天功能的打包变体会排除 pet.chat（参照 config.py 的同款守卫），
             # 那里跳过订阅即可，灵动岛本体照常可用。
@@ -2560,6 +2565,7 @@ class AppShell:
             monitor.refresh()  # 本方法也是配置应用路径：服务商 / Key 变了就重查
         self._push_island_session_counts()
         self._push_island_briefing_state()
+        self._sync_notification_center()
         # 批5.2a：灵动岛按**聚合**可见态同步（任一窗可见 = 可见），替代只看主窗。
         self.island.set_pet_visible(self._aggregate_pet_visible())
         self.island.show()
@@ -3040,6 +3046,105 @@ class AppShell:
         controller = getattr(self, "_work_briefing", None)
         if controller is not None:
             controller.open_window()
+
+    # ------------------------------------------------------------------ 通知中心
+    def _sync_notification_center(self) -> None:
+        """通知中心服务（Windows 通知中心里的 Slack 通知铺进岛的卡片）：岛在才建；配置变了重排。"""
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        service = getattr(self, "_notifications", None)
+        if service is None:
+            try:
+                from .notification_center import available
+                from .notification_service import NotificationService
+
+                if not available():
+                    return
+                service = NotificationService(self.config, parent=self.app)
+                service.changed.connect(self._push_island_notifications)
+                service.unread_changed.connect(self._push_island_notification_count)
+                service.activation_done.connect(self._on_notification_activation_done)
+                self._notifications = service
+                service.start()
+            except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+                logging.exception("通知中心接线失败")
+                return
+        else:
+            service.apply_settings()
+        self._push_island_notifications()
+
+    def _push_island_notifications(self, *_args) -> None:
+        island = getattr(self, "island", None)
+        service = getattr(self, "_notifications", None)
+        if island is None or not shiboken6.isValid(island) or service is None:
+            return
+        from .claude_session_history import ago_text
+
+        now, enabled, unread = time.time(), service.enabled, service.unread_uids
+        rows = [
+            {"key": n.uid, "title": n.title, "app": n.app, "app_id": n.app_id, "sender": n.sender,
+             "message": n.message, "ago": ago_text(now - n.created), "unread": n.uid in unread,
+             "in_center": n.in_center}
+            for n in service.notices] if enabled else []
+        island.set_notifications(rows, is_open=service.ui_open, logos=service.logos, visible=enabled)
+        self._push_island_notification_count()
+
+    def _push_island_notification_count(self, *_args) -> None:
+        island = getattr(self, "island", None)
+        service = getattr(self, "_notifications", None)
+        if island is None or not shiboken6.isValid(island) or service is None:
+            return
+        island.set_notification_count(service.unread_count if service.enabled else None)
+
+    def _on_island_notifications_opened(self) -> None:
+        service = getattr(self, "_notifications", None)
+        if service is not None:
+            service.mark_all_seen()
+            self._push_island_notifications()
+
+    def _on_island_notification_activated(self, uid) -> None:
+        service = getattr(self, "_notifications", None)
+        island = getattr(self, "island", None)
+        if service is None or island is None:
+            return
+        if service.activate(uid):
+            island.show_notification_status(t("notices.status.jumping"))
+            island.collapse_card()
+
+    def _on_island_notification_action(self, action: str, uid) -> None:
+        service = getattr(self, "_notifications", None)
+        if service is None:
+            return
+        if action == "open":
+            self._on_island_notification_activated(uid)
+        elif action == "dismiss":
+            service.dismiss(uid)
+        elif action == "clear":
+            service.clear()
+
+    def _on_island_notification_toggled(self, is_open: bool) -> None:
+        service = getattr(self, "_notifications", None)
+        if service is not None:
+            service.ui_open = bool(is_open)
+            if is_open:
+                service.mark_all_seen()
+                self._push_island_notifications()
+
+    def _on_notification_activation_done(self, notice, result: str) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        if result == "activated":
+            text = t("notices.status.activated", app=notice.app)
+        elif result == "opened_app":
+            text = t("notices.status.opened_app", app=notice.app)
+        elif result == "gone":
+            text = t("notices.status.gone")
+        else:
+            text = t("notices.status.failed")
+        island.show_notification_status(text)
+        self._push_island_notifications()       # 跳过一次的那条可能已不在通知中心里：下一轮会标灰
 
     def _start_knowledge_sync(self) -> None:
         """本地知识库的每日同步（可选服务：无聊天打包变体没有 pet.chat，跳过）。"""
