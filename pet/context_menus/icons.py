@@ -236,6 +236,17 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
     elif name == "template":
         painter.drawRoundedRect(QRectF(1.5, 2.0, 5.0, 12.0), 1.0, 1.0)
         painter.drawRoundedRect(QRectF(8.0, 2.0, 6.5, 5.0), 1.0, 1.0); painter.drawRoundedRect(QRectF(8.0, 8.5, 6.5, 5.5), 1.0, 1.0)
+    elif name == "windows":
+        # 四格窗：本机工作区。描边语言与其余图标一致，不用品牌色
+        for x, y in ((2.2, 2.2), (8.6, 2.2), (2.2, 8.6), (8.6, 8.6)):
+            painter.drawRect(QRectF(x, y, 5.2, 5.2))
+    elif name == "ubuntu":
+        # 一环三点：WSL（Ubuntu）里的工作区
+        painter.drawEllipse(QPointF(8.0, 8.0), 5.0, 5.0)
+        painter.setBrush(QBrush(color))
+        for angle in (-pi / 2, pi / 6, 5 * pi / 6):
+            painter.drawEllipse(QPointF(8.0 + cos(angle) * 5.0, 8.0 + sin(angle) * 5.0), 1.7, 1.7)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
     elif name in {"application", "launcher"}:
         painter.drawRoundedRect(QRectF(2.0, 2.0, 12.0, 12.0), 2.0, 2.0)
         for x, y in ((5.0, 5.0), (11.0, 5.0), (5.0, 11.0), (11.0, 11.0)):
@@ -350,6 +361,24 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
 
     painter.end()
     return QIcon(pixmap)
+
+
+OPEN_BADGE_COLOR = "#30a46c"   # 与灵动岛「工作中」计数同一个绿
+
+
+def badged_menu_icon(menu: QMenu, name: str, badge: str = OPEN_BADGE_COLOR, size: int | None = None) -> QIcon:
+    """``vector_menu_icon`` 的那个图标，右下角多一个实心圆点（「现在开着」之类的状态）。"""
+    base = vector_menu_icon(menu, name, size).pixmap(round((size or small_icon_size(menu)) * (menu.devicePixelRatioF() or 1.0)))
+    base.setDevicePixelRatio(menu.devicePixelRatioF() or 1.0)
+    painter = QPainter(base)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    logical = base.width() / base.devicePixelRatio()
+    painter.scale(logical / 16.0, logical / 16.0)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(badge))
+    painter.drawEllipse(QPointF(12.4, 12.4), 3.2, 3.2)
+    painter.end()
+    return QIcon(base)
 
 
 def vector_widget_icon(widget, name: str, size: int = 18) -> QIcon:

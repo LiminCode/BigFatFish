@@ -29,7 +29,6 @@
         {"type": "action", "id": "hide_pet", "visible": true},
         {"type": "action", "id": "spawn_pet", "visible": true},
         {"type": "action", "id": "clear_spawned_pets", "visible": true},
-        {"type": "action", "id": "agent_cost", "visible": true},
         {"type": "action", "id": "golden_spin", "visible": true},
         {"type": "action", "id": "edge_probe", "visible": true}
       ]

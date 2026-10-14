@@ -17,7 +17,6 @@ from .shared import (
     add_drag_physics,
     add_deepseek_web,
     add_edge_probe,
-    add_agent_cost,
     add_golden_spin,
     add_vscode_workspaces_menu,
     add_harness,
@@ -62,7 +61,6 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     add_rally_pets(menu, pet, icons=False)
     add_clear_spawned_pets(menu, pet, icons=False)
     add_golden_spin(menu, pet, icons=False)
-    add_agent_cost(menu, pet, icons=False)
     # legacy 布局约定无图标（测试 test_legacy_config_value_dispatches_legacy_layout 守着）
     # 「音乐」子菜单 2026-10-13 从右键菜单下线（歌词气泡 / 唱歌联动保留，入口在设置页），
     # 它的位置给了「VS Code 工作区」

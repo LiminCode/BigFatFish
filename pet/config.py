@@ -91,6 +91,8 @@ _MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quar
     # 2026-10-13 「音乐」从右键菜单下线（功能本身保留在设置页）
     "music_pause", "music_next", "music_prev", "music_quit", "music_lyric_align",
     "music_open_netease", "music_open_qqmusic",
+    # 2026-10-13 「显示本轮消费」（DeepSeek 余额差）从右键菜单和设置页下线；配置键与结算代码保留
+    "agent_cost",
 })
 
 

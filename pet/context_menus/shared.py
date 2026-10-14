@@ -850,10 +850,19 @@ def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
         hint = sub.addAction("还没有开过的工作区；可在设置里指定工作区文件目录")
         hint.setEnabled(False)
         return sub
+    from .icons import badged_menu_icon, vector_menu_icon
+
     for entry in entries:
-        label = f"{'● ' if entry.open else ''}{entry.label}{' [WSL]' if entry.wsl else ''}"
+        if icons:
+            # 图标说明在哪（Ubuntu = WSL，Windows = 本机）；开着的在图标右下角带一个绿点
+            label = entry.label
+        else:
+            label = f"{'● ' if entry.open else ''}{entry.label}{' [WSL]' if entry.wsl else ''}"
         action = add_action(sub, label, None, lambda entry=entry: opener(entry), close_on_trigger=True)
-        action.setToolTip(entry.target)
+        if icons:
+            glyph = "ubuntu" if entry.wsl else "windows"
+            action.setIcon(badged_menu_icon(sub, glyph) if entry.open else vector_menu_icon(sub, glyph))
+        action.setToolTip(entry.target + ("（开着）" if entry.open else ""))
     return sub
 
 

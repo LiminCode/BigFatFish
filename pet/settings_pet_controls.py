@@ -323,8 +323,6 @@ def build_pet_controls(host) -> None:
         host.music_browser_media_check.setChecked(
             bool(host.config.get("music_browser_media_enabled", False))
         )
-    host.agent_cost_check = ToggleSwitch(host)
-    host.agent_cost_check.setChecked(bool(host.config.get("agent_cost_enabled", False)))
     host.music_lyric_lead_spin = BrowserDoubleSpinBox(host)
     host.music_lyric_lead_spin.setRange(LEAD_MIN_SECONDS, LEAD_MAX_SECONDS)
     host.music_lyric_lead_spin.setSingleStep(0.1)

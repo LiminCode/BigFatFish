@@ -1895,20 +1895,13 @@ class ModernSettingsDialog(QDialog):
         phrases_box.set_expanded(False)
         self.dialogue_phrases_box = phrases_box
         automation_layout = automation.layout()
-        # 「Agent 联动」＝两级结构：折叠框下按用途分子组（消费统计 / 提示音效）。
+        # 「Agent 联动」＝两级结构：折叠框下按用途分子组（提示音效）。
         # 用现成的 CollapsibleGroup.add_group，不需要新造控件。
         agent_box = CollapsibleGroup("Agent 联动", automation)
-        agent_cost_rows = [
-            SettingRow("agent_cost", "显示本轮消费",
-                       "Agent 每轮结束时查询一次余额，与开始时的余额相减得出本轮消费。"
-                       "仅 DeepSeek 提供余额接口；余额精度为分，不足 ¥0.01 的消耗测不出。",
-                       self.agent_cost_check),
-        ]
         agent_box.add_group("提示音效", claim_prefix("agent_sound_"))
         agent_box.set_expanded(True)
         self.agent_link_box = agent_box
         # 这些行已被上面的折叠框认领，必须登记，否则会再落进「待分类」。
-        claimed.update(agent_cost_rows)
         claimed.update(claim_prefix("agent_sound_"))
         # dialogue_* 里的全局风格控件（表达风格、专属文案对象、弹窗文案模板 JSON）
         # 不是某个事件的气泡文案，已被 claim_prefix("dialogue_") 认领（不再进
@@ -1922,13 +1915,11 @@ class ModernSettingsDialog(QDialog):
             )
             insert_at += 1
         automation_layout.insertWidget(insert_at, phrases_box)
-        # 顶层顺序：消费统计 → Agent 联动 → 文案风格 → 自定义台词。
-        # 「消费统计」独立成一级分组且排最前（直接可见，不藏在折叠框里）。
+        # 顶层顺序：Agent 联动 → VS Code 工作区 → 文案风格 → 自定义台词。
         # 必须在上面的插入全部做完之后再插，否则会被后来的 insertWidget(0, ...) 挤下去。
-        cost_section = SettingsSection("消费统计", agent_cost_rows, automation)
-        automation_layout.insertWidget(0, cost_section)
-        automation_layout.insertWidget(1, agent_box)
-        automation_layout.insertWidget(2, SettingsSection("VS Code 工作区", settings_vscode.workspace_rows(self), automation))
+        # 「消费统计」（DeepSeek 余额差）2026-10-13 下线：Claude 没有余额接口，用量看灵动岛的「今日用量」
+        automation_layout.insertWidget(0, agent_box)
+        automation_layout.insertWidget(1, SettingsSection("VS Code 工作区", settings_vscode.workspace_rows(self), automation))
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
@@ -2180,8 +2171,6 @@ class ModernSettingsDialog(QDialog):
         self.config.set("music_sing_enabled", self.music_sing_check.isChecked())
         if getattr(self, "music_lyric_check", None) is not None:
             self.config.set("music_lyric_enabled", self.music_lyric_check.isChecked())
-        if getattr(self, "agent_cost_check", None) is not None:
-            self.config.set("agent_cost_enabled", self.agent_cost_check.isChecked())
         if getattr(self, "music_lyric_lead_spin", None) is not None:
             self.config.set(
                 "music_lyric_lead_seconds", float(self.music_lyric_lead_spin.value())

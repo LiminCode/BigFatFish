@@ -217,3 +217,101 @@ REAL activate: True | took 0.01 s
   对应的功能已经不在菜单上）；`vscode_workspaces` 旧版本读到会忽略。
 - **回滚**：`git revert` 后重启桌宠。被清掉的 `music` 布局节点不会回来，用户在菜单编辑器里
   重新加即可。
+
+---
+
+# 第二轮改进：系统图标与绿点；「显示本轮消费」下线
+
+> **基线**：`da384c6`（本报告第一轮的提交）　**日期**：`2026-10-13`
+> **范围**：12 个文件（实现 8、测试 4）；报告与索引随本轮更新
+
+## 九、第二轮：核心特性
+
+用户看了第一版菜单后的三条反馈：
+
+1. 「开着的」那个圆点最好是绿色。
+2. 区分 WSL 和本机，试试用 Ubuntu 图标和 Windows 图标。
+3. 「自动化与联动」里的「消费统计」可以去掉了（用不到 DeepSeek）；有 Claude 的消费就换成
+   Claude 的。
+
+| # | 第一轮 | 第二轮 |
+|---|---|---|
+| 1 | 文字前缀「● 」 | 新版菜单：图标右下角一个绿点（`#30a46c`，与灵动岛「工作中」计数同色） |
+| 2 | 文字后缀「[WSL]」 | 新版菜单：每条带图标——一环三点（Ubuntu，WSL 里的）或四格窗（Windows，本机的）。旧版菜单按约定无图标，仍用文字标记 |
+| 3 | 设置页有「消费统计」一节，右键「桌宠控制」里有「显示本轮消费」 | 两处都下线。配置键 `agent_cost_enabled` 与结算代码保留（与「音乐」同一口径：只摘入口） |
+
+**关于「换成 Claude 的」**：「显示本轮消费」靠 DeepSeek 的余额接口（开始、结束各查一次
+余额相减）。Claude 没有余额接口，没法照搬。Claude 的用量已经在灵动岛的「今日用量」里
+（读本机对话记录里的令牌数）。要做「每轮 Claude 用了多少令牌」的气泡是另一个功能，这里
+没有做——设置页的那一节就空出来了，不放一个只读的状态项（设置门禁不准入「当前状态」）。
+
+**图标的做法**：两个图标是和菜单里其他图标同一套描边语言手绘的简化记号，不是 Ubuntu /
+Windows 的官方图形资产，不带品牌色。
+
+## 十、第二轮：修改文件说明
+
+增删取自 `git diff da384c6 --numstat`。
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/context_menus/icons.py` | +29 / −0 | `vector_menu_icon` 新增 `windows`、`ubuntu` 两个名字；新增 `badged_menu_icon`（在任一图标右下角画实心圆点）与 `OPEN_BADGE_COLOR` |
+| `pet/context_menus/shared.py` | +11 / −2 | `add_vscode_workspaces_menu`：`icons=True` 时文字只留名字，图标按 WSL / 本机选、开着的加绿点；`icons=False`（旧版）保持文字标记。悬停提示在路径后标「（开着）」 |
+| `pet/context_menus/registry.py` | +1 / −4 | 去掉 `agent_cost` 的导入、标签、图标、规格 |
+| `pet/context_menus/legacy.py` | +0 / −2 | 去掉 `add_agent_cost` 的导入与调用 |
+| `pet/menu_templates/modern-default-v1.json` | +0 / −1 | 去掉「桌宠控制」里的 `agent_cost` 节点 |
+| `pet/config.py` | +2 / −0 | `_MENU_LAYOUT_DROPPED_ACTIONS` 加 `agent_cost`（老布局加载时清掉） |
+| `pet/modern_settings_dialog.py` | +5 / −16 | 去掉「消费统计」一节、它的行、认领登记、保存回写；「Agent 联动」与「VS Code 工作区」各上移一位。文件从 2406 行降到 2395 行（预算 2406 不动，预算只是上限） |
+| `pet/settings_pet_controls.py` | +0 / −2 | 不再建 `agent_cost_check` 开关 |
+| `tests/test_agent_cost_entry_removed.py`（新增） | +71 / −0 | 3 条：两套菜单都没有「显示本轮消费」、同组其他项还在；设置页没有那一节与那个开关、保存不碰配置键；配置键照旧读进来、老布局里的那一项加载时清掉 |
+| `tests/test_vscode_workspaces.py` | +44 / −4 | 菜单用例按模板分开断言（新版查图标与绿点像素、WSL 与本机图标不同；旧版查文字标记）；新增两个系统图标存在且不同、徽记版右下角是绿的 |
+| `tests/test_menu_layout.py` | +0 / −2 | 注册集合与「桌宠控制」快照去掉 `agent_cost` / 「显示本轮消费」 |
+| `tests/test_sprite_menu_parity.py` | +2 / −7 | `REQUIRED_LABELS`、新版能力清单、点击路由用例里去掉「显示本轮消费」 |
+
+**未改动**：`pet/agent_cost.py`、`agent_link.py` 里的结算（仍读 `agent_cost_enabled`，老配置
+里开着的照旧生效）、`shared.add_agent_cost` 建造函数（没有调用方）、`tests/test_agent_cost.py`
+与 `test_agent_link.py`（全部通过）。
+
+## 十一、第二轮：性能分析
+
+**方法**：一次性脚本，`QT_QPA_PLATFORM=offscreen`，n=200 取中位数与 p95。
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| 画一个 `ubuntu` 图标 | 中位 46 µs，p95 101 µs | 每条 WSL 条目 1 次，右键时 |
+| 画一个 `windows` 图标 | 中位 52 µs，p95 66 µs | 每条本机条目 1 次 |
+| 带绿点的图标 | 中位 67 µs，p95 107 µs | 每条开着的条目 1 次 |
+| 一次右键 12 条合计 | 按上面推算约 0.6–1.3 ms（没有单独量整组） | 右键时 |
+| 设置页 | 少一节、少一个开关 | 打开设置页时 |
+
+**结论**：没有稳态开销；右键打开菜单多约 1 ms 的绘制，在第一轮的 30 ms 读取之上。没有新的
+系统调用、线程、磁盘或网络。内存没有变化（图标随菜单建了又丢）。
+
+## 十二、第二轮：实机运行记录
+
+```text
+真实数据建出的新版子菜单：12 行，12 个图标；开着的 7 条右下角有绿点；
+WSL 的 10 条是一环三点，本机的 2 条是四格窗；同名的带「· 父目录」或「· 工作区」后缀
+设置页「自动化与联动」1100 px 与 720 px：第一节是「Agent 联动」，其后是「VS Code 工作区」，没有「消费统计」
+```
+
+截图留在会话目录，没有入库（含工作区名字）。真实桌宠在提交后重启，日志无报错。
+
+**没有验证的部分**：同第一轮——没有在真实桌面上右键点开过这个菜单；没有真的打开过一个
+没开着的工作区。另外没有在浅色主题下看过这两个图标（它们用菜单的前景色，与其他图标
+一样随主题变）。
+
+## 十三、第二轮：测试与验证
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests`、`git diff --check` | 通过 |
+| 红 → 绿 | `pytest -q tests/test_agent_cost_entry_removed.py tests/test_vscode_workspaces.py` | 实现前 `5 failed, 18 passed`；实现后新文件先剩 1 条红（我的断言用了只看顶层的查找函数，和产品无关），改断言后 `3 passed`，工作区文件 `22 passed` |
+| 聚焦 + 相关 | 两个新文件 + 菜单三族 + `test_config_schema` `test_architecture` `test_agent_cost` `test_agent_link` | 436 passed（含 1 个环境性失败） |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（隔离 worktree，`da384c6` 加本轮改动） | `6 failed, 5144 passed, 11 skipped in 517.54s`：5 个是这台机器固定的环境性失败；第 6 个是本轮新测试文件当时的旧版本（断言用了只看顶层的查找函数），产品代码没有问题；该文件改断言后单独重跑 `3 passed`，之后没有再改任何产品代码，没有再跑一次全量 |
+
+## 十四、第二轮：已知限制
+
+- 「每轮 Claude 用了多少」没有做；要做的话数据源是本机的对话记录（`claude_usage_monitor`
+  已经在读），呈现方式需要另定。
+- 图标是简化记号；不想要品牌联想的话可以换成任意两个不同的几何记号，名字在
+  `add_vscode_workspaces_menu` 里只出现一次。

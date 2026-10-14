@@ -202,6 +202,37 @@ def test_failures_are_reported_in_words():
 
 # ---------------------------------------------------------------- 菜单
 
+def _icon_pixels(action) -> list:
+    image = action.icon().pixmap(32).toImage()
+    return [image.pixelColor(x, y).rgba() for y in range(image.height()) for x in range(image.width())]
+
+
+def _has_green_badge(action) -> bool:
+    """图标右下角那一块有没有绿色（开着的标记）。"""
+    image = action.icon().pixmap(32).toImage()
+    w, h = image.width(), image.height()
+    for y in range(int(h * 0.6), h):
+        for x in range(int(w * 0.6), w):
+            c = image.pixelColor(x, y)
+            if c.alpha() > 128 and c.green() > c.red() + 60 and c.green() > c.blue() + 30:
+                return True
+    return False
+
+
+def test_the_two_system_icons_exist_and_differ():
+    from pet.context_menus.icons import badged_menu_icon, vector_menu_icon
+
+    menu = QMenu()
+    ubuntu, windows = vector_menu_icon(menu, "ubuntu"), vector_menu_icon(menu, "windows")
+    assert not ubuntu.isNull() and not windows.isNull()
+    assert ubuntu.pixmap(32).toImage() != windows.pixmap(32).toImage()
+    plain = windows.pixmap(32).toImage()
+    badged = badged_menu_icon(menu, "windows").pixmap(32).toImage()
+    assert plain != badged
+    bottom_right = badged.pixelColor(int(badged.width() * 0.8), int(badged.height() * 0.8))
+    assert bottom_right.green() > bottom_right.red() + 60
+
+
 def _find(menu: QMenu, text: str):
     for action in menu.actions():
         if action.text() == text:
@@ -232,10 +263,19 @@ def test_the_main_fish_menu_lists_the_workspaces(shell, listed, template, monkey
     menu = shell._build_menu_for(shell.sprite)
     entry = _find(menu, "VS Code 工作区")
     assert entry is not None and entry.menu() is not None, template
-    labels = [a.text() for a in entry.menu().actions() if not a.isSeparator()]
-    assert labels == ["● ops [WSL]", "● BigFatFish", "deploy [WSL]"]
+    actions = [a for a in entry.menu().actions() if not a.isSeparator()]
+    labels = [a.text() for a in actions]
+    if template == "legacy":
+        # 旧版菜单约定无图标：开着的 / WSL 仍靠文字标记
+        assert labels == ["● ops [WSL]", "● BigFatFish", "deploy [WSL]"]
+    else:
+        # 新版：系统图标说明在哪（Ubuntu / Windows），开着的在图标右下角带绿点
+        assert labels == ["ops", "BigFatFish", "deploy"]
+        assert all(not a.icon().isNull() for a in actions)
+        assert _has_green_badge(actions[0]) and _has_green_badge(actions[1]) and not _has_green_badge(actions[2])
+        assert _icon_pixels(actions[0]) != _icon_pixels(actions[1]), "WSL 与本机的图标不一样"
 
-    next(a for a in entry.menu().actions() if a.text() == "deploy [WSL]").trigger()
+    next(a for a in actions if a.text().startswith("deploy")).trigger()
     deadline = time.monotonic() + 5
     while not opened and time.monotonic() < deadline:
         app.processEvents()

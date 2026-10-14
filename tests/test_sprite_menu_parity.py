@@ -14,7 +14,7 @@
 覆盖：
 1. legacy 模板 ≡ build_legacy_menu(PetWindow)（条件显示项对齐：聊天门/win32 门）；
 2. modern 模板 ≡ build_modern_menu(PetWindow)（注册表 + 用户编排 + 图标分组）；
-3. 显式清单：用户点名的缺失条目（AI 对话/黄金回旋/显示本轮消费/
+3. 显式清单：用户点名的缺失条目（AI 对话/黄金回旋/
    边缘探头/大小/DeepSeek Harness/打开网页版 DeepSeek/主动识屏/Agent 联动/
    切换菜单模板）逐项在树里；
 4. 无聊天变体：聊天门条目在两侧一起消失；
@@ -73,7 +73,6 @@ ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每
 REQUIRED_LABELS = (
     "AI 对话",
     "黄金回旋",
-    "显示本轮消费",
     "边缘探头",
     "大小",
     "DeepSeek Harness",
@@ -343,7 +342,7 @@ def test_modern_template_exposes_same_capabilities(tmp_path):
         menu = build_sprite_full_menu(shell)
         labels = _all_labels(menu)
         for label in ("AI 对话", "播放动画", "切换角色", "播放速率", "大小",
-                      "拖动物理", "边缘探头", "黄金回旋", "显示本轮消费", "桌宠设置"):
+                      "拖动物理", "边缘探头", "黄金回旋", "桌宠设置"):
             assert label in labels, f"modern 模板缺项：{label}"
         controls = _find(menu, "桌宠控制").menu()
         assert _find(controls, "生小肥鱼") is not None
@@ -454,10 +453,6 @@ def test_menu_routes_legacy_service_semantics(tmp_path, monkeypatch):
         probe = _find(menu, "边缘探头")
         probe.setChecked(True)
         assert config.get("edge_probe_enabled") is True
-        # 显示本轮消费 → agent_cost_enabled（agent_link 结算时读）
-        cost = _find(menu, "显示本轮消费")
-        cost.setChecked(True)
-        assert config.get("agent_cost_enabled") is True
         # 大小四档 → sprite scale setter + 主配置（主宠菜单：作用对象 = 主 sprite）
         size = _find(menu, "大小").menu()
         target = next(a for a in size.actions() if a.text().endswith("px"))
