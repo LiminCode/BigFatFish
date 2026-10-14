@@ -315,3 +315,68 @@ WSL 的 10 条是一环三点，本机的 2 条是四格窗；同名的带「· 
   已经在读），呈现方式需要另定。
 - 图标是简化记号；不想要品牌联想的话可以换成任意两个不同的几何记号，名字在
   `add_vscode_workspaces_menu` 里只出现一次。
+
+---
+
+# 第三轮修正：WSL 目录按发行版分行填
+
+> **基线**：`9ab0740`（第二轮的提交）　**日期**：`2026-10-13`
+> **范围**：4 个文件（实现 3、测试 1）；报告与索引随本轮更新
+
+## 十五、第三轮：核心特性
+
+用户在设置里填了 `/home/limin/workspace`——WSL 里的原生写法，而第一版只认
+`\wsl.localhost\<发行版>\…`，于是这个目录扫不出来、设置页提示「打不开」。用户接着提出：
+这一节应该先列出本机有哪些发行版，目录填在对应发行版下面，更符合直觉。
+
+| | 第一、二轮 | 第三轮 |
+|---|---|---|
+| 设置 | 一个「工作区文件目录」框，WSL 要写 UNC 形式 | 「本机目录」一行 + 每个已装的 WSL 发行版各一行（默认发行版排第一并标出，Docker 的内部发行版不列）+「菜单条数」 |
+| 配置 | `{"workspace_dir", "menu_limit"}` | `{"workspace_dir": 本机目录, "wsl_dirs": {发行版: 发行版里的目录}, "menu_limit"}`。老值里的 WSL 路径（`/home/…` 按默认发行版，UNC 按它写的发行版）加载时搬到 `wsl_dirs` 下 |
+| 菜单顺序 | 开着的 → 其余按最后用过的时间 | 开着的 → **用户目录里的** → 其余最近用过的。实机上 7 个开着的 + 35 个最近的、上限 12，原来的顺序会把用户特意配的目录整个挤出去 |
+
+发行版列表来自注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss`（每个子键的
+`DistributionName`，`DefaultDistribution` 指向默认的那个），读一次 0.1 ms。设置页建一次读一次。
+
+## 十六、第三轮：修改文件说明
+
+增删取自 `git diff 9ab0740 --numstat`。
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/vscode_workspaces.py` | +139 / −14 | `normalize` 的新形状与老值迁移；`default_wsl_distro`、`wsl_distros` / `_registry_distros`（注册表）；`parse_directory` 认 `/` 开头的路径；`listing_path` / `directory_exists` / `scan_workspace_dir` 多一个 `distro` 参数（按发行版分行时发行版是明确的，不用猜）；`list_workspaces` 扫本机目录加每个发行版的目录，排序加「用户目录里的」这一档 |
+| `pet/settings_vscode.py` | +50 / −20 | 行按发行版动态生成；每行自己的「目录打不开」提示；保存时本机没列出来的发行版（比如暂时卸了）的目录原样保留 |
+| `pet/config.py` | +1 / −1 | 默认值加 `wsl_dirs: {}` |
+| `tests/test_vscode_workspaces.py` | +121 / −8 | 配置 4（新形状、老值迁移、持久化、发行版列表）；扫描 2（`/` 开头的路径、按发行版分行、行里误填 UNC）；合并 2（每个目录都扫、用户目录不被挤出）；设置页 3（按发行版分行并持久化、没装的发行版保留目录、没有 WSL 只有本机一行）；注册表函数在真机上不抛 |
+
+## 十七、第三轮：性能分析
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| 读注册表列发行版 | 0.09–0.14 ms（n=1 各） | 打开设置页 1 次 |
+| 多扫一个发行版的目录 | 与第一轮相同（UNC 列目录约 15 ms） | 每次右键，每个配了目录的发行版 1 次 |
+
+其余没有变化。
+
+## 十八、第三轮：实机运行记录
+
+```text
+用户保存的旧值：{'workspace_dir': '/home/limin/workspace', 'menu_limit': 12}
+normalize 之后：  {'workspace_dir': '', 'wsl_dirs': {'Ubuntu-24.04': '/home/limin/workspace'}, 'menu_limit': 12}
+本机发行版（注册表）：['Ubuntu-24.04']（docker-desktop 被隐藏）
+菜单（上限 12）：12 条，7 条开着的；用户目录里的 7 个工作区文件全部在列，位置 [1, 5, 7, 8, 9, 10, 11]
+（1 和 5 那两个本来就开着，排在开着的那一档里）
+设置页 1100 / 720 px：「本机目录」「Ubuntu-24.04（默认发行版）」「菜单条数」三行，720 px 下无裁切
+```
+
+**没有验证的部分**：多发行版的机器（本机只有一个可见的）只有用例覆盖；真实桌面上的
+右键菜单仍没有人去点过。
+
+## 十九、第三轮：测试与验证
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests`、`git diff --check` | 通过 |
+| 红 → 绿 | `pytest -q tests/test_vscode_workspaces.py` | 「认 `/` 开头的路径」那 4 条测试写在实现前，但和实现同一批应用，没有单独看红；按发行版分行那一批先把旧用例跑红（`2 failed`：配置形状变了）再改绿；「用户目录不被挤出」1 条先红后绿。最终 `30 passed` |
+| 聚焦 + 相关 | 新文件 + 菜单两族 + 设置页三族 + `test_config_schema` `test_config_instance` `test_architecture` + 两个下线用例文件 | 168 passed |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（隔离 worktree，`9ab0740` 加本轮改动） | 最终代码：`5 failed, 5154 passed, 11 skipped in 460.62s`，5 个就是这台机器固定的环境性失败。（排序调整之前的那一版也跑过一次全量：`5 failed, 5153 passed`，同样只有这 5 个。）这次运行之后只改了本报告与索引登记 |

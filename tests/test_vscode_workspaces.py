@@ -33,17 +33,35 @@ def _entry(label, target, **over) -> WorkspaceEntry:
 # ---------------------------------------------------------------- 配置
 
 def test_defaults_and_cleaning(tmp_path):
-    assert Config(tmp_path).get(vw.CONFIG_KEY) == {"workspace_dir": "", "menu_limit": 12}
-    assert vw.normalize({"workspace_dir": f"  {UNC}  ", "menu_limit": "99"}) == {"workspace_dir": UNC, "menu_limit": 30}
+    assert Config(tmp_path).get(vw.CONFIG_KEY) == {"workspace_dir": "", "wsl_dirs": {}, "menu_limit": 12}
+    cleaned = vw.normalize({"workspace_dir": "  D:\\ws  ", "wsl_dirs": {"Debian": " /srv/ws ", "": "/x", "U": ""},
+                            "menu_limit": "99"}, default_distro=lambda: "U")
+    assert cleaned == {"workspace_dir": "D:\\ws", "wsl_dirs": {"Debian": "/srv/ws"}, "menu_limit": 30}
     assert vw.normalize({"menu_limit": "many"})["menu_limit"] == 12
     assert vw.normalize(None)["menu_limit"] == 12
 
 
+def test_an_old_single_directory_that_was_a_wsl_path_moves_under_its_distro():
+    """第一版只有一个目录框；用户在里面填过 ``/home/me/workspace`` 或 UNC 写法。"""
+    moved = vw.normalize({"workspace_dir": "/home/u/workspace"}, default_distro=lambda: "Ubuntu-24.04")
+    assert moved == {"workspace_dir": "", "wsl_dirs": {"Ubuntu-24.04": "/home/u/workspace"}, "menu_limit": 12}
+    assert vw.normalize({"workspace_dir": UNC}, default_distro=lambda: "Debian")["wsl_dirs"] == {"Ubuntu-24.04": "/home/u/workspace"}
+    assert vw.normalize({"workspace_dir": "/home/u/ws"}, default_distro=lambda: "")["wsl_dirs"] == {}, "不知道发行版：丢弃，不猜"
+    assert vw.normalize({"wsl_dirs": {"Debian": UNC}})["wsl_dirs"] == {"Debian": "/home/u/workspace"}, "发行版那一行里误填 UNC：取里面那段"
+
+
 def test_the_setting_survives_a_restart(tmp_path):
     config = Config(tmp_path)
-    config.set(vw.CONFIG_KEY, {"workspace_dir": UNC, "menu_limit": 5})
+    config.set(vw.CONFIG_KEY, {"workspace_dir": "D:\\ws", "wsl_dirs": {"Ubuntu-24.04": "/home/u/ws"}, "menu_limit": 5})
     config.save()
-    assert Config(tmp_path).get(vw.CONFIG_KEY) == {"workspace_dir": UNC, "menu_limit": 5}
+    assert Config(tmp_path).get(vw.CONFIG_KEY) == {"workspace_dir": "D:\\ws", "wsl_dirs": {"Ubuntu-24.04": "/home/u/ws"}, "menu_limit": 5}
+
+
+def test_installed_distros_come_from_the_registry_default_first_without_dockers_internal_ones():
+    pairs = [("docker-desktop", False), ("Debian", False), ("Ubuntu-24.04", True), ("", False)]
+    assert vw.wsl_distros(enumerate_registry=lambda: pairs) == ["Ubuntu-24.04", "Debian"]
+    assert vw.wsl_distros(enumerate_registry=lambda: []) == []
+    assert isinstance(vw.wsl_distros(), list)      # 真注册表：有没有 WSL 都不能抛
 
 
 # ---------------------------------------------------------------- 目录里的工作区文件
@@ -53,6 +71,45 @@ def test_a_wsl_unc_directory_is_understood_as_a_folder_inside_the_distro():
     assert vw.parse_directory(r"\\wsl$\Debian\srv") == (True, "Debian", "/srv")
     assert vw.parse_directory(r"D:\work\spaces") == (False, "", r"D:\work\spaces")
     assert vw.parse_directory("") == (False, "", "")
+
+
+def test_a_plain_posix_path_means_the_default_wsl_distro():
+    """用户照 WSL 里的习惯填 ``/home/me/workspace``，不该要求他换成 UNC 写法。"""
+    assert vw.parse_directory("/home/u/workspace", default_distro=lambda: "Debian") == (True, "Debian", "/home/u/workspace")
+    assert vw.parse_directory(" /srv/ws/ ", default_distro=lambda: "Debian") == (True, "Debian", "/srv/ws")
+    assert vw.parse_directory("/home/u/workspace", default_distro=lambda: "") == (True, "", "/home/u/workspace"), \
+        "没有默认发行版：认得出是 WSL 路径，但不知道去哪找"
+    assert vw.listing_path("/home/u/workspace", default_distro=lambda: "Debian") == r"\\wsl.localhost\Debian\home\u\workspace"
+    assert vw.listing_path(UNC, default_distro=lambda: "Debian") == UNC
+    assert vw.listing_path(r"D:\work", default_distro=lambda: "Debian") == r"D:\work"
+    assert vw.listing_path("/home/u/workspace", default_distro=lambda: "") == ""
+
+
+def test_scanning_a_plain_posix_path_lists_through_the_unc_share():
+    seen = []
+
+    def listdir(path):
+        seen.append(path)
+        return ["a.code-workspace"]
+
+    entries = vw.scan_workspace_dir("/home/u/workspace", listdir=listdir, default_distro=lambda: "Debian")
+    assert seen == [r"\\wsl.localhost\Debian\home\u\workspace"]
+    assert [(e.target, e.wsl, e.distro) for e in entries] == [("/home/u/workspace/a.code-workspace", True, "Debian")]
+    assert vw.scan_workspace_dir("/home/u/workspace", listdir=listdir, default_distro=lambda: "") == []
+
+    seen.clear()
+    entries = vw.scan_workspace_dir("/home/u/ws/", distro="Alpine", listdir=listdir)
+    assert seen == [r"\\wsl.localhost\Alpine\home\u\ws"] and entries[0].distro == "Alpine"
+    assert vw.listing_path(UNC, distro="Alpine") == r"\\wsl.localhost\Alpine\home\u\workspace", "行里误填 UNC：按本行的发行版"
+
+
+def test_default_distro_comes_from_the_registry_or_is_empty(monkeypatch):
+    import sys
+
+    if sys.platform == "win32":
+        assert isinstance(vw.default_wsl_distro(), str)   # 本机有没有 WSL 都不能抛
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert vw.default_wsl_distro() == ""
 
 
 def test_scanning_lists_only_workspace_files_with_targets_the_code_command_understands():
@@ -126,9 +183,19 @@ def test_open_ones_first_then_by_recency_and_each_workspace_once():
     scanned = [_entry("ops", "/home/u/ws/ops.code-workspace", multi_root=True),
                _entry("deploy", "/home/u/ws/deploy.code-workspace", multi_root=True)]
     listed = vw.list_workspaces({}, opened=opened, recent=recent, scanned=scanned)
+    # 开着的 → 用户目录里的（ops 同时也在「最近」里，仍按目录那一档排）→ 其余最近用过的
     assert [(e.label, e.open) for e in listed] == [
-        ("gateway", True), ("BigFatFish", True), ("core", False), ("ops", False), ("deploy", False)]
-    assert vw.list_workspaces({"menu_limit": 3}, opened=opened, recent=recent, scanned=scanned)[-1].label == "core"
+        ("gateway", True), ("BigFatFish", True), ("ops", False), ("deploy", False), ("core", False)]
+    assert vw.list_workspaces({"menu_limit": 3}, opened=opened, recent=recent, scanned=scanned)[-1].label == "ops"
+
+
+def test_the_users_own_directory_is_never_crowded_out_by_recent_ones():
+    """实机：7 个开着的 + 35 个最近的，上限 12——用户特意配的目录里的文件一条都轮不到。"""
+    opened = [_entry(f"o{i}", f"/home/u/o{i}", open=True, last_used=NOW) for i in range(7)]
+    recent = [_entry(f"r{i}", f"/home/u/r{i}", last_used=NOW - i) for i in range(35)]
+    scanned = [_entry(f"w{i}", f"/home/u/ws/w{i}.code-workspace", multi_root=True) for i in range(3)]
+    listed = vw.list_workspaces({"menu_limit": 12}, opened=opened, recent=recent, scanned=scanned)
+    assert [e.label for e in listed][7:10] == ["w0", "w1", "w2"] and len(listed) == 12
 
 
 def test_same_named_entries_are_told_apart_by_parent_folder_or_workspace_marker():
@@ -141,6 +208,15 @@ def test_same_named_entries_are_told_apart_by_parent_folder_or_workspace_marker(
     listed = vw.list_workspaces({}, opened=opened, recent=[], scanned=scanned)
     assert [e.label for e in listed] == ["core · Github", "core · Github-2", "core · work", "core · 工作区", "other"]
     assert listed[0].target == "/home/u/Github/core", "只改显示的名字，路径不动"
+
+
+def test_every_configured_directory_is_scanned(monkeypatch):
+    calls = []
+    monkeypatch.setattr(vw, "scan_workspace_dir", lambda path, distro="", **kw: (calls.append((path, distro)), [])[1])
+    monkeypatch.setattr(vw, "open_entries", lambda workspaces=None: [])
+    monkeypatch.setattr(vw, "recent_entries", lambda appdata=None, now=None: [])
+    vw.list_workspaces({"workspace_dir": "D:\\ws", "wsl_dirs": {"Ubuntu-24.04": "/home/u/ws", "Debian": "/srv"}})
+    assert calls == [("D:\\ws", ""), ("/home/u/ws", "Ubuntu-24.04"), ("/srv", "Debian")]
 
 
 def test_an_open_window_learns_its_distro_from_the_recent_record():
@@ -310,23 +386,60 @@ def _dialog(tmp_path, monkeypatch):
     return config, settings_mod, settings_mod.ModernSettingsDialog(config, include_ai=False)
 
 
-def test_settings_offer_the_directory_and_the_limit_and_persist_them(tmp_path, monkeypatch):
+def _titles(dialog, settings_mod, ids):
+    from PySide6.QtWidgets import QLabel
+
+    rows = [dialog.findChild(settings_mod.SettingRow, f"settingRow_{i}") for i in ids]
+    return [row.findChildren(QLabel)[0].text() for row in rows]
+
+
+def test_settings_offer_one_row_per_distro_and_persist_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(vw, "wsl_distros", lambda **kw: ["Ubuntu-24.04", "Debian"])
     config, settings_mod, dialog = _dialog(tmp_path, monkeypatch)
     try:
         assert dialog.findChild(settings_mod.SettingRow, "settingRow_vscode_workspace_dir") is not None
+        assert _titles(dialog, settings_mod, ["vscode_wsl_dir_0", "vscode_wsl_dir_1"]) == ["Ubuntu-24.04（默认发行版）", "Debian"]
+        assert list(dialog.vscode_wsl_dir_edits) == ["Ubuntu-24.04", "Debian"]
         assert dialog.vscode_workspace_dir_picker.text() == "" and dialog.vscode_menu_limit_spin.value() == 12
         dialog.vscode_workspace_dir_picker.setText(f"  {tmp_path}  ")
+        dialog.vscode_wsl_dir_edits["Ubuntu-24.04"].setText(" /home/u/workspace ")
         dialog.vscode_menu_limit_spin.setValue(7)
         dialog._save()
     finally:
         dialog.deleteLater()
-    assert Config(tmp_path).get(vw.CONFIG_KEY) == {"workspace_dir": str(tmp_path), "menu_limit": 7}
+    assert Config(tmp_path).get(vw.CONFIG_KEY) == {
+        "workspace_dir": str(tmp_path), "wsl_dirs": {"Ubuntu-24.04": "/home/u/workspace"}, "menu_limit": 7}
 
     _config, settings_mod, reopened = _dialog(tmp_path, monkeypatch)
     try:
         assert reopened.vscode_workspace_dir_picker.text() == str(tmp_path)
+        assert reopened.vscode_wsl_dir_edits["Ubuntu-24.04"].text() == "/home/u/workspace"
         row = reopened.findChild(settings_mod.SettingRow, "settingRow_vscode_workspace_dir")
         reopened.vscode_workspace_dir_picker.setText(str(tmp_path / "nowhere"))
         assert "打不开" in row.hint_label.text()
     finally:
         reopened.deleteLater()
+
+
+def test_a_distro_that_is_not_installed_right_now_keeps_its_directory(tmp_path, monkeypatch):
+    config = Config(tmp_path)
+    config.set(vw.CONFIG_KEY, {"wsl_dirs": {"Debian": "/srv/ws"}})
+    config.save()
+    monkeypatch.setattr(vw, "wsl_distros", lambda **kw: ["Ubuntu-24.04"])
+    _config, _settings_mod, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        assert list(dialog.vscode_wsl_dir_edits) == ["Ubuntu-24.04"]
+        dialog._save()
+    finally:
+        dialog.deleteLater()
+    assert Config(tmp_path).get(vw.CONFIG_KEY)["wsl_dirs"] == {"Debian": "/srv/ws"}
+
+
+def test_without_wsl_there_is_only_the_local_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(vw, "wsl_distros", lambda **kw: [])
+    _config, settings_mod, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        assert dialog.vscode_wsl_dir_edits == {}
+        assert dialog.findChild(settings_mod.SettingRow, "settingRow_vscode_wsl_dir_0") is None
+    finally:
+        dialog.deleteLater()

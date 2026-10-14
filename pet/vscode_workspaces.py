@@ -57,37 +57,153 @@ class WorkspaceEntry:
 
 # ---------------------------------------------------------------- 配置
 
-def normalize(value) -> dict:
+#: 不是给人用的发行版，设置页不列
+_HIDDEN_DISTROS = {"docker-desktop", "docker-desktop-data", "rancher-desktop", "rancher-desktop-data"}
+
+
+def normalize(value, *, default_distro: Callable[[], str] | None = None) -> dict:
+    """``{"workspace_dir": 本机目录, "wsl_dirs": {发行版: 发行版里的目录}, "menu_limit": 条数}``。
+
+    早先只有一个 ``workspace_dir``：里面填的若是 WSL 路径（``/home/…`` 或 ``\\\\wsl.localhost\\…``），
+    搬到 ``wsl_dirs`` 对应的发行版下面。"""
     raw = value if isinstance(value, dict) else {}
     try:
         limit = int(raw.get("menu_limit", DEFAULT_LIMIT))
     except (TypeError, ValueError):
         limit = DEFAULT_LIMIT
-    return {
-        "workspace_dir": str(raw.get("workspace_dir") or "").strip()[:1000],
-        "menu_limit": max(LIMIT_RANGE[0], min(LIMIT_RANGE[1], limit)),
-    }
+    wsl_dirs: dict[str, str] = {}
+    raw_dirs = raw.get("wsl_dirs")
+    if isinstance(raw_dirs, dict):
+        for distro, path in raw_dirs.items():
+            distro, path = str(distro or "").strip(), str(path or "").strip()
+            if distro and path:
+                wsl_dirs[distro] = _inner_wsl_path(path)[:1000]
+    local = str(raw.get("workspace_dir") or "").strip()[:1000]
+    wsl, distro, inner = parse_directory(local, default_distro=default_distro or default_wsl_distro)
+    if wsl:
+        if distro and inner:
+            wsl_dirs.setdefault(distro, inner)
+        local = ""
+    return {"workspace_dir": local, "wsl_dirs": wsl_dirs,
+            "menu_limit": max(LIMIT_RANGE[0], min(LIMIT_RANGE[1], limit))}
+
+
+def _inner_wsl_path(path: str) -> str:
+    """发行版那一行里填的路径：POSIX 原样；误填成 UNC 形式的取它里面的那一段。"""
+    wsl, _distro, inner = parse_directory(path, default_distro=lambda: "?")
+    return inner if wsl else path
+
+
+def wsl_distros(*, enumerate_registry: Callable[[], list[tuple[str, bool]]] | None = None) -> list[str]:
+    """本机装着的 WSL 发行版，默认的排第一；Docker 之类的内部发行版不列。没有 WSL 返回空。"""
+    pairs = (enumerate_registry or _registry_distros)()
+    named = [(name, is_default) for name, is_default in pairs if name and name.lower() not in _HIDDEN_DISTROS]
+    return [name for name, is_default in named if is_default] + [name for name, is_default in named if not is_default]
+
+
+def _registry_distros() -> list[tuple[str, bool]]:
+    import sys
+
+    if sys.platform != "win32":
+        return []
+    try:
+        import winreg
+
+        found = []
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Lxss") as lxss:
+            try:
+                default = str(winreg.QueryValueEx(lxss, "DefaultDistribution")[0])
+            except OSError:
+                default = ""
+            index = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(lxss, index)
+                except OSError:
+                    break
+                index += 1
+                try:
+                    with winreg.OpenKey(lxss, sub) as key:
+                        found.append((str(winreg.QueryValueEx(key, "DistributionName")[0] or ""), sub == default))
+                except OSError:
+                    continue
+        return found
+    except (OSError, ValueError, TypeError):
+        return []
 
 
 # ---------------------------------------------------------------- 用户目录里的工作区文件
 
-def parse_directory(path: str) -> tuple[bool, str, str]:
-    """``(是否 WSL, 发行版, 发行版里 / 本机的路径)``。UNC 的 WSL 形式换算成发行版里的 POSIX 路径。"""
+def default_wsl_distro() -> str:
+    """默认 WSL 发行版的名字（注册表里记着，读一次不到 0.1 ms）；没有 WSL / 不是 Windows 返回空。"""
+    import sys
+
+    if sys.platform != "win32":
+        return ""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Lxss") as lxss:
+            guid = winreg.QueryValueEx(lxss, "DefaultDistribution")[0]
+            with winreg.OpenKey(lxss, str(guid)) as distro:
+                return str(winreg.QueryValueEx(distro, "DistributionName")[0] or "")
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
+def parse_directory(path: str, *, default_distro: Callable[[], str] = default_wsl_distro) -> tuple[bool, str, str]:
+    """``(是否 WSL, 发行版, 发行版里 / 本机的路径)``。
+
+    认三种写法：``\\\\wsl.localhost\\<发行版>\\…`` / ``\\\\wsl$\\<发行版>\\…``（发行版写在路径里）、
+    ``/home/me/workspace`` 这种 WSL 里的原生路径（按默认发行版）、本机路径。"""
     text = str(path or "").strip()
     match = _UNC_WSL_RE.match(text)
     if match:
         distro, rest = match.group(1), match.group(2).replace("\\", "/").strip("/")
         return True, distro, "/" + rest
+    if text.startswith("/"):
+        return True, default_distro() or "", posixpath.normpath(text.replace("\\", "/")).rstrip("/") or "/"
     return False, "", text
 
 
-def scan_workspace_dir(path: str, *, listdir: Callable[[str], list[str]] | None = None) -> list[WorkspaceEntry]:
-    """目录里的 ``*.code-workspace``（不递归）。目录不存在 / 读不了就是空。"""
-    wsl, distro, inner = parse_directory(path)
+def listing_path(path: str, *, distro: str = "",
+                 default_distro: Callable[[], str] = default_wsl_distro) -> str:
+    """Windows 这边真正去读的路径：WSL 里的经 ``\\\\wsl.localhost\\<发行版>`` 共享；认不出发行版返回空。
+
+    ``distro`` 给定时 ``path`` 是那个发行版里的目录（设置页按发行版分行填的那种）。"""
+    if distro:
+        wsl, found, inner = True, distro, _inner_wsl_path(str(path or "").strip())
+        inner = posixpath.normpath(inner).rstrip("/") if inner else ""
+    else:
+        wsl, found, inner = parse_directory(path, default_distro=default_distro)
     if not inner:
+        return ""
+    if not wsl:
+        return inner
+    if not found:
+        return ""
+    return "\\\\wsl.localhost\\" + found + inner.replace("/", "\\")
+
+
+def directory_exists(path: str, *, distro: str = "") -> bool:
+    """设置页提示用：这个目录现在读得到吗。"""
+    target = listing_path(path, distro=distro)
+    return bool(target) and os.path.isdir(target)
+
+
+def scan_workspace_dir(path: str, *, distro: str = "", listdir: Callable[[str], list[str]] | None = None,
+                       default_distro: Callable[[], str] = default_wsl_distro) -> list[WorkspaceEntry]:
+    """目录里的 ``*.code-workspace``（不递归）。目录不存在 / 读不了就是空。``distro`` 见 ``listing_path``。"""
+    if distro:
+        wsl, inner = True, _inner_wsl_path(str(path or "").strip())
+        inner = posixpath.normpath(inner).rstrip("/") if inner else ""
+    else:
+        wsl, distro, inner = parse_directory(path, default_distro=default_distro)
+    where = listing_path(path, distro=distro if wsl else "", default_distro=default_distro)
+    if not inner or not where:
         return []
     try:
-        names = sorted((listdir or os.listdir)(path))
+        names = sorted((listdir or os.listdir)(where))
     except (OSError, ValueError):
         return []
     entries = []
@@ -180,7 +296,10 @@ def list_workspaces(settings, *, opened: list[WorkspaceEntry] | None = None,
     """菜单要显示的那几条：开着的在前，其余按最后活动时间；同一个工作区只留一条。"""
     settings = normalize(settings)
     opened = open_entries() if opened is None else opened
-    scanned = scan_workspace_dir(settings["workspace_dir"]) if scanned is None else scanned
+    if scanned is None:
+        scanned = scan_workspace_dir(settings["workspace_dir"])
+        for distro, path in settings["wsl_dirs"].items():
+            scanned += scan_workspace_dir(path, distro=distro)
     recent = recent_entries() if recent is None else recent
     merged: dict[tuple[bool, str], WorkspaceEntry] = {}
     for entry in opened:
@@ -192,10 +311,16 @@ def list_workspaces(settings, *, opened: list[WorkspaceEntry] | None = None,
         elif kept.open and kept.distro == "" and entry.distro:
             merged[entry.key] = WorkspaceEntry(kept.label, kept.target, kept.wsl, entry.distro,
                                                kept.multi_root, True, kept.last_used)
+    configured = {entry.key for entry in scanned}
     for entry in scanned:
         merged.setdefault(entry.key, entry)
-    # 稳定排序：开着的几个之间保持 VS Code 清单里的顺序，不按名字重排
-    ordered = sorted(merged.values(), key=lambda item: (not item.open, -item.last_used))
+
+    def rank(item: WorkspaceEntry) -> int:
+        # 开着的 → 用户目录里的（他特意配的，不能被「最近」挤出条数上限）→ 其余最近用过的
+        return 0 if item.open else 1 if item.key in configured else 2
+
+    # 稳定排序：开着的几个之间保持 VS Code 清单里的顺序；目录里的按文件名；最近的按时间
+    ordered = sorted(merged.values(), key=lambda item: (rank(item), -item.last_used))
     return disambiguate(ordered[:settings["menu_limit"]])
 
 

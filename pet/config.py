@@ -847,7 +847,7 @@ class Config:
             # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
             "work_briefing": normalize_work_briefing(None),
             # 右键菜单「VS Code 工作区」：工作区文件目录 + 菜单条数，见 pet/vscode_workspaces.py
-            "vscode_workspaces": {"workspace_dir": "", "menu_limit": 12},
+            "vscode_workspaces": {"workspace_dir": "", "wsl_dirs": {}, "menu_limit": 12},
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
