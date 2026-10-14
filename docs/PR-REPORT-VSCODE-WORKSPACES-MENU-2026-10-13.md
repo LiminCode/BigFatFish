@@ -325,7 +325,7 @@ WSL 的 10 条是一环三点，本机的 2 条是四格窗；同名的带「· 
 
 ## 十五、第三轮：核心特性
 
-用户在设置里填了 `/home/limin/workspace`——WSL 里的原生写法，而第一版只认
+用户在设置里填了 `/home/<me>/workspace`——WSL 里的原生写法，而第一版只认
 `\wsl.localhost\<发行版>\…`，于是这个目录扫不出来、设置页提示「打不开」。用户接着提出：
 这一节应该先列出本机有哪些发行版，目录填在对应发行版下面，更符合直觉。
 
@@ -361,8 +361,8 @@ WSL 的 10 条是一环三点，本机的 2 条是四格窗；同名的带「· 
 ## 十八、第三轮：实机运行记录
 
 ```text
-用户保存的旧值：{'workspace_dir': '/home/limin/workspace', 'menu_limit': 12}
-normalize 之后：  {'workspace_dir': '', 'wsl_dirs': {'Ubuntu-24.04': '/home/limin/workspace'}, 'menu_limit': 12}
+用户保存的旧值：{'workspace_dir': '/home/<me>/workspace', 'menu_limit': 12}
+normalize 之后：  {'workspace_dir': '', 'wsl_dirs': {'Ubuntu-24.04': '/home/<me>/workspace'}, 'menu_limit': 12}
 本机发行版（注册表）：['Ubuntu-24.04']（docker-desktop 被隐藏）
 菜单（上限 12）：12 条，7 条开着的；用户目录里的 7 个工作区文件全部在列，位置 [1, 5, 7, 8, 9, 10, 11]
 （1 和 5 那两个本来就开着，排在开着的那一档里）
