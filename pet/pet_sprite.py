@@ -114,6 +114,7 @@ class PetSprite(QObject):
         self.caption = ""
         self.caption_below = False       # False = 身体框上方；True = 下方
         self.caption_tone = ""           # 胶囊配色（_CAPTION_TONES 的键）；不认识的用默认
+        self.caption_badge = ""          # 胶囊左边的记号：""（没有）/ "crown"（金色桂冠）
         self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
         self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr, 配色) → 胶囊贴图
         self.pos = QPointF(0, 0)
@@ -1041,6 +1042,7 @@ class PetSprite(QObject):
     _CAPTION_FONT_PX = 12
     _CAPTION_PAD_X = 8
     _CAPTION_PAD_Y = 3
+    _CAPTION_BADGE_W = 16            # 桂冠占的宽度（含与文字的间距）
     # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名一个含中文的字体——与气泡同一
     # 种（等线，没装则各平台的中文 UI 字体，见 ui_fonts）。必须是**单族**。
     _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
@@ -1062,7 +1064,8 @@ class PetSprite(QObject):
         rect, body = self.rect(), self.body_rect()
         # 标签每帧都画：字体度量（建 QFont / QFontMetrics、省略、量宽）只在文本或
         # 画布宽度变了才重算；位置是下面几行整数运算，移动时照常跟着走。
-        key = (self.caption, rect.width())
+        badge_w = self._CAPTION_BADGE_W if self.caption_badge else 0
+        key = (self.caption, rect.width(), badge_w)
         cached = self._caption_text_cache
         if cached is None or cached[0] != key:
             font = QFont(self._CAPTION_FONT_FAMILY) if self._CAPTION_FONT_FAMILY else QFont()
@@ -1070,9 +1073,9 @@ class PetSprite(QObject):
             metrics = QFontMetrics(font)
             # 中间省略：开头是会话名、结尾是状态，两头都得看得见
             text = metrics.elidedText(self.caption, Qt.TextElideMode.ElideMiddle,
-                                      max(1, rect.width() - 2 * self._CAPTION_PAD_X - 2))
+                                      max(1, rect.width() - 2 * self._CAPTION_PAD_X - badge_w - 2))
             cached = (key, text, font,
-                      min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X),
+                      min(rect.width(), metrics.horizontalAdvance(text) + 2 * self._CAPTION_PAD_X + badge_w),
                       metrics.height() + 2 * self._CAPTION_PAD_Y)
             self._caption_text_cache = cached
         _key, text, _font, width, text_height = cached
@@ -1099,7 +1102,8 @@ class PetSprite(QObject):
         if pill.isEmpty():
             return None
         fill, ink = self._CAPTION_TONES.get(self.caption_tone, self._CAPTION_DEFAULT_TONE)
-        key = (text, pill.width(), pill.height(), self._dpr, fill, ink)
+        badge = self.caption_badge
+        key = (text, pill.width(), pill.height(), self._dpr, fill, ink, badge)
         cached = self._caption_pixmap_cache
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -1114,13 +1118,56 @@ class PetSprite(QObject):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(*fill))
             painter.drawRoundedRect(QRectF(0, 0, width, height), height / 2, height / 2)
+            badge_w = self._CAPTION_BADGE_W if badge else 0
+            if badge == "crown":
+                self._paint_crown(painter, QRectF(self._CAPTION_PAD_X - 2, 0, badge_w, height))
             painter.setFont(self._caption_text_cache[2])
             painter.setPen(QColor(*ink))
-            painter.drawText(QRect(0, 0, width, height), int(Qt.AlignmentFlag.AlignCenter), text)
+            painter.drawText(QRect(badge_w, 0, width - badge_w, height), int(Qt.AlignmentFlag.AlignCenter), text)
         finally:
             painter.end()
         self._caption_pixmap_cache = (key, pixmap)
         return pixmap
+
+    @staticmethod
+    def _paint_crown(painter: QPainter, box: QRectF) -> None:
+        """金色桂冠：左右两枝叶子围成的半环，底部交汇。画在 ``box`` 里（居中，约 13×12）。
+
+        先用深金色画一遍粗的做衬底，再用亮金色画细的——胶囊底色不论深浅都看得出轮廓。"""
+        from PySide6.QtGui import QPainterPath, QPen
+
+        cx, cy = box.center().x(), box.center().y() + 0.5
+        gold, dark = QColor(236, 184, 44), QColor(150, 102, 8)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        branches = []
+        for side in (-1, 1):
+            arc = QPainterPath()
+            arc.moveTo(cx + side * 0.8, cy + 5.2)
+            arc.cubicTo(cx + side * 6.8, cy + 3.6, cx + side * 6.8, cy - 3.2, cx + side * 2.4, cy - 5.4)
+            leaves = []
+            for i, t in enumerate((0.18, 0.40, 0.62, 0.84)):
+                p = arc.pointAtPercent(t)
+                dx, dy = 3.4 - i * 0.3, 1.9
+                leaf = QPainterPath()
+                leaf.moveTo(p.x(), p.y())
+                leaf.cubicTo(p.x() + side * dx * 0.35, p.y() - dy * 1.3, p.x() + side * dx * 1.05, p.y() - dy * 0.5,
+                             p.x() + side * dx, p.y() + dy * 0.25)
+                leaf.cubicTo(p.x() + side * dx * 0.6, p.y() + dy * 0.5, p.x() + side * dx * 0.2, p.y() + dy * 0.3,
+                             p.x(), p.y())
+                leaves.append(leaf)
+            branches.append((arc, leaves))
+        for color, stroke in ((dark, 2.6), (gold, 1.3)):     # 衬底一遍、亮色一遍
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(color, stroke, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            for arc, _leaves in branches:
+                painter.drawPath(arc)
+            painter.setPen(QPen(color, 0.9 if color is dark else 0.0))
+            painter.setBrush(color)
+            for _arc, leaves in branches:
+                for leaf in leaves:
+                    painter.drawPath(leaf)
+        painter.restore()
 
     def _paint_caption(self, painter: QPainter) -> None:
         pixmap = self.caption_pixmap()

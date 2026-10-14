@@ -95,7 +95,7 @@ case ${DSH_PET_EVENT:-} in
         _dp_cwd=$_dp_v
         _dp_proj=${_dp_v##*/}; _dp_proj=${_dp_proj##*\\}
         _dp_raw transcript_path
-        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=
+        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=; _dp_model=
         if [ -n "$_dp_path" ]; then
             # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
             [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
@@ -110,11 +110,19 @@ case ${DSH_PET_EVENT:-} in
                     _dp_title=${_dp_tail##*\"aiTitle\":\"}
                     _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
             esac
+            # 最近一轮用的模型（assistant 记录里的 "model":"claude-…"）：给小鱼戴桂冠用。
+            # 只认 claude- 开头、字母数字点横线组成的；别的（含怪字符）当没有。
+            case $_dp_tail in
+                *'"model":"claude-'*)
+                    _dp_model=${_dp_tail##*\"model\":\"}
+                    _dp_model=${_dp_model%%\"*}
+                    case $_dp_model in *[!A-Za-z0-9.-]*) _dp_model= ;; esac ;;
+            esac
         fi
         # cwd / transcript 是 stdin 里原样截出的 JSON 字符串片段（Windows 路径的反斜杠
         # 已经是转义好的 \\），直接嵌回去；它们只是两条路径，不含对话内容。
-        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s"}\n' \
-            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
+        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s","model":"%s"}\n' \
+            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" "$_dp_model" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
 esac
 """
 
@@ -456,7 +464,7 @@ class ClaudeSessionTracker:
     _PATH_MAX = 520
     #: 随逐会话更新捎带的附加字段：有值才出现，值变了不单独触发一条更新
     #: （``tool`` 每次工具调用都变，单独上报会把呈现层刷爆）。
-    _EXTRA_KEYS = ("cwd", "transcript", "tool")
+    _EXTRA_KEYS = ("cwd", "transcript", "tool", "model")
 
     def __init__(self) -> None:
         self._busy: dict[str, str] = {}       # 会话 ID → thinking / working
@@ -553,7 +561,8 @@ class ClaudeSessionTracker:
         if event == "SessionMeta":
             paths_changed = self._note_extra(
                 sid, cwd=str(record.get("cwd") or "")[:self._PATH_MAX],
-                transcript=str(record.get("transcript") or "")[:self._PATH_MAX])
+                transcript=str(record.get("transcript") or "")[:self._PATH_MAX],
+                model=self._label(record.get("model"))[:60])
             before = len(self._updates)
             self._session_update(sid, title=self._label(record.get("title")),
                                  project=self._label(record.get("project")))

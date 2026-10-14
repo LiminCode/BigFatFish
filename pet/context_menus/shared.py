@@ -459,6 +459,17 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(theme_id == current_theme)
                 theme_group.addAction(choice)
                 connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
+        crown_choices = getattr(pet, "crown_model_choices", None)
+        toggle_crown = getattr(pet, "toggle_crown_model", None)
+        if callable(crown_choices) and callable(toggle_crown):
+            # 测试替身的宿主可能对任何属性都回一个返回 None 的函数：按空清单处理
+            choices = crown_choices() or ()
+            crown_menu = add_submenu(sub, "桂冠给哪个模型", None)
+            for token, label, checked in choices:
+                choice = crown_menu.addAction(label)
+                choice.setCheckable(True)
+                choice.setChecked(bool(checked))
+                choice.toggled.connect(lambda on, token=token: toggle_crown(token, on))
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):

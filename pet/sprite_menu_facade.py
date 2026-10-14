@@ -621,6 +621,26 @@ class SpriteMenuFacade:
         self.cfg.set("agent_link", ag_data)
         self._save()
 
+    def crown_model_choices(self) -> list[tuple[str, str, bool]]:
+        """「桂冠给哪个模型」：四个家族 + 在场会话的具体型号，带勾选态。"""
+        from .session_crown import CONFIG_KEY, choices, normalize_tokens
+
+        controller = getattr(self._shell, "session_pets", None)
+        seen = controller.seen_models() if controller is not None else []
+        return choices(normalize_tokens((self.cfg.get("agent_link") or {}).get(CONFIG_KEY)), seen)
+
+    def toggle_crown_model(self, token: str, on: bool) -> None:
+        """勾 / 取消一个模型：落盘，在场的小鱼当场换桂冠。"""
+        from .session_crown import CONFIG_KEY, normalize_tokens, toggled
+
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data[CONFIG_KEY] = toggled(normalize_tokens(ag_data.get(CONFIG_KEY)), str(token), bool(on))
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        controller = getattr(self._shell, "session_pets", None)
+        if controller is not None:
+            controller.refresh_badges()
+
     def set_session_card_theme(self, theme_id: str) -> None:
         """会话小鱼详情卡的配色方案：落盘；下次打开详情卡时生效。"""
         from .session_card_themes import CONFIG_KEY, normalize_theme_id

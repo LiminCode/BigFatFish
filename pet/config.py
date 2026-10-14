@@ -260,6 +260,8 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 会话小鱼头顶的金色桂冠给跑着这些模型的会话（匹配片段，见 pet/session_crown.py）
+        "crown_models": ["fable"],
         # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
         "session_card_theme": DEFAULT_CARD_THEME,
         # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
@@ -386,6 +388,9 @@ def _clean_agent_link_data(raw: Any) -> dict:
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
     result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
+    from .session_crown import normalize_tokens as _normalize_crown_tokens  # 惰性：它依赖会话详情模块
+
+    result["crown_models"] = _normalize_crown_tokens(raw.get("crown_models", result.get("crown_models")))
     for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
                            ("session_history_rows", 3, 20)):
         try:

@@ -3826,11 +3826,12 @@ class OverlayShell(QObject):
         self._remove_spawned_sprite(sprite)
         self._refresh_tray_menu()
 
-    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "") -> None:
-        if sprite.caption == text and sprite.caption_tone == tone:
+    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "", badge: str = "") -> None:
+        if sprite.caption == text and sprite.caption_tone == tone and sprite.caption_badge == badge:
             return
         sprite.caption = text
         sprite.caption_tone = tone
+        sprite.caption_badge = badge
         self.overlay.update(QRegion(sprite.rect()))
 
     def _slot_writer(self, slot: int):

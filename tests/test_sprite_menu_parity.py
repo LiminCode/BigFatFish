@@ -67,7 +67,9 @@ POOLS = {
 ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼", "会话小鱼上限", "护驾",
                             "记录最近的对话", "最近的对话显示行数", "详情卡配色",
                             # 「VS Code 工作区」：条目来自壳的门面回调，旧 PetWindow 没有
-                            "VS Code 工作区"})
+                            "VS Code 工作区",
+                            # 「桂冠给哪个模型」：会话小鱼的记号，同样只有 overlay 有
+                            "桂冠给哪个模型"})
 
 # 用户点名的缺失条目（legacy 清单 → overlay 菜单必须逐项存在）
 REQUIRED_LABELS = (

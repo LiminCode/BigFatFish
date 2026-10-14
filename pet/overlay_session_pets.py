@@ -115,6 +115,27 @@ class SessionPetController(QObject):
         self.on_session_update(key[0], {**info, **self._extras.get(key, {}), "title": title})
         return True
 
+    def _badge_for(self, key: tuple[str, str]) -> str:
+        """这个会话的小鱼该戴什么：跑着配置里点名的模型 → ``crown``；否则没有。"""
+        from . import session_crown
+
+        config = getattr(self._shell, "_config", None)          # 配置挂在壳上（控制器自己不持有）
+        agent_cfg = (config.get("agent_link") if config is not None else None) or {}
+        tokens = agent_cfg.get(session_crown.CONFIG_KEY)
+        model = self._extras.get(key, {}).get("model", "")
+        return "crown" if session_crown.is_crowned(model, session_crown.normalize_tokens(tokens)) else ""
+
+    def refresh_badges(self) -> None:
+        """「桂冠给哪个模型」改了：在场的小鱼当场换。"""
+        for key, sprite in self._pets.items():
+            if key in self._sessions and self._shell.is_session_pet(sprite):
+                self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
+                                                    badge=self._badge_for(key))
+
+    def seen_models(self) -> list[str]:
+        """在场会话用过的模型 id（菜单里列具体型号用）。"""
+        return [extras["model"] for extras in self._extras.values() if extras.get("model")]
+
     def sessions(self) -> list[dict]:
         """在用的会话：``{"agent", "sessionId", "phase", "title", "project"}``，按出场先后。"""
         return [{"agent": key[0], **info} for key, info in self._sessions.items()]
@@ -178,7 +199,7 @@ class SessionPetController(QObject):
             changed = previous_info != info
             self._sessions[key] = info
             extras = self._extras.setdefault(key, {})
-            for name in ("cwd", "transcript", "tool"):
+            for name in ("cwd", "transcript", "tool", "model"):
                 if update.get(name):
                     extras[name] = str(update[name])
             seen_now = previous_phase == "review" and phase == "resting"
@@ -206,7 +227,7 @@ class SessionPetController(QObject):
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
             sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}",
-            tone=phase)
+            tone=phase, badge=self._badge_for(key))
         previous = self._phases.get(key)
         if previous == phase:
             return  # 只是标签变了：不重启正在播的动画
