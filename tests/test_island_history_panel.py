@@ -209,7 +209,12 @@ def _icon_pixels(row) -> list:
     return [image.pixelColor(x, y).rgba() for y in range(image.height()) for x in range(image.width())]
 
 
-def test_each_row_shows_an_icon_for_where_it_was_opened(panel):
+def test_each_row_shows_an_icon_for_where_it_was_opened(panel, monkeypatch):
+    from pet import host_icons
+
+    # 不依赖这台机器装了什么：当作一个程序都没装，走手绘记号（真图标那一路见 test_host_icons）
+    host_icons.clear_cache()
+    monkeypatch.setattr(host_icons, "host_executable", lambda kind, **kw: "")
     panel.set_rows([
         {**_rows(1)[0], "key": ("claude", "a"), "host": "vscode"},
         {**_rows(1)[0], "key": ("claude", "b"), "host": "terminal"},
@@ -226,6 +231,22 @@ def test_each_row_shows_an_icon_for_where_it_was_opened(panel):
     assert rows[4].icon.pixmap().isNull() and rows[4].icon.width() == rows[0].icon.width(), \
         "不知道从哪开的：留空位，文字仍对齐"
     assert all(row.title.x() == rows[0].title.x() for row in rows)
+
+
+def test_row_icons_come_from_the_installed_programs_when_available(panel, monkeypatch):
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+
+    from pet import host_icons
+
+    marker = QPixmap(16, 16)
+    marker.fill(QColor("#10c040"))
+    asked = []
+    monkeypatch.setattr(host_icons, "host_icon", lambda widget, kind, size, **kw: (asked.append((kind, size)), QIcon(marker))[1])
+    panel.set_rows([{**_rows(1)[0], "host": "vscode"}])
+    panel.set_open(True)
+    (row,) = panel.row_widgets()
+    assert asked == [("vscode", 16)]
+    assert row.icon.pixmap().toImage().pixelColor(8, 8).name() == "#10c040"
 
 
 def test_header_and_rows_are_painted_as_tiles_not_bare_text(panel):

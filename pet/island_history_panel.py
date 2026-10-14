@@ -34,6 +34,7 @@ _LIVE_BAR_PX = 3
 _SCROLLBAR_PX = 6
 _TITLE_PX, _SMALL_PX = 12, 10
 _STATUS_MS = 4000
+_ICON_WARM_DELAY_MS = 2500
 LIVE_TEXT = "进行中"
 #: 从哪开的 → 图标名（``context_menus.icons``）
 HOST_ICONS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
@@ -120,13 +121,13 @@ class _HistoryRow(QFrame):
         self.tile.style().polish(self.tile)
 
     def _set_icon(self, host: str) -> None:
-        name = HOST_ICONS.get(host)
-        if not name:
+        if host not in HOST_ICONS:
             self.icon.clear()
             return
-        from .context_menus.icons import vector_widget_icon
+        from .host_icons import host_icon
 
-        self.icon.setPixmap(vector_widget_icon(self, name, _ICON_PX).pixmap(_ICON_PX, _ICON_PX))
+        # 本机装着的那个程序自己的图标（VS Code / PowerShell / wsl.exe）；没有就是手绘记号
+        self.icon.setPixmap(host_icon(self, host, _ICON_PX).pixmap(_ICON_PX, _ICON_PX))
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         self._press = event.position().toPoint()
@@ -191,6 +192,16 @@ class SessionHistoryPanel(QWidget):
         self._status_timer.setInterval(_STATUS_MS)
         self._status_timer.timeout.connect(self._clear_status)
         self._restyle()
+        # 来源图标里 VS Code 那个第一次要外壳解包 150 ms：启动稳定后先取好，别卡第一次展开
+        QTimer.singleShot(_ICON_WARM_DELAY_MS, self._warm_icons)
+
+    def _warm_icons(self) -> None:
+        from .host_icons import warm
+
+        try:
+            warm(self, _ICON_PX)
+        except Exception:  # noqa: BLE001 - 预热失败没关系，用到时再取
+            pass
 
     # ---------------------------------------------------------------- 外观
     def set_look(self, *, primary: str, secondary: str, accent: str, width: int) -> None:

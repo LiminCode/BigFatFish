@@ -134,3 +134,85 @@ PowerShell 里开的、WSL 终端里开的，前面要有对应的小图标方�
 - **影响面**：只有岛卡片里的「最近的对话」的外观；数据与动作不变。
 - **配置 / 落盘**：无。
 - **回滚**：`git revert` 后重启桌宠。
+
+---
+
+# 第二轮改进：来源图标用本机程序自己的图标
+
+> **基线**：`fda37e7`（本报告第一轮的提交）　**日期**：`2026-10-14`
+> **范围**：4 个文件（实现 2、测试 2）；报告与索引随本轮更新
+
+## 九、第二轮：核心特性
+
+用户问：VS Code、shell、WSL 能不能用本机装着的真图标？可以。Windows 外壳会把可执行文件
+里嵌的图标交出来（`QFileIconProvider`，快捷启动菜单已经在用），所以：
+
+| 来源 | 取谁的图标 | 本机实测 |
+|---|---|---|
+| VS Code | `Code.exe`（`code` 命令所在安装目录 → 用户目录安装 → 系统安装，依次找） | 找到，蓝色折带标志 |
+| 本机终端 | PowerShell 7 的 `pwsh.exe`（`Program Files`），没有就系统自带的 `powershell.exe` | 7 没装，用了系统自带的；蓝色 `>_` 标志 |
+| WSL 终端 | `System32\wsl.exe` | 企鹅 |
+| 脚本 | 没有对应程序 | 手绘记号 |
+
+程序不在、外壳取不到、非 Windows：退回第一轮的手绘记号，一行都不会空着。
+
+**勘查里排除的**：`WindowsApps` 下的执行别名（`wt.exe`、`pwsh.exe` 那种）交出来的是通用的
+程序图标，不是本尊，所以 Windows Terminal 没有进候选；Ubuntu 发行版用 `wsl --install`
+装的没有带图标的应用包，注册表里只有 `Flavor: ubuntu`，所以 WSL 用的是 `wsl.exe` 的企鹅
+而不是 Ubuntu 的圈。
+
+## 十、第二轮：修改文件说明
+
+增删取自 `git diff fda37e7 --numstat`。
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/host_icons.py`（新增） | +108 / −0 | `host_executable(kind)`：候选路径按顺序找；`host_icon(widget, kind, size)`：外壳取图 → 复用快捷启动的 `fitted_application_icon` 裁掉透明边并填满 → 失败退回手绘记号；按 (种类, 尺寸, 缩放) 缓存；`warm()` 预热；查找函数与取图函数都可注入 |
+| `pet/island_history_panel.py` | +15 / −4 | `_set_icon` 改用 `host_icon`；面板建好 2.5 s 后预热一次（VS Code 的图标第一次要外壳解包 150 ms，别留给第一次展开卡片） |
+| `tests/test_host_icons.py`（新增） | +138 / −0 | 8 条：装了就用程序的图标（注入的取图函数被问到正确路径、画出来的是它给的）；没装用手绘记号；外壳抛错也退回；同一种类同一尺寸只问一次；查找顺序（有 7 优先 7、没有就系统自带、非 Windows 为空）；预热取齐四种且之后不再问；面板按时安排预热；真机上四种都不为空、不抛 |
+| `tests/test_island_history_panel.py` | +22 / −1 | 新增「行图标来自 `host_icon`」；「四种来源各不相同」那条改成不依赖本机装了什么（注入「一个都没装」） |
+
+## 十一、第二轮：性能分析
+
+真机，`QT_QPA_PLATFORM=windows`，每种各 1 次：
+
+| 种类 | 第一次（外壳取图 + 裁剪） | 命中缓存 |
+|---|---|---|
+| VS Code | 150.1 ms | 44 µs |
+| 本机终端（powershell.exe） | 11.4 ms | 48 µs |
+| WSL（wsl.exe） | 6.3 ms | 41 µs |
+| 脚本（手绘） | 0.2 ms | 15 µs |
+
+**结论**：合计约 170 ms 的一次性开销，放在启动后 2.5 s 的单次定时器里（GUI 线程；
+`QFileIconProvider` 走外壳 COM，没有放到别的线程）；之后每行取图标 40–50 µs。没有新的
+磁盘写入、网络、常驻线程；缓存里 4 个小图标。启动期多这 170 ms 的 GUI 占用没有和别的
+启动任务对比过时序，只知道它在 2.5 s 之后。
+
+## 十二、第二轮：实机运行记录
+
+```text
+外壳取图探针（9 个候选）：Code.exe ✓ 真标志；code 命令所在处 ✓；wt.exe 别名 ✗ 通用图标；
+pwsh 7 不存在；powershell.exe ✓；cmd.exe ✓（没用）；wsl.exe ✓ 企鹅；ubuntu 别名不存在
+真实字体渲染（深 / 浅）：三种来源的行分别是 VS Code 标志、PowerShell 标志、企鹅；脚本是手绘记号
+```
+
+截图留在会话目录，没有入库。真实桌宠在提交后重启。
+
+**没有验证的部分**：没有在真实桌面上展开过岛看；浅色岛上 PowerShell 图标的蓝底与白色薄膜
+的对比只在渲染图里看过；高 DPI 下外壳给的是 20/40/60/320 四档，裁剪后 16 px 的清晰度没有
+逐档比较。
+
+## 十三、第二轮：测试与验证
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests`、`git diff --check` | 通过 |
+| 红 → 绿 | `pytest -q tests/test_host_icons.py tests/test_island_history_panel.py` | 新测试写在实现前但同一批应用，没有单独看红；接线后「四种来源各不相同」在真机上红了（三个真图标在 offscreen 下取出来一样）——改成注入「一个都没装」后绿，顺手把注入点改成调用时取默认值；最终 `282 passed`（含岛的全部家族） |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（隔离 worktree，`fda37e7` 加本轮改动） | `5 failed, 5170 passed, 11 skipped in 486.13s`，5 个就是这台机器固定的环境性失败。这次运行之后只改了本报告与索引登记 |
+
+## 十四、第二轮：已知限制
+
+- Windows Terminal 没有专门的图标（别名取不到本尊），本机终端一律显示 PowerShell。
+- WSL 用的是 `wsl.exe` 的企鹅，不是具体发行版的图标。
+- 「VS Code 工作区」菜单里的条目图标还是第一轮的手绘记号（Ubuntu 圈 / 四格窗），没有换成
+  真图标——那边区分的是「WSL / 本机」，不是程序。要换也容易，`host_icon` 直接可用。
