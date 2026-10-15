@@ -192,3 +192,57 @@ hook 在每个回合边界本来就读一次记录尾部（取标题），多截
 | 静态检查 | `ruff`、`git diff --check` 通过 |
 | 红 → 绿 | 新用例与改动同一批应用，没有单独看红；`test_sprite_caption` `test_island_english` `test_i18n` `test_session_crown` `test_overlay_session_pets` 共 71 passed |
 | 全量（隔离 worktree，`5c41136` 加本轮） | `5 failed, 5206 passed, 11 skipped in 438.99s`，5 个就是这台机器固定的环境性失败。这次运行之后只改了本报告的措辞 |
+
+## 十四、第三轮（2026-10-15）：桂冠跟上会话中途换的模型
+
+用户在真实桌面上看到：WSL 里一个会话的详情卡写着「Fable 5.1 · high」，头顶胶囊却没有桂冠。
+排查桥文件与会话记录：这个会话前半段跑 Opus 5.5（记录里 163 + 104 条），当前这一轮才换到
+Fable 5.1。hook 只在回合开始 / 结束（`UserPromptSubmit` / `Stop`）时把会话记录尾部的模型报上来，
+用户是在**换完模型之后**提的这一问，所以 `UserPromptSubmit` 那次报的还是上一轮的 Opus；详情卡是
+点开时当场读记录，已经是 Fable。两条数据路径一个滞后一轮、一个实时，于是对不上。
+
+改法沿用「读记录时发现用户改过名就补标题」（`retitle`）的既有做法：详情卡读回会话记录后，把
+读到的模型也同步给控制器（新增 `SessionPetController.remodel`），模型真的变了就当场重贴桂冠。
+读不到模型（空串）不算换，没变就提前返回。不碰 hook 脚本——让每次工具事件都去读 128 KB 记录尾
+不值得，回合结束那次 `SessionMeta` 本来就会把它纠正过来，这里只是把「打开详情卡」也变成一个
+纠正点。
+
+### 修改文件说明
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/overlay_session_pets.py` | +19 / −0 | 新增 `remodel(key, model)`：改在场会话的模型、重贴桂冠；空串 / 没变 / 不在场返回 False |
+| `pet/session_pet_ui.py` | +3 / −1 | `_on_detail_ready` 在 `retitle` 之后调 `remodel` |
+| `tests/test_session_crown.py` | +19 / −0 | 新用例：hook 报 Opus 的小鱼，读记录发现 Fable → 戴上桂冠；没变 / 空串 / 不在场都不动 |
+
+### 性能分析
+
+`remodel` 只在详情卡读完会话记录时调一次（用户点小鱼才读），没有稳态开销、没有新线程 / 系统调用。
+本机实测（offscreen，复用桂冠测试的 shell fixture，n=2000）：
+
+| 情形 | 每次 |
+|---|---|
+| 模型真的变了（改 extras + 重贴胶囊，缓存失效，下次绘制才真画） | 6.4 µs |
+| 模型没变（提前返回） | 0.28 µs |
+
+### 实机运行记录
+
+```text
+排查（改动前）：
+  %APPDATA%ig-fat-fishgent-events\claude_wsl.jsonl 该会话最近 8 条 SessionMeta 全是 "model":"claude-opus-5-5"
+  会话记录 15449ffb…jsonl 共 1589 行：最后一条 opus 在第 1473 行，之后 31 条 assistant 全是 claude-fable-5-1
+  → hook 报的是上一轮的模型，详情卡读的是当前的。
+重启：00:21:45 pet-overlay-gate.log「acquired pid=24172」；pet-24172.log「Agent 监视器 [claude_wsl] 已启动」。
+  那个 WSL 会话在 00:21:12 已经 Stop，回合结束那条 SessionMeta 已是 "model":"claude-fable-5-1"，
+  重启后它处于休息态、不凭空生小鱼，所以没能在真实桌面上再现「点开卡片 → 当场戴上」这一步。
+```
+
+没有验证的：真实桌面上点开卡片的那一刻桂冠出现（路径由新用例覆盖：`remodel` → `set_session_pet_caption`）。
+
+### 测试与验证
+
+| 门 | 结果 |
+|---|---|
+| 静态检查 | `ruff` 三个文件通过、`git diff --check` 通过 |
+| 红 → 绿 | 新用例先跑：`AttributeError: remodel`（红）；加实现后 `test_session_crown` `test_overlay_session_pets` `test_session_pet_details` 共 80 passed |
+| 全量 | 未跑：只增一个控制器方法与一处调用，接口、持久化、生命周期、平台分支都没动 |

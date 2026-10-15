@@ -400,8 +400,10 @@ class SessionPetActions(QObject):
             action(card.key)
 
     def _on_detail_ready(self, key, detail) -> None:
-        # 读回来的标题以会话记录 / 运行清单为准（含用户改的名字）：同步给小鱼头顶
+        # 读回来的标题以会话记录 / 运行清单为准（含用户改的名字）：同步给小鱼头顶；
+        # 在用的模型同理（hook 只在回合边界报，中途换模型那一轮它报的还是旧的）→ 桂冠
         self._controller.retitle(tuple(key), getattr(detail, "title", ""))
+        self._controller.remodel(tuple(key), getattr(detail, "model", ""))
         self._cache[key] = detail
         card = self._card
         if (card is not None and shiboken6.isValid(card) and card.isVisible()

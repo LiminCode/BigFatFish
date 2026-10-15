@@ -115,6 +115,25 @@ class SessionPetController(QObject):
         self.on_session_update(key[0], {**info, **self._extras.get(key, {}), "title": title})
         return True
 
+    def remodel(self, key: tuple[str, str], model: str) -> bool:
+        """把一个在场会话在用的模型改成 ``model``（头顶的桂冠随之更新）。
+
+        用在「读会话记录时发现模型换了」：hook 只在回合开始 / 结束时报模型，会话中途
+        换了模型（/model、/fast）的那一轮，hook 报的还是上一轮的；详情卡是当场读记录，
+        先由这里把桂冠对上。读不到模型（空串）不算换。返回是否真的改了。"""
+        model = str(model or "").strip()
+        if key not in self._sessions or not model:
+            return False
+        extras = self._extras.setdefault(key, {})
+        if extras.get("model") == model:
+            return False
+        extras["model"] = model
+        sprite = self._pets.get(key)
+        if sprite is not None and self._shell.is_session_pet(sprite):
+            self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
+                                                badge=self._badge_for(key))
+        return True
+
     def _badge_for(self, key: tuple[str, str]) -> str:
         """这个会话的小鱼该戴什么：跑着配置里点名的模型 → ``crown``；否则没有。"""
         from . import session_crown

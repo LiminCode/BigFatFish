@@ -115,6 +115,25 @@ def test_the_fish_wears_the_crown_only_for_the_chosen_model(shell):  # noqa: F81
     assert a.caption_badge == "", "模型换了，桂冠摘掉"
 
 
+def test_the_crown_follows_the_model_read_from_the_transcript(shell):  # noqa: F811
+    """hook 只在回合开始 / 结束时报模型：会话中途换了模型（/model、/fast）的那一轮，
+    hook 报的还是上一轮的。读会话记录发现的模型要当场换桂冠，不等下一回合。"""
+    key = ("claude", "A")
+    _update(shell, "A", "claude-opus-5-5")
+    fish = shell.session_pets.sprite_of(key)
+    assert fish.caption_badge == ""
+
+    assert shell.session_pets.remodel(key, "claude-fable-5-1") is True
+    assert fish.caption_badge == "crown"
+    assert shell.session_pets.describe(key)["model"] == "claude-fable-5-1"
+    assert shell.session_pets.seen_models() == ["claude-fable-5-1"], "菜单里列的具体型号也跟着换"
+
+    assert shell.session_pets.remodel(key, "claude-fable-5-1") is False, "没变就不动"
+    assert shell.session_pets.remodel(key, "") is False, "记录里读不到模型不算换"
+    assert fish.caption_badge == "crown"
+    assert shell.session_pets.remodel(("claude", "nobody"), "claude-fable-5-1") is False
+
+
 def test_changing_the_choice_in_the_menu_recrowns_the_fish_at_once(shell):  # noqa: F811
     _update(shell, "A", "claude-fable-5-1")
     _update(shell, "B", "claude-opus-5-5")
