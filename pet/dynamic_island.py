@@ -4,8 +4,8 @@
 - 常驻顶层小窗，可显示图标、名称、信息槽、状态区（Claude Code 会话计数 + API 连接图标：
   绿 = 对话 API 可用，红 = 不可用）；
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
-- 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
-  桌宠隐藏时也一样（卡片上的「显示桌宠」是恢复入口）；
+- 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换肥鱼显隐；
+  肥鱼隐藏时也一样（卡片上的「显示肥鱼」是恢复入口）；
 - 信息槽二选一：当前时间，或今日用量（Claude Code 今天用掉的 token，见 claude_usage）；
 - 事件动效（``event_effects``）：AI 回复/余额刷新时位移弹跳 +
   表面轻压 + 短暂呼吸，静止时完全无定时器开销；
@@ -299,7 +299,7 @@ class DynamicIsland(QWidget):
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
         self.on_geometry_changed = None
-        # 桌宠聚合可见性回调（碰撞体据此挂起/恢复）：AppShell 注入。
+        # 肥鱼聚合可见性回调（碰撞体据此挂起/恢复）：AppShell 注入。
         self.on_pet_visibility_changed = None
 
         # ---- 模式与动效状态（静止时全部为稳态，_anim_timer 不运行）----
@@ -443,13 +443,13 @@ class DynamicIsland(QWidget):
         """本进程成为前台（Active）才重申；失去前台不动作。
 
         外部应用抢到前台（开始菜单、全屏游戏、第三方置顶工具）时重申会让岛
-        反过来盖住系统级置顶面，与 legacy「全屏应用会暂时盖住桌宠」同口径。
+        反过来盖住系统级置顶面，与 legacy「全屏应用会暂时盖住肥鱼」同口径。
         """
         if state == Qt.ApplicationState.ApplicationActive:
             self.reassert_topmost()
 
     def set_icon_provider(self, fn) -> None:
-        """注入"鱼本体头像"取图回调（AppShell 提供：取首个桌宠窗的当前帧图标）。
+        """注入"鱼本体头像"取图回调（AppShell 提供：取首个肥鱼窗的当前帧图标）。
 
         回调返回 QPixmap 或 None（帧尚未就绪，岛侧下次重建内容层时重试）。
         注入即作废已缓存头像/内容层：换形象后要立刻取到新头像。
@@ -633,7 +633,7 @@ class DynamicIsland(QWidget):
             self._ensure_anim_timer()
 
     def bump(self, strength: float = 1.0, dir_x: float = 0.0, dir_y: float = 0.0) -> None:
-        """被桌宠撞到（果冻墙→水波感）：撞击点荡开涟漪 + 轻微定向踢动。
+        """被肥鱼撞到（果冻墙→水波感）：撞击点荡开涟漪 + 轻微定向踢动。
 
         dir_x/dir_y 为岛被顶着的方向（单位向量，由碰撞侧从对方 dv 取反得到）；
         位移与形变只作用于绘制层，窗口几何不动（岛的位置永远由用户拖拽决定）。
@@ -1835,8 +1835,8 @@ class DynamicIsland(QWidget):
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
             else:
-                # 桌宠隐藏时也照常展开卡片（Claude Code 会话、最近的对话都在这里），
-                # 恢复桌宠的入口是卡片上的「显示桌宠」。此前隐藏时单击改弹岛对话
+                # 肥鱼隐藏时也照常展开卡片（Claude Code 会话、最近的对话都在这里），
+                # 恢复肥鱼的入口是卡片上的「显示肥鱼」。此前隐藏时单击改弹岛对话
                 # 气泡，卡片就点不开了（2026-10-11 按用户要求去掉这条路由）。
                 self.expand_card()
         else:

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Linux Wayland 会话下默认改用 xcb 平台插件的回归测试。
 
-根因：Wayland 协议不允许客户端自行移动顶层窗口，桌宠拖动依赖的
+根因：Wayland 协议不允许客户端自行移动顶层窗口，肥鱼拖动依赖的
 QWidget.move() 会被合成器静默忽略（表现为"无法拖动"）；透明无边框
 窗口在原生 wayland 插件下还有重绘残留（拖影）。修复：创建
 QApplication 之前检测 Wayland 会话并把 QT_QPA_PLATFORM 默认设为 xcb，

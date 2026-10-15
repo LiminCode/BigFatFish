@@ -675,7 +675,7 @@ class PetSprite(QObject):
         换角色 = 换素材库：旧库 shutdown 后被回收，clip 的 C++ 对象跟着销毁，而
         sprite 手上的 Python 包装还在。对它再 ``stop()`` 会抛 RuntimeError
         （``Internal C++ object … already deleted``）——不接住的话换绑永远过不去，
-        桌宠卡死在旧角色的最后一帧，切回来也一样（2026-10-11 实机）。与上面
+        肥鱼卡死在旧角色的最后一帧，切回来也一样（2026-10-11 实机）。与上面
         ``_disconnect_clip_signals`` 对「对象已毁」的口径一致。
         """
         stop = getattr(clip, "stop", None)
@@ -728,7 +728,7 @@ class PetSprite(QObject):
         # 换 clip 后签名/缓存作废；首帧到达前先按脏处理，保证首 tick 上屏。
         # **不清 self._pixmap**：旧 clip 的最后一帧留作兜底（_frame_sig=None
         # 已强制按新签名重建，新帧到货即覆盖）——清掉会让新 clip 首帧异步
-        # 到货前 paint 画透明，桌宠闪消失一瞬。
+        # 到货前 paint 画透明，肥鱼闪消失一瞬。
         self._frame_sig = None
         self._hit_image = None
         self._frame_dirty = True

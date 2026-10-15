@@ -11,7 +11,7 @@
    ``tool_response`` 可以有几百 KB（shell 的 ``read`` 逐字节读，300KB 实测 600ms）。
 2. **settings.json 合并**（``merge_hooks`` / ``strip_hooks``）：只动带
    ``x-dsh-pet`` 标记的条目，用户自己的 hooks 原样保留。
-3. **WSL 通道**（``WslSettingsStore`` / ``to_wsl_path``）：桌宠跑在 Windows，
+3. **WSL 通道**（``WslSettingsStore`` / ``to_wsl_path``）：肥鱼跑在 Windows，
    Claude Code 跑在 WSL 发行版里——读写发行版内的 ``~/.claude/settings.json``
    一律经 ``wsl.exe``，事件文件仍落在 Windows 侧（WSL 里看是 ``/mnt/c/…``）。
 4. **会话收敛**（``ClaudeSessionTracker``）：同一个 Claude Code 可以同时开多个
@@ -40,15 +40,15 @@ HOOK_EVENTS = (
     "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure",
     "SessionStart", "SessionEnd", "UserPromptSubmit", "Notification",
 )
-HOOK_FLAG = "x-dsh-pet"            # 本桌宠注入条目的结构化标记
+HOOK_FLAG = "x-dsh-pet"            # 本肥鱼注入条目的结构化标记
 HOOK_SCRIPT_NAME = "claude_event_hook.sh"
-#: 桌宠自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
+#: 肥鱼自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
 #: 不落，这次运行不会冒出一只会话小鱼。
 HEADLESS_ENV = "BIG_FAT_FISH_HEADLESS"
 #: 无标记旧条目的兜底识别（早期版本注入）：命令里带这些脚本文件名才算我们的。
 _LEGACY_SCRIPT_MARKERS = ("claude_event_hook.ps1", "claude_event_hook.py", HOOK_SCRIPT_NAME)
 
-_HOOK_SCRIPT = r"""# dsh-pet: Claude Code 事件 hook。由桌宠生成、每次启动刷新，请勿手改。
+_HOOK_SCRIPT = r"""# dsh-pet: Claude Code 事件 hook。由肥鱼生成、每次启动刷新，请勿手改。
 # 由 hook 命令 source 执行；事件名 / Agent 名 / 输出文件经环境变量传入。
 # 只落元数据（时间戳、事件名、会话 ID、工具名、通知类型），其余一概不写。
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -56,7 +56,7 @@ if [ -n "${BASH_VERSION:-}" ]; then
 else
     _dp_in=$(head -c 4096)
 fi
-[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 桌宠自己起的无界面运行：不报
+[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 肥鱼自己起的无界面运行：不报
 _dp_pick() {
     case $_dp_in in
         *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;
@@ -175,7 +175,7 @@ def _sq(value: str) -> str:
 def sh_hook_command(script: str, out: str, agent: str, event: str) -> str:
     """hook 命令：脚本存在才 source，且永远以 0 退出。
 
-    脚本缺失时（桌宠卸载了但 hooks 还在）直接 ``.`` 一个不存在的文件会让非交互
+    脚本缺失时（肥鱼卸载了但 hooks 还在）直接 ``.`` 一个不存在的文件会让非交互
     shell 报错退出，Claude Code 每个事件都要记一条 hook 失败——所以先 ``[ -r ]``。
     """
     return (
@@ -226,7 +226,7 @@ def find_git_bash() -> str | None:
 # ---------------------------------------------------------------- settings.json 合并
 
 def is_our_entry(entry: Any) -> bool:
-    """是不是本桌宠注入的 matcher 组（新格式认标记，旧格式认脚本文件名）。"""
+    """是不是本肥鱼注入的 matcher 组（新格式认标记，旧格式认脚本文件名）。"""
     if not isinstance(entry, dict):
         return False
     if entry.get(HOOK_FLAG) is True:
@@ -239,7 +239,7 @@ def is_our_entry(entry: Any) -> bool:
 
 
 def strip_hooks(data: dict) -> dict:
-    """移除本桌宠的全部条目（就地改并返回）；清空的事件键一并删掉。"""
+    """移除本肥鱼的全部条目（就地改并返回）；清空的事件键一并删掉。"""
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         return data
@@ -294,7 +294,7 @@ def run_wsl(args: list[str], *, input_text: str | None = None,
             timeout: float = _WSL_TIMEOUT_S) -> tuple[int, str]:
     """在默认发行版里跑一条命令，返回 (返回码, stdout)。任何失败都折成非零返回码。
 
-    ``CREATE_NO_WINDOW``：桌宠由 pythonw / GUI exe 启动时没有控制台，不带它每次调用
+    ``CREATE_NO_WINDOW``：肥鱼由 pythonw / GUI exe 启动时没有控制台，不带它每次调用
     都会闪一个终端窗口。``WSL_UTF8=1``：否则 wsl.exe 自己的输出是 UTF-16。
     """
     exe = wsl_exe()
@@ -426,7 +426,7 @@ class ClaudeSessionTracker:
 
     - ``("state", 状态)``：Agent 级状态，交给既有状态机；
     - ``("session_done", {...})``：一个会话收工，但同 Agent 还有别的会话在忙——
-      只该弹一条提示，不能动状态机（否则桌宠会切回待机）；
+      只该弹一条提示，不能动状态机（否则肥鱼会切回待机）；
     - ``("approval_request" | "approval_resolved", {"approvalId": ...})``：
       会话停在权限确认上 / 之后又动了。
 
@@ -434,7 +434,7 @@ class ClaudeSessionTracker:
     Code 的实际语义决定的：
 
     - ``PostToolUseFailure`` 算 **working**：工具失败（grep 没匹配、测试没过）是
-      常态，回合照常继续。按通用映射算 error 的话，模型多想 0.8 秒桌宠就会报
+      常态，回合照常继续。按通用映射算 error 的话，模型多想 0.8 秒肥鱼就会报
       「那边停了」。真正的回合失败是 ``StopFailure``。
     - ``SessionStart`` **不产生状态**：自动压缩上下文会在回合中途触发它
       （``source=compact``），当成 idle 会误报完成。

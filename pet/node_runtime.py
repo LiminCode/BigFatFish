@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Resolve Node.js tools consistently for terminal and desktop-app launches.
 
-桌宠是可能由 Finder / Explorer / 开机自启拉起的 GUI 进程，继承到的 PATH 往往
+肥鱼是可能由 Finder / Explorer / 开机自启拉起的 GUI 进程，继承到的 PATH 往往
 不完整：
 
 - macOS：.app 的环境 PATH 极简（Issue #67）；
 - Windows：进程环境块是**登录时缓存**的，用户刚装好的 nvm-windows / pnpm /
-  Volta 目录不在里面（issue：桌宠找不到 pnpm → 桥接安装失败）。
+  Volta 目录不在里面（issue：肥鱼找不到 pnpm → 桥接安装失败）。
 
 因此这里给出统一的「增强 PATH」：把已知的 Node 包管理器目录补齐；Windows 还额外
 读注册表里**最新**的 PATH（进程环境块的旧值靠它补全），再交给 ``shutil.which``。

@@ -2,7 +2,7 @@
 """辅助进程：给 test_foreground_steal 起一个"用户应用"窗口并持有前台。
 
 单独进程是必需的：同一进程的两个窗口共享前台队列，`GetForegroundWindow()`
-无法区分"桌宠夺了前台"和"自己的另一个窗口仍是前台"。用法：
+无法区分"肥鱼夺了前台"和"自己的另一个窗口仍是前台"。用法：
     python tests/helpers/foreground_holder.py <unused>
 按 stdout 打印自己的 HWND，保持前台直到 stdin 关闭或超时。
 """

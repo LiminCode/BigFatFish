@@ -18,7 +18,7 @@ webm_clip._hard_stop），而 MovieLibrary 是素材池的持有者：本刀在�
   队列，下一次播放拿到的是全新队列，绝不依赖旧队列里的任何一帧；
 - 软停驻留（``_soft_parked``，等 re-arm 续圈）的 reader 仍存活，被"reader
   已退出"判据排除，续圈语义零影响；
-- 显示槽由 start()/jumpToFrame() 重写，且桌宠显示的是 PetSprite 自己那份
+- 显示槽由 start()/jumpToFrame() 重写，且肥鱼显示的是 PetSprite 自己那份
   pixmap，清空已停播 clip 的显示槽不会造成任何可见变化
   （webm_clip._hard_stop 本来就会这么做）。
 """

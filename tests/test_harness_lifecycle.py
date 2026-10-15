@@ -586,7 +586,7 @@ def _patch_posix(monkeypatch, calls, *, pgid=4321, own_pgrp=9999):
 
 def test_terminate_process_tree_posix_kills_group_not_single_pid(monkeypatch):
     """POSIX 分支必须按进程组终止：dsh 常以 npx→node 两层存在，只 kill 顶层
-    pid 会留下 node 子进程（docstring 声称'进程树'）。桌宠自拉实例 spawn 时
+    pid 会留下 node 子进程（docstring 声称'进程树'）。肥鱼自拉实例 spawn 时
     start_new_session=True，进程组即 dsh 自己的组，killpg 安全。"""
     calls: list[tuple] = []
     _patch_posix(monkeypatch, calls, pgid=1234)  # 目标是自己的组长
@@ -601,7 +601,7 @@ def test_terminate_process_tree_posix_kills_group_not_single_pid(monkeypatch):
 
 def test_terminate_process_tree_posix_never_signals_own_group(monkeypatch):
     """目标进程的组恰好是本进程组时（异常配置），必须回退单 pid kill——
-    killpg 打自己的组会把桌宠一起带走。"""
+    killpg 打自己的组会把肥鱼一起带走。"""
     calls: list[tuple] = []
     _patch_posix(monkeypatch, calls, pgid=1234, own_pgrp=1234)  # 目标组即本进程组
     monkeypatch.setattr(hl, "_terminate_process_tree", _REAL_TERMINATE_PROCESS_TREE)

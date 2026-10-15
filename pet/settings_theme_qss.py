@@ -65,7 +65,6 @@ QPushButton#saveAndExit, QPushButton#saveOnly {{
 QPushButton#saveAndExit:hover, QPushButton#saveOnly:hover {{ background: {tile_hover}; }}
 QPushButton#saveAndExit:pressed, QPushButton#saveOnly:pressed {{ background: {selected}; color: {selected_text}; }}
 QLabel#searchStatus {{ padding: 0 5px; color: {muted}; font-size: 11px; }}
-QLabel#settingsVersion {{ color: {muted}; font-size: 11px; padding-top: 4px; }}
 QListWidget#settingsSidebar {{
     background: transparent;
     border: none;

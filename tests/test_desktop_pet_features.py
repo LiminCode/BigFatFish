@@ -694,7 +694,7 @@ def test_modern_pet_context_menu_has_spawn_action_with_avatar_icon(monkeypatch):
 
     direct_actions = [action for action in menu.actions() if not action.isSeparator()]
     assert direct_actions
-    controls = next(action.menu() for action in direct_actions if action.text() == "桌宠控制")
+    controls = next(action.menu() for action in direct_actions if action.text() == "肥鱼控制")
     spawn_action = next(action for action in controls.actions() if action.text() == "生小肥鱼")
     assert not spawn_action.icon().isNull()
     spawn_action.trigger()
@@ -872,7 +872,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "播放速率",
         "大小",
         "VS Code 工作区",
-        "桌宠控制",
+        "肥鱼控制",
         "快捷启动",
         "工具与帮助",
         "Agent 联动",
@@ -883,7 +883,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     # 立即报时/语音报时开关/今日节日/节日提醒开关：2026-09-19 起默认模板
     # visible: false，不上默认菜单（用户可在菜单编辑器加回）
     expected_labels.extend([
-        "桌宠设置",
+        "肥鱼设置",
         "退出",
     ])
     assert labels == expected_labels
@@ -909,7 +909,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
 
 
 def test_context_menu_has_no_deepseek_entries():
-    """「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 全部下线（纯桌宠版同样没有）。"""
+    """「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 全部下线（纯肥鱼版同样没有）。"""
     from PySide6.QtWidgets import QApplication, QMenu
 
     from pet.context_menu import populate_context_menu
@@ -1211,7 +1211,7 @@ def test_modern_menu_starts_with_ojingjing_entry_and_uses_pet_avatar(monkeypatch
     assert entry.height() == 39
     assert entry.findChild(QWidget, "ojingjingAvatar") is not None
     assert entry.findChild(QWidget, "ojingjingClickAccessory") is not None
-    controls = next(action.menu() for action in menu.actions() if action.text() == "桌宠控制")
+    controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     spawn = next(action for action in controls.actions() if action.text() == "生小肥鱼")
     pixmap = spawn.icon().pixmap(18, 18)
     center = pixmap.toImage().pixelColor(pixmap.width() // 2, pixmap.height() // 2)
@@ -1380,7 +1380,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert isinstance(dialog.sidebar, QListWidget)
     assert isinstance(dialog.pages, QStackedWidget)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected_pages = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_pages
     assert dialog.pages.count() == len(expected_pages)
     assert dialog.search_edit.placeholderText() == "搜索设置…"
@@ -1413,7 +1413,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert {"浅色主题", "深色主题", "彩蛋入口"}.issubset(set(section_titles))
     scale_row = dialog.findChild(settings_mod.QWidget, "settingRow_scale")
     assert scale_row is not None
-    assert scale_row.findChild(settings_mod.QLabel, "settingLabel").text() == "桌宠大小"
+    assert scale_row.findChild(settings_mod.QLabel, "settingLabel").text() == "肥鱼大小"
     assert scale_row.findChild(settings_mod.QLabel, "settingHint").text()
     stylesheet = dialog.styleSheet()
     assert "QLineEdit:focus" in stylesheet
@@ -2077,8 +2077,8 @@ def test_legacy_config_value_uses_legacy_settings_callback(monkeypatch):
     pet = Pet()
     menu = QMenu()
     populate_context_menu(menu, pet)
-    # legacy 模板的「桌宠设置」走旧版设置回调（不再是现代设置）
-    next(action for action in menu.actions() if action.text() == "桌宠设置").trigger()
+    # legacy 模板的「肥鱼设置」走旧版设置回调（不再是现代设置）
+    next(action for action in menu.actions() if action.text() == "肥鱼设置").trigger()
     assert pet.opened == ["legacy"]
     menu.close()
     app.processEvents()
@@ -2798,7 +2798,7 @@ def test_window_opening_menu_action_uses_native_close_path():
 
     app = QApplication.instance() or QApplication([])
     menu = QMenu()
-    action = add_action(menu, "桌宠设置", None, lambda: None, close_on_trigger=True)
+    action = add_action(menu, "肥鱼设置", None, lambda: None, close_on_trigger=True)
     assert action.property("closeOnTrigger") is True
     menu.close()
     app.processEvents()

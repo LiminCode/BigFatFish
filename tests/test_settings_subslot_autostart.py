@@ -28,6 +28,6 @@ def test_modern_settings_dialog_disables_autostart_on_sub_slot(app, tmp_path):
     d_slot1 = ModernSettingsDialog(slot1_cfg, include_ai=False)
     try:
         assert d_slot1.autostart_check.isEnabled() is False
-        assert d_slot1.autostart_check.toolTip() == "仅主桌宠可设置"
+        assert d_slot1.autostart_check.toolTip() == "仅主肥鱼可设置"
     finally:
         d_slot1.close()

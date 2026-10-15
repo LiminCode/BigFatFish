@@ -30,8 +30,8 @@ _WS_CAPTION = 0x00C00000    # WS_BORDER | WS_DLGFRAME（带标题栏）
 _WS_EX_TOPMOST = 0x00000008  # 置顶：真全屏游戏/视频几乎必带，普通最大化窗口不带
 _WS_EX_TRANSPARENT = 0x00000020
 # 不接收激活：鼠标点击不夺前台（issue #98）。工具窗口（Tool）不带该位时，
-# 点击桌宠会把它变成前台窗口，用户随后的键盘输入全部落到桌宠上，而桌宠不处理
-# Ctrl+C/Ctrl+V —— 观感就是"整机复制粘贴失效"，点回原窗口或退出桌宠才恢复。
+# 点击肥鱼会把它变成前台窗口，用户随后的键盘输入全部落到肥鱼上，而肥鱼不处理
+# Ctrl+C/Ctrl+V —— 观感就是"整机复制粘贴失效"，点回原窗口或退出肥鱼才恢复。
 _WS_EX_NOACTIVATE = 0x08000000
 
 # ---- Win32：置顶重申（SetWindowPos）用常量 ----
@@ -65,11 +65,11 @@ def _set_windows_click_through(hwnd: int, enabled: bool, user32=None) -> bool:
 
 
 def _set_windows_no_activate(hwnd: int, user32=None) -> bool:
-    """置位 WS_EX_NOACTIVATE：鼠标点击桌宠不再夺走前台/键盘焦点（issue #98）。
+    """置位 WS_EX_NOACTIVATE：鼠标点击肥鱼不再夺走前台/键盘焦点（issue #98）。
 
     只影响"激活"：窗口照样收到鼠标与键盘消息（点击、拖拽、逐像素穿透判定都不
     受影响，实测点击仍能进 mousePressEvent），但不会成为前台窗口，因此用户正在
-    编辑的应用保持前台与输入焦点——Ctrl+C/Ctrl+V 不会再落到桌宠上。
+    编辑的应用保持前台与输入焦点——Ctrl+C/Ctrl+V 不会再落到肥鱼上。
 
     与改 flags 不同，这里只改扩展样式位，不重建原生窗口。
     返回 True 表示本次真的改了样式。
@@ -89,7 +89,7 @@ def _set_windows_topmost(hwnd: int, on: bool, user32=None) -> bool:
     与 Qt ``WindowStaysOnTopHint`` 的差别正是这里存在的理由：Qt 只在 flags
     **变化**时写一次 ``WS_EX_TOPMOST``，此后窗口只是"身在 topmost 带里"，而带内
     先后仍由"谁最近被激活/显示"决定；带 ``WindowDoesNotAcceptFocus`` 的窗口
-    （灵动岛、桌宠）从不激活，一旦被别的 topmost 窗（本进程聊天窗/设置窗/气泡、
+    （灵动岛、肥鱼）从不激活，一旦被别的 topmost 窗（本进程聊天窗/设置窗/气泡、
     第三方置顶工具）盖住就再也不会自己回来。本函数**每次调用都重排 z 序**，
     把窗口重新插到 topmost 带最上。
 
@@ -119,7 +119,7 @@ class WindowsPerPixelInputController:
     """根据光标所在像素动态切换 layered window 的输入穿透。
 
     HTTRANSPARENT 只能继续命中当前线程的窗口，无法穿透到其他应用。
-    WS_EX_TRANSPARENT 会让 Windows 在命中时跳过 layered 桌宠窗口；独立
+    WS_EX_TRANSPARENT 会让 Windows 在命中时跳过 layered 肥鱼窗口；独立
     定时器在窗口不再收到鼠标消息时仍能检测光标并恢复角色区域交互。
     """
 
@@ -277,7 +277,7 @@ _FS_SKIP_CLASSES = {
 }
 
 # 已知覆盖层工具进程（截图/取色工具的全屏监听层不是"全屏应用"）：
-# 实测 PixPin（pixpin.exe）打字时热键监听闪现全屏覆盖层曾致桌宠误隐藏频闪
+# 实测 PixPin（pixpin.exe）打字时热键监听闪现全屏覆盖层曾致肥鱼误隐藏频闪
 _FS_SKIP_PROCS = {'pixpin.exe', 'snipaste.exe'}
 
 
@@ -351,13 +351,13 @@ def _fg_fullscreen_probe() -> tuple[bool, str]:
     if not info:
         return False, "无可判定前台窗口(不可见/最小化/cloaked)"
     hwnd = info['hwnd']
-    # 排除本进程与其他变体/多开的桌宠进程（置顶小窗，几何不会误判，
+    # 排除本进程与其他变体/多开的肥鱼进程（置顶小窗，几何不会误判，
     # 但 SHQueryUserNotificationState 兜底需要进程名兜底排除）
     proc = info.get('process', '')
     if info.get('pid') == os.getpid() or proc.lower().startswith('dsh-pet-'):
-        return False, f"前台是桌宠自身 {proc}"
+        return False, f"前台是肥鱼自身 {proc}"
     # 已知覆盖层工具进程永不视为全屏（实测：PixPin 截屏覆盖层全屏无边框置顶，
-    # 用户打字时其热键监听闪现覆盖层 → 误命中全屏 → 桌宠频闪）。
+    # 用户打字时其热键监听闪现覆盖层 → 误命中全屏 → 肥鱼频闪）。
     if proc.lower() in _FS_SKIP_PROCS:
         return False, f"覆盖层工具进程 {proc}"
     # 排除桌面/任务栏等 shell 窗口
@@ -372,7 +372,7 @@ def _fg_fullscreen_probe() -> tuple[bool, str]:
     exstyle = u32.GetWindowLongW(hwnd, GWL_EXSTYLE)
     topmost = bool(exstyle & _WS_EX_TOPMOST)
     # 工具窗口（WS_EX_TOOLWINDOW：截图覆盖层/输入法候选框/悬浮面板）永不视为
-    # 全屏——实测 PixPin 截屏覆盖层（全屏、无标题栏、置顶）曾触发桌宠误隐藏
+    # 全屏——实测 PixPin 截屏覆盖层（全屏、无标题栏、置顶）曾触发肥鱼误隐藏
     # 频闪（用户打字时 PixPin 覆盖层闪现 → 几何覆盖误判全屏）。
     if exstyle & 0x00000080:  # WS_EX_TOOLWINDOW
         return False, f"工具窗口 cls={cls} proc={info.get('process', '')}"

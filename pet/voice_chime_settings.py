@@ -174,7 +174,7 @@ class VoiceChimeSettingsPage(QWidget):
                     SettingRow("voice_chime_rate", "语速", "语速偏移百分比：0 为正常，正数更快，负数更慢。", self.rate_spin),
                     SettingRow("voice_chime_pitch", "音调", "音调偏移（Hz）：0 为正常，正数更尖锐，负数更低沉。", self.pitch_spin),
                     SettingRow("voice_chime_volume", "音量", "报时播放音量（0-100）。", self.volume_spin),
-                    SettingRow("voice_chime_show_bubble", "报时气泡", "报时时在桌宠头顶显示气泡文字（含台词/歌词）。", self.bubble_check),
+                    SettingRow("voice_chime_show_bubble", "报时气泡", "报时时在肥鱼头顶显示气泡文字（含台词/歌词）。", self.bubble_check),
                     SettingRow("voice_chime_show_quote", "台词/歌词", "报时时附带台词/歌词（每天整套换新，当天内每次报时按序取不同条目）；关闭后仅播报时间文本。", self.quote_check),
                     SettingRow("voice_chime_preview", "立即试听", "按当前配置立即播报一句“报时文本 + 台词/歌词”，无需等待报时点。", self.preview_btn),
                 ],

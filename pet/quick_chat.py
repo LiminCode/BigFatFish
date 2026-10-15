@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """快速对话气泡（Quick Chat）。
 
-点击桌宠弹出的头顶小气泡输入框；回车发送，AI 回复在气泡内流式显示，
+点击肥鱼弹出的头顶小气泡输入框；回车发送，AI 回复在气泡内流式显示，
 与完整 AI 对话窗口共用同一会话历史（SessionStore / ChatService）。
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _surface_radius(preset: dict) -> float:
 
     breath_bubble 是有机水滴形（speech_bubble 专属几何，preset 里 radius=0）：
     quick_chat 不支持该形状，按 0 渲染会变直角方框——同一
-    self_talk_bubble_style 设置在桌宠气泡与快速对话两套观感。这里用大圆角
+    self_talk_bubble_style 设置在肥鱼气泡与快速对话两套观感。这里用大圆角
     近似，与 speech_bubble 同设置不破解；普通预设用自己的 radius。
     """
     if preset.get("shape") == "breath_bubble":
@@ -87,7 +87,7 @@ class QuickChatBubble(QFrame):
         self._capture_compat = False
         self._capture_host: QWidget | None = None
         self._scale = quick_chat_scale(config)
-        apply_family(self)   # 与桌宠气泡同一种字体（等线）
+        apply_family(self)   # 与肥鱼气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)
@@ -334,7 +334,7 @@ class QuickChatBubble(QFrame):
         self.update()
 
     def set_capture_compat(self, on: bool, host: QWidget | None = None) -> None:
-        """直播捕获兼容：把快速对话气泡作为桌宠主窗的子内容渲染（issue #62）。
+        """直播捕获兼容：把快速对话气泡作为肥鱼主窗的子内容渲染（issue #62）。
 
         开启后快速对话不再是独立 Tool 窗口，而成为主窗子控件，捕获主窗时即可
         看到并操作它；关闭后恢复独立置顶 Tool 窗口形态。

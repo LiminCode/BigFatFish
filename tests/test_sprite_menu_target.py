@@ -289,9 +289,9 @@ def test_golden_spin_defaults_to_main_sprite(tmp_path):
         shell._delete_runtime_marker()
 
 
-# ---------------------------------------------------------------- F3 隐藏桌宠
+# ---------------------------------------------------------------- F3 隐藏肥鱼
 def test_hide_child_keeps_window_and_other_pets(tmp_path):
-    """右击子肥鱼「隐藏桌宠」只藏这一只（窗口与主宠照旧）。"""
+    """右击子肥鱼「隐藏肥鱼」只藏这一只（窗口与主宠照旧）。"""
     shell, _instance, _config = _make_shell(tmp_path)
     try:
         child = _spawn_child(shell)

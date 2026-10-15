@@ -73,7 +73,7 @@ def _qapp() -> QApplication:
 
 
 class _Win:
-    """假桌宠窗口：只记录气泡，不碰任何 Qt 绘制。"""
+    """假肥鱼窗口：只记录气泡，不碰任何 Qt 绘制。"""
 
     def __init__(self) -> None:
         self.bubbles: list[tuple[str, int | None]] = []

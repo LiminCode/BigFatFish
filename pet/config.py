@@ -84,7 +84,7 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 ]
 
 
-# 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到桌宠设置 + 托盘菜单），
+# 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到肥鱼设置 + 托盘菜单），
 # 用户旧布局里残留的该节点在此一次性剔除——否则菜单编辑器会把它一直回存成「此平台
 # 不可用」，旧入口就没有干净去向（docs/SETTINGS-CHANGE-GATES.md「旧 key/旧入口有去向」）。
 # 同名 action id 若将来重新引入，删掉这里即可。
@@ -662,7 +662,7 @@ def _default_dynamic_island_data() -> dict:
         # 图片；其余字符串=文字/emoji（用户主动选择，愿意付首次绘制的一次性税额）
         "icon": "auto",
         "click_action": "expand",  # expand（展开卡片）/ toggle_pet（切换显隐，旧行为）
-        "hidden_chat": True,  # 桌宠隐藏时：联动提醒 / AI 回复到达时岛上弹预览（单击岛照常展开卡片）
+        "hidden_chat": True,  # 肥鱼隐藏时：联动提醒 / AI 回复到达时岛上弹预览（单击岛照常展开卡片）
         "event_effects": True,  # 事件动效：AI 回复/余额刷新弹跳
         "edge_dock": True,  # 拖到屏幕边缘收成细条，鼠标靠近滑出
         "dock_edge": "none",  # none / top / bottom / left / right（拖拽落点写入）
@@ -886,9 +886,9 @@ class Config:
             "mouse_through": False,
             "cursor_hidden_passthrough": True,
             "drag_physics": False,
-            "lock_position": False,  # 锁定位置：桌宠不可拖动（点击仍有效）
+            "lock_position": False,  # 锁定位置：肥鱼不可拖动（点击仍有效）
             "shift_drag": False,  # 按住 SHIFT+左键才能拖动
-            "pet_opacity": 100,  # 桌宠窗口不透明度 10-100
+            "pet_opacity": 100,  # 肥鱼窗口不透明度 10-100
             "context_menu_template": "modern",
             "context_menu_layout": None,
             "context_menu_appearance": dict(DEFAULT_CONTEXT_MENU_APPEARANCE),
@@ -929,9 +929,9 @@ class Config:
             "golden_spin_direct": False,  # 点击触发黄金回旋时跳过点击动画，直接回旋并逐圈加速
             "edge_probe_enabled": False,  # 拖到屏幕左右边缘后自动进入探头姿态
             "autostart_wanted": False,  # 用户曾开启过开机自启（用于启动自检：被安全软件清理时提醒）
-            "harness_autostart": False,  # 随桌宠启动自动拉起（web 目标=只起服务不开浏览器；桌面端目标=打开界面）
+            "harness_autostart": False,  # 随肥鱼启动自动拉起（web 目标=只起服务不开浏览器；桌面端目标=打开界面）
             # 自启目标：auto=检测到桌面端安装则桌面端、否则 web；web/desktop 显式指定。
-            # **只作用于「随桌宠启动」**：右键菜单/托盘的启动入口是显式选择，不受它影响；
+            # **只作用于「随肥鱼启动」**：右键菜单/托盘的启动入口是显式选择，不受它影响；
             # 「重启/停止服务」始终只作用于 dsh web 服务进程。
             "harness_launch_target": "auto",
             # 手动指定 pnpm 入口（文件 / 目录 / 包装脚本都行，语义同 DSH_PNPM_BIN）。
@@ -955,7 +955,7 @@ class Config:
             "agent_link": _default_agent_link_data(),
             "file_interpret": _default_file_interpret_data(),
             "chat_ui_style": "modern",  # modern / classic（仅聊天窗口保留双实现）
-            "chat_follow_pet": False,  # 聊天窗口是否跟随桌宠移动
+            "chat_follow_pet": False,  # 聊天窗口是否跟随肥鱼移动
             "system_notifications_enabled": True,  # 对话完成/失败/需要授权时弹桌面系统通知
             "todo_reminder_enabled": True,  # 待办提醒总开关
             "todo_reminder_lead_minutes": 5,  # 待办提前提醒分钟数（0~60，0=不提前）
@@ -1298,7 +1298,7 @@ class Config:
             from .chat.models import SecretStore  # 惰性导入，且只实例化一次
         except ModuleNotFoundError as exc:
             # 无聊天功能的独立打包会明确排除 pet.chat；配置仍可被
-            # 通用入口加载，因此不能让一次迁移检查阻止桌宠启动。
+            # 通用入口加载，因此不能让一次迁移检查阻止肥鱼启动。
             if exc.name == "pet.chat" or str(exc.name or "").startswith("pet.chat."):
                 return
             raise

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""多开桌宠碰撞物理核心（纯 Python 实现，无 Qt 依赖）。
+"""多开肥鱼碰撞物理核心（纯 Python 实现，无 Qt 依赖）。
 
 包含：
 1. 圆链/椭圆碰撞检测（Broad-phase AABB + Narrow-phase）
@@ -127,7 +127,7 @@ def calculate_mass(
     scale: float = DEFAULT_BASE_SCALE,
     collision_mass_scale: float = DEFAULT_MASS_SCALE,
 ) -> float:
-    """计算桌宠质量。
+    """计算肥鱼质量。
     
     规则 (plan4 §4.1，实机手感修正)：
     质量按体型加权并限制在 0.5~2.5，优先保证街机碰撞手感。
@@ -442,7 +442,7 @@ def solve_collision_impulse(
         )
         # 弹床系数是**入场用的一次性系数**：只有动态方还没被抛掷时才是
         # "撞岛进抛掷"的那一下（对齐 legacy island_collision._clamp_body：
-        # 非 throw 分支给 dv=-(1+STATIC_RESTITUTION)*vn 并把桌宠切进抛掷物理）。
+        # 非 throw 分支给 dv=-(1+STATIC_RESTITUTION)*vn 并把肥鱼切进抛掷物理）。
         # 动态方一旦带 FLAG_THROWN，岛就必须退化成普通反弹面，用调用方传入
         # 的恢复系数（已在上面 clamp 到 ≤1）——legacy 的 throw 分支反射速度
         # 用的就是 physics.RESTITUTION(0.78<1)。若这里仍按 1.3 放大，thrown

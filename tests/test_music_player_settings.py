@@ -56,7 +56,7 @@ def _pickers(dialog):
 
 
 def test_rows_sit_in_the_pet_domain_music_group(dialog):
-    """两行 + 检测按钮落在「桌宠 · 音乐关联」组里（掉进「待分类」就等于没做）。"""
+    """两行 + 检测按钮落在「肥鱼 · 音乐关联」组里（掉进「待分类」就等于没做）。"""
     from PySide6.QtWidgets import QWidget
 
     rows = [
@@ -72,7 +72,7 @@ def test_rows_sit_in_the_pet_domain_music_group(dialog):
             page = candidate
             break
     assert page is not None
-    assert dialog.sidebar.item(dialog.pages.indexOf(page)).text() == "桌宠"
+    assert dialog.sidebar.item(dialog.pages.indexOf(page)).text() == "肥鱼"
     assert "待分类（开发期）" not in [row.objectName() for row in rows]
 
 

@@ -208,7 +208,7 @@ def test_spawn_refreshes_island_wall_hooks(tmp_path, app, monkeypatch):
 
 
 def test_spawn_pet_always_creates_in_process_window(tmp_path, app, monkeypatch):
-    """4.4a：`spawn_pet` 不再拉起独立桌宠进程——统一走进程内新窗。"""
+    """4.4a：`spawn_pet` 不再拉起独立肥鱼进程——统一走进程内新窗。"""
     config = Config(tmp_path)
     config.save()
     shell = AppShell(QApplication.instance(), config, enable_chat=True)
@@ -1166,7 +1166,7 @@ def test_clear_spawned_pets_defers_heavy_teardown_to_reaper_thread(
         tmp_path, app, monkeypatch):
     """批 G：链式「退出子肥鱼」把每窗的重资源回收（writer 关闭 / agent
     shutdown——各有界阻塞秒级）挪到进程级 reaper 线程执行；UI 线程只保留
-    关窗/摘标记等毫秒级步骤，主桌宠不再冻结。4.4a 起碰撞会话已退役。"""
+    关窗/摘标记等毫秒级步骤，主肥鱼不再冻结。4.4a 起碰撞会话已退役。"""
     import threading
 
     shell, config, primary_handle = _make_primary_with_slot(tmp_path)

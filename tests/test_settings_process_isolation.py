@@ -477,7 +477,7 @@ def test_standalone_festival_preview_shows_notice_without_speech(tmp_path, monke
 
 
 def test_standalone_runtime_marker_drives_move_away(tmp_path):
-    """无 parent 时按 runtime 状态文件避让桌宠位置。"""
+    """无 parent 时按 runtime 状态文件避让肥鱼位置。"""
     from pet.modern_settings_dialog import ModernSettingsDialog
 
     _qapp()
@@ -511,7 +511,7 @@ def test_standalone_move_away_without_marker_does_not_crash(tmp_path):
 
 
 def test_standalone_geometry_ignores_dead_process_markers(tmp_path):
-    """死者留下的 runtime 标记不算桌宠位置（返回 None）。"""
+    """死者留下的 runtime 标记不算肥鱼位置（返回 None）。"""
     import pet.settings_standalone as standalone_mod
 
     config = Config(base=tmp_path)

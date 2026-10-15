@@ -184,7 +184,7 @@ class SessionPetController(QObject):
 
         收敛器只知道「回合结束了」（``resting``）；「用户看过没有」是这一层的事。
         刚从干活 / 等批准转入休息的会话记为没看过，到 ``acknowledge`` 或它的下一次
-        提问为止。桌宠启动时就已经停着的会话不算——没人知道它是不是早被看过了。"""
+        提问为止。肥鱼启动时就已经停着的会话不算——没人知道它是不是早被看过了。"""
         if phase == "review":       # 把自己登记表里的内容回放进来（retitle / acknowledge）
             phase = "resting"
         if phase != "resting":

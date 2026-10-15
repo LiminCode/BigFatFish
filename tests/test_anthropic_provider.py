@@ -160,7 +160,7 @@ def test_messages_are_reshaped_for_the_messages_api():
     jpeg = base64.b64encode(b"jpeg-bytes").decode()
     system, convo = ap.to_anthropic_messages([
         {"role": "assistant", "content": "开场白（没有对应的 user，得丢掉）"},
-        {"role": "system", "content": "你是桌宠"},
+        {"role": "system", "content": "你是肥鱼"},
         {"role": "user", "content": "你好"},
         {"role": "user", "content": [
             {"type": "text", "text": "看这张图"},
@@ -174,7 +174,7 @@ def test_messages_are_reshaped_for_the_messages_api():
         {"role": "assistant", "content": "结尾的 assistant 是预填，得丢掉"},
     ])
 
-    assert system == "你是桌宠\n\n说中文"
+    assert system == "你是肥鱼\n\n说中文"
     assert convo == [{"role": "user", "content": [
         {"type": "text", "text": "你好"},
         {"type": "text", "text": "看这张图"},
@@ -187,12 +187,12 @@ def test_messages_are_reshaped_for_the_messages_api():
 
 def test_stream_yields_text_and_sends_a_clean_request(fake):
     holder: list = []
-    out = _run([{"role": "system", "content": "你是桌宠"}, {"role": "user", "content": "嗨"}],
+    out = _run([{"role": "system", "content": "你是肥鱼"}, {"role": "user", "content": "嗨"}],
                _claude(temperature=0.7, max_tokens=2048), holder=holder)
 
     assert out == ["你", "好"]
     surface, kwargs = fake.client.calls[0]
-    assert kwargs["model"] == "claude-opus-5" and kwargs["system"] == "你是桌宠"
+    assert kwargs["model"] == "claude-opus-5" and kwargs["system"] == "你是肥鱼"
     assert kwargs["messages"] == [{"role": "user", "content": [{"type": "text", "text": "嗨"}]}]
     assert kwargs["max_tokens"] >= 16000, "思考与回答共用额度：2048 会让回答被思考挤掉"
     assert "temperature" not in kwargs and "top_p" not in kwargs, "当前模型已移除采样参数，发了就是 400"
@@ -261,7 +261,7 @@ def test_errors_caused_by_cancelling_are_not_failures(fake):
 def test_describe_image_sends_the_screenshot_before_the_prompt(fake):
     fake.client = _FakeClient(_FakeStream(["在写代码呢"]))
 
-    text = ap.describe_image(b"\xff\xd8jpeg", "这是截图", "你是桌宠", _claude(timeout=5),
+    text = ap.describe_image(b"\xff\xd8jpeg", "这是截图", "你是肥鱼", _claude(timeout=5),
                              model="claude-opus-5", base_url="https://api.anthropic.com", api_key="k")
 
     assert text == "在写代码呢"
@@ -270,7 +270,7 @@ def test_describe_image_sends_the_screenshot_before_the_prompt(fake):
     assert image == {"type": "image", "source": {
         "type": "base64", "media_type": "image/jpeg",
         "data": base64.standard_b64encode(b"\xff\xd8jpeg").decode()}}
-    assert prompt == {"type": "text", "text": "这是截图"} and kwargs["system"] == "你是桌宠"
+    assert prompt == {"type": "text", "text": "这是截图"} and kwargs["system"] == "你是肥鱼"
     args = fake.client_args[0]
     assert args["max_retries"] == 0, "识屏按真实请求次数扣每日额度，不许 SDK 悄悄重试"
     assert args["timeout"] >= 60 and args["api_key"] == "k"
@@ -387,14 +387,14 @@ def _vision_call(monkeypatch, config, **kwargs):
         return "看到了"
 
     monkeypatch.setattr(ap, "describe_image", _describe)
-    return vision._post_vision_request(b"jpeg", "notepad.exe | 记事本", "你是桌宠", config, **kwargs), seen
+    return vision._post_vision_request(b"jpeg", "notepad.exe | 记事本", "你是肥鱼", config, **kwargs), seen
 
 
 def test_screen_reading_goes_through_the_claude_channel(monkeypatch):
     text, seen = _vision_call(monkeypatch, _claude(), pet_name="大肥鱼")
     assert text == "看到了"
     assert seen["model"] == "claude-opus-5", "Claude 模型本身多模态，识屏直接用聊天模型"
-    assert seen["api_key"] == "sk-ant-test" and seen["system"] == "你是桌宠"
+    assert seen["api_key"] == "sk-ant-test" and seen["system"] == "你是肥鱼"
     assert "屏幕截图" in seen["user_text"] and "大肥鱼" in seen["user_text"]
 
 

@@ -9,7 +9,7 @@
 
 - **同步** ``sync``：下载仓库默认分支的 zip 包（不依赖本机装没装 git，Token 只出现在
   请求头里），只解出文本类文件，整目录原子替换。状态写在 ``state.json``，设置窗口
-  （独立进程）和桌宠主进程都读它。
+  （独立进程）和肥鱼主进程都读它。
 - **读取** ``KnowledgeBase``：list / read / search，路径一律限制在副本目录内。
 - **工具** ``toolset_for``：把上面三样包装成 Claude 通道的客户端工具，连同一段用法
   说明交给 ``AnthropicProvider``。
@@ -128,7 +128,7 @@ def describe(config_dir, repo: str) -> str:
     if has_copy(config_dir, repo):
         when = datetime.fromtimestamp(state.synced_at).strftime("%Y-%m-%d %H:%M")
         return f"上次同步 {when}，{state.files} 个文件。之后每天自动同步一次。"
-    return "还没有同步过。保存后桌宠会自动同步，也可以现在同步。"
+    return "还没有同步过。保存后肥鱼会自动同步，也可以现在同步。"
 
 
 # ---------------------------------------------------------------- 同步

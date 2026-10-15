@@ -2,8 +2,8 @@
 """DeepSeek 开放平台余额查询（GET /user/balance）。
 
 余额气泡/小部件显示思路参考 MeteorNOX/DeepSeek-Balance-Whale-Widget
-（见 README「参考项目」致谢），本实现为桌宠内置的轻量版本：
-菜单「DeepSeek 余额」→ 后台查询 → 桌宠气泡显示；可在桌宠设置中
+（见 README「参考项目」致谢），本实现为肥鱼内置的轻量版本：
+菜单「DeepSeek 余额」→ 后台查询 → 肥鱼气泡显示；可在肥鱼设置中
 开启自动刷新（分钟级）。
 
 v4.1 扩展（同步上游 dsh-pet 余额动画）：

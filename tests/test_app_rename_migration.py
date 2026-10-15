@@ -273,7 +273,7 @@ def test_characters_dropped_into_the_old_data_directory_are_still_found(monkeypa
 # ---------------------------------------------------------------- Claude Code 钩子里的路径
 
 def _installed_hooks(tmp_path, monkeypatch, events_file):
-    """一份装过本桌宠钩子（指向 events_file）、还带着用户自己钩子的 settings.json。"""
+    """一份装过本肥鱼钩子（指向 events_file）、还带着用户自己钩子的 settings.json。"""
     from pet.agent_link import ClaudeCodeMonitor
 
     settings = tmp_path / "home" / ".claude" / "settings.json"

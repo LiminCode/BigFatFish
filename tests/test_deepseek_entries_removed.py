@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """DeepSeek 的入口 2026-10-14 全部下线：右键菜单的「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」、
-托盘里的同名三项、「Agent 联动」里的 DSH 开关、设置页的「随桌宠启动 dsh 服务 / 自启目标 / 点击显示余额」、
+托盘里的同名三项、「Agent 联动」里的 DSH 开关、设置页的「随肥鱼启动 dsh 服务 / 自启目标 / 点击显示余额」、
 灵动岛「卡片内容」里的余额项。
 
 和「音乐」「显示本轮消费」同一口径：只摘入口，余额查询（pet/balance.py）、Harness 启动器（pet/harness_launcher.py）、

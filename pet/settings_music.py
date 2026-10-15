@@ -68,7 +68,7 @@ def create_music_player_controls(dialog) -> None:
 
 
 def build_music_player_rows(dialog) -> list[SettingRow]:
-    """本组的设置行（由「桌宠 · 音乐关联」组直接取用，不走 claim）。"""
+    """本组的设置行（由「肥鱼 · 音乐关联」组直接取用，不走 claim）。"""
     rows: list[SettingRow] = []
     for key in PLAYER_KEYS:
         label = music_players.player_label(key)

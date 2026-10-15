@@ -205,10 +205,10 @@ class _AiSettingsPage(QWidget):
             SettingRow("api_url", "API 地址", "OpenAI Chat Completions 兼容服务地址。", self.url),
             SettingRow("model", "模型", "发送请求时使用的模型标识。", self.model),
             SettingRow("api_key", "API Key", "凭据优先保存到系统钥匙串。", self.key),
-            SettingRow("system_prompt", "System Prompt", "定义桌宠对话时的身份、语气和行为。", self.prompt, stacked=True),
+            SettingRow("system_prompt", "System Prompt", "定义肥鱼对话时的身份、语气和行为。", self.prompt, stacked=True),
             SettingRow(
                 "about_user", "关于我",
-                "告诉桌宠你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
+                "告诉肥鱼你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
                 self.about_user, stacked=True,
             ),
             SettingRow("connection_test", "连接测试", self.test_result.text(), self.test_button),
@@ -238,7 +238,7 @@ class _AiSettingsPage(QWidget):
         root.addWidget(SettingsSection("连接器", [
             SettingRow(
                 "github_connector", "GitHub（只读）",
-                "让桌宠在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
+                "让肥鱼在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
                 "Token 会随请求发给 Anthropic，由它去连 GitHub。",
                 self.github_connector,
             ),
@@ -260,7 +260,7 @@ class _AiSettingsPage(QWidget):
         root.addWidget(SettingsSection("知识库", [
             SettingRow(
                 "knowledge_base_enabled", "本地知识库",
-                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时桌宠只读本机这份副本。"
+                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时肥鱼只读本机这份副本。"
                 "仅 Claude 通道生效；读到的内容会随对话发给模型。",
                 self.knowledge_base,
             ),
@@ -703,7 +703,7 @@ class _AiSettingsPage(QWidget):
         self._test_thread = None
 
     def save(self) -> None:
-        # 保存前基于磁盘最新配置重取快照：另一个设置窗口（AI 设置/桌宠设置 AI 页）
+        # 保存前基于磁盘最新配置重取快照：另一个设置窗口（AI 设置/肥鱼设置 AI 页）
         # 可能在本窗口打开期间改过 Provider 结构；先保留本窗口的 provider 草稿/
         # 新增/删除，再与磁盘快照合并，避免覆盖其它窗口新增的结构。
         old_settings = self.settings

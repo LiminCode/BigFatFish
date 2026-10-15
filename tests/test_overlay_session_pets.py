@@ -230,7 +230,7 @@ def test_repeated_updates_do_not_restart_the_animation(shell, controller):
 
 
 def test_a_resting_session_does_not_summon_a_fish(shell, controller):
-    """桌宠启动时会话早就停了：不为它凭空生一只，等它下次提问。"""
+    """肥鱼启动时会话早就停了：不为它凭空生一只，等它下次提问。"""
     controller.on_session_update("claude", _update(phase="resting"))
     assert _session_pets(shell) == []
 

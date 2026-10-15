@@ -560,8 +560,8 @@ def add_return_corner(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_hide_pet(menu: QMenu, pet, *, icons: bool = True):
-    # close_on_trigger：隐藏后菜单随之关闭，避免菜单悬空无法找回桌宠
-    return add_action(menu, "隐藏桌宠", "hide" if icons else None, pet.hide, close_on_trigger=True)
+    # close_on_trigger：隐藏后菜单随之关闭，避免菜单悬空无法找回肥鱼
+    return add_action(menu, "隐藏肥鱼", "hide" if icons else None, pet.hide, close_on_trigger=True)
 
 
 def add_look_screen(menu: QMenu, pet, *, icons: bool = True):
@@ -645,7 +645,7 @@ def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
-    """右键菜单快捷入口：让桌宠原地逆时针旋转一圈。"""
+    """右键菜单快捷入口：让肥鱼原地逆时针旋转一圈。"""
     callback = getattr(pet, "trigger_golden_spin", None)
     return add_action(
         menu,
@@ -785,7 +785,7 @@ def _launch_player_and_play(player_key: str, pet) -> None:
                 # 时它已经是个死对象，emit 会抛 RuntimeError（同 agent_link 的
                 # 防护写法）。这里必须吞掉——否则 daemon 线程以未捕获异常收尾。
                 try:
-                    bridge.notice.emit(f"找不到{label}：可在 设置 → 桌宠 → 音乐关联 里指定它的程序位置")
+                    bridge.notice.emit(f"找不到{label}：可在 设置 → 肥鱼 → 音乐关联 里指定它的程序位置")
                 except RuntimeError:
                     pass
                 return
@@ -964,7 +964,7 @@ def _music_player_builder(player_key: str):
         )
         if missing:
             action.setEnabled(False)
-            action.setToolTip(f"找不到{label}：可在 设置 → 桌宠 → 音乐关联 里指定它的程序位置")
+            action.setToolTip(f"找不到{label}：可在 设置 → 肥鱼 → 音乐关联 里指定它的程序位置")
         elif state == music_players.CACHED_COLD:
             music_players.warm_cache_async(player_key, manual)
         return action

@@ -7,7 +7,7 @@
 结果是真实链路上除 turn/* 之外的每个语义事件都抛 AttributeError——
 异常在 Qt 槽里被吞掉只打印不中断，导致 `_model_access_retry_counts` 静默恒为空：
 model_access 记录未带 consecutiveRetryCount 时兜底计数恒为 0，语义上「连续
-限流次数」退化成「桌宠收到几次」。线上 125 条真实记录触发 77 次该异常。
+限流次数」退化成「肥鱼收到几次」。线上 125 条真实记录触发 77 次该异常。
 
 修复口径：归一化点（normalize_event）把上游事件名写进基类字段 `event`
 （并归一化 AgentStatus → agent/status），消费端即可按真实语义判定。
@@ -72,7 +72,7 @@ def test_consume_counts_consecutive_timeout_retries():
     回归（2026-09-11）：会话 session-b5b4f120… 连续 5 次 llm/retry 均为
     errorCode=TIMEOUT（"upstream response headers timed out before streaming
     started"）后恢复正常，旧实现 is_model_access 只认限流码，连续计数永远为空，
-    桌宠侧重试异常提醒完全不触发。TIMEOUT 类重试同属「本次模型请求未成功」，
+    肥鱼侧重试异常提醒完全不触发。TIMEOUT 类重试同属「本次模型请求未成功」，
     必须进入连续计数供提醒兜底。
     """
     tracker = ModelAccessTracker()

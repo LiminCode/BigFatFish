@@ -535,7 +535,7 @@ def test_status_and_elapsed_wording():
 
 
 def test_transcript_is_found_by_session_id_when_the_hook_has_not_sent_its_path_yet(tmp_path):
-    """桌宠刚启动、会话正在回合中途：路径要到下一个回合边界才来，详情不能因此是空的。"""
+    """肥鱼刚启动、会话正在回合中途：路径要到下一个回合边界才来，详情不能因此是空的。"""
     project = tmp_path / ".claude" / "projects" / "C--code-proj"
     project.mkdir(parents=True)
     (project / f"{SID}.jsonl").write_text(_transcript_text("路径还没送到时的问题"), encoding="utf-8")

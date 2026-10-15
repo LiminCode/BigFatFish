@@ -218,7 +218,7 @@ def test_shared_tray_per_window_submenu_exists_and_routes(tmp_path, app, monkeyp
         submenus = {}
         for act in menu.actions():
             sub = act.menu()
-            if sub is not None and act.text().startswith("桌宠 "):
+            if sub is not None and act.text().startswith("肥鱼 "):
                 submenus[act.text()] = sub
         # 每窗一个子菜单
         assert submenus, f"应存在每窗子菜单，实际 actions: {[a.text() for a in menu.actions()]}"

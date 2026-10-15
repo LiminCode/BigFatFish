@@ -175,7 +175,7 @@ def test_click_sound_path_row_sits_directly_below_toggle(tmp_path, monkeypatch):
 
 
 def test_settings_dialog_position_avoids_pet_window(tmp_path, monkeypatch):
-    """设置窗口激活时不应遮挡桌宠：打开时移动到不与桌宠相交的位置。"""
+    """设置窗口激活时不应遮挡肥鱼：打开时移动到不与肥鱼相交的位置。"""
     import pet.modern_settings_dialog as settings_mod
     from PySide6.QtCore import QRect
     from PySide6.QtWidgets import QApplication, QWidget
@@ -564,10 +564,10 @@ def test_windows_ojingjing_children_do_not_intercept_hover():
 
 
 def test_macos_hide_pet_respects_dock_icon_hidden_preference(tmp_path, monkeypatch):
-    """macOS 关闭「显示 Dock 图标」后，隐藏桌宠不得再临时唤回 Dock 图标。
+    """macOS 关闭「显示 Dock 图标」后，隐藏肥鱼不得再临时唤回 Dock 图标。
 
     issue #74：托盘（菜单栏）菜单已承担恢复入口（显示/隐藏、鼠标穿透、
-    桌宠设置），因此隐藏桌宠应尊重用户关闭 Dock 图标的偏好，不再把
+    肥鱼设置），因此隐藏肥鱼应尊重用户关闭 Dock 图标的偏好，不再把
     activation policy 临时改回 Regular，也不写回配置。
     """
     import sys
@@ -647,7 +647,7 @@ def test_linux_settings_has_no_orphan_windows_cursor_passthrough_toggle(tmp_path
 
 
 def test_hide_pet_notifies_and_dock_click_restores(tmp_path, monkeypatch):
-    """用户主动隐藏：弹托盘提示 + macOS 点击 Dock 图标恢复桌宠。"""
+    """用户主动隐藏：弹托盘提示 + macOS 点击 Dock 图标恢复肥鱼。"""
     import sys
 
     from unittest import mock
@@ -672,7 +672,7 @@ def test_hide_pet_notifies_and_dock_click_restores(tmp_path, monkeypatch):
         assert notified, "用户主动隐藏应触发托盘提示回调"
         # 隐藏后 arm Dock 点击恢复监听
         m_sig.connect.assert_called_once()
-        # 点击 Dock 图标 → 应用激活 → 自动恢复桌宠
+        # 点击 Dock 图标 → 应用激活 → 自动恢复肥鱼
         window_mod.PetWindow._restore_on_dock_reactivate(
             win, Qt.ApplicationState.ApplicationActive
         )
@@ -990,10 +990,10 @@ def test_settings_window_rethemes_immediately_with_the_appearance_selector(
 
 
 def test_modern_settings_finished_refreshes_even_on_rejected(tmp_path, monkeypatch):
-    """新版设置直接关闭（Rejected）也必须把改动应用到桌宠。
+    """新版设置直接关闭（Rejected）也必须把改动应用到肥鱼。
 
     回归背景：只有 Accepted（保存并退出）才刷新；X 关闭时 closeEvent 已
-    自动保存，但桌宠 scale/拖动物理等不生效。
+    自动保存，但肥鱼 scale/拖动物理等不生效。
     """
     from PySide6.QtWidgets import QApplication
 
@@ -1018,15 +1018,15 @@ def test_modern_settings_finished_refreshes_even_on_rejected(tmp_path, monkeypat
     owner.config = Config(tmp_path)
     owner.shell._apply_balance_timer = lambda: None
     owner.shell._sync_dynamic_island = lambda: None
-    # Phase 1 门控后 todo 服务走 _sync_todo_service（懒启停）；测试只测桌宠刷新
+    # Phase 1 门控后 todo 服务走 _sync_todo_service（懒启停）；测试只测肥鱼刷新
     owner.shell._sync_todo_service = lambda: None
-    owner.shell._sync_chime_service = lambda: None  # 语音报时同样懒启停，本用例只测桌宠刷新
+    owner.shell._sync_chime_service = lambda: None  # 语音报时同样懒启停，本用例只测肥鱼刷新
     owner.shell._sync_festival_service = lambda: None  # 节日提醒同样懒启停（其内部会连带同步报时通道）
     owner._refresh_chat_windows = lambda: None
     owner._sync_animation_prewarm = lambda: None
     monkeypatch.setattr(app_mod, "_mac_set_dock_icon_visible", lambda *a, **k: None)
     PetInstance._modern_settings_finished(owner, 0)  # QDialog.Rejected（X 关闭）
-    assert refreshed == [1], "Rejected 关闭也必须刷新桌宠"
+    assert refreshed == [1], "Rejected 关闭也必须刷新肥鱼"
 
 
 def test_ai_page_warns_when_keyring_unavailable(tmp_path, monkeypatch):
@@ -1155,8 +1155,8 @@ def test_macos_dock_menu_keeps_settings_reachable_when_pet_is_mouse_through(monk
     assert menu is controller.dock_menu
     assert menu.property("dockMenuInstalled") is callable(getattr(menu, "setAsDockMenu", None))
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
-    assert labels[:3] == ["显示桌宠", "桌宠设置", "AI 对话"]
-    next(action for action in menu.actions() if action.text() == "桌宠设置").trigger()
+    assert labels[:3] == ["显示肥鱼", "肥鱼设置", "AI 对话"]
+    next(action for action in menu.actions() if action.text() == "肥鱼设置").trigger()
     controller.instance.open_modern_settings.assert_called_once_with()
     menu.close()
     app.processEvents()

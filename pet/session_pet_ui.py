@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """会话小鱼的交互面：详情卡、专属右键菜单、跳转（Qt 层）。
 
-会话小鱼是一个 Claude Code 会话的状态指示，不是另一只桌宠——主肥鱼那棵菜单
+会话小鱼是一个 Claude Code 会话的状态指示，不是另一只肥鱼——主肥鱼那棵菜单
 （动作点播、AI 对话、角色切换……）对它没有意义。这里给它两样自己的东西：
 
 - **单击 → 详情卡**：标题、状态与持续时间、最近的问题、在哪打开的（VS Code 插件 /
@@ -114,7 +114,7 @@ class SessionDetailCard(QFrame):
         self._scale = _card_scale(config)
         self._theme_id = ""
         self._theme = session_card_themes.card_theme(None)
-        apply_family(self)   # 与桌宠气泡同一种字体（等线）
+        apply_family(self)   # 与肥鱼气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)

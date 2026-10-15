@@ -17,7 +17,7 @@
     {
       "type": "submenu",
       "id": "pet_controls",
-      "label": "桌宠控制",
+      "label": "肥鱼控制",
       "visible": true,
       "section": "pet",
       "children": [

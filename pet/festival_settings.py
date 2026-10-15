@@ -151,7 +151,7 @@ class FestivalSettingsPage(QWidget):
                     SettingRow(
                         "festival_reminder_enabled",
                         "启用节日提醒",
-                        "命中节日/节气当天，按下方时间用桌宠气泡告知今天是什么日子，"
+                        "命中节日/节气当天，按下方时间用肥鱼气泡告知今天是什么日子，"
                         "并附一句与节日氛围匹配的文案。默认关闭。",
                         self.enabled_check,
                     ),

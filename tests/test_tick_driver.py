@@ -674,7 +674,7 @@ def test_set_suspended_resumes_every_sprite_despite_one_error():
 
 
 def test_user_input_self_heals_stuck_suspend():
-    """解锁消息丢失：用户点到桌宠即解除挂起（否则会钉在 T3 + 停播到下次显隐）。"""
+    """解锁消息丢失：用户点到肥鱼即解除挂起（否则会钉在 T3 + 停播到下次显隐）。"""
     clock = FakeClock()
     sprite = PausableSprite()
     driver, _overlay = _pause_driver_with(clock, [sprite])

@@ -6,7 +6,7 @@
 - 有界 Byte-Offset Tailer：新增行增量读取、重复读取不重放、文件轮转/截断安全、backfill 防护；
 - 事件 JSONL 解析与状态规范化映射；
 - AgentLinkManager 生命周期与 pause / resume；
-- 状态变更触发桌宠行为与气泡反馈；
+- 状态变更触发肥鱼行为与气泡反馈；
 - Claude Code 确认框逻辑（拒绝则不写入 hooks）；
 """
 
@@ -551,7 +551,7 @@ class TestAgentLinkManager:
         assert cfg.data["agent_link"]["cursor"] is True
         assert mgr.monitors["cursor"].is_running() is True
 
-        # 暂停（桌宠隐藏）
+        # 暂停（肥鱼隐藏）
         mgr.pause()
         assert mgr.monitors["cursor"].is_running() is False
 
@@ -1477,7 +1477,7 @@ class TestAgentLinkBubbles:
 
 
     def test_hidden_pet_redirects_feedback_bubble_to_island(self, tmp_path):
-        """桌宠隐藏时联动反馈气泡改道灵动岛反馈面（不再静默丢弃）。"""
+        """肥鱼隐藏时联动反馈气泡改道灵动岛反馈面（不再静默丢弃）。"""
         mgr, win, bubbles, clock = self._make_mgr(tmp_path)
         redirected = []
 
@@ -1494,7 +1494,7 @@ class TestAgentLinkBubbles:
         assert bubbles == []
 
     def test_hidden_dsh_full_scenario_start_and_done_redirect(self, tmp_path):
-        """场景回归：桌宠全程隐藏，DSH 两轮状态轮转——start/thinking/done
+        """场景回归：肥鱼全程隐藏，DSH 两轮状态轮转——start/thinking/done
         都必须到达改道面（island 反馈气泡），不得静默丢弃。"""
         mgr, win, bubbles, clock = self._make_mgr(
             tmp_path)
@@ -1526,7 +1526,7 @@ class TestAgentLinkBubbles:
 
 
     def test_visible_pet_keeps_normal_bubble_path(self, tmp_path):
-        """桌宠可见时不改道（正常气泡路径不受注入影响）。"""
+        """肥鱼可见时不改道（正常气泡路径不受注入影响）。"""
         mgr, win, bubbles, clock = self._make_mgr(tmp_path)
         redirected = []
         win.hidden_bubble_redirect = lambda *a, **k: redirected.append(a) or True
@@ -3781,7 +3781,7 @@ class TestUnknownBridgeEventReminder:
         mon.stop()
 
     def test_watchdog_and_control_events_are_not_unknown(self, tmp_path):
-        """桥接/桌宠回显真实会写、语义层与状态机都没建模的事件不得判成「未知」。
+        """桥接/肥鱼回显真实会写、语义层与状态机都没建模的事件不得判成「未知」。
 
         漏登记后果与 user/message 同型：每次写盘触发一次「更新/重装 bridge」
         误提醒（10 分钟冷却 → 表现为偶发弹窗）。来源：

@@ -46,7 +46,7 @@ ACTION_LABELS = {
     "animations_hub": "播放动画", "character": "切换角色", "playback_speed": "播放速率",
     "size": "大小", "drag_physics": "拖动物理", "no_move": "不移动",
     "on_top": "窗口置顶", "autostart": "开机自启",
-    "return_corner": "回到右下角", "hide_pet": "隐藏桌宠",
+    "return_corner": "回到右下角", "hide_pet": "隐藏肥鱼",
     "spawn_pet": "生小肥鱼", "clear_spawned_pets": "退出子肥鱼",
     "rally_pets": "护驾",
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
@@ -54,7 +54,7 @@ ACTION_LABELS = {
     "quick_launch": "快捷启动",
     "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
     "proactive_screen": "主动识屏", "todo_panel": "待办提醒",
-    "modern_settings": "桌宠设置", "quit": "退出",
+    "modern_settings": "肥鱼设置", "quit": "退出",
 }
 
 
@@ -84,7 +84,7 @@ CUSTOM_ICON_CHOICES = (
     ("默认图标", "default"), ("无图标", "none"),
     ("对话", "chat"), ("屏幕", "screen"), ("播放", "play"),
     ("角色", "character"), ("速度", "speed"), ("尺寸", "size"),
-    ("桌宠", "pet"), ("交互", "interaction"), ("置顶", "pin"),
+    ("肥鱼", "pet"), ("交互", "interaction"), ("置顶", "pin"),
     ("隐藏", "hide"), ("应用", "application"), ("余额", "balance"),
     ("清除", "clear"), ("网页", "web"), ("下载", "download"), ("更新", "update"),
     ("自动化", "automation"), ("设置", "settings"), ("待办", "todo"),
@@ -114,7 +114,7 @@ def _build_animations(menu, pet):
 
 
 def _build_settings(menu, pet):
-    return add_action(menu, "桌宠设置", "settings", pet.on_open_modern_settings, close_on_trigger=True)
+    return add_action(menu, "肥鱼设置", "settings", pet.on_open_modern_settings, close_on_trigger=True)
 
 
 def _build_todo_panel(menu, pet):

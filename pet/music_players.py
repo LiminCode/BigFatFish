@@ -208,7 +208,7 @@ def _shallow_scan(root: Path, exe_name: str) -> str | None:
 def clear_cache() -> None:
     """清掉路径缓存（含 ``None`` 负缓存），下次查询重新扫描。
 
-    手填路径（``music_player_paths``，由 设置 → 桌宠 → 音乐关联 写入）每次查询都
+    手填路径（``music_player_paths``，由 设置 → 肥鱼 → 音乐关联 写入）每次查询都
     重新判定，不经过本缓存；本函数是给"自动搜索结果变了、要立刻重扫"留的入口，
     调用点是设置页保存时的 ``pet/settings_music.save_music_player_settings``
     （路径真的变了才清，避免每次保存都让右键菜单重扫盘）。

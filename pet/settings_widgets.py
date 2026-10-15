@@ -91,7 +91,7 @@ BROWSER_CONTROL_SPEC = {
 
 SETTINGS_DOMAIN_NAV = (
     ("常规", "settings"),
-    ("桌宠", "pet"),
+    ("肥鱼", "pet"),
     ("互动", "interaction"),
     ("菜单", "application"),
     ("桌面组件", "island"),

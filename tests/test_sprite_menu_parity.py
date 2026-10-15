@@ -64,7 +64,7 @@ POOLS = {
 # 「护驾」同理：把所有小肥鱼叫到主肥鱼身边，需要同一进程里的多只 sprite。
 # 「记录最近的对话」：灵动岛卡片里的那个列表由 overlay 壳的历史服务供数。
 # 「详情卡配色」：会话小鱼详情卡的配色方案，同样只有 overlay 有会话小鱼。
-ALLOWED_EXTRAS = frozenset({"退出这只", "桌宠设置", "隐藏桌宠", "每个会话一只小鱼", "会话小鱼上限", "护驾",
+ALLOWED_EXTRAS = frozenset({"退出这只", "肥鱼设置", "隐藏肥鱼", "每个会话一只小鱼", "会话小鱼上限", "护驾",
                             "记录最近的对话", "最近的对话显示行数", "详情卡配色",
                             # 「VS Code 工作区」：条目来自壳的门面回调，旧 PetWindow 没有
                             "VS Code 工作区",
@@ -291,7 +291,7 @@ def test_modern_template_tree_matches_reference_petwindow(tmp_path):
         overlay = build_sprite_full_menu(shell)
         _assert_reference_contained(overlay, reference)
         # 现代布局确实生效：分组子菜单 + 样式标记（不是被 legacy 布局冒充）
-        assert "桌宠控制" in _all_labels(overlay)
+        assert "肥鱼控制" in _all_labels(overlay)
         assert overlay.property("menuStyle") == "modern"
     finally:
         win.close()
@@ -305,11 +305,11 @@ def test_legacy_template_is_flat_and_modern_is_grouped(tmp_path):
         # 旧版：动画分类/窗口能力平铺在根层
         root = [a.text() for a in legacy.actions() if not a.isSeparator()]
         assert "回到右下角" in root and "播放速率" in root
-        assert "桌宠控制" not in root
+        assert "肥鱼控制" not in root
         shell._config.set("context_menu_template", "modern")
         modern = build_sprite_full_menu(shell)
         root = [a.text() for a in modern.actions() if not a.isSeparator()]
-        assert "桌宠控制" in root and "工具与帮助" in root
+        assert "肥鱼控制" in root and "工具与帮助" in root
         assert "回到右下角" not in root          # 收进分组子菜单
     finally:
         shell._delete_runtime_marker()
@@ -330,7 +330,7 @@ def test_legacy_template_missing_entries_all_present(tmp_path):
         for label in expected:
             assert label in labels, f"legacy 模板缺项：{label}"
         # overlay 侧保留的、legacy.py 没有的三个入口（删掉就是实机可见回退）
-        for label in ("桌宠设置", "隐藏桌宠"):
+        for label in ("肥鱼设置", "隐藏肥鱼"):
             assert label in labels, f"legacy 模板缺项：{label}"
     finally:
         shell._delete_runtime_marker()
@@ -342,9 +342,9 @@ def test_modern_template_exposes_same_capabilities(tmp_path):
         menu = build_sprite_full_menu(shell)
         labels = _all_labels(menu)
         for label in ("AI 对话", "播放动画", "切换角色", "播放速率", "大小",
-                      "拖动物理", "边缘探头", "黄金回旋", "桌宠设置"):
+                      "拖动物理", "边缘探头", "黄金回旋", "肥鱼设置"):
             assert label in labels, f"modern 模板缺项：{label}"
-        controls = _find(menu, "桌宠控制").menu()
+        controls = _find(menu, "肥鱼控制").menu()
         assert _find(controls, "生小肥鱼") is not None
         tools = _find(menu, "工具与帮助").menu()
         for label in ("GitHub 项目页",):
@@ -554,7 +554,7 @@ def test_close_on_trigger_action_defers_then_dispatches(tmp_path, monkeypatch):
         monkeypatch.setattr(shell, "set_pet_visible",
                             lambda visible: hidden.append(visible))
         menu = build_sprite_full_menu(shell)
-        action = _find(menu, "隐藏桌宠")
+        action = _find(menu, "隐藏肥鱼")
         assert action.property("closeOnTrigger") is True
         menu.popup(QPoint(20, 20))
         app.processEvents()

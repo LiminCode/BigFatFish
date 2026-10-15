@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-应用入口 —— QApplication + 桌宠窗口 + 系统托盘。
+应用入口 —— QApplication + 肥鱼窗口 + 系统托盘。
 
 支持运行时切换角色：
-- 右键桌宠 →「切换角色」
+- 右键肥鱼 →「切换角色」
 - 托盘菜单 →「切换角色」
 切换后会热加载对应形象的 webm，并保留位置/朝向等配置。
 
@@ -214,7 +214,7 @@ class _OverlayChatHost:
     - ``frameGeometry`` 兜底（身体框为空时才被读，拿合成窗几何顶替，避免
       AttributeError）；
     - 头像 ``icon_pixmap``（聊天窗标题栏取角色图）；
-    - ``add/remove_position_listener``（``chat_follow_pet`` 勾选时聊天窗跟随桌宠，
+    - ``add/remove_position_listener``（``chat_follow_pet`` 勾选时聊天窗跟随肥鱼，
       转发到合成窗的 sprite 位置监听）。
     """
 
@@ -485,7 +485,7 @@ class PetInstance:
         win.on_look_screen = win.look_at_screen if self.enable_chat and hasattr(win, "look_at_screen") else None
         win.on_open_legacy_settings = None
         win.on_open_modern_settings = self._slot_wrap(self.open_modern_settings)
-        # 桌宠隐藏时的气泡改道面（DSH 联动等非交互反馈气泡 → 灵动岛，见
+        # 肥鱼隐藏时的气泡改道面（DSH 联动等非交互反馈气泡 → 灵动岛，见
         # window_alerts.redirect_hidden_bubble）；岛对话不可用时注入方返回 False。
         win.hidden_bubble_redirect = self.shell._island_feedback_bubble
         # 反馈面可用性探针：隐藏期联动监视器是否跳过低功耗暂停（mixin 消费）。
@@ -628,7 +628,7 @@ class PetInstance:
         self.shell._refresh_tray_menu()
 
     def _apply_spawn_offset(self) -> None:
-        """让新孵化的桌宠与母桌宠错开，避免两个窗口完全重叠。
+        """让新孵化的肥鱼与母肥鱼错开，避免两个窗口完全重叠。
 
         批5.2：偏移量改为实例属性（显式传递），不再读进程级
         DSH_PET_SPAWN_OFFSET_INDEX 环境变量——单进程多窗下环境变量是
@@ -689,7 +689,7 @@ class PetInstance:
         """打开快速对话气泡；与完整聊天窗共用会话历史。"""
         if not self.enable_chat or self.win is None:
             return
-        # 桌宠全部隐藏：气泡锚不到桌宠，改弹到灵动岛上（岛是对话代理）。
+        # 肥鱼全部隐藏：气泡锚不到肥鱼，改弹到灵动岛上（岛是对话代理）。
         # singleShot 与下方同口径：Cocoa 菜单跟踪期间延迟到菜单关闭再弹。
         shell = getattr(self, "shell", None)
         if shell is not None and not shell._aggregate_pet_visible() \
@@ -801,7 +801,7 @@ class PetInstance:
 
         macOS 的右键/托盘菜单是原生 NSMenu 跟踪会话（menu.exec 阻塞期间），
         菜单项动作触发时会话尚未结束，此时新建窗口的 show/raise/activate
-        会被 AppKit 抑制——表现为首次点击「AI 设置 / 桌宠设置」无反应，
+        会被 AppKit 抑制——表现为首次点击「AI 设置 / 肥鱼设置」无反应，
         需要再点一次（此时窗口实例已存在，直接 show 成功）。
         延迟到菜单关闭后再呈现即可稳定弹出；Qt 自绘菜单（Windows）同样
         覆盖：弹窗仍显示时重试等待。重试 60 次（约 3.6 秒）后放弃，
@@ -857,7 +857,7 @@ class PetInstance:
                 chat_window.refresh_settings()
 
     def _update_bubble_suppression_for_settings(self) -> None:
-        """任一设置窗口打开/独立设置进程存活时暂停桌宠气泡，避免气泡盖住设置界面。"""
+        """任一设置窗口打开/独立设置进程存活时暂停肥鱼气泡，避免气泡盖住设置界面。"""
         if getattr(self, "win", None) is None:
             return
         shell = getattr(self, "shell", None)
@@ -932,10 +932,10 @@ class PetInstance:
             self._hint_dock_hidden_recovery()
 
     def _apply_modern_settings(self) -> None:
-        """把设置页刚落盘的改动应用到运行中的桌宠（「保存」与关窗共用）。"""
+        """把设置页刚落盘的改动应用到运行中的肥鱼（「保存」与关窗共用）。"""
         # 新版设置在关闭时一律落盘（closeEvent 自动保存，「保存并退出」同样走
-        # _write_config），因此无论 Accepted/Rejected 都把改动应用到桌宠。
-        # 此前只有 Accepted 才刷新：直接 X 关闭时保存生效但桌宠不更新。
+        # _write_config），因此无论 Accepted/Rejected 都把改动应用到肥鱼。
+        # 此前只有 Accepted 才刷新：直接 X 关闭时保存生效但肥鱼不更新。
         #
         # 应用链与 watcher 路径共用 AppShell._apply_external_config_change；但
         # 旧测试桩（AppShell.__new__ + 只打桩原内联 seam，没有 _instances）仍走
@@ -963,8 +963,8 @@ class PetInstance:
 
     def _dock_hidden_recovery_message(self) -> str:
         return (
-            "已隐藏 Dock 图标，桌宠仍会常驻。需要恢复时：点菜单栏托盘图标 → "
-            "「桌宠设置」→ 重新勾选「显示 Dock 图标」；找不到桌宠也从托盘菜单「显示 / 隐藏」恢复。"
+            "已隐藏 Dock 图标，肥鱼仍会常驻。需要恢复时：点菜单栏托盘图标 → "
+            "「肥鱼设置」→ 重新勾选「显示 Dock 图标」；找不到肥鱼也从托盘菜单「显示 / 隐藏」恢复。"
         )
 
     def _hint_dock_hidden_recovery(self) -> None:
@@ -977,7 +977,7 @@ class PetInstance:
         tray = getattr(self.shell, "tray", None)
         if tray is not None and callable(getattr(tray, "showMessage", None)):
             tray.showMessage(
-                "桌宠设置",
+                "肥鱼设置",
                 self._dock_hidden_recovery_message(),
                 QSystemTrayIcon.MessageIcon.Information,
                 7000,
@@ -1069,7 +1069,7 @@ class PetInstance:
             self.win.show_bubble("检测到开机自启已被系统或安全软件关闭，可在设置中重新启用。", duration_ms=7000)
 
     def _notify_pet_hidden(self) -> None:
-        """用户主动隐藏桌宠后弹托盘提示，指明恢复入口。
+        """用户主动隐藏肥鱼后弹托盘提示，指明恢复入口。
 
         批5.2a：灵动岛按聚合可见态同步；非主窗（多窗）的提示文案指向
         托盘菜单里的「显示 / 隐藏 [slot-N]」（P2-5 消除误导）。
@@ -1086,7 +1086,7 @@ class PetInstance:
             else:
                 message = "点击托盘图标或 Dock 图标即可恢复。"
         self.shell.tray.showMessage(
-            "桌宠已隐藏",
+            "肥鱼已隐藏",
             message,
             QSystemTrayIcon.MessageIcon.Information,
             4000,
@@ -1134,7 +1134,7 @@ class AppShell:
         self._toast_windows: list[DesktopNotification] = []
         self.island = None
         self.island_collision = None  # 果冻墙：岛的静态碰撞体（island_collision.py）
-        self.island_chat = None  # 岛对话气泡：桌宠隐藏时的交互面（island_chat.py）
+        self.island_chat = None  # 岛对话气泡：肥鱼隐藏时的交互面（island_chat.py）
         self._spawned_pet_count = 0
         self._balance_busy = False
         # 静默余额查询（岛卡片展开）独立忙标志与节流时间戳；
@@ -1277,7 +1277,7 @@ class AppShell:
         """托盘对象：legacy = 本进程建的 QSystemTrayIcon；overlay = 壳的托盘。
 
         overlay 拓扑进程级托盘由 OverlayShell 持有（``self.tray`` 恒 None），
-        不看向壳则「隐藏桌宠 → 点托盘恢复」提示与 Dock 隐藏指路都读不到托盘。
+        不看向壳则「隐藏肥鱼 → 点托盘恢复」提示与 Dock 隐藏指路都读不到托盘。
         """
         tray = getattr(self, '_tray', None)
         if tray is not None:
@@ -1557,13 +1557,13 @@ class AppShell:
         # 外部配置变更也可能改了 agent_link.dsh（右键菜单开关落盘后同样收敛到
         # 这里）→ 各窗 refresh_pet_settings 链里的 manager.apply_config 会按
         # 同一功能门启停 DshMonitor（桥目录唯一读方）。
-        # 联动被关掉 → 桌宠自拉起的 dsh web 立即收口：它唯一的消费者就是这条
+        # 联动被关掉 → 肥鱼自拉起的 dsh web 立即收口：它唯一的消费者就是这条
         # 联动管线，关掉后留着只是常驻内存。顺序放在跟踪器停表之后（先停探测再
         # 停服务，免得跟踪器在服务消失的那一刻又报一轮 offline）；只动自拉起
         # 登记表里的 pid，用户手动起的实例不受影响。
         # 进程反查（PowerShell ~10s 超时）与 taskkill（~15s 超时）是秒级阻塞：
         # 本方法跑在配置去抖回调（GUI 线程）上，收口与后续设置同步没有依赖，
-        # 放 daemon 线程做，不许卡死所有桌宠共用的 GUI 线程（审查缺口 G2）。
+        # 放 daemon 线程做，不许卡死所有肥鱼共用的 GUI 线程（审查缺口 G2）。
         if not self._dsh_tracker_wanted():
             threading.Thread(target=self._stop_harness_if_still_unwanted,
                              daemon=True, name="pet-harness-stop").start()
@@ -1591,7 +1591,7 @@ class AppShell:
             logging.info("独立设置进程已在运行，不重复拉起")
             self._mark_settings_child(True)
             if not self._settings_launch_pending():
-                # 拉起窗口之外 = 用户再次点了「桌宠设置」（可能是另一只宠的）：
+                # 拉起窗口之外 = 用户再次点了「肥鱼设置」（可能是另一只宠的）：
                 # 静默 return True 会让这次点击表现为"什么都没发生"。
                 self._notify_settings_already_open(instance)
             return True
@@ -1614,7 +1614,7 @@ class AppShell:
         能做的只有说清现状。文案按归属分三种：同一只（"已经打开"）、另一只
         （"先关闭"）、归属未知（外部拉起的设置进程）。
 
-        走 self-drawn 右下角通知而不是桌宠气泡：设置页开着时气泡本来就被抑制
+        走 self-drawn 右下角通知而不是肥鱼气泡：设置页开着时气泡本来就被抑制
         （_update_bubble_suppression_for_settings），冒泡必被丢弃；通知沿用
         「系统通知」总开关（与待办提醒的 notify 分支同口径）。
         """
@@ -1623,16 +1623,16 @@ class AppShell:
         owner = getattr(self, "_settings_owner_instance_id", None)
         requested = _instance_config_identity(instance)
         if owner is not None and owner == requested:
-            message = "桌宠设置已经打开（独立设置窗口不会重复打开）：请切换到已打开的窗口。"
+            message = "肥鱼设置已经打开（独立设置窗口不会重复打开）：请切换到已打开的窗口。"
         elif owner is not None:
-            message = "已有一只桌宠的设置窗口开着：请先关闭它，再打开这只的设置。"
+            message = "已有一只肥鱼的设置窗口开着：请先关闭它，再打开这只的设置。"
         else:
-            message = "桌宠设置已经打开：请先关闭已打开的设置窗口再试。"
+            message = "肥鱼设置已经打开：请先关闭已打开的设置窗口再试。"
         logging.info("设置页已在运行，提示用户：%s", message)
         notify = getattr(self, "system_notify", None)
         if callable(notify):
             try:
-                notify("桌宠设置", message)
+                notify("肥鱼设置", message)
             except Exception:
                 logging.exception("设置页占用提示失败")
 
@@ -2090,11 +2090,11 @@ class AppShell:
             self.instance._create_ui(character_id)
 
     def _maybe_autostart_harness(self) -> None:
-        """「随桌宠启动 dsh 服务」：主窗就绪后按 ``harness_launch_target`` 拉起。
+        """「随肥鱼启动 dsh 服务」：主窗就绪后按 ``harness_launch_target`` 拉起。
 
         目标是 dsh web 时全程静默（CREATE_NO_WINDOW 隐藏控制台 +
         open_browser=False，不开浏览器、无弹窗）；目标是桌面端界面时直接打开
-        桌面端应用（用户的主力应用，桌宠退出**不会**关它）。
+        桌面端应用（用户的主力应用，肥鱼退出**不会**关它）。
 
         「本机已有实例」的判定交给 ``launch_harness`` 自己做：它同时会看 web
         端口候选与桌面端单实例；在这里按 web 端口提前 return，会把用户选的
@@ -2139,12 +2139,12 @@ class AppShell:
                     # 拉起刚完成联动就被关/进程在退出：立刻收口，不留「关了还在跑」
                     harness_mod.stop_self_launched_harness()
             except Exception:
-                logging.exception("随桌宠自动拉起 dsh 服务失败")
+                logging.exception("随肥鱼自动拉起 dsh 服务失败")
 
         threading.Thread(target=_run, daemon=True, name="pet-harness-autostart").start()
 
     def _harness_autostart_wanted(self) -> bool:
-        """「随桌宠启动 dsh 服务」的功能门：三个条件同时成立才自动拉起。
+        """「随肥鱼启动 dsh 服务」的功能门：三个条件同时成立才自动拉起。
 
         1. ``enable_chat``——旧口径；无 Chat 的变体连 Harness 菜单都不显示；
         2. 用户显式开了 ``harness_autostart``；
@@ -2213,7 +2213,7 @@ class AppShell:
     def _on_about_to_quit(self) -> None:
         """退出前保存各窗位置并释放资源（全进程「全部退出」语义，R5 切分）。
 
-        aboutToQuit 只绑定一次自本控制器；切换角色会重建桌宠窗口，信号
+        aboutToQuit 只绑定一次自本控制器；切换角色会重建肥鱼窗口，信号
         触发时读取当前窗口（经 ``self.instance.win``），避免调用已延迟销毁
         的旧窗口。
 
@@ -2323,7 +2323,7 @@ class AppShell:
         if self.festival_service is not None:
             self.festival_service.stop()
         # 退出收口：停掉本进程自拉起的 dsh web（父进程退出不带走 CREATE_NO_WINDOW
-        # 的子进程，实机确认桌宠退出后 node 仍活着——只能由宿主自己收）。
+        # 的子进程，实机确认肥鱼退出后 node 仍活着——只能由宿主自己收）。
         # 只杀自拉起登记表里且命令行复核通过的那个：用户手动起的实例不受影响。
         #
         # 会话结束（关机/注销）路径整段跳过：那条路径的纪律是「静默、快速、不再
@@ -2480,7 +2480,7 @@ class AppShell:
             logging.exception("把窗口接入共享 Agent 联动链失败")
 
     def _sync_dynamic_island(self) -> None:
-        """按配置创建/隐藏灵动岛；桌宠隐藏后灵动岛仍可常驻。"""
+        """按配置创建/隐藏灵动岛；肥鱼隐藏后灵动岛仍可常驻。"""
         island_cfg = self.config.get("dynamic_island", {})
         enabled = bool(island_cfg.get("enabled", True)) if isinstance(island_cfg, dict) else False
         if not enabled:
@@ -2586,10 +2586,10 @@ class AppShell:
 
         本进程直连硬墙：岛作为屏幕边界式位置墙，在统一位置出口
         move_window_towwards 里逐次钳制——身体框任何移动都进不了岛区，
-        杜绝采样间隙导致的穿透抽搐；岛被拖到桌宠身上由 on_geometry_changed
+        杜绝采样间隙导致的穿透抽搐；岛被拖到肥鱼身上由 on_geometry_changed
         事件驱动推出。
         4.4a：跨进程几何发布/远端复制（attach_publisher / on_remote_snapshot）
-        随多进程多宠退役层停用——岛上桌宠的碰撞反馈只在本进程结算。
+        随多进程多宠退役层停用——岛上肥鱼的碰撞反馈只在本进程结算。
         """
         enabled = bool(island_cfg.get("collision_enabled", True)) \
             if isinstance(island_cfg, dict) else True
@@ -2632,7 +2632,7 @@ class AppShell:
             if island is not None and shiboken6.isValid(island):
                 island.bump(1.5, 0.0, -1.0)
             return
-        # 桌宠全部隐藏：快速气泡锚不到桌宠，直接开完整聊天窗。（此前改弹岛对话气泡；
+        # 肥鱼全部隐藏：快速气泡锚不到肥鱼，直接开完整聊天窗。（此前改弹岛对话气泡；
         # 隐藏时单击岛已改回展开卡片，卡片上的「聊天」不再绕回那个气泡。）
         if not self._aggregate_pet_visible():
             self._open_full_chat_from_island_chat()
@@ -2696,7 +2696,7 @@ class AppShell:
             sync(session_id, focus=focus)
 
     def _island_feedback_available(self) -> bool:
-        """桌宠隐藏期间灵动岛反馈面是否可用（window 的联动暂停决策探针）。
+        """肥鱼隐藏期间灵动岛反馈面是否可用（window 的联动暂停决策探针）。
 
         可用时隐藏不暂停联动监视器：DSH 事件继续驱动岛反馈气泡；
         不可用（无聊天模块 / 岛未启用 / hidden_chat 关）时照旧暂停省电。"""
@@ -2704,11 +2704,11 @@ class AppShell:
 
     def _island_feedback_bubble(self, text: str, subtitle: str = "",
                                 duration_ms: int = 3200) -> bool:
-        """桌宠隐藏时的反馈气泡改道面（window_alerts.redirect_hidden_bubble 注入调用）。
+        """肥鱼隐藏时的反馈气泡改道面（window_alerts.redirect_hidden_bubble 注入调用）。
 
-        DSH 联动状态/提醒等非交互气泡在桌宠隐藏期间改弹到岛对话气泡
+        DSH 联动状态/提醒等非交互气泡在肥鱼隐藏期间改弹到岛对话气泡
         （预览式，不抢焦点，超时自动收回，后到覆盖）。岛对话不可用
-        （无聊天模块 / 岛未启用 / hidden_chat 关 / 桌宠其实可见）时返回
+        （无聊天模块 / 岛未启用 / hidden_chat 关 / 肥鱼其实可见）时返回
         False，调用方维持原丢弃行为。"""
         if self._aggregate_pet_visible() or not self._island_chat_available():
             return False
@@ -2726,11 +2726,11 @@ class AppShell:
         return True
 
     def _show_pets_from_island_chat(self) -> None:
-        """岛对话气泡里的「显示桌宠」：恢复全部窗并同步岛状态。"""
+        """岛对话气泡里的「显示肥鱼」：恢复全部窗并同步岛状态。"""
         overlay = getattr(self, "_overlay_shell", None)
         if overlay is not None:
             # overlay 拓扑：inst.win 恒为 None，下面的旧循环一只也显示不了，却把岛
-            # 写成「已显示」——桌宠没回来、按钮倒先变了（2026-10-11 实机）。交给壳：
+            # 写成「已显示」——肥鱼没回来、按钮倒先变了（2026-10-11 实机）。交给壳：
             # 它显示合成窗，并在真的显示之后自己同步岛状态。
             overlay.set_pet_visible(True)
         else:
@@ -2760,7 +2760,7 @@ class AppShell:
         monitor = self._live_api_key_monitor()
         if monitor is not None:
             monitor.note_success()  # 回复都到了：API 肯定是通的
-        # 桌宠隐藏时岛是唯一常驻交互面：回复到达在岛上弹预览气泡（不抢焦点，
+        # 肥鱼隐藏时岛是唯一常驻交互面：回复到达在岛上弹预览气泡（不抢焦点，
         # 超时自动收回）。岛气泡在场时跳过——多半是气泡自己刚回完话，别再弹。
         if not self._aggregate_pet_visible() and self._island_chat_available():
             bubble = getattr(self, "island_chat", None)
@@ -2816,9 +2816,9 @@ class AppShell:
             self._balance_timer.start(minutes * 60000)
 
     def _island_icon_pixmap(self):
-        """灵动岛"鱼本体头像"：取首个桌宠窗的当前帧图标；无窗/无帧返回 None（岛侧会重试）。
+        """灵动岛"鱼本体头像"：取首个肥鱼窗的当前帧图标；无窗/无帧返回 None（岛侧会重试）。
 
-        4.4a overlay 拓扑：``instances[].win`` 恒为 None（单合成窗，桌宠在
+        4.4a overlay 拓扑：``instances[].win`` 恒为 None（单合成窗，肥鱼在
         OverlayShell 里），图标改从壳的主 sprite 当前帧取（``OverlayShell.icon_pixmap``
         与旧 ``PetWindow.icon_pixmap`` 同款裁剪/缩放）；两处都取不到才返回 None，
         岛侧按 provider 契约（dynamic_island._icon_pixmap 不缓存 None）稍后重试。
@@ -2878,7 +2878,7 @@ class AppShell:
     def _refresh_island_card(self) -> None:
         history = self._session_history()
         if history is not None:
-            history.rescan()            # 桌宠没开着时打开过的对话：展开卡片时补一遍（节流在服务里）
+            history.rescan()            # 肥鱼没开着时打开过的对话：展开卡片时补一遍（节流在服务里）
             self._push_island_history()  # 「多久以前」随手刷新
         if self._island_card_source() == "claude":
             self._show_island_claude_sessions()
@@ -3378,7 +3378,7 @@ class AppShell:
 
     # ------------------------------------------------------------ 生小肥鱼 / 多窗
     def spawn_pet(self) -> None:
-        """生小肥鱼：统一走进程内新窗，不再拉起独立桌宠进程。
+        """生小肥鱼：统一走进程内新窗，不再拉起独立肥鱼进程。
 
         4.4b：多进程多宠退役层删除后，多宠的唯一形态是进程内多窗/多 sprite。
         ``--slot`` / ``DSH_PET_SPAWN_OFFSET_INDEX`` 兼容解析保留（T5），
@@ -3504,7 +3504,7 @@ class AppShell:
         agent_link shutdown（最多 2s 共享 join）、碰撞会话停止（最多 3s+1s
         wait）——挪到进程级后台 reaper 线程串行执行；UI 线程只保留关窗、
         摘 runtime 标记、释放 slot 锁、从登记表移除等毫秒级必做步骤，
-        N 只连清时主桌宠不再冻结。默认 False = 「退出这只」单窗路径保持
+        N 只连清时主肥鱼不再冻结。默认 False = 「退出这只」单窗路径保持
         既有同步语义逐位不变。重回收只做线程 join / queued 调用 / 纯 Python
         注册表操作，不触碰 Qt 对象，后台执行安全。
         """
@@ -3708,8 +3708,8 @@ class AppShell:
 
         # N-2：Dock 菜单只装一次，动作必须动态解析当前主窗实例——
         # 主窗经「退出这只」退掉并提升新主窗后，绑旧实例会把死窗复活。
-        menu.addAction("显示桌宠", show_pet)
-        menu.addAction("桌宠设置", lambda: self.instance is not None and self.instance.open_modern_settings())
+        menu.addAction("显示肥鱼", show_pet)
+        menu.addAction("肥鱼设置", lambda: self.instance is not None and self.instance.open_modern_settings())
         if self.enable_chat:
             menu.addAction("AI 对话", lambda: self.instance is not None and self.instance.open_chat())
         menu.addSeparator()
@@ -3809,7 +3809,7 @@ class AppShell:
     def _tray_placeholder_icon(self) -> QIcon:
         """首帧还没解码时的托盘占位图标：复用既有矢量图标语言，不用新素材。
 
-        刻意不把桌宠窗口传进去取主题色——_build_tray 的调用方可能是非 QWidget
+        刻意不把肥鱼窗口传进去取主题色——_build_tray 的调用方可能是非 QWidget
         的替身窗口（测试），而托盘观感本来就该跟窗口 QSS 无关。
         """
         return vector_menu_icon(QWidget(), "pet", 64)
@@ -3879,7 +3879,7 @@ class AppShell:
             menu.addAction('AI 对话', self.instance.open_chat)
             menu.addAction('快速对话（气泡）', self.instance.open_quick_chat)
             menu.addAction('AI 设置', self.instance.open_chat_settings)
-        menu.addAction('桌宠设置', self.instance.open_modern_settings)
+        menu.addAction('肥鱼设置', self.instance.open_modern_settings)
 
         m_char = track_menu(menu.addMenu('切换角色'))
         current = str(self.config.get('character', catalog.DEFAULT_CHARACTER))
@@ -3923,7 +3923,7 @@ class AppShell:
                 if win_i is None:
                     continue
                 slot_label = f"[slot-{inst.slot_id}]" if inst.slot_id is not None else ""
-                sub = track_menu(menu.addMenu(f'桌宠 {slot_label}' if slot_label else '桌宠'))
+                sub = track_menu(menu.addMenu(f'肥鱼 {slot_label}' if slot_label else '肥鱼'))
 
                 def _toggle(win=win_i) -> None:
                     if win.isVisible():
@@ -3951,7 +3951,7 @@ class AppShell:
         menu.addAction('退出', self.app.quit)
 
         tray.setContextMenu(menu)
-        tray.setToolTip('dsh-pet 独立桌宠')
+        tray.setToolTip('dsh-pet 独立肥鱼')
         tray.show()
         # F5：菜单已由新菜单接管后，显式记录所有权并释放被替换的旧菜单
         #（owner 生命周期：强引用保活到替换，旧菜单延迟销毁防泄漏）。
@@ -4021,7 +4021,7 @@ def _mac_set_dock_icon_visible(visible: bool) -> None:
 def _default_xcb_platform_on_wayland() -> None:
     """Linux Wayland 会话下把 Qt 平台插件默认设为 xcb（XWayland）。
 
-    Wayland 协议不允许客户端自行移动顶层窗口，桌宠拖动依赖的
+    Wayland 协议不允许客户端自行移动顶层窗口，肥鱼拖动依赖的
     QWidget.move() 会被合成器静默忽略（表现为无法拖动）；透明无边框
     窗口在原生 wayland 插件下还存在重绘残留（拖影）。须在创建
     QApplication 之前调用。用户显式设置 QT_QPA_PLATFORM 时尊重其选择。

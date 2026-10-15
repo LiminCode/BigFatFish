@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""“吃垃圾文件”模拟功能：拖文件给桌宠后播放吃动画并记录统计。
+"""“吃垃圾文件”模拟功能：拖文件给肥鱼后播放吃动画并记录统计。
 
 重要边界：本模块只做视觉反馈与统计，绝不删除/移动/修改被拖入的文件。
 统计写到配置目录下的 file_eaten_stats.json，供用户查看累计吃了多少文件。
@@ -127,7 +127,7 @@ def _pick_eating_animation(pet) -> str | None:
 
 
 class FileEaterDropHandler(QObject):
-    """挂在桌宠窗口上的拖放事件过滤器 + 吃文件反馈控制器。"""
+    """挂在肥鱼窗口上的拖放事件过滤器 + 吃文件反馈控制器。"""
 
     def __init__(self, pet):
         super().__init__(pet)

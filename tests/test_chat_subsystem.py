@@ -379,7 +379,7 @@ def test_ai_settings_is_modeless_so_pet_can_still_move(tmp_path: Path):
 def test_present_dialog_defers_until_popup_menu_closes(tmp_path: Path, monkeypatch):
     """菜单跟踪会话期间触发的设置弹窗应延迟到菜单关闭后再显示。
 
-    回归 macOS 右键菜单首次点击「AI 设置/桌宠设置」无反应的问题：
+    回归 macOS 右键菜单首次点击「AI 设置/肥鱼设置」无反应的问题：
     原生 NSMenu 跟踪会话中新建窗口的 show/activate 会被 AppKit 抑制。
     """
     import time
@@ -993,7 +993,7 @@ def test_modern_sidebar_footer_only_keeps_status_and_follow(tmp_path: Path):
         button for button in footer.findChildren(QToolButton)
         if not button.isHidden()
     ]
-    # 跟随桌宠 + 删除当前会话 + 清空当前会话（此前两个按钮是孤儿控件）
+    # 跟随肥鱼 + 删除当前会话 + 清空当前会话（此前两个按钮是孤儿控件）
     assert visible_tools == [
         window.follow_button, window.delete_session_button, window.clear_button,
     ]
@@ -3357,7 +3357,7 @@ def test_classic_chat_window_uses_the_renamed_character(tmp_path):
     """经典聊天窗（肥鱼牌小手机）的标题 / 头像 / 气泡署名都跟着用户给角色起的名字走。
 
     实机：角色已改名「大肥鱼」，灵动岛与新版聊天窗都显示新名字，经典聊天窗仍写着
-    shenshen、头像是 S、气泡署名是「桌宠」。
+    shenshen、头像是 S、气泡署名是「肥鱼」。
     """
     from PySide6.QtWidgets import QApplication
 
@@ -3395,7 +3395,7 @@ def test_classic_chat_window_without_an_alias_keeps_the_old_labels(tmp_path):
         assert "大肥鱼" not in window.title_label.text()
         window._add("assistant", "你好")
         replies = [b for b in window.findChildren(MessageBubble) if b.role == "assistant"]
-        assert replies[-1].meta.text() == "桌宠", "没起名字时署名不变"
+        assert replies[-1].meta.text() == "肥鱼", "没起名字时署名不变"
         assert MessageBubble("user", "hi", "shenshen").meta.text() == "你"
     finally:
         window.close()

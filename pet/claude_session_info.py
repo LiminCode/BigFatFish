@@ -236,7 +236,7 @@ def read_tail(path: Path | str, limit: int = TAIL_BYTES) -> str:
 def find_transcript(session_id: str, home: Path | None = None) -> str:
     """按会话 ID 找 transcript（``~/.claude/projects/<项目>/<id>.jsonl``）。
 
-    hook 只在回合边界送路径；桌宠刚启动、会话还在回合中途时路径还没到，先这样找。
+    hook 只在回合边界送路径；肥鱼刚启动、会话还在回合中途时路径还没到，先这样找。
     """
     if not _safe_session_id(session_id):
         return ""

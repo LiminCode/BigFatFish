@@ -156,7 +156,7 @@ def test_independent_vision_prefers_own_key_over_chat_key(monkeypatch):
 
 
 def test_vision_request_includes_self_recognition_hint(monkeypatch):
-    """视觉请求 user 文本应携带自我识别提示（认出截图里的桌宠是自己）。"""
+    """视觉请求 user 文本应携带自我识别提示（认出截图里的肥鱼是自己）。"""
     import json
     from pet import vision
     from pet.chat.models import ProviderConfig

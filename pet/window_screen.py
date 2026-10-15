@@ -53,7 +53,7 @@ def fs_watch_loop(host, *, monotonic=None) -> None:
     """
     clock = monotonic if monotonic is not None else _fs_monotonic
     stop = host._fs_stop
-    # Phase 1：避免纯桌宠启动即加载 PIL；该线程真正需要检测光标时才导入。
+    # Phase 1：避免纯肥鱼启动即加载 PIL；该线程真正需要检测光标时才导入。
     from . import vision as vision_mod
     polls = 0
     consecutive_errors = 0
@@ -159,13 +159,13 @@ def on_cursor_visibility_changed(host, visibility: str, *, monotonic=None) -> No
 
 
 def on_fullscreen_changed(host, hit: bool) -> None:
-    """主线程：全屏出现 → 隐藏桌宠；全屏退出 → 恢复。"""
+    """主线程：全屏出现 → 隐藏肥鱼；全屏退出 → 恢复。"""
     logging.info("全屏状态变化 hit=%s auto_hidden=%s visible=%s", hit, host._auto_hidden, host.isVisible())
     if hit:
         if not host._auto_hidden and host.isVisible():
             host._auto_hidden = True
             host._speech_bubble.hide()
-            host.hide(notify=False)  # 自动隐藏是内部语义，不弹"桌宠已隐藏"托盘通知
+            host.hide(notify=False)  # 自动隐藏是内部语义，不弹"肥鱼已隐藏"托盘通知
     elif host._auto_hidden:
         host._auto_hidden = False
         host.show()
@@ -206,7 +206,7 @@ def set_stream_capture_mode(host, on: bool) -> None:
     """直播捕获兼容模式：Tool → 普通顶层窗口 + 标题。
 
     直播姬/OBS 的窗口捕获会过滤 Tool 窗口（WS_EX_TOOLWINDOW），
-    开启后改为普通窗口并设置可见标题，捕获列表即可看到桌宠；
+    开启后改为普通窗口并设置可见标题，捕获列表即可看到肥鱼；
     代价是任务栏出现图标。setWindowFlags 会重建原生窗口，随后
     showEvent 会自动重新应用置顶。
     """
@@ -221,7 +221,7 @@ def set_stream_capture_mode(host, on: bool) -> None:
     host.setWindowFlags(build_window_flags(host.cfg, host.mouse_through, on))
     host.setWindowTitle(STREAM_CAPTURE_TITLE if on else '')
     if was_visible:
-        host.show()  # 只在原本可见时恢复：手动/自动隐藏的桌宠不被意外唤出
+        host.show()  # 只在原本可见时恢复：手动/自动隐藏的肥鱼不被意外唤出
     host._speech_bubble.set_capture_compat(on, host=host)
     if getattr(host, "_quick_chat_capture_widget", None) is not None and shiboken6.isValid(host._quick_chat_capture_widget):
         host._quick_chat_capture_widget.set_capture_compat(on, host=host)

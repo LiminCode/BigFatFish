@@ -20,7 +20,7 @@ VARIABLES = {
     "count": "数量（question.many=问题数；model_access.many=连续模型访问失败次数）",
     "reasons": "判断原因（减法退役兼容位：检测器已删，恒自动隐藏）",
     "detail": "桥接安装失败详情（bridge.install.failed）",
-    "event": "未知事件名（bridge.unknown；bridge 写出但桌宠当前版本不认识的事件名）",
+    "event": "未知事件名（bridge.unknown；bridge 写出但肥鱼当前版本不认识的事件名）",
     "text": "余额查询结果文本（balance.result）",
     "tool": "原始工具名（activity.*）",
     "toolName": "审批原始工具名（approval.*；上游记录提供时可用）",
@@ -138,7 +138,7 @@ EVENT_DESCRIPTIONS: dict[str, str] = {
     "bridge.install.success": "联动通信桥安装完成（Pet 公共事件，应写 global）",
     "bridge.install.failed": "联动通信桥安装失败（Pet 公共事件，应写 global）",
     "bridge.uninstall.failed": "联动通信桥卸载失败（Pet 公共事件，应写 global）",
-    "bridge.unknown": "bridge 写出的未知事件——当前桌宠不认识它，提示用户更新/重装 bridge（Pet 公共事件，应写 global）",
+    "bridge.unknown": "bridge 写出的未知事件——当前肥鱼不认识它，提示用户更新/重装 bridge（Pet 公共事件，应写 global）",
     "approval.tool": "Agent 请求审批一次工具调用（等待用户决策；不是工具已执行）",
     "approval.generic": "通用审批等待用户决定",
     "question.empty": "Agent 提问：等待用户从选项选择",
@@ -244,8 +244,8 @@ CONDITIONAL_PARAMETERS: dict[str, tuple[str, ...]] = {
 # 导入侧只读取 template / phrases / entries 等业务键，这段自述在导入时会被忽略，可随意保留或删除。
 EXPORT_GUIDE: dict[str, Any] = {
     "这是什么": (
-        "本文件是桌宠「表达风格」一键导出的角色台词模板（格式 persona-phrases/v1），"
-        "覆盖桌宠自言自语、Agent 状态、审批、提问、错误、模型访问失败等全部弹窗/气泡文案。"
+        "本文件是肥鱼「表达风格」一键导出的角色台词模板（格式 persona-phrases/v1），"
+        "覆盖肥鱼自言自语、Agent 状态、审批、提问、错误、模型访问失败等全部弹窗/气泡文案。"
         "本段（_说明）只是给人或 AI 阅读的注释，导入时会被自动忽略，整段删除也不影响使用。"
     ),
     "怎么改（最常用）": [
@@ -298,7 +298,7 @@ EXPORT_GUIDE: dict[str, Any] = {
         "model_access.one / many、llm_error.api": "模型访问失败（单次/连续） / AI 服务出错。",
         "done.success / done.attention": "收尾：任务完成 / 停下等你确认。",
         "failure.retry / tool / generic": "本轮失败：重试后仍失败 / 工具执行失败 / 通用失败。",
-        "bridge.*": "联动桥接的安装/卸载提示（bridge.unknown=bridge 写出桌宠不认识的未知事件，提示更新/重装）。",
+        "bridge.*": "联动桥接的安装/卸载提示（bridge.unknown=bridge 写出肥鱼不认识的未知事件，提示更新/重装）。",
         "balance.loading / balance.result": "余额查询：查询中提示 / 查询结果。",
     },
     "用 AI / 角色卡自动改写（推荐）": (

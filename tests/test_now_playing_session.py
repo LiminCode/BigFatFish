@@ -3,7 +3,7 @@
 
 背景（2026-09-21 本机实测）：同时存在多个媒体会话时，旧实现"没有正在播放的
 会话就退回 sessions[0]"。实测本机 sessions[0] 是 Chrome（浏览器标签页），而
-用户真正在听的是 cloudmusic.exe，于是桌宠会显示浏览器里那首歌。
+用户真正在听的是 cloudmusic.exe，于是肥鱼会显示浏览器里那首歌。
 
 另一条实测事实（本文件用来钉死它）：网易云音乐（cloudmusic.exe）**完全不上报
 播放进度**——position / end_time 恒为 0.0、last_updated_time 是 1601-01-01，
@@ -170,7 +170,7 @@ def test_pick_keeps_tracked_session_while_it_is_playing():
 def test_pick_keeps_tracked_paused_session_instead_of_first():
     """实测缺陷回归：全部暂停时必须留在当前跟踪对象上。
 
-    旧实现退回 sessions[0]，实测 sessions[0] 是 Chrome，于是桌宠会跳到浏览器
+    旧实现退回 sessions[0]，实测 sessions[0] 是 Chrome，于是肥鱼会跳到浏览器
     里那首歌上（用户的网易云只是暂停了一下）。
     """
     chrome_paused = _Session("Chrome", status=PAUSED, title="浏览器里的歌")

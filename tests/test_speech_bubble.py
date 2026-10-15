@@ -575,7 +575,7 @@ def test_bubble_label_size_measures_painted_lines():
 def test_bubble_rect_for_anchor_wide_bubble_stays_on_screen():
     """更宽的气泡（列宽上限 360 → 气泡约 386px）定位仍正确。
 
-    正常屏幕：优先选到「避开桌宠」的位置；窄屏放不下时退化为贴边钳位，
+    正常屏幕：优先选到「避开肥鱼」的位置；窄屏放不下时退化为贴边钳位，
     但结果仍必须完整落在可用区内（不允许气泡越出屏幕/主窗被裁）。
     """
     available = QRect(0, 0, 1920, 1080)

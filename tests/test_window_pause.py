@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """窗口隐藏/显示时暂停与恢复动画解码的回归测试。
 
-背景：桌宠隐藏（托盘隐藏 / 全屏自动隐藏）后仍会继续 24fps 解码与重建
+背景：肥鱼隐藏（托盘隐藏 / 全屏自动隐藏）后仍会继续 24fps 解码与重建
 mask，多开时属于纯白烧。此测试锁定 hideEvent 暂停、showEvent 恢复的行为。
 """
 from __future__ import annotations
@@ -171,7 +171,7 @@ def test_auto_hide_keeps_fullscreen_watcher_alive(app, tmp_path, monkeypatch):
     assert win._hidden_paused is True
     assert win._fs_thread is not None and win._fs_thread.is_alive()  # 关键：watcher 不能被暂停
 
-    # 模拟退出全屏：_on_fullscreen_changed(False) 应把桌宠 show 回来并恢复活动
+    # 模拟退出全屏：_on_fullscreen_changed(False) 应把肥鱼 show 回来并恢复活动
     win._on_fullscreen_changed(False)
     app.processEvents()
     assert win._auto_hidden is False
@@ -184,7 +184,7 @@ def test_auto_hide_keeps_fullscreen_watcher_alive(app, tmp_path, monkeypatch):
 
 
 def test_disable_auto_hide_restores_pet(app, tmp_path):
-    """自动隐藏状态下关闭开关：桌宠应立即恢复显示（玩游戏也想看到桌宠的场景）。"""
+    """自动隐藏状态下关闭开关：肥鱼应立即恢复显示（玩游戏也想看到肥鱼的场景）。"""
     lib = FakeLibrary()
     win = PetWindow(lib, Config(base=tmp_path))
     win.auto_hide_fullscreen = True
@@ -244,7 +244,7 @@ def test_fullscreen_geometry_hit_requires_borderless(app, tmp_path):
     """全屏判定：覆盖整屏几何且无标题栏（WS_CAPTION）= 真全屏。
 
     回归一：Windows「自动隐藏任务栏」下最大化窗口铺满整屏，旧实现只看几何把它
-    误判成真全屏而隐藏桌宠 → 带标题栏的窗口不命中。
+    误判成真全屏而隐藏肥鱼 → 带标题栏的窗口不命中。
     回归二：已最大化后按 F11（IsZoomed 仍为真、但应用清掉标题栏）应命中——
     几何 + IsZoomed 都无法区分该场景与普通最大化窗口，标题栏才是可靠信号。
     """
@@ -253,7 +253,7 @@ def test_fullscreen_geometry_hit_requires_borderless(app, tmp_path):
     geom = QRect(0, 0, 1920, 1080)  # 含任务栏区域的整屏几何
 
     # 真全屏（游戏/视频/浏览器 F11、最大化后按 F11、无边框全屏游戏）：
-    # 无标题栏 + 覆盖整屏 → 命中，应隐藏桌宠
+    # 无标题栏 + 覆盖整屏 → 命中，应隐藏肥鱼
     assert win._fullscreen_geometry_hit(0, 0, 1920, 1080, geom, has_caption=False) is True
 
     # 自动隐藏任务栏 + 普通最大化窗口：铺满整屏但带标题栏 → 不命中（修复目标）

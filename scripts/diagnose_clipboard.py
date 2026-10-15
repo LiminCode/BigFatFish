@@ -15,16 +15,16 @@
     seq              剪贴板序号（复制成功一次会 +1；长时间不变说明复制根本没发生）
     fg / fg_proc     前台窗口及其进程 ← 判断按键被谁收走
     focus / focus_proc  该前台线程的键盘焦点窗口及其进程
-    pets             正在运行的桌宠进程列表（判断是否多开/僵尸实例）
+    pets             正在运行的肥鱼进程列表（判断是否多开/僵尸实例）
 
 判读规则（拿到 CSV 后）：
-1. openable=False 且 owner_proc 是桌宠 → 桌宠进程占着剪贴板（需按进程名定位泄漏点）；
-2. openable=False 且 owner_proc 是别的程序 → 与桌宠无关，是那个程序的问题，
-   桌宠只是"重启后顺手好了"；
-3. openable 全程 True，但 fg_proc/focus_proc 变成桌宠 → 按键被桌宠收走：
-   用户以为在编辑器里按 Ctrl+C，其实前台/焦点在桌宠上；
+1. openable=False 且 owner_proc 是肥鱼 → 肥鱼进程占着剪贴板（需按进程名定位泄漏点）；
+2. openable=False 且 owner_proc 是别的程序 → 与肥鱼无关，是那个程序的问题，
+   肥鱼只是"重启后顺手好了"；
+3. openable 全程 True，但 fg_proc/focus_proc 变成肥鱼 → 按键被肥鱼收走：
+   用户以为在编辑器里按 Ctrl+C，其实前台/焦点在肥鱼上；
 4. 全都正常 → 复制粘贴失效不是剪贴板被占，而是目标应用自身状态，
-   与桌宠无关。
+   与肥鱼无关。
 
 把 CSV 附到 issue #98 即可定案。
 """
@@ -140,7 +140,7 @@ def _clipboard_state() -> tuple[bool, int, int]:
 
 
 def _pet_pids() -> str:
-    """当前进程名疑似桌宠的 PID 列表（用 tasklist 口径，避免引入依赖）。"""
+    """当前进程名疑似肥鱼的 PID 列表（用 tasklist 口径，避免引入依赖）。"""
     import subprocess
 
     try:

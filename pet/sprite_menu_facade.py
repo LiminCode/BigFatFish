@@ -283,7 +283,7 @@ class SpriteMenuFacade:
 
     @property
     def on_open_chat(self):
-        """「AI 对话」：legacy 由 app 注入 ``PetInstance.open_chat``（纯桌宠版
+        """「AI 对话」：legacy 由 app 注入 ``PetInstance.open_chat``（纯肥鱼版
         注入 None → 条目整条不显示）；这里同一门（``enable_chat``）。"""
         if not self._chat_enabled():
             return None
@@ -301,13 +301,13 @@ class SpriteMenuFacade:
         """legacy 布局的旧设置槽：app.py 自 ae6838a 起恒注入 ``None``。
 
         逐点对齐（否则 overlay 会凭空多出/少掉一个设置入口）；legacy 模板真正
-        可用的设置入口由 ``build_sprite_full_menu`` 追加的「桌宠设置」承担。
+        可用的设置入口由 ``build_sprite_full_menu`` 追加的「肥鱼设置」承担。
         """
         return None
 
     @property
     def on_open_modern_settings(self):
-        """「桌宠设置」：``OverlayShell.open_settings_for``（D13 逐 sprite 身份）。
+        """「肥鱼设置」：``OverlayShell.open_settings_for``（D13 逐 sprite 身份）。
 
         必须闭包绑定本次菜单的作用对象：``open_settings_for`` 的默认参数是"主
         sprite"，直接把它交出去会让右击子肥鱼的设置入口静默打开主宠配置。
@@ -422,7 +422,7 @@ class SpriteMenuFacade:
         sprite.set_pos(shell._default_corner_pos(shell._bounds, sprite.rect()))
 
     def hide(self) -> None:
-        """「隐藏桌宠」：只隐藏被点的那一只（旧版一窗一宠 = 隐藏本窗）。
+        """「隐藏肥鱼」：只隐藏被点的那一只（旧版一窗一宠 = 隐藏本窗）。
 
         子宠走逐只显隐（``set_sprite_visible``，托盘逐只菜单「显示这只」可恢复，
         且其它宠不受影响）。主宠保持整窗语义（``set_pet_visible``）：主宠即宿主
@@ -860,7 +860,7 @@ def build_sprite_full_menu(shell, sprite=None) -> QMenu:
     """overlay 全量右键菜单：按 ``context_menu_template`` 走 legacy/modern 建造器。
 
     ``sprite`` = 被点中的那一条（4.2c D13 由 ``ShellOverlayWindow.contextMenuEvent``
-    透传）；动作面里作用于"某一只"的入口（桌宠设置 / 退出这只）按它路由。
+    透传）；动作面里作用于"某一只"的入口（肥鱼设置 / 退出这只）按它路由。
 
     条件显示与 legacy 窗侧逐点一致（聊天门 / win32+聊天门），
     ``tests/test_sprite_menu_parity.py`` 用真实 PetWindow 的同条件菜单树锁死。
@@ -876,15 +876,15 @@ def build_sprite_full_menu(shell, sprite=None) -> QMenu:
         install_stay_open_interaction(menu)
         # 旧布局缺的两个入口由这里补（legacy.py 自身没有；删掉就是实机可见的
         # 功能回退——用户当前菜单里这两项本来就在）：
-        # 1) 桌宠设置：app 把 on_open_legacy_settings 恒注入 None，旧布局没有
+        # 1) 肥鱼设置：app 把 on_open_legacy_settings 恒注入 None，旧布局没有
         #    设置入口，不补则切到旧版后无处可开设置；
-        # 2) 隐藏桌宠：overlay 的隐藏语义（set_pet_visible）没有别的菜单入口。
+        # 2) 隐藏肥鱼：overlay 的隐藏语义（set_pet_visible）没有别的菜单入口。
         settings_action = _add_action(
-            menu, "桌宠设置", None, facade.on_open_modern_settings,
+            menu, "肥鱼设置", None, facade.on_open_modern_settings,
             close_on_trigger=True)
         _move_before_quit(menu, settings_action)
         hide_action = _add_action(
-            menu, "隐藏桌宠", None, facade.hide, close_on_trigger=True)
+            menu, "隐藏肥鱼", None, facade.hide, close_on_trigger=True)
         if not _move_after_label(menu, "退出子肥鱼", hide_action):
             _move_before_quit(menu, hide_action)
     else:

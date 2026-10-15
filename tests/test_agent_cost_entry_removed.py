@@ -32,7 +32,7 @@ def test_neither_menu_offers_the_per_turn_cost_toggle(tmp_path):
 
             menu = build_sprite_full_menu(shell)
             assert "显示本轮消费" not in _all_labels(menu), template
-            assert "黄金回旋" in _all_labels(menu), "同组的其他项还在（新版在「桌宠控制」里，旧版平铺）"
+            assert "黄金回旋" in _all_labels(menu), "同组的其他项还在（新版在「肥鱼控制」里，旧版平铺）"
         finally:
             shell._delete_runtime_marker()
 
@@ -59,7 +59,7 @@ def test_the_setting_itself_still_loads_and_a_saved_layout_drops_the_entry(tmp_p
     assert config.get("agent_cost_enabled") is False
     config.set("agent_cost_enabled", True)
     config.set("context_menu_layout", {"schema_version": 1, "nodes": [
-        {"type": "submenu", "id": "pet_controls", "label": "桌宠控制", "visible": True, "children": [
+        {"type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True, "children": [
             {"type": "action", "id": "agent_cost", "visible": True},
             {"type": "action", "id": "golden_spin", "visible": True}]},
         {"type": "action", "id": "modern_settings", "visible": True},

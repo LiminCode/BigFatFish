@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """灵动岛碰撞（本进程直连版，同步硬墙 + 事件驱动撞岛反应）。
 
-检测机制：屏幕边界式同步位置硬墙（无 30Hz 定时器）——桌宠身体框任何移动
+检测机制：屏幕边界式同步位置硬墙（无 30Hz 定时器）——肥鱼身体框任何移动
 只要会进岛区，就在统一位置出口 move_window_towwards 里被钳出，没有采样间隙、
 没有 velocity 反馈循环，从源头杜绝穿透抽搐（issue #146 实机教训：30Hz 判定
 帧间钻进→被弹→速度不足离场→再判定的鬼畜循环，velocity 反弹修不干净）。
@@ -12,8 +12,8 @@
 - 抛掷中撞墙：墙处反射速度（口径同屏幕边缘 throw_step 的 RESTITUTION）并钉住
   物理位置，避免物理空间穿过岛、视觉被钉在墙上；真撞附加命中反馈；
 - 轻贴（接近速度不足）：只推出，不响不挤；
-- 岛被拖到桌宠身上（拖岛拍鱼）：on_geometry_changed → submit 事件驱动把被
-  压住的桌宠经统一出口推出，岛速（submit 内事件采样估计）参与相对速度结算。
+- 岛被拖到肥鱼身上（拖岛拍鱼）：on_geometry_changed → submit 事件驱动把被
+  压住的肥鱼经统一出口推出，岛速（submit 内事件采样估计）参与相对速度结算。
 
 低占用：无定时器；只在落窗/岛几何变化时做几何查询与接触跟踪。
 """
@@ -31,8 +31,8 @@ from . import physics as physics_mod
 log = logging.getLogger(__name__)
 
 _CAPSULE_HEIGHT = 44            # 胶囊视觉高度（与 dynamic_island._CAPSULE_HEIGHT 同步）
-_HIT_COOLDOWN_S = 0.15          # 每只桌宠的命中冷却（防一帧多弹/音效连发）
-_SQUASH_INTERVAL_S = 0.25       # 每只桌宠的挤压动画错峰
+_HIT_COOLDOWN_S = 0.15          # 每只肥鱼的命中冷却（防一帧多弹/音效连发）
+_SQUASH_INTERVAL_S = 0.25       # 每只肥鱼的挤压动画错峰
 _CONTACT_VELOCITY_MAX_DT = 0.5  # 接触跟踪的有效间隔（超此按首次接触，无速度）
 _MAX_ISLAND_SPEED = 1500.0      # 岛速估计上限（px/s）：异常大的估计不进拍鱼结算
 
@@ -69,14 +69,14 @@ class IslandCollisionBody(QObject):
 
     墙：统一位置出口 move_window_towwards 里按需钳制位置（host 上挂
     _island_clamp_body hook）；岛自己移动时（on_geometry_changed → submit）
-    事件驱动推出被压住的桌宠。真撞复用桌宠侧真实撞击业务链（_apply_hit）。
+    事件驱动推出被压住的肥鱼。真撞复用肥鱼侧真实撞击业务链（_apply_hit）。
     """
 
     def __init__(self, island, config, pets_provider=None, parent=None):
         super().__init__(parent if isinstance(parent, QObject) else None)
         self._island = island  # 本进程持有岛 widget（退役层删除后不再有远端模式）
         self._config = config
-        # 返回本进程全部桌宠窗口的回调（AppShell 注入）
+        # 返回本进程全部肥鱼窗口的回调（AppShell 注入）
         self._pets_provider = pets_provider or (lambda: ())
         self._running = False
         # 岛速估计（拖岛拍鱼用相对速度；submit 事件采样刷新，无定时器）
@@ -85,7 +85,7 @@ class IslandCollisionBody(QObject):
         self._last_size: tuple[int, int] | None = None
         self._vx = 0.0
         self._vy = 0.0
-        # 接触跟踪（墙触发时测得桌宠接近速度）+ 命中冷却 + 挤压错峰
+        # 接触跟踪（墙触发时测得肥鱼接近速度）+ 命中冷却 + 挤压错峰
         self._contact: dict[int, tuple[float, float, float]] = {}
         self._hit_cooldown: dict[int, float] = {}
         self._pet_squash: dict[int, float] = {}
@@ -97,7 +97,7 @@ class IslandCollisionBody(QObject):
 
     # ------------------------------------------------------------ 生命周期
     def _register_clamp_hooks(self) -> None:
-        """给全部桌宠窗口挂同步硬墙 hook（move_window_towwards 里按需调用）。
+        """给全部肥鱼窗口挂同步硬墙 hook（move_window_towwards 里按需调用）。
 
         同时把碰撞体自身挂到窗口上（_island_collision_body），供窗口侧后续
         查询岛碰撞体的归属（如「本进程有岛」判定）。
@@ -151,13 +151,13 @@ class IslandCollisionBody(QObject):
         log.info("灵动岛碰撞体已停止")
 
     def set_own_pet_visible(self, visible: bool) -> None:
-        """本进程桌宠可见性回调（AppShell 接线保留）：本地版无挂起语义，
+        """本进程肥鱼可见性回调（AppShell 接线保留）：本地版无挂起语义，
         仅留日志便于排查。"""
-        log.debug("灵动岛碰撞体：本进程桌宠可见性=%s", bool(visible))
+        log.debug("灵动岛碰撞体：本进程肥鱼可见性=%s", bool(visible))
 
     def submit(self) -> None:
-        """岛几何变化（拖拽/展开/停靠/归位）：刷新岛速，并把被岛压住的桌宠
-        经统一出口推出（岛动桌宠没动的穿越；桌宠动时由同步墙挡）。
+        """岛几何变化（拖拽/展开/停靠/归位）：刷新岛速，并把被岛压住的肥鱼
+        经统一出口推出（岛动肥鱼没动的穿越；肥鱼动时由同步墙挡）。
 
         事件驱动、无定时器；几何动画/细条态不推挤（与 _clamp_body 同口径）。
         拖岛拍鱼的相对速度在此参与结算——推出会触发 _clamp_body 的撞岛判定。
@@ -168,7 +168,7 @@ class IslandCollisionBody(QObject):
         self._push_out_covered_pets()
 
     def _push_out_covered_pets(self) -> None:
-        """把当前被岛（本地或远端几何）压住的桌宠经统一出口推出。"""
+        """把当前被岛（本地或远端几何）压住的肥鱼经统一出口推出。"""
         if not self._wall_active():
             return
         try:
@@ -198,7 +198,7 @@ class IslandCollisionBody(QObject):
             except RuntimeError:
                 continue  # 窗口已销毁
             except Exception:  # noqa: BLE001 - 单只异常不拖垮推挤循环
-                log.warning("灵动岛推挤跳过异常桌宠", exc_info=True)
+                log.warning("灵动岛推挤跳过异常肥鱼", exc_info=True)
 
     # ------------------------------------------------------------ 岛速估计
     def _update_motion(self) -> None:
@@ -234,7 +234,7 @@ class IslandCollisionBody(QObject):
                 return  # 高频回调样本太密：保留上次速度，不刷新采样点
             dx, dy = cx - self._last_center[0], cy - self._last_center[1]
             jump = math.hypot(dx, dy)
-            # 瞬移跳变守卫（与桌宠侧 jump_guard 对称）：配置变更/换屏/夹回
+            # 瞬移跳变守卫（与肥鱼侧 jump_guard 对称）：配置变更/换屏/夹回
             # 屏幕造成的跳变不参与估计——位移超过"极速拖拽×间隔 + 窗口宽度"
             # 即视为瞬移，速度清零并只重置采样点（上限钳制挡不住这种拍飞）
             if jump > 3000.0 * dt + rect.width():
@@ -373,7 +373,7 @@ class IslandCollisionBody(QObject):
                     pet_vx = (xi - pxi) / dt
                     pet_vy = (yi - pyi) / dt
         self._contact[key] = (float(xi), float(yi), now)
-        # 相对岛速的接近分量（法线指向桌宠一侧，接近为负）
+        # 相对岛速的接近分量（法线指向肥鱼一侧，接近为负）
         vn = (pet_vx - self._vx) * nx + (pet_vy - self._vy) * ny
         hit = vn < -collision.IMPULSE_MIN_APPROACH_SPEED
         cooldown_ok = now - self._hit_cooldown.get(key, 0.0) >= _HIT_COOLDOWN_S
@@ -433,7 +433,7 @@ class IslandCollisionBody(QObject):
             bump(min(3.0, strength / 400.0), dir_x, dir_y)
 
     def _apply_hit(self, win, dvx: float, dvy: float, now: float, key: int) -> None:
-        """复用桌宠侧真实撞击反应（原有业务）：加冲量 → 限速 → 音效 → 挤压 →
+        """复用肥鱼侧真实撞击反应（原有业务）：加冲量 → 限速 → 音效 → 挤压 →
         进抛掷物理（口径沿用已退役碰撞客户端的手感，不走 IPC）。
         """
         cancel_move = getattr(win, "_cancel_move", None)

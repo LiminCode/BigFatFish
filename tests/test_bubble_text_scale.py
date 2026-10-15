@@ -2,7 +2,7 @@
 """气泡文字大小（bubble_text_scale）：配置钳位、气泡等比放大、不裁字、分页正常。
 
 回归背景：配图早有 ``self_talk_image_scale``，文字气泡的尺寸与字号却是硬编码的
-（列宽 248/360、font-size 13px），大屏上嫌字小只能改桌宠缩放。本项新增
+（列宽 248/360、font-size 13px），大屏上嫌字小只能改肥鱼缩放。本项新增
 ``bubble_text_scale``（50–300%，默认 100）：**列宽、换行预算、label 尺寸与
 字号用同一个系数**整体等比放大。
 
@@ -176,7 +176,7 @@ def test_scaled_label_never_narrower_than_the_widest_line():
     _qapp()
     from pet.speech_bubble_text import bubble_max_lines, paginate_bubble_text
 
-    text = "桌宠气泡文字放大以后，每一行的行尾都不能被气泡右边界切掉，这是硬约束。" * 2
+    text = "肥鱼气泡文字放大以后，每一行的行尾都不能被气泡右边界切掉，这是硬约束。" * 2
     for scale in (1.0, 1.5, 2.0, 3.0):
         bubble = _bubble(scale, text)
         try:

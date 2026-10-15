@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""对话连接器：让桌宠在对话里查外部服务，目前只有 GitHub（只读）。
+"""对话连接器：让肥鱼在对话里查外部服务，目前只有 GitHub（只读）。
 
 走的是 Messages API 的 MCP connector：请求里带上 MCP 服务器地址和 Token，由
-Anthropic 的服务器去连 GitHub 的远程 MCP 服务器、替模型调用工具，桌宠本地不跑
+Anthropic 的服务器去连 GitHub 的远程 MCP 服务器、替模型调用工具，肥鱼本地不跑
 MCP 客户端。因此有两条限制：
 
 - **只在直连 Claude API 时可用**。OpenAI 兼容通道没有这个功能；经第三方网关访问

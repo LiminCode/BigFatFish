@@ -10,7 +10,7 @@
 - **D12 指令消费**：主进程按 config 目录 watcher + QTimer 轮询消费「退出子肥鱼」
   指令（含 target slot 只退一只、未知 slot 空操作、消费即删、无 config 目录不装
   watcher、stop/退出收口）；
-- **D13 路由**：右键命中的 sprite 透传给菜单建造器；菜单「桌宠设置」按被点
+- **D13 路由**：右键命中的 sprite 透传给菜单建造器；菜单「肥鱼设置」按被点
   sprite 的 config 身份（主身份 / slot-N）传入独立设置进程；「退出这只」接
   exit_pet(被点 sprite)。
 
@@ -130,7 +130,7 @@ def test_tray_single_pet_has_no_per_pet_submenu(tmp_path):
         menu = _tray_menu(shell)
         labels = _labels(menu)
         for expected in ("显示 / 隐藏", "回到右下角", "生小肥鱼", "退出子肥鱼",
-                         "桌宠设置", "退出"):
+                         "肥鱼设置", "退出"):
             assert expected in labels, f"托盘缺项 {expected}；实际: {labels}"
         assert _submenus(menu) == {}, "单宠不该有逐只子菜单"
         assert "退出这只" not in labels
@@ -252,7 +252,7 @@ def test_tray_survives_menu_build_failure(tmp_path, monkeypatch):
 
     旧实现把「建托盘 + 建菜单」包在同一个 try 里，菜单阶段任何异常都会
     ``self.tray = None``，而 ``start()`` 判 None 永不 show → 用户看到的是
-    「托盘里完全没有桌宠条目」，只留一行 log（正是用户报的现象）。
+    「托盘里完全没有肥鱼条目」，只留一行 log（正是用户报的现象）。
     """
     from pet import overlay_shell as overlay_shell_mod
 
@@ -479,7 +479,7 @@ def test_menu_exit_this_absent_for_single_pet(tmp_path):
 
 
 def test_menu_settings_routes_child_identity(tmp_path):
-    """D13：被点子肥鱼的「桌宠设置」必须带该 sprite 的 slot 身份。"""
+    """D13：被点子肥鱼的「肥鱼设置」必须带该 sprite 的 slot 身份。"""
     shell, _ = _make_persistent_shell(tmp_path)
     opened: list = []
     try:
@@ -487,7 +487,7 @@ def test_menu_settings_routes_child_identity(tmp_path):
             open_settings_process=lambda inst: (opened.append(inst), True)[1])
         first, _second = _spawn_two(shell)
         menu = build_sprite_full_menu(shell, first)
-        _action(menu, "桌宠设置").trigger()
+        _action(menu, "肥鱼设置").trigger()
         assert [inst.config.instance_id for inst in opened] == [
             f"slot-{shell._spawned_slots[first]}"]
     finally:
@@ -502,7 +502,7 @@ def test_menu_settings_keeps_main_identity(tmp_path):
             open_settings_process=lambda inst: (opened.append(inst), True)[1])
         _spawn_two(shell)
         menu = build_sprite_full_menu(shell, shell.sprite)
-        _action(menu, "桌宠设置").trigger()
+        _action(menu, "肥鱼设置").trigger()
         assert [inst.config.instance_id for inst in opened] == [
             str(shell._config.instance_id or "")]
     finally:
@@ -516,7 +516,7 @@ def test_tray_settings_entry_uses_main_identity(tmp_path):
         shell._instance.shell = SimpleNamespace(
             open_settings_process=lambda inst: (opened.append(inst), True)[1])
         _spawn_two(shell)
-        _action(_tray_menu(shell), "桌宠设置").trigger()
+        _action(_tray_menu(shell), "肥鱼设置").trigger()
         assert [inst.config.instance_id for inst in opened] == [""]
     finally:
         _teardown(shell)

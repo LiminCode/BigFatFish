@@ -368,7 +368,7 @@ class IslandCollisionBridge:
             jump = math.hypot(dx, dy)
             if jump >= _MOTION_MIN_STEP:
                 # 「岛在动」：相邻两次采样之间真的位移了（死区内外的样本都算，
-                # 只看位移不看是否估出速度）→ 同步唤醒 tick 档位。桌宠静止时
+                # 只看位移不看是否估出速度）→ 同步唤醒 tick 档位。肥鱼静止时
                 # tick 已降到 T2/T3（不跑仿真），岛拖拽是几何回调驱动的用户
                 # 输入、不经过 overlay 的鼠标事件，没有这条通道甩岛过鱼会整个
                 # 手势期间不结算（见 _notify_kinetic）。
@@ -480,7 +480,7 @@ class IslandCollisionBridge:
     def _notify_kinetic(self) -> None:
         """岛在动 → 同步唤醒 tick 档位（M-1 的 ``TickDriver.note_kinetic``）。
 
-        桌宠静止时 tick 会降到 T2（250ms 心跳）甚至 T3（不跑仿真）；岛拖拽是
+        肥鱼静止时 tick 会降到 T2（250ms 心跳）甚至 T3（不跑仿真）；岛拖拽是
         几何回调驱动的用户输入，不经过 overlay 的鼠标事件（岛是独立顶层窗），
         没有这条通道，拖岛撞鱼可能整个手势期间一次碰撞结算都没发生。异常静默
         降级（岛本体功能不受影响），与音效/bump 挂点同纪律。
@@ -607,7 +607,7 @@ class IslandWindowBridge:
 
         鱼拖拽正在进行（``overlay._press_global`` 非空）时不抢档：两条拖拽源共用
         一个轮询档位，岛侧松手若直接 ``set_drag_active(False)`` 会把仍在拖拽的鱼
-        打回 10ms 档——档位归属交给鱼侧自己的按-放循环。异常静默降级（岛/桌宠
+        打回 10ms 档——档位归属交给鱼侧自己的按-放循环。异常静默降级（岛/肥鱼
         功能不受影响），与 bump/kinetic 挂点同纪律。
         """
         overlay = self._overlay

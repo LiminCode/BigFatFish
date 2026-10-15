@@ -93,7 +93,7 @@ def test_user_layout_filters_hidden_unavailable_and_empty_submenus():
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "桌宠控制",
+                    "label": "肥鱼控制",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "no_move", "visible": True},
@@ -131,7 +131,7 @@ def test_user_layout_filters_hidden_unavailable_and_empty_submenus():
         {
             "type": "submenu",
             "id": "pet_controls",
-            "label": "桌宠控制",
+            "label": "肥鱼控制",
             "visible": True,
             "children": (
                 {"type": "action", "id": "no_move", "visible": True},
@@ -405,7 +405,7 @@ def test_saved_layout_drops_removed_mouse_through_action(tmp_path):
         "nodes": [
             {"type": "action", "id": "modern_settings", "visible": True},
             {
-                "type": "submenu", "id": "pet_controls", "label": "桌宠控制", "visible": True,
+                "type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True,
                 "children": [
                     {"type": "action", "id": "no_move", "visible": True},
                     {"type": "action", "id": "mouse_through", "visible": True},
@@ -513,11 +513,11 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "播放速率",
         "大小",
         "VS Code 工作区",
-        "桌宠控制",
+        "肥鱼控制",
         "快捷启动",
         "工具与帮助",
         "Agent 联动",
-        "桌宠设置",
+        "肥鱼设置",
         "退出",
     ]
     if sys.platform == "win32":
@@ -532,24 +532,24 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "厉害了我的鲸", "|",
         "护驾", "AI 对话", "看看屏幕", "|",
         "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "|",
-        "桌宠控制", "快捷启动", "|",
+        "肥鱼控制", "快捷启动", "|",
         "工具与帮助", "Agent 联动", "|",
-        "桌宠设置", "退出",
+        "肥鱼设置", "退出",
     ]
     if sys.platform == "win32":
         expected_rendered.insert(-3, "主动识屏")
-    # tools 段顺序：… Agent 联动 [主动识屏] 待办提醒 | 桌宠设置 退出
+    # tools 段顺序：… Agent 联动 [主动识屏] 待办提醒 | 肥鱼设置 退出
     # （报时/节日四项默认 visible: false，不渲染）
     expected_rendered.insert(-3, "待办提醒")
     assert rendered == expected_rendered
-    pet_controls = next(action.menu() for action in menu.actions() if action.text() == "桌宠控制")
+    pet_controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     assert [action.text() for action in pet_controls.actions() if not action.isSeparator()] == [
         "拖动物理",
         "不移动",
         "窗口置顶",
         "开机自启",
         "回到右下角",
-        "隐藏桌宠",
+        "隐藏肥鱼",
         "生小肥鱼",
         "退出子肥鱼",
         "黄金回旋",
@@ -822,7 +822,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected
 
     def owner(setting_id):
@@ -842,8 +842,8 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     assert owner("api_url") == "AI 与对话"
     assert owner("voice_chime_enabled") == "语音"
     assert owner("file_interpret_enabled") == "文件识别"
-    assert owner("music_player_netease") == "桌宠"
-    assert owner("music_player_qqmusic") == "桌宠"
+    assert owner("music_player_netease") == "肥鱼"
+    assert owner("music_player_qqmusic") == "肥鱼"
     assert "待分类（开发期）" not in [
         label.text() for label in dialog.findChildren(settings_mod.QLabel)
     ]
@@ -948,7 +948,7 @@ def test_voice_domain_owns_only_tts_rows(tmp_path, monkeypatch):
     """「语音」域按 2026-09-17 定稿口径只收鱼开口说话（TTS）类设置：
     语音报时组 + 节日提醒组（节日提醒原在「自动化与联动」域，但带 speak/TTS 播报）。
 
-    音效类不属此域：点击音效回「互动 · 点击反馈」、碰撞音效回「桌宠」碰撞组
+    音效类不属此域：点击音效回「互动 · 点击反馈」、碰撞音效回「肥鱼」碰撞组
     （见下面两个用例），Agent 提示音效仍留在 Agent 联动折叠框。
     """
     from PySide6.QtWidgets import QApplication
@@ -1052,7 +1052,7 @@ def test_click_sound_rows_return_to_interaction_click_feedback(tmp_path, monkeyp
 
 
 def test_collision_sound_rows_return_to_pet_collision_groups(tmp_path, monkeypatch):
-    """碰撞音效 2 行回「桌宠」：开关紧随碰撞开关（多开碰撞组），音量随物理参数进
+    """碰撞音效 2 行回「肥鱼」：开关紧随碰撞开关（多开碰撞组），音量随物理参数进
     「碰撞参数（高级）」；「语音」域不再持有。"""
     from PySide6.QtWidgets import QApplication
 
@@ -1065,7 +1065,7 @@ def test_collision_sound_rows_return_to_pet_collision_groups(tmp_path, monkeypat
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     try:
         labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
-        pet_page = dialog.pages.widget(labels.index("桌宠"))
+        pet_page = dialog.pages.widget(labels.index("肥鱼"))
         voice_page = dialog.pages.widget(labels.index("语音"))
 
         primary = _section_of(dialog, settings_mod, "collision_sound_enabled")
@@ -1139,7 +1139,7 @@ def test_agent_sound_rows_stay_in_agent_link_fold(tmp_path, monkeypatch):
 
 
 def test_sound_and_festival_search_jump_to_owning_domains(tmp_path, monkeypatch):
-    """搜索按「语音」定稿口径跳域：点击音效 → 互动、碰撞音效 → 桌宠、
+    """搜索按「语音」定稿口径跳域：点击音效 → 互动、碰撞音效 → 肥鱼、
     节日提醒 / 语音报时 → 语音、Agent 提示音 → 自动化与联动。"""
     from PySide6.QtWidgets import QApplication
 
@@ -1158,8 +1158,8 @@ def test_sound_and_festival_search_jump_to_owning_domains(tmp_path, monkeypatch)
             ("音效音源", "互动", True),
             ("试听音效", "互动", True),
             ("click_sound_volume", "互动", True),
-            ("碰撞音效", "桌宠", True),
-            ("碰撞音量", "桌宠", False),
+            ("碰撞音效", "肥鱼", True),
+            ("碰撞音量", "肥鱼", False),
             ("报时频率", "语音", True),
             ("节日提醒", "语音", True),
             ("立即试听", "语音", True),
@@ -1194,7 +1194,7 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    expected_sidebar = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
@@ -1557,7 +1557,7 @@ def test_settings_domains_use_semantic_sidebar_icons():
 
     assert SETTINGS_DOMAIN_NAV == (
         ("常规", "settings"),
-        ("桌宠", "pet"),
+        ("肥鱼", "pet"),
         ("互动", "interaction"),
         ("菜单", "application"),
         ("桌面组件", "island"),
@@ -1647,7 +1647,7 @@ def test_menu_preview_uses_resolver_and_omits_empty_submenu(tmp_path, monkeypatc
         editor.preview.topLevelItem(i).text(0)
         for i in range(editor.preview.topLevelItemCount())
     ]
-    assert "桌宠控制" not in preview_labels
+    assert "肥鱼控制" not in preview_labels
     dialog.reject()
     app.processEvents()
 
@@ -1679,7 +1679,7 @@ def test_menu_preview_refreshes_after_tree_shape_changes():
         editor.preview.topLevelItem(index)
         for index in range(editor.preview.topLevelItemCount())
     ]
-    preview_controls = next(item for item in preview_roots if item.text(0) == "桌宠控制")
+    preview_controls = next(item for item in preview_roots if item.text(0) == "肥鱼控制")
     assert action_label in [item.text(0) for item in preview_roots]
     assert action_label not in [
         preview_controls.child(index).text(0)
@@ -1704,7 +1704,7 @@ def test_menu_preview_and_runtime_qmenu_share_the_same_layout_structure():
     for node in layout["nodes"]:
         node["visible"] = node["id"] in visible_root_ids
         if node["id"] == "pet_controls":
-            node["label"] = "常用桌宠操作"
+            node["label"] = "常用肥鱼操作"
             for child in node["children"]:
                 child["visible"] = child["id"] == "drag_physics"
 
@@ -2073,7 +2073,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "桌宠控制",
+                    "label": "肥鱼控制",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "drag_physics", "visible": True},
@@ -2094,7 +2094,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "我的桌宠操作",
+                    "label": "我的肥鱼操作",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "no_move", "visible": True},
@@ -2124,7 +2124,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
     assert result.source == "normalized"
     assert result.diagnostics == ("default-action-added:future_action",)
     controls = result.nodes[0]
-    assert controls["label"] == "我的桌宠操作"
+    assert controls["label"] == "我的肥鱼操作"
     assert [child["id"] for child in controls["children"]] == [
         "no_move",
         "future_action",

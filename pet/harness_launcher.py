@@ -6,7 +6,7 @@
 InstallLocation / DisplayIcon）时走桌面端，否则走 web；显式 web/desktop 直通。
 桌面端探测与自动拉起**目前仅 Windows**：非 Windows 上 auto 仍解析成 web，
 显式 desktop 回报 ``unsupported``（不 Popen 目录、也不静默改开网页）。桌面端是
-用户的主力 GUI 应用：由桌宠拉起只登记不杀（退出收口只覆盖 web 服务进程）。
+用户的主力 GUI 应用：由肥鱼拉起只登记不杀（退出收口只覆盖 web 服务进程）。
 
 
 启动命令解析按可靠性级联（适配不同安装方式/不同 PATH 的电脑）：
@@ -232,7 +232,7 @@ def _wrap_cmd(command: list[str]) -> list[str]:
 # 按基础命令缓存 `web --help` 是否包含 --no-open，避免每次点击菜单都探测
 _NO_OPEN_CACHE: dict[tuple[str, ...], bool] = {}
 
-# Windows 探测子进程必须隐藏窗口：桌宠是无控制台的 GUI 进程，console 类子进程
+# Windows 探测子进程必须隐藏窗口：肥鱼是无控制台的 GUI 进程，console 类子进程
 # （cmd/node）不隐藏就会弹出可见终端窗口（开机自启场景实测复现：空终端窗口
 # 挂十几秒后消失）。
 _HIDDEN_KWARGS: dict = (
@@ -241,7 +241,7 @@ _HIDDEN_KWARGS: dict = (
 
 
 def _probe_cache_path() -> Path:
-    """--no-open 探测结果的落盘缓存路径（桌宠数据目录下）。"""
+    """--no-open 探测结果的落盘缓存路径（肥鱼数据目录下）。"""
     try:
         from . import config as _config_mod
         app_dir = str(getattr(_config_mod, "APP_DIR_NAME", "big-fat-fish"))
@@ -435,14 +435,14 @@ _LAUNCHED_CHILDREN: list[subprocess.Popen] = []
 
 # 本进程**自拉起**的 harness pid 登记（退出收口 / 联动关闭收口的唯一依据）。
 # 为什么必须有：Windows 上子进程用 CREATE_NO_WINDOW 起，不带 DETACHED_PROCESS
-# 也不会随父进程退出而被杀（实机确认桌宠退出后 node.exe 仍活着）——「谁拉的谁
+# 也不会随父进程退出而被杀（实机确认肥鱼退出后 node.exe 仍活着）——「谁拉的谁
 # 收尾」只能靠这里记下的身份。存 pid 而不是 Popen 对象：收口时要用**当下**的
 # 命令行复核身份（防 pid 复用），句柄回收则由 _LAUNCHED_CHILDREN 负责。
 _SELF_LAUNCHED_PIDS: list[int] = []
 
 # 自拉起 pid → 目标类型（"web" / "desktop"）。desktop 是用户的主力 GUI 应用：
 # 登记只为「是谁拉的」可考，退出/联动关闭收口**绝不终止** desktop（只收 web
-# 这种纯后台服务进程）——用户自己开着的应用不该被桌宠关掉。
+# 这种纯后台服务进程）——用户自己开着的应用不该被肥鱼关掉。
 _SELF_LAUNCHED_KIND: dict[int, str] = {}
 
 # 登记表与子进程列表的互斥锁（G2 并发补丁）：联动关闭的收口在 daemon 线程、
@@ -503,7 +503,7 @@ def _spawn(command: list[str]) -> None:
     而非 _which 用的增强 PATH——不注入增强 PATH 会静默失败
     （env: node: No such file or directory，45 秒后无反应）。
 
-    起成功后把 pid 记进自拉起登记表：桌宠退出不会带走这个子进程，收口
+    起成功后把 pid 记进自拉起登记表：肥鱼退出不会带走这个子进程，收口
     （``stop_self_launched_harness``）只认这里记下的身份。
     """
     kwargs: dict = {
@@ -549,7 +549,7 @@ def launch_harness(port: int = DEFAULT_PORT, *, open_browser: bool = True,
                    cancel_check=None, target: str = "auto") -> tuple[str, str]:
     """启动 harness；open_browser=True 时确保浏览器被打开。
 
-    open_browser=False（随桌宠自启动场景）：只起服务不开浏览器——已有实例
+    open_browser=False（随肥鱼自启动场景）：只起服务不开浏览器——已有实例
     直接返回，新起实例不等就绪、不开页面。注意旧版 dsh 不支持 --no-open
     时会自己开浏览器，此参数无法阻止（启动前无法可靠探测）。
 
@@ -561,8 +561,8 @@ def launch_harness(port: int = DEFAULT_PORT, *, open_browser: bool = True,
 
     返回 (status, url)：
     - already   已有实例在运行（配置端口或官方默认 3080）；open_browser 时已打开浏览器
-    - started   已后台启动；open_browser 且命令带 --no-open 时由桌宠等待就绪后
-                打开浏览器，否则由 dsh 自己开浏览器（桌宠不重复打开）
+    - started   已后台启动；open_browser 且命令带 --no-open 时由肥鱼等待就绪后
+                打开浏览器，否则由 dsh 自己开浏览器（肥鱼不重复打开）
     - aborted   cancel_check 命中：慢探测后放弃拉起（未 spawn）
     - not-found 未找到 dsh 命令 / 未检测到桌面端安装（显式 target="desktop"）
     - unsupported 平台不支持桌面端（非 Windows；info="desktop"）
@@ -612,7 +612,7 @@ def launch_harness(port: int = DEFAULT_PORT, *, open_browser: bool = True,
         return "error", str(exc)
 
     if "--no-open" not in command:
-        # 未传 --no-open：dsh 会自己打开浏览器，桌宠不再重复打开
+        # 未传 --no-open：dsh 会自己打开浏览器，肥鱼不再重复打开
         return "started", url
 
     if not open_browser:
@@ -631,12 +631,12 @@ def launch_harness(port: int = DEFAULT_PORT, *, open_browser: bool = True,
 
 
 # ------------------------------------------------------------------ 生命周期
-# 「停止 / 重启」的取证与终止。为什么要按端口反查进程：桌宠既可能自己拉起
+# 「停止 / 重启」的取证与终止。为什么要按端口反查进程：肥鱼既可能自己拉起
 # dsh（子进程脱离父进程存活，见 _spawn 的说明），也可能复用你手动跑着的实例
 # ——两条路径都没有可用的句柄，唯一可靠的共同事实是「谁在监听那个端口」。
 #
 # dsh CLI 自身没有 stop/exit 子命令（lib/bin.js 只有 web / plugin / dump-config），
-# 所以只能由宿主（桌宠）完成收尾；--no-open 让服务静默常驻之后，这是用户
+# 所以只能由宿主（肥鱼）完成收尾；--no-open 让服务静默常驻之后，这是用户
 # 关闭它的唯一入口——以前关掉那个可见控制台窗口就等于关服务，现在窗口不存在了。
 
 # 命令行必须命中的特征：dsh 的包名/可执行名 + web 子命令。这是防「pid 复用
@@ -884,7 +884,7 @@ def _terminate_process_tree(pid: int, proc=None) -> bool:
     会让 dsh 以「cmd → node」两层形态存在，/T 才能收干净；CREATE_NO_WINDOW
     防止 GUI 进程里凭空弹一个空白控制台窗口（实机反馈）。
     POSIX 上 dsh 常为「npx → node」两层：只 kill 顶层 pid 会留下 node 子进程，
-    故按进程组终止（桌宠自拉实例 spawn 时 start_new_session=True，进程组即
+    故按进程组终止（肥鱼自拉实例 spawn 时 start_new_session=True，进程组即
     dsh 自己的组）。**仅当目标是自己进程组的组长（pgid == pid）才 killpg**：
     交互 shell 的前台作业与 start_new_session 的子进程都是组长；而脚本里
     `dsh web &` 这类后台启动的 dsh 属于脚本的组，killpg 会把整个脚本组连带
@@ -1050,7 +1050,7 @@ def stop_self_launched_harness() -> list[int]:
 
     与 ``stop_harness`` 的区别：后者按端口反查「谁在监听」，会终止包括用户
     自己在终端跑着的实例（所以它必须先弹确认框）；本函数是**无确认的收口**路径
-    （桌宠正常退出 / DSH 联动被关掉），因此只能动自己有把握的进程——三重条件
+    （肥鱼正常退出 / DSH 联动被关掉），因此只能动自己有把握的进程——三重条件
     缺一不可，任何一条不成立就放过：
 
     1. pid 在自拉起登记表里（``_spawn`` 记的）——用户手动起的实例永不在表中；
@@ -1164,7 +1164,7 @@ def launch_harness_gui(parent=None, action: str = "start", target: str = "auto")
 
     ``target``（仅 action="start" 有意义）："auto"（默认，检测到桌面端优先）/
     "web" / "desktop"；重启/停止只作用于 web 服务进程（desktop 是用户的主力
-    应用，桌宠绝不终止它）。
+    应用，肥鱼绝不终止它）。
 
     命令解析可能同步执行 `npm root -g`（最长 15 秒）、进程反查在 Windows 上
     跑 PowerShell `Get-CimInstance`（最长 10 秒），放在 GUI 线程会卡住界面；

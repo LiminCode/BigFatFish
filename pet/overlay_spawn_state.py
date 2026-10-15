@@ -217,7 +217,7 @@ def read_slot_geometry(config_dir: Path | str, slot_id: int) -> dict:
 def read_slot_config(config_dir: Path | str, slot_id: int) -> dict | None:
     """读 slot 身份配置的原始 dict（**通用只读读点**，B7b 的 per-slot 取源入口）。
 
-    旧实现（base-2786c15）：每只桌宠是独立进程、各读自己的
+    旧实现（base-2786c15）：每只肥鱼是独立进程、各读自己的
     ``config-slot-N.json``（``Config(instance_id="slot-N")`` + ``window.py``
     逐键读 ``self.cfg``）。单进程壳只有一份主配置，per-slot 取源必须从这份文件
     读回来——本函数就是那条"读点"，语义与 ``Config`` 的加载口径对齐：
@@ -280,7 +280,7 @@ def write_slot_setting(config_dir: Path | str, slot_id: int, key: str, value,
 def read_slot_collision_enabled(config_dir: Path | str, slot_id: int, *,
                                 default: bool = True,
                                 fallback: bool | None = None) -> bool:
-    """读 slot 身份配置里的 ``collision_enabled``（旧契约：每只桌宠各自的 config）。
+    """读 slot 身份配置里的 ``collision_enabled``（旧契约：每只肥鱼各自的 config）。
 
     旧实现（base-2786c15）：子宠进程按 ``--instance slot-N`` 起自己的 ``Config``
     （``config.py:683-689``：该 slot 文件不存在 → 先按主配置落种；存在 → 一个键
