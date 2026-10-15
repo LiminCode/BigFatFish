@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QMenu
 from .. import autostart as autostart_mod
 from .. import catalog
 from .. import claude_hooks
+from .. import claude_launchers
 from .icons import fitted_pet_pixmap_icon, pet_avatar_menu_icon, vector_menu_icon
 from .menu_styles.common import inherit_menu_style
 
@@ -844,6 +845,43 @@ def add_youtube_music(menu: QMenu, pet, *, icons: bool = True):
         menu, "YouTube Music", "play" if icons else None,
         lambda: QDesktopServices.openUrl(QUrl(YOUTUBE_MUSIC_URL)), close_on_trigger=True,
     )
+
+
+def _tell(pet, text: str) -> None:
+    """启动失败时冒一句（壳的门面与 PetWindow 都有 ``show_bubble``；没有就只写日志）。"""
+    show = getattr(pet, "show_bubble", None)
+    if callable(show):
+        show(text)
+
+
+def add_claude_desktop(menu: QMenu, pet, *, icons: bool = True):
+    """「Claude Desktop」：拉起本机的 Claude 桌面程序（商店版或老式安装器）；没装的话置灰。"""
+    target = claude_launchers.claude_desktop_target()
+
+    def launch() -> None:
+        if not claude_launchers.launch_claude_desktop(target):
+            _tell(pet, "Claude Desktop 没能拉起来…")
+
+    action = add_action(menu, "Claude Desktop", "sparkle" if icons else None, launch, close_on_trigger=True)
+    if not target:
+        action.setEnabled(False)
+        action.setToolTip("没找到 Claude Desktop")
+    return action
+
+
+def add_wsl_claude_code(menu: QMenu, pet, *, icons: bool = True):
+    """「Claude Code（WSL）」：在默认发行版的家目录开一个终端、起一个新的 claude 会话；没有 WSL 置灰。"""
+    argv = claude_launchers.wsl_claude_argv()
+
+    def launch() -> None:
+        if not claude_launchers.launch_wsl_claude(list(argv or [])):
+            _tell(pet, "WSL 里的 Claude Code 没能拉起来…")
+
+    action = add_action(menu, "Claude Code（WSL）", "ubuntu" if icons else None, launch, close_on_trigger=True)
+    if argv is None:
+        action.setEnabled(False)
+        action.setToolTip("没找到 WSL")
+    return action
 
 
 def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):

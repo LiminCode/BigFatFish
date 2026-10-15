@@ -258,6 +258,13 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
         for angle in (-pi / 2, pi / 6, 5 * pi / 6):
             painter.drawEllipse(QPointF(8.0 + cos(angle) * 5.0, 8.0 + sin(angle) * 5.0), 1.7, 1.7)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "sparkle":
+        # 四角星：Claude Desktop。描边语言与其余图标一致，不用品牌色
+        path.moveTo(8.0, 1.8); path.cubicTo(8.6, 6.2, 9.8, 7.4, 14.2, 8.0)
+        path.cubicTo(9.8, 8.6, 8.6, 9.8, 8.0, 14.2)
+        path.cubicTo(7.4, 9.8, 6.2, 8.6, 1.8, 8.0)
+        path.cubicTo(6.2, 7.4, 7.4, 6.2, 8.0, 1.8)
+        painter.drawPath(path)
     elif name in {"application", "launcher"}:
         painter.drawRoundedRect(QRectF(2.0, 2.0, 12.0, 12.0), 2.0, 2.0)
         for x, y in ((5.0, 5.0), (11.0, 5.0), (5.0, 11.0), (11.0, 11.0)):

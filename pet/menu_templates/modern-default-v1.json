@@ -14,6 +14,8 @@
     {"type": "action", "id": "size", "visible": true, "section": "playback"},
     {"type": "action", "id": "vscode_workspaces", "visible": true, "section": "playback"},
     {"type": "action", "id": "youtube_music", "visible": true, "section": "playback"},
+    {"type": "action", "id": "claude_desktop", "visible": true, "section": "playback"},
+    {"type": "action", "id": "wsl_claude_code", "visible": true, "section": "playback"},
     {"type": "separator", "id": "default.separator-playback", "visible": true},
     {
       "type": "submenu",

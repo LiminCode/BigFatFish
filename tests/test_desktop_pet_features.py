@@ -873,6 +873,8 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "大小",
         "VS Code 工作区",
         "YouTube Music",
+        "Claude Desktop",
+        "Claude Code（WSL）",
         "肥鱼控制",
         "快捷启动",
         "工具与帮助",
