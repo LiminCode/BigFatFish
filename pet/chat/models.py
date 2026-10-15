@@ -61,7 +61,7 @@ class ChatSettings:
     enabled: bool=True; active_provider: str='openai-main'; default_system_prompt: str='你是一只可爱的桌面宠物，请用自然、友善的中文和用户交流。'; history_message_limit: int=40; history_char_limit: int=24000; providers: dict[str,ProviderConfig]=field(default_factory=dict)
     # GitHub 连接器开关（默认关）；Token 在系统钥匙串里。见 pet/chat/connectors.py
     github_connector: bool=False
-    # 「关于我」：用户写给桌宠的说明（是谁、知识库在哪）。对话时追加在人设后面，
+    # 「关于我」：用户写给肥鱼的说明（是谁、知识库在哪）。对话时追加在人设后面，
     # 不随人设来源变化。见 PromptBuilder.build_messages
     about_user: str=''
     # 本地知识库：把这个 GitHub 仓库（owner/repo）每天同步到本地，对话时只读本地副本。

@@ -115,6 +115,46 @@ class SessionPetController(QObject):
         self.on_session_update(key[0], {**info, **self._extras.get(key, {}), "title": title})
         return True
 
+    def remodel(self, key: tuple[str, str], model: str) -> bool:
+        """把一个在场会话在用的模型改成 ``model``（头顶的桂冠随之更新）。
+
+        用在「读会话记录时发现模型换了」：hook 只在回合开始 / 结束时报模型，会话中途
+        换了模型（/model、/fast）的那一轮，hook 报的还是上一轮的；详情卡是当场读记录，
+        先由这里把桂冠对上。读不到模型（空串）不算换。返回是否真的改了。"""
+        model = str(model or "").strip()
+        if key not in self._sessions or not model:
+            return False
+        extras = self._extras.setdefault(key, {})
+        if extras.get("model") == model:
+            return False
+        extras["model"] = model
+        sprite = self._pets.get(key)
+        if sprite is not None and self._shell.is_session_pet(sprite):
+            self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
+                                                badge=self._badge_for(key))
+        return True
+
+    def _badge_for(self, key: tuple[str, str]) -> str:
+        """这个会话的小鱼该戴什么：跑着配置里点名的模型 → ``crown``；否则没有。"""
+        from . import session_crown
+
+        config = getattr(self._shell, "_config", None)          # 配置挂在壳上（控制器自己不持有）
+        agent_cfg = (config.get("agent_link") if config is not None else None) or {}
+        tokens = agent_cfg.get(session_crown.CONFIG_KEY)
+        model = self._extras.get(key, {}).get("model", "")
+        return "crown" if session_crown.is_crowned(model, session_crown.normalize_tokens(tokens)) else ""
+
+    def refresh_badges(self) -> None:
+        """「桂冠给哪个模型」改了：在场的小鱼当场换。"""
+        for key, sprite in self._pets.items():
+            if key in self._sessions and self._shell.is_session_pet(sprite):
+                self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
+                                                    badge=self._badge_for(key))
+
+    def seen_models(self) -> list[str]:
+        """在场会话用过的模型 id（菜单里列具体型号用）。"""
+        return [extras["model"] for extras in self._extras.values() if extras.get("model")]
+
     def sessions(self) -> list[dict]:
         """在用的会话：``{"agent", "sessionId", "phase", "title", "project"}``，按出场先后。"""
         return [{"agent": key[0], **info} for key, info in self._sessions.items()]
@@ -144,7 +184,7 @@ class SessionPetController(QObject):
 
         收敛器只知道「回合结束了」（``resting``）；「用户看过没有」是这一层的事。
         刚从干活 / 等批准转入休息的会话记为没看过，到 ``acknowledge`` 或它的下一次
-        提问为止。桌宠启动时就已经停着的会话不算——没人知道它是不是早被看过了。"""
+        提问为止。肥鱼启动时就已经停着的会话不算——没人知道它是不是早被看过了。"""
         if phase == "review":       # 把自己登记表里的内容回放进来（retitle / acknowledge）
             phase = "resting"
         if phase != "resting":
@@ -178,7 +218,7 @@ class SessionPetController(QObject):
             changed = previous_info != info
             self._sessions[key] = info
             extras = self._extras.setdefault(key, {})
-            for name in ("cwd", "transcript", "tool"):
+            for name in ("cwd", "transcript", "tool", "model"):
                 if update.get(name):
                     extras[name] = str(update[name])
             seen_now = previous_phase == "review" and phase == "resting"
@@ -206,7 +246,7 @@ class SessionPetController(QObject):
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
             sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}",
-            tone=phase)
+            tone=phase, badge=self._badge_for(key))
         previous = self._phases.get(key)
         if previous == phase:
             return  # 只是标签变了：不重启正在播的动画

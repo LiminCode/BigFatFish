@@ -20,7 +20,7 @@ from tests.test_overlay_dead_switches import _make_shell
 
 app = QApplication.instance() or QApplication([])
 
-LEGACY_HINT = "让 OBS 等工具能够枚举并捕获桌宠窗口。"
+LEGACY_HINT = "让 OBS 等工具能够枚举并捕获肥鱼窗口。"
 
 
 def _stream_capture_hint(tmp_path, monkeypatch, topology: str) -> str:
@@ -48,7 +48,7 @@ def test_stream_capture_copy_says_unsupported_under_overlay_topology(tmp_path, m
     hint = _stream_capture_hint(tmp_path, monkeypatch, "overlay")
     assert "暂不支持" in hint
     assert "重启" not in hint
-    assert "让 OBS 等工具能够枚举并捕获桌宠窗口" in hint
+    assert "让 OBS 等工具能够枚举并捕获肥鱼窗口" in hint
 
 
 def test_stream_capture_copy_unchanged_under_legacy_topology(tmp_path, monkeypatch):

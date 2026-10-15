@@ -4,8 +4,8 @@
 - 常驻顶层小窗，可显示图标、名称、信息槽、状态区（Claude Code 会话计数 + API 连接图标：
   绿 = 对话 API 可用，红 = 不可用）；
 - 支持拖拽、四边停靠半隐藏（收成细条、鼠标靠近滑出）、位置持久化；
-- 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换桌宠显隐；
-  桌宠隐藏时也一样（卡片上的「显示桌宠」是恢复入口）；
+- 单击胶囊按 ``click_action`` 展开卡片（余额/最近消息/快捷按钮）或切换肥鱼显隐；
+  肥鱼隐藏时也一样（卡片上的「显示肥鱼」是恢复入口）；
 - 信息槽二选一：当前时间，或今日用量（Claude Code 今天用掉的 token，见 claude_usage）；
 - 事件动效（``event_effects``）：AI 回复/余额刷新时位移弹跳 +
   表面轻压 + 短暂呼吸，静止时完全无定时器开销；
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import catalog
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,20 @@ _BRIEF_ICON_W = 13
 _BRIEF_ICON_H = 15
 _BRIEF_GAP = 10
 _BRIEF_UNREAD_COLOR = QColor("#3b8fe8")
-_BRIEF_TOOLTIPS = {"idle": "工作简报", "unread": "工作简报 · 有一份新的"}
+_BRIEF_TOOLTIPS = {"idle": "island.briefing.idle", "unread": "island.briefing.unread"}   # i18n 键
+# 「通知」按钮：简报图标右边的一个小铃铛（见 set_notification_count）；有新的时换成琥珀色并带角标
+_BELL_ICON_W = 14
+_BELL_ICON_H = 15
+_BELL_UNREAD_COLOR = QColor("#e8a33b")
+_PLACEHOLDER_KEYS = {"island.balance.placeholder": "余额 --", "island.tier.placeholder": "余额峰谷 --",
+                     "island.usage.placeholder": "今日 --"}
+
+
+def _all_placeholder_texts(key: str) -> set[str]:
+    """这个占位键在各语言里的写法（判断「现在显示的还是占位值」用）。"""
+    from . import i18n
+
+    return {i18n.table(code).get(key, "") for code in i18n.LANGUAGES} - {""}
 _API_STATUS_COLORS = {
     "ok": QColor(80, 220, 120),        # 对话 API 可用
     "bad": QColor(229, 72, 77),        # Key 无效 / 没权限 / 端点不通
@@ -244,6 +258,11 @@ class DynamicIsland(QWidget):
     history_action = Signal(str, object)
     history_toggled = Signal(bool)
     briefing_requested = Signal()  # 点了胶囊最右边的「工作简报」按钮
+    # 「通知」：点了胶囊上的铃铛（卡片已展开并把通知框打开）/ 点了一条 / 右键菜单选了一项 / 折叠或展开了
+    notifications_requested = Signal()
+    notification_activated = Signal(object)
+    notification_action = Signal(str, object)
+    notification_toggled = Signal(bool)
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -265,21 +284,22 @@ class DynamicIsland(QWidget):
         self._drag_offset: QPoint | None = None
         self._dragging = False
         self._press_global: QPoint | None = None
-        self._balance_tier_text = "余额峰谷 --"
-        self._balance_text = "余额 --"
+        self._balance_tier_text = t("island.tier.placeholder")
+        self._balance_text = t("island.balance.placeholder")
         self._pet_visible = True
         self._agent_active = False
         self._api_state = "unknown"
         self._api_detail = ""
         self._briefing_state = "hidden"   # hidden 不画 / idle / unread 有一份没看过的
+        self._notification_count: int | None = None   # None 不画铃铛；0 安静；>0 有这么多条新的
         # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
-        self._usage_text = "今日 --"
+        self._usage_text = t("island.usage.placeholder")
         self._usage_detail = ""
         self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
         self.on_geometry_changed = None
-        # 桌宠聚合可见性回调（碰撞体据此挂起/恢复）：AppShell 注入。
+        # 肥鱼聚合可见性回调（碰撞体据此挂起/恢复）：AppShell 注入。
         self.on_pet_visibility_changed = None
 
         # ---- 模式与动效状态（静止时全部为稳态，_anim_timer 不运行）----
@@ -423,13 +443,13 @@ class DynamicIsland(QWidget):
         """本进程成为前台（Active）才重申；失去前台不动作。
 
         外部应用抢到前台（开始菜单、全屏游戏、第三方置顶工具）时重申会让岛
-        反过来盖住系统级置顶面，与 legacy「全屏应用会暂时盖住桌宠」同口径。
+        反过来盖住系统级置顶面，与 legacy「全屏应用会暂时盖住肥鱼」同口径。
         """
         if state == Qt.ApplicationState.ApplicationActive:
             self.reassert_topmost()
 
     def set_icon_provider(self, fn) -> None:
-        """注入"鱼本体头像"取图回调（AppShell 提供：取首个桌宠窗的当前帧图标）。
+        """注入"鱼本体头像"取图回调（AppShell 提供：取首个肥鱼窗的当前帧图标）。
 
         回调返回 QPixmap 或 None（帧尚未就绪，岛侧下次重建内容层时重试）。
         注入即作废已缓存头像/内容层：换形象后要立刻取到新头像。
@@ -439,8 +459,8 @@ class DynamicIsland(QWidget):
         self.update()
 
     def set_balance_info(self, tier_text: str, balance_text: str) -> None:
-        self._balance_tier_text = str(tier_text or "余额峰谷 --")
-        self._balance_text = str(balance_text or "余额 --")
+        self._balance_tier_text = str(tier_text or t("island.tier.placeholder"))
+        self._balance_text = str(balance_text or t("island.balance.placeholder"))
         self._sync_card_labels()
         self._refresh()
 
@@ -475,12 +495,27 @@ class DynamicIsland(QWidget):
             self._refresh()
 
     def briefing_tooltip(self) -> str:
-        return _BRIEF_TOOLTIPS.get(self._briefing_state, "")
+        key = _BRIEF_TOOLTIPS.get(self._briefing_state)
+        return t(key) if key else ""
 
-    def _briefing_icon_left(self) -> float | None:
-        """按钮图标的左边界；不显示返回 None。排法与 ``_content_cache`` 逐项一致。"""
-        if self._briefing_state == "hidden":
-            return None
+    def set_notification_count(self, count: int | None) -> None:
+        """「通知」铃铛：``None`` 不显示（没接通知服务 / 关着）；``0`` 安静；``>0`` 有这么多条新的
+        （换成琥珀色并带角标）。画在简报图标右边（简报不显示时顶上它的位置）。"""
+        count = None if count is None else max(0, int(count))
+        if count != self._notification_count:
+            self._notification_count = count
+            self._sync_card_labels()
+            self._refresh()
+
+    def notification_tooltip(self) -> str:
+        if self._notification_count is None:
+            return ""
+        if self._notification_count > 0:
+            return t("island.notifications.unread", n=self._notification_count)
+        return t("island.notifications.idle")
+
+    def _toolbar_left(self) -> float:
+        """状态区右边那排小按钮（简报、通知）的起点。排法与 ``_content_cache`` 逐项一致。"""
         icon, name, info, status = self._visible_parts()
         fm = self.fontMetrics()
         x = _CAPSULE_INSET + 13.0
@@ -496,30 +531,61 @@ class DynamicIsland(QWidget):
             x += _LINK_ICON_W + _BRIEF_GAP
         return x
 
-    def briefing_button_rect(self) -> QRectF | None:
-        """按钮的可点区域（比图标大一圈，整条胶囊高度）；不显示返回 None。"""
-        left = self._briefing_icon_left()
+    def _briefing_icon_left(self) -> float | None:
+        """简报图标的左边界；不显示返回 None。"""
+        if self._briefing_state == "hidden":
+            return None
+        return self._toolbar_left()
+
+    def _bell_icon_left(self) -> float | None:
+        """通知铃铛的左边界；不显示返回 None。排在简报图标右边。"""
+        if self._notification_count is None:
+            return None
+        x = self._toolbar_left()
+        if self._briefing_state != "hidden":
+            x += _BRIEF_ICON_W + _BRIEF_GAP
+        return x
+
+    @staticmethod
+    def _button_rect(left: float | None, icon_w: int, width: float) -> QRectF | None:
+        """按钮的可点区域：图标左右各延半个间距（相邻两个按钮正好不重叠），整条胶囊高度。"""
         if left is None:
             return None
-        right = min(float(self.width()), left + _BRIEF_ICON_W + 8)
+        right = min(width, left + icon_w + _BRIEF_GAP / 2)
         return QRectF(left - _BRIEF_GAP / 2, 0, right - (left - _BRIEF_GAP / 2), _CAPSULE_HEIGHT)
 
-    def _briefing_hit(self, pos) -> bool:
+    def briefing_button_rect(self) -> QRectF | None:
+        """按钮的可点区域（比图标大一圈，整条胶囊高度）；不显示返回 None。"""
+        return self._button_rect(self._briefing_icon_left(), _BRIEF_ICON_W, float(self.width()))
+
+    def notification_button_rect(self) -> QRectF | None:
+        return self._button_rect(self._bell_icon_left(), _BELL_ICON_W, float(self.width()))
+
+    def _button_hit(self, rect: QRectF | None, pos) -> bool:
         if self._mode == "docked" and not self._hover_peek:
             return False  # 停靠成细条时胶囊没画出来
-        rect = self.briefing_button_rect()
         return rect is not None and rect.contains(QPointF(pos))
 
+    def _briefing_hit(self, pos) -> bool:
+        return self._button_hit(self.briefing_button_rect(), pos)
+
+    def _notification_hit(self, pos) -> bool:
+        return self._button_hit(self.notification_button_rect(), pos)
+
     def event(self, event) -> bool:  # noqa: N802
-        # 悬停在简报按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
-        if event.type() == QEvent.Type.ToolTip and self._briefing_hit(event.pos()):
-            QToolTip.showText(event.globalPos(), self.briefing_tooltip(), self)
-            return True
+        # 悬停在简报 / 通知按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
+        if event.type() == QEvent.Type.ToolTip:
+            if self._briefing_hit(event.pos()):
+                QToolTip.showText(event.globalPos(), self.briefing_tooltip(), self)
+                return True
+            if self._notification_hit(event.pos()):
+                QToolTip.showText(event.globalPos(), self.notification_tooltip(), self)
+                return True
         return super().event(event)
 
     def set_usage_info(self, text: str, detail: str = "") -> None:
         """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
-        text = str(text or "今日 --")
+        text = str(text or t("island.usage.placeholder"))
         changed = text != self._usage_text
         self._usage_text, self._usage_detail = text, str(detail or "")
         self._sync_tooltip()
@@ -567,7 +633,7 @@ class DynamicIsland(QWidget):
             self._ensure_anim_timer()
 
     def bump(self, strength: float = 1.0, dir_x: float = 0.0, dir_y: float = 0.0) -> None:
-        """被桌宠撞到（果冻墙→水波感）：撞击点荡开涟漪 + 轻微定向踢动。
+        """被肥鱼撞到（果冻墙→水波感）：撞击点荡开涟漪 + 轻微定向踢动。
 
         dir_x/dir_y 为岛被顶着的方向（单位向量，由碰撞侧从对方 dv 取反得到）；
         位移与形变只作用于绘制层，窗口几何不动（岛的位置永远由用户拖拽决定）。
@@ -592,6 +658,7 @@ class DynamicIsland(QWidget):
         old_edge = self.dock_edge
         old_icon = self._icon_spec()
         self._cfg = _cfg_dict(self.config)
+        self._relabel_placeholders()
         self._sync_tooltip()             # 信息槽换了内容：提示里要不要带用量跟着变
         self._sync_card_labels()
         # 头像必须跟着刷新作废：provider 取的是**当前形象**的帧，而角色热切换
@@ -608,6 +675,15 @@ class DynamicIsland(QWidget):
             self._apply_fixed_size()
             self._apply_position()
         self._refresh()
+
+    def _relabel_placeholders(self) -> None:
+        """语言换了：还是占位值的几处（余额 -- / 今日 --）按新语言重写；有真实数据的不动。"""
+        placeholders = {t_zh: key for key, t_zh in _PLACEHOLDER_KEYS.items()}
+        for attr, key in (("_balance_text", "island.balance.placeholder"),
+                          ("_balance_tier_text", "island.tier.placeholder"),
+                          ("_usage_text", "island.usage.placeholder")):
+            if placeholders.get(getattr(self, attr)) == key or getattr(self, attr) in _all_placeholder_texts(key):
+                setattr(self, attr, t(key))
 
     def _refresh(self) -> None:
         """内容变化后立即重算尺寸、夹回屏幕并重绘。"""
@@ -644,6 +720,15 @@ class DynamicIsland(QWidget):
         for label in (self._card_balance_label, self._card_tier_label,
                       self._card_message_label):
             layout.addWidget(label)
+        # 「通知」：没接通知服务时整个不出现（见 set_notifications）
+        from .island_notification_panel import NotificationPanel
+
+        self._notice_panel = NotificationPanel(self._card_box)
+        self._notice_panel.hide()
+        self._notice_panel.toggled.connect(self._on_notice_toggled)
+        self._notice_panel.activated.connect(self.notification_activated)
+        self._notice_panel.action_requested.connect(self.notification_action)
+        layout.addWidget(self._notice_panel)
         # 「最近的对话」：没有记录时整个不出现，卡片与原来一模一样
         from .island_history_panel import SessionHistoryPanel
 
@@ -656,9 +741,9 @@ class DynamicIsland(QWidget):
         layout.addSpacing(2)
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
-        self._card_toggle_btn = QPushButton("显隐桌宠", self._card_box)
-        self._card_chat_btn = QPushButton("聊天", self._card_box)
-        self._card_settings_btn = QPushButton("设置", self._card_box)
+        self._card_toggle_btn = QPushButton(t("island.card.toggle"), self._card_box)
+        self._card_chat_btn = QPushButton(t("island.card.chat"), self._card_box)
+        self._card_settings_btn = QPushButton(t("island.card.settings"), self._card_box)
         self._card_toggle_btn.clicked.connect(self._on_card_toggle)
         self._card_chat_btn.clicked.connect(self._on_card_chat)
         self._card_settings_btn.clicked.connect(self._on_card_settings)
@@ -695,6 +780,10 @@ class DynamicIsland(QWidget):
         # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
         self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
                                      width=self._card_width() - 2 * _CARD_MARGIN_X)
+        self._history_panel.retranslate()      # 语言可能刚换过；没换时只是重填一遍文字
+        self._notice_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
+                                    width=self._card_width() - 2 * _CARD_MARGIN_X)
+        self._notice_panel.retranslate()
         text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2
         for label, text, max_lines in (
                 (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
@@ -705,7 +794,9 @@ class DynamicIsland(QWidget):
             label.setText("\n".join(lines))
             if label is not self._card_message_label:   # 最近消息在聊天窗里看全文，不挂提示
                 label.setToolTip(text if lines and lines[-1].endswith("…") else "")
-        self._card_toggle_btn.setText("隐藏桌宠" if self._pet_visible else "显示桌宠")
+        self._card_toggle_btn.setText(t("island.card.hide_pet") if self._pet_visible else t("island.card.show_pet"))
+        self._card_chat_btn.setText(t("island.card.chat"))          # 语言可能刚换过
+        self._card_settings_btn.setText(t("island.card.settings"))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -769,12 +860,42 @@ class DynamicIsland(QWidget):
         self._refresh()                      # 卡片高度跟着列表长 / 缩
         self.history_toggled.emit(bool(is_open))
 
+    # ------------------------------------------------------------ 通知
+    def set_notifications(self, rows, *, is_open: bool | None = None, logos=None, visible: bool = True) -> None:
+        """卡片里的「通知」折叠框：``rows`` 见 ``island_notification_panel``；``visible=False``
+        （没接通知服务 / 关着）整个不出现。``logos`` 是应用 id → 图标 PNG 字节。"""
+        panel = self._notice_panel
+        if logos is not None:
+            panel.set_logos(logos)
+        panel.set_rows(rows)
+        if is_open is not None:
+            panel.set_open(is_open)
+        panel.setVisible(bool(visible))
+        self._sync_collapse_timer()
+        self._refresh()
+
+    def show_notification_status(self, text: str) -> None:
+        self._notice_panel.show_status(text)
+
+    def _on_notice_toggled(self, is_open: bool) -> None:
+        self._sync_collapse_timer()
+        self._refresh()
+        self.notification_toggled.emit(bool(is_open))
+
+    def _on_bell_clicked(self) -> None:
+        """点了胶囊上的铃铛：展开卡片、把通知框打开（已展开时只开通知框），再告诉 app。"""
+        if self._mode != "expanded":
+            self.expand_card()
+        if not self._notice_panel.is_open():
+            self._notice_panel.set_open(True)
+            self._on_notice_toggled(True)
+        self.notifications_requested.emit()
+
     def _sync_collapse_timer(self) -> None:
-        """卡片的自动收起计时：「最近的对话」开着时不计（用户正在列表里找）。"""
+        """卡片的自动收起计时：「最近的对话」或「通知」开着时不计（用户正在列表里找）。"""
         if self._mode != "expanded":
             return
-        panel = self._history_panel
-        if panel.is_open() and not panel.isHidden():
+        if any(panel.is_open() and not panel.isHidden() for panel in (self._history_panel, self._notice_panel)):
             self._card_collapse_timer.stop()
         else:
             self._card_collapse_timer.start()
@@ -1078,6 +1199,8 @@ class DynamicIsland(QWidget):
             width += _LINK_ICON_W
         if self._briefing_state != "hidden":
             width += _BRIEF_GAP + _BRIEF_ICON_W
+        if self._notification_count is not None:
+            width += _BRIEF_GAP + _BELL_ICON_W
         return max(120, width + _CAPSULE_INSET * 2)
 
     def _update_size(self) -> None:
@@ -1310,6 +1433,31 @@ class DynamicIsland(QWidget):
             painter.setBrush(_BRIEF_UNREAD_COLOR)
             painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
 
+    def _paint_bell_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+        """「通知」图标：一只铃铛（钟体 + 底边 + 小铃舌）；有新的时换琥珀色，右上角一个实心角标。"""
+        w, h, stroke = float(_BELL_ICON_W), float(_BELL_ICON_H), 1.5
+        unread = bool(self._notification_count)
+        pen = QPen(_BELL_UNREAD_COLOR if unread else color, stroke)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        body = QPainterPath()
+        top, shoulder, rim = y + 1.5, y + h * 0.42, y + h - 3.6
+        body.moveTo(x + 1.2, rim)
+        body.lineTo(x + 2.6, rim - 2.2)
+        body.lineTo(x + 2.6, shoulder)
+        body.arcTo(QRectF(x + 2.6, top, w - 5.2, (shoulder - top) * 2), 180, -180)
+        body.lineTo(x + w - 2.6, rim - 2.2)
+        body.lineTo(x + w - 1.2, rim)
+        body.closeSubpath()
+        painter.drawPath(body)
+        painter.drawLine(QPointF(x + w / 2 - 1.8, y + h - 1.2), QPointF(x + w / 2 + 1.8, y + h - 1.2))
+        if unread:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(_BELL_UNREAD_COLOR)
+            painter.drawEllipse(QPointF(x + w - 1.0, y + 1.0), 3.0, 3.0)
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1447,6 +1595,7 @@ class DynamicIsland(QWidget):
             info_color.name() if info else "",
             (self._api_state, tuple(self._session_counts), secondary_color.name()) if status else (),
             (self._briefing_state, secondary_color.name()),
+            self._notification_count,
             self.font().toString(), dpr, self.width(),
         )
         if self._content_pixmap is not None and self._content_cache_key == key:
@@ -1523,6 +1672,9 @@ class DynamicIsland(QWidget):
         if briefing_x is not None:
             self._paint_briefing_icon(painter, briefing_x, (_CAPSULE_HEIGHT - _BRIEF_ICON_H) / 2,
                                       secondary_color)
+        bell_x = self._bell_icon_left()
+        if bell_x is not None:
+            self._paint_bell_icon(painter, bell_x, (_CAPSULE_HEIGHT - _BELL_ICON_H) / 2, secondary_color)
         painter.end()
         self._content_pixmap = pm
         self._content_cache_key = key
@@ -1678,11 +1830,13 @@ class DynamicIsland(QWidget):
                 self._dock_back_timer.start()
             elif self._briefing_hit(event.position()):
                 self.briefing_requested.emit()
+            elif self._notification_hit(event.position()):
+                self._on_bell_clicked()
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
             else:
-                # 桌宠隐藏时也照常展开卡片（Claude Code 会话、最近的对话都在这里），
-                # 恢复桌宠的入口是卡片上的「显示桌宠」。此前隐藏时单击改弹岛对话
+                # 肥鱼隐藏时也照常展开卡片（Claude Code 会话、最近的对话都在这里），
+                # 恢复肥鱼的入口是卡片上的「显示肥鱼」。此前隐藏时单击改弹岛对话
                 # 气泡，卡片就点不开了（2026-10-11 按用户要求去掉这条路由）。
                 self.expand_card()
         else:

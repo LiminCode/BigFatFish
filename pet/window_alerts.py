@@ -135,12 +135,12 @@ def restore_after_suppression(host) -> None:
 
 def redirect_hidden_bubble(host, text: str, *, subtitle: str = "",
                            duration_ms: int = 3200) -> bool:
-    """桌宠隐藏时的气泡改道：交给注入的灵动岛反馈面（AppShell 经
-    ``hidden_bubble_redirect`` 注入；island_chat 让岛在桌宠隐藏时代理交互面）。
+    """肥鱼隐藏时的气泡改道：交给注入的灵动岛反馈面（AppShell 经
+    ``hidden_bubble_redirect`` 注入；island_chat 让岛在肥鱼隐藏时代理交互面）。
 
     返回是否已改道。无注入 / 岛不可用 / 注入方拒绝时返回 False，调用方
     维持原丢弃行为。仅覆盖非交互反馈气泡；审批/问题等带按钮的交互气泡
-    需要桌宠可见（岛气泡暂不支持按钮），不走本改道。"""
+    需要肥鱼可见（岛气泡暂不支持按钮），不走本改道。"""
     redirect = getattr(host, "hidden_bubble_redirect", None)
     if not callable(redirect):
         return False
@@ -157,7 +157,7 @@ def show_alert(host, text: str, *, subtitle: str = "", duration_ms: int = 0,
                alert_type: str = "watchdog", metadata: dict | None = None) -> None:
     """提醒消息队列：需要用户注意的提醒统一入队，一次只展示一个。"""
     if not host.isVisible():
-        # 桌宠隐藏：非交互提醒（无按钮）改道灵动岛反馈面；交互气泡与
+        # 肥鱼隐藏：非交互提醒（无按钮）改道灵动岛反馈面；交互气泡与
         # 设置页抑制期维持原丢弃行为。
         if not buttons and not bubble_blocked(host) and redirect_hidden_bubble(
                 host, text, subtitle=subtitle, duration_ms=duration_ms or 3200):
@@ -420,7 +420,7 @@ def pick_self_talk_choice(texts, images, image_chance):
     """按出图概率抽一条自言自语，返回 ``(kind, value)``；两边都空返回 None。
 
     为什么要先掷骰子：图片目录常有几十张图，和文本混在一起**等权随机**会让图片
-    彻底压过文本——实测 24 张图 + 5 句文本 → 出图概率 82.8%，点击桌宠几乎总是
+    彻底压过文本——实测 24 张图 + 5 句文本 → 出图概率 82.8%，点击肥鱼几乎总是
     弹图。现在先决定"这次出图还是出文本"，再在对应池里选一条，用户设的百分比
     就是真实概率（0 = 只出文本，100 = 只出图）。
 

@@ -152,7 +152,7 @@ def theme_names() -> list[tuple[str, str]]:
 # 对话窗口风格标识 → 展示名，设置界面的唯一来源：主设置窗的风格下拉项、裁切行
 # 标签/编辑器标题、老聊天设置对话框的裁切入口都从这里派生，避免多处字面量走样。
 # 顺序即下拉框顺序（modern 在前，classic 在后）。
-CHAT_UI_STYLE_LABELS: dict[str, str] = {'modern': '肥鱼版 DeepSeek', 'classic': '肥鱼牌小手机'}
+CHAT_UI_STYLE_LABELS: dict[str, str] = {'modern': '肥鱼版宽屏', 'classic': '肥鱼牌小手机'}
 
 # 对话窗口风格 → 裁切选区纵横比（宽/高），按各风格窗口默认尺寸取值（窗口可缩放，
 # 渲染端 cover 兜底）：

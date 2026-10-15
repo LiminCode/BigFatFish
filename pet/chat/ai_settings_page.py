@@ -205,10 +205,10 @@ class _AiSettingsPage(QWidget):
             SettingRow("api_url", "API 地址", "OpenAI Chat Completions 兼容服务地址。", self.url),
             SettingRow("model", "模型", "发送请求时使用的模型标识。", self.model),
             SettingRow("api_key", "API Key", "凭据优先保存到系统钥匙串。", self.key),
-            SettingRow("system_prompt", "System Prompt", "定义桌宠对话时的身份、语气和行为。", self.prompt, stacked=True),
+            SettingRow("system_prompt", "System Prompt", "定义肥鱼对话时的身份、语气和行为。", self.prompt, stacked=True),
             SettingRow(
                 "about_user", "关于我",
-                "告诉桌宠你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
+                "告诉肥鱼你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
                 self.about_user, stacked=True,
             ),
             SettingRow("connection_test", "连接测试", self.test_result.text(), self.test_button),
@@ -238,7 +238,7 @@ class _AiSettingsPage(QWidget):
         root.addWidget(SettingsSection("连接器", [
             SettingRow(
                 "github_connector", "GitHub（只读）",
-                "让桌宠在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
+                "让肥鱼在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
                 "Token 会随请求发给 Anthropic，由它去连 GitHub。",
                 self.github_connector,
             ),
@@ -260,7 +260,7 @@ class _AiSettingsPage(QWidget):
         root.addWidget(SettingsSection("知识库", [
             SettingRow(
                 "knowledge_base_enabled", "本地知识库",
-                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时桌宠只读本机这份副本。"
+                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时肥鱼只读本机这份副本。"
                 "仅 Claude 通道生效；读到的内容会随对话发给模型。",
                 self.knowledge_base,
             ),
@@ -292,12 +292,12 @@ class _AiSettingsPage(QWidget):
         rows = [
             SettingRow(
                 "chat_ui_style", "对话窗口",
-                "肥鱼版 DeepSeek 提供宽屏现代体验；肥鱼牌小手机保留紧凑经典体验。",
+                "肥鱼版宽屏 提供宽屏现代体验；肥鱼牌小手机保留紧凑经典体验。",
                 self.chat_ui_style,
             ),
             SettingRow(
                 "chat_background", "对话背景",
-                "肥鱼版 DeepSeek 与肥鱼牌小手机均支持纯色、内置主题或自定义图片。",
+                "肥鱼版宽屏 与肥鱼牌小手机均支持纯色、内置主题或自定义图片。",
                 self.background_select,
             ),
             SettingRow("chat_background_file", "自定义背景图片", "支持常见图片格式，使用绝对路径。", self.background_picker),
@@ -306,7 +306,7 @@ class _AiSettingsPage(QWidget):
             SettingRow("chat_bg_crops", "裁切取景", "拖拽移动 + 滚轮缩放选区，决定背景取哪一块；不裁则按主题默认主体取景。", self.background_crop_btn),
             SettingRow(
                 "modern_chat_card_opacity", "消息卡片不透明度",
-                "调节肥鱼版 DeepSeek 消息卡片透出背景的程度。",
+                "调节肥鱼版宽屏 消息卡片透出背景的程度。",
                 self.message_card_opacity,
             ),
         ]
@@ -334,7 +334,7 @@ class _AiSettingsPage(QWidget):
         try:
             self.background_select.clear()
             self.background_select.addItem("纯色背景", "")
-            # 内置主题两种对话窗口风格都可用（肥鱼版 DeepSeek 与肥鱼牌小手机一致）
+            # 内置主题两种对话窗口风格都可用（肥鱼版宽屏 与肥鱼牌小手机一致）
             for key, label in self._background_themes:
                 self.background_select.addItem(label, f"builtin:{key}")
             self.background_select.addItem("自定义图片", "custom")
@@ -703,7 +703,7 @@ class _AiSettingsPage(QWidget):
         self._test_thread = None
 
     def save(self) -> None:
-        # 保存前基于磁盘最新配置重取快照：另一个设置窗口（AI 设置/桌宠设置 AI 页）
+        # 保存前基于磁盘最新配置重取快照：另一个设置窗口（AI 设置/肥鱼设置 AI 页）
         # 可能在本窗口打开期间改过 Provider 结构；先保留本窗口的 provider 草稿/
         # 新增/删除，再与磁盘快照合并，避免覆盖其它窗口新增的结构。
         old_settings = self.settings

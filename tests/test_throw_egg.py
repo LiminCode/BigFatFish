@@ -2,7 +2,7 @@
 """批 D 彩蛋：边缘探头状态被击飞时飞行整帧旋转跟随速度方向。
 
 覆盖：arm 条件双向（碰撞取消才 arm）、角度四方向、低速碰边界恢复、
-低速碰桌宠恢复、高速不恢复、_stop_physics 兜底、end 幂等与重 arm；
+低速碰肥鱼恢复、高速不恢复、_stop_physics 兜底、end 幂等与重 arm；
 批 F：恢复阈值提到 780 且按用户要求移除飞行时间硬上限。
 """
 from __future__ import annotations

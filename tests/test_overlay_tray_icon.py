@@ -3,7 +3,7 @@
 
 回归：托盘图标只在 _build_tray 建造时取一次，而建造跑在 overlay.show() 之前，
 sprite 首帧未上屏、clip 未起播，icon_pixmap 只能回退系统占位图标——不刷新
-就永远显示不出鱼（用户「托盘栏没有桌宠图标」；上游 b37a44c 只修了 legacy
+就永远显示不出鱼（用户「托盘栏没有肥鱼图标」；上游 b37a44c 只修了 legacy
 PetWindow 路径，overlay 壳是另一条建造链）。
 """
 from __future__ import annotations
@@ -93,7 +93,7 @@ def test_tray_icon_fallback_is_pet_pawprint(tmp_path):
     legacy ``app.py:3127`` 的 ``_tray_placeholder_icon`` 是
     ``vector_menu_icon(QWidget(), "pet", 64)``；overlay 此前回退
     ``SP_ComputerIcon``——首帧未就绪期间用户在托盘里看到的是电脑图标，
-    观感等同「托盘栏里没有桌宠图标」。
+    观感等同「托盘栏里没有肥鱼图标」。
     """
     from PySide6.QtWidgets import QWidget
 

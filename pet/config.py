@@ -18,6 +18,9 @@ from typing import Any
 from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
+from . import i18n
+from .notification_center import normalize as normalize_notifications
+from .slack_watch import normalize as normalize_slack_watch
 from .work_briefing import normalize as normalize_work_briefing
 
 
@@ -81,13 +84,25 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 ]
 
 
-# 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到桌宠设置 + 托盘菜单），
+# 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到肥鱼设置 + 托盘菜单），
 # 用户旧布局里残留的该节点在此一次性剔除——否则菜单编辑器会把它一直回存成「此平台
 # 不可用」，旧入口就没有干净去向（docs/SETTINGS-CHANGE-GATES.md「旧 key/旧入口有去向」）。
 # 同名 action id 若将来重新引入，删掉这里即可。
 # 2026-10-11：在线更新整个移除（从源码运行的 fork，查的是上游发布版、装的是上游
 # 安装包），「检查更新」「夸克网盘下载」同样在此剔除。
-_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"})
+_MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quark_download"}) | frozenset({
+    # 2026-10-13 「音乐」从右键菜单下线（功能本身保留在设置页）
+    "music_pause", "music_next", "music_prev", "music_quit", "music_lyric_align",
+    "music_open_netease", "music_open_qqmusic",
+    # 2026-10-13 「显示本轮消费」（DeepSeek 余额差）从右键菜单和设置页下线；配置键与结算代码保留
+    "agent_cost",
+    # 2026-10-14 DeepSeek 的三个入口下线（余额查询 / Harness 启动器代码保留，只摘菜单）
+    "balance", "harness", "deepseek_web",
+})
+
+
+#: 整组下线的子菜单：连壳一起清掉（否则老布局里留一个只剩分隔线的空壳）
+_MENU_LAYOUT_DROPPED_SUBMENUS = frozenset({"music"})
 
 
 def _drop_removed_menu_actions(nodes):
@@ -96,8 +111,10 @@ def _drop_removed_menu_actions(nodes):
         if not isinstance(node, dict):
             kept.append(node)
             continue
-        if (node.get("type") == "action"
-                and str(node.get("id") or "") in _MENU_LAYOUT_DROPPED_ACTIONS):
+        node_id = str(node.get("id") or "")
+        if node.get("type") == "action" and node_id in _MENU_LAYOUT_DROPPED_ACTIONS:
+            continue
+        if node.get("type") == "submenu" and node_id in _MENU_LAYOUT_DROPPED_SUBMENUS:
             continue
         children = node.get("children")
         if isinstance(children, list):
@@ -247,6 +264,8 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 会话小鱼头顶的金色桂冠给跑着这些模型的会话（匹配片段，见 pet/session_crown.py）
+        "crown_models": ["fable"],
         # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
         "session_card_theme": DEFAULT_CARD_THEME,
         # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
@@ -373,6 +392,9 @@ def _clean_agent_link_data(raw: Any) -> dict:
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
     result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
+    from .session_crown import normalize_tokens as _normalize_crown_tokens  # 惰性：它依赖会话详情模块
+
+    result["crown_models"] = _normalize_crown_tokens(raw.get("crown_models", result.get("crown_models")))
     for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
                            ("session_history_rows", 3, 20)):
         try:
@@ -588,26 +610,6 @@ def _bool_or_default(value, default):
     return bool(default)
 
 
-def _clean_music_player_paths(value) -> dict:
-    """手动指定的播放器可执行文件路径 {播放器键: 路径}。
-
-    键只认 music_players.PLAYERS 里的两个播放器（其余键丢弃，避免手改配置塞进
-    任何多余东西）；值必须是字符串路径，空串/非字符串一律丢弃。限长与其它路径键
-    同规（500 字符），只做配置面清洗，不碰文件系统——路径是否存在由消费方判定。
-    """
-    if not isinstance(value, dict):
-        return {}
-    cleaned = {}
-    for key in ("netease", "qqmusic"):
-        raw = value.get(key)
-        if not isinstance(raw, str):
-            continue
-        path = raw.strip()
-        if path:
-            cleaned[key] = path[:500]
-    return cleaned
-
-
 def _clean_self_talk_texts(value):
     if not isinstance(value, list):
         return list(DEFAULT_SELF_TALK_TEXTS)
@@ -640,7 +642,7 @@ def _default_dynamic_island_data() -> dict:
         # 图片；其余字符串=文字/emoji（用户主动选择，愿意付首次绘制的一次性税额）
         "icon": "auto",
         "click_action": "expand",  # expand（展开卡片）/ toggle_pet（切换显隐，旧行为）
-        "hidden_chat": True,  # 桌宠隐藏时：联动提醒 / AI 回复到达时岛上弹预览（单击岛照常展开卡片）
+        "hidden_chat": True,  # 肥鱼隐藏时：联动提醒 / AI 回复到达时岛上弹预览（单击岛照常展开卡片）
         "event_effects": True,  # 事件动效：AI 回复/余额刷新弹跳
         "edge_dock": True,  # 拖到屏幕边缘收成细条，鼠标靠近滑出
         "dock_edge": "none",  # none / top / bottom / left / right（拖拽落点写入）
@@ -832,8 +834,15 @@ class Config:
             "on_top": True,
             "show_dock_icon": True,
             "tray_icon": "",  # 自定义托盘图标（图片的绝对路径）；空 = 用角色头像，见 pet/tray_icon.py
+            "ui_language": i18n.DEFAULT_LANGUAGE,  # 界面语言（zh / en），目前只覆盖灵动岛，见 pet/i18n.py
             # 工作简报（WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程），见 pet/work_briefing.py
             "work_briefing": normalize_work_briefing(None),
+            # 右键菜单「VS Code 工作区」：工作区文件目录 + 菜单条数，见 pet/vscode_workspaces.py
+            "vscode_workspaces": {"workspace_dir": "", "wsl_dirs": {}, "menu_limit": 12},
+            # 通知中心（Windows 通知中心里的 Slack 通知铺进灵动岛），见 pet/notification_center.py
+            "notifications": normalize_notifications(None),
+            # Slack 关注（电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack），见 pet/slack_watch.py
+            "slack_watch": normalize_slack_watch(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -857,9 +866,9 @@ class Config:
             "mouse_through": False,
             "cursor_hidden_passthrough": True,
             "drag_physics": False,
-            "lock_position": False,  # 锁定位置：桌宠不可拖动（点击仍有效）
+            "lock_position": False,  # 锁定位置：肥鱼不可拖动（点击仍有效）
             "shift_drag": False,  # 按住 SHIFT+左键才能拖动
-            "pet_opacity": 100,  # 桌宠窗口不透明度 10-100
+            "pet_opacity": 100,  # 肥鱼窗口不透明度 10-100
             "context_menu_template": "modern",
             "context_menu_layout": None,
             "context_menu_appearance": dict(DEFAULT_CONTEXT_MENU_APPEARANCE),
@@ -894,15 +903,14 @@ class Config:
             "music_browser_media_enabled": False,
             # 手动指定播放器路径 {netease|qqmusic: exe 路径}：自动搜索找不到时的
             # 逃生口，只能手改 config.json（暂无设置页控件），空 = 走自动搜索。
-            "music_player_paths": {},
             "agent_cost_enabled": False,  # Agent 本轮结束时显示消费金额（用余额差值估算）
             "golden_spin_on_click": False,  # 点击回应动画结束后自动接一段黄金回旋
             "golden_spin_direct": False,  # 点击触发黄金回旋时跳过点击动画，直接回旋并逐圈加速
             "edge_probe_enabled": False,  # 拖到屏幕左右边缘后自动进入探头姿态
             "autostart_wanted": False,  # 用户曾开启过开机自启（用于启动自检：被安全软件清理时提醒）
-            "harness_autostart": False,  # 随桌宠启动自动拉起（web 目标=只起服务不开浏览器；桌面端目标=打开界面）
+            "harness_autostart": False,  # 随肥鱼启动自动拉起（web 目标=只起服务不开浏览器；桌面端目标=打开界面）
             # 自启目标：auto=检测到桌面端安装则桌面端、否则 web；web/desktop 显式指定。
-            # **只作用于「随桌宠启动」**：右键菜单/托盘的启动入口是显式选择，不受它影响；
+            # **只作用于「随肥鱼启动」**：右键菜单/托盘的启动入口是显式选择，不受它影响；
             # 「重启/停止服务」始终只作用于 dsh web 服务进程。
             "harness_launch_target": "auto",
             # 手动指定 pnpm 入口（文件 / 目录 / 包装脚本都行，语义同 DSH_PNPM_BIN）。
@@ -911,7 +919,7 @@ class Config:
             "pnpm_bin": "",
             "stream_capture_mode": False,  # 直播捕获兼容模式（Windows：Tool 窗口直播姬/OBS 枚举不到）
             "chat_background": "",  # 肥鱼牌小手机背景：空=纯色；builtin:* = 内置主题；否则为图片路径
-            "modern_chat_background": "",  # 肥鱼版 DeepSeek 背景：空=纯色；否则为自定义图片路径
+            "modern_chat_background": "",  # 肥鱼版宽屏 背景：空=纯色；否则为自定义图片路径
             "chat_background_opacity": 100,
             "chat_background_fill": "cover",
             "modern_chat_background_opacity": 100,
@@ -926,7 +934,7 @@ class Config:
             "agent_link": _default_agent_link_data(),
             "file_interpret": _default_file_interpret_data(),
             "chat_ui_style": "modern",  # modern / classic（仅聊天窗口保留双实现）
-            "chat_follow_pet": False,  # 聊天窗口是否跟随桌宠移动
+            "chat_follow_pet": False,  # 聊天窗口是否跟随肥鱼移动
             "system_notifications_enabled": True,  # 对话完成/失败/需要授权时弹桌面系统通知
             "todo_reminder_enabled": True,  # 待办提醒总开关
             "todo_reminder_lead_minutes": 5,  # 待办提前提醒分钟数（0~60，0=不提前）
@@ -1077,6 +1085,8 @@ class Config:
         previous_providers = previous_chat.get("providers") if isinstance(previous_chat, dict) else None
         merged_chat = _merge_chat_data(merged)
         self.data["chat"] = merged_chat
+        # 外部（设置窗口）改了语言：重载这一步就切，岛随后的刷新读到的已是新语言
+        self.data["ui_language"] = i18n.set_language(self.data.get("ui_language"))
         if isinstance(previous_providers, dict):
             raw_providers = merged.get("providers")
             raw_providers = raw_providers if isinstance(raw_providers, dict) else {}
@@ -1103,7 +1113,11 @@ class Config:
             "on_top",
             "show_dock_icon",
             "tray_icon",
+            "ui_language",
             "work_briefing",
+            "vscode_workspaces",
+            "notifications",
+            "slack_watch",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1162,7 +1176,6 @@ class Config:
             "music_lyric_cache_limit",
             "music_lyric_lead_seconds",
             "music_browser_media_enabled",
-            "music_player_paths",
             "agent_cost_enabled",
             "golden_spin_on_click",
             "golden_spin_direct",
@@ -1263,7 +1276,7 @@ class Config:
             from .chat.models import SecretStore  # 惰性导入，且只实例化一次
         except ModuleNotFoundError as exc:
             # 无聊天功能的独立打包会明确排除 pet.chat；配置仍可被
-            # 通用入口加载，因此不能让一次迁移检查阻止桌宠启动。
+            # 通用入口加载，因此不能让一次迁移检查阻止肥鱼启动。
             if exc.name == "pet.chat" or str(exc.name or "").startswith("pet.chat."):
                 return
             raise
@@ -1388,6 +1401,7 @@ class Config:
                     stack.append(value)
 
     def _normalize_pet_settings(self):
+        self.data["ui_language"] = i18n.set_language(self.data.get("ui_language"))
         target = str(self.data.get("harness_launch_target") or "auto").strip().lower()
         self.data["harness_launch_target"] = target if target in ("auto", "web", "desktop") else "auto"
         dialogue_mode = str(self.data.get("dialogue_mode") or "legacy").lower()
@@ -1493,6 +1507,11 @@ class Config:
         self.data["edge_probe_enabled"] = _bool_or_default(self.data.get("edge_probe_enabled"), False)
         self.data["agent_link"] = _clean_agent_link_data(self.data.get("agent_link"))
         self.data["work_briefing"] = normalize_work_briefing(self.data.get("work_briefing"))
+        from .vscode_workspaces import normalize as normalize_vscode_workspaces  # 惰性：它依赖会话跳转模块
+
+        self.data["vscode_workspaces"] = normalize_vscode_workspaces(self.data.get("vscode_workspaces"))
+        self.data["notifications"] = normalize_notifications(self.data.get("notifications"))
+        self.data["slack_watch"] = normalize_slack_watch(self.data.get("slack_watch"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1534,7 +1553,6 @@ class Config:
         )
         # 手动播放器路径：此前只有消费方读、没有 schema 登记，手改 config.json 会
         # 被 reload() 静默丢弃（交付前审查 P1-3）。清洗成 {netease|qqmusic: 路径}。
-        self.data["music_player_paths"] = _clean_music_player_paths(self.data.get("music_player_paths"))
         prewarm = str(self.data.get("media_prewarm", "balanced") or "balanced").strip().lower()
         self.data["media_prewarm"] = prewarm if prewarm in {"full", "balanced", "minimal"} else "balanced"
         # 批10-A3：默认 32→8（预测式预热使能）；32 是批9 引入仅一天的旧默认，
@@ -1676,10 +1694,12 @@ class Config:
             "music_lyric_cache_limit",
             "music_browser_media_enabled",
             "agent_cost_enabled",
-            "music_player_paths",
             "character_profiles",
             "chat_always_on_top",
             "dynamic_island",
+            "ui_language",
+            "notifications",
+            "slack_watch",
         }:
             self._normalize_pet_settings()
 

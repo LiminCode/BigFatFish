@@ -21,7 +21,7 @@ def test_claude_character_is_listed():
 def test_builtin_character_package_is_usable(character_id):
     video_dir = catalog.character_video_dir(character_id)
     idle = video_dir / catalog.DIR_IDLE / catalog.ANIM_FILES[catalog.IDLE]
-    assert idle.is_file(), f"{character_id} 缺少待机动画：没有它桌宠连站都站不住"
+    assert idle.is_file(), f"{character_id} 缺少待机动画：没有它肥鱼连站都站不住"
 
     box = catalog.character_body_box(character_id)
     assert box is not None, f"{character_id} 的 manifest 没有声明 body_box"

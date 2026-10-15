@@ -301,7 +301,7 @@ def reminder_slot(now: _dt.datetime, cfg: dict) -> str:
 def startup_slot(now: _dt.datetime, cfg: dict) -> str:
     """服务启动时的补提醒槽位。
 
-    桌宠不保证常驻：用户可能中午才开机，此时当天的 09:00 提醒点已经错过。
+    肥鱼不保证常驻：用户可能中午才开机，此时当天的 09:00 提醒点已经错过。
     若当天确有节日且当前已过首个提醒时间，返回一个独立槽位让服务立即补
     报一次。**只压制当前这一分钟**：启动时刻恰好落在某个提醒分钟内时，
     服务会把该分钟的正式槽位一并盖戳（见 ``festival_service._catch_up``），

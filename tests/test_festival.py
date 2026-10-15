@@ -499,7 +499,7 @@ def test_third_party_notices_list_every_song():
 
 # ---------------------------------------------------------------- 语音播报与让位
 class _Win:
-    """假桌宠窗口：只记录气泡。"""
+    """假肥鱼窗口：只记录气泡。"""
 
     def __init__(self) -> None:
         self.bubbles: list[str] = []

@@ -195,3 +195,92 @@ def test_ten_rows_are_visible_by_default_and_the_cap_is_adjustable(panel):
     assert panel.body.height() == 1 * ROW_HEIGHT, "至少露一行"
     panel.set_max_visible("x")
     assert panel.body.height() == 10 * ROW_HEIGHT, "给的值不像话就用默认"
+
+
+# ---------------------------------------------------------------- 卡片样式（2026-10-14：Windows Phone 式的平铺卡片）
+
+def _pixel(widget, x: int, y: int):
+    image = widget.grab().toImage()
+    return image.pixelColor(min(x, image.width() - 1), min(y, image.height() - 1))
+
+
+def _icon_pixels(row) -> list:
+    image = row.icon.pixmap().toImage()
+    return [image.pixelColor(x, y).rgba() for y in range(image.height()) for x in range(image.width())]
+
+
+def test_each_row_shows_an_icon_for_where_it_was_opened(panel, monkeypatch):
+    from pet import host_icons
+
+    # 不依赖这台机器装了什么：当作一个程序都没装，走手绘记号（真图标那一路见 test_host_icons）
+    host_icons.clear_cache()
+    monkeypatch.setattr(host_icons, "host_executable", lambda kind, **kw: "")
+    panel.set_rows([
+        {**_rows(1)[0], "key": ("claude", "a"), "host": "vscode"},
+        {**_rows(1)[0], "key": ("claude", "b"), "host": "terminal"},
+        {**_rows(1)[0], "key": ("claude_wsl", "c"), "host": "wsl"},
+        {**_rows(1)[0], "key": ("claude", "d"), "host": "script"},
+        {**_rows(1)[0], "key": ("claude", "e")},
+    ])
+    panel.set_open(True)
+    app.processEvents()
+    rows = panel.row_widgets()
+    drawn = [_icon_pixels(row) for row in rows[:4]]
+    assert all(any(px & 0xFF000000 for px in pixels) for pixels in drawn), "四种来源都有图标"
+    assert len({tuple(pixels) for pixels in drawn}) == 4, "四种来源的图标各不相同"
+    assert rows[4].icon.pixmap().isNull() and rows[4].icon.width() == rows[0].icon.width(), \
+        "不知道从哪开的：留空位，文字仍对齐"
+    assert all(row.title.x() == rows[0].title.x() for row in rows)
+
+
+def test_row_icons_come_from_the_installed_programs_when_available(panel, monkeypatch):
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+
+    from pet import host_icons
+
+    marker = QPixmap(16, 16)
+    marker.fill(QColor("#10c040"))
+    asked = []
+    monkeypatch.setattr(host_icons, "host_icon", lambda widget, kind, size, **kw: (asked.append((kind, size)), QIcon(marker))[1])
+    panel.set_rows([{**_rows(1)[0], "host": "vscode"}])
+    panel.set_open(True)
+    (row,) = panel.row_widgets()
+    assert asked == [("vscode", 16)]
+    assert row.icon.pixmap().toImage().pixelColor(8, 8).name() == "#10c040"
+
+
+def test_header_and_rows_are_painted_as_tiles_not_bare_text(panel):
+    panel.set_rows(_rows(2))
+    panel.set_open(True)
+    app.processEvents()
+    header_fill = _pixel(panel.header, 4, panel.header.height() // 2)
+    assert header_fill.alpha() > 0, "表头是一块卡片，不是透明底上的字"
+    row = panel.row_widgets()[0]
+    tile_fill = _pixel(row, row.width() // 2, 4)
+    gap_fill = _pixel(row, row.width() // 2, row.height() - 1)
+    assert tile_fill.alpha() > 0 and gap_fill.alpha() == 0, "行是一块卡片，卡片之间留缝"
+    assert panel.header.font().bold()
+
+
+def test_a_live_row_carries_an_accent_bar_on_its_left_edge(panel):
+    panel.set_rows(_rows(1, live=True))
+    panel.set_open(True)
+    app.processEvents()
+    row = panel.row_widgets()[0]
+    bar = _pixel(row, 1, row.height() // 2)
+    assert bar.name() == "#40b8ff", "进行中的行左边一道主题色条"
+    panel.set_rows(_rows(1, live=False))
+    app.processEvents()
+    bar = _pixel(panel.row_widgets()[0], 1, ROW_HEIGHT // 2)
+    assert bar.name() != "#40b8ff"
+
+
+def test_tiles_follow_the_island_palette(panel):
+    panel.set_rows(_rows(1))
+    panel.set_open(True)
+    app.processEvents()
+    dark_tile = _pixel(panel.row_widgets()[0], 60, 4)
+    panel.set_look(primary="#f0f0f5", secondary="#9a9aa3", accent="#40b8ff", width=WIDTH)
+    app.processEvents()
+    light_tile = _pixel(panel.row_widgets()[0], 60, 4)
+    assert dark_tile.lightness() < light_tile.lightness(), "浅字（深底）用浅色卡片，深字（浅底）用深色卡片"

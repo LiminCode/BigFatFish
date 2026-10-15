@@ -126,13 +126,11 @@ def test_pet_third_party_imports_are_declared():
     )
 
 
-def test_psutil_is_declared_for_player_probe():
-    """psutil 专项保险：歌词显示靠它绕开 SMTC 的永久阻塞，缺了就白修（见模块 docstring）。"""
-    assert "psutil" in _declared_requirement_names(), (
-        "psutil 必须留在 requirements.txt：pet/now_playing.py 用它判断播放器进程在不在，"
-        "进程不在时直接启动播放器而**不碰 WinRT**；缺失时该判断放行，"
-        "SMTC 卡住的老路会照旧走。"
-    )
-    from pet import now_playing
+def test_psutil_is_declared_for_session_liveness():
+    """psutil 专项保险：会话小鱼靠它核对 Claude Code 进程还在不在、跳转时认窗口的进程名。
 
-    assert callable(now_playing.player_process_running)
+    （2026-10-15 之前它还用来判断网易云 / QQ 音乐的进程，那段随本地播放器启动一起下线。）"""
+    assert "psutil" in _declared_requirement_names(), (
+        "psutil 必须留在 requirements.txt：pet/claude_session_info.py 与 "
+        "pet/claude_session_jump.py 用它看进程；缺失时这两处退化为「无从判断」。"
+    )

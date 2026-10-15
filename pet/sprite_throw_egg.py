@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""彩蛋（overlay/sprite 架构）：边缘探头状态的桌宠被撞飞时，飞行中整帧旋转
-使头部跟随速度方向；落地停稳 / 低速触碰边界或桌宠后回正。
+"""彩蛋（overlay/sprite 架构）：边缘探头状态的肥鱼被撞飞时，飞行中整帧旋转
+使头部跟随速度方向；落地停稳 / 低速触碰边界或肥鱼后回正。
 
 语义蓝本是旧窗口机 ``pet/throw_egg.py``（只读参考；**阈值常量直接 import，
 不复制数值**）。旧机把彩蛋实现为「窗口级整帧旋转 + 每物理 tick 更新角度」；
@@ -36,7 +36,7 @@ arm 条件严格对齐旧机（批 A/批 D 通用约束）：只有「边缘探�
    空中阈值 ``THROW_EGG_AIR_FOLLOW_SPEED``（只防近零速 atan2 抖动）；
    速度 >= 分档阈值才写角度，角度 = ``90 + degrees(atan2(vy, vx))``
    （屏幕坐标 y 朝下：向右=90°、向下=180°、向上=0°、向左=270°）。
-3. **回正**：速度 < 触界阈值且触界 → 回正结束；飞行中再次撞到其它桌宠
+3. **回正**：速度 < 触界阈值且触界 → 回正结束；飞行中再次撞到其它肥鱼
    （``on_probe_collision_throw`` 复入 → ``on_pet_contact``）而速度低于
    该阈值 → 回正；落地停稳（physics 把 ``interaction_state`` 切回 normal）
    → tick 无条件兜底回正（旧 ``_stop_physics`` 的 ``_te.end()``）；拖拽
@@ -195,7 +195,7 @@ class SpriteThrowEggWorld:
 
         两种语义按会话表分流：
 
-        - **已在彩蛋会话中**（飞行中再次撞到其它桌宠）：走旧机
+        - **已在彩蛋会话中**（飞行中再次撞到其它肥鱼）：走旧机
           ``on_pet_contact``——用碰撞结算后的速度判定，低速回正；
         - **不在会话中**：只有确认「本次撞击真取消了活跃探头会话」才 arm。
           ``probe_cancelled`` 是探头世界 ``on_sprite_collision_hit`` 的返回
@@ -214,7 +214,7 @@ class SpriteThrowEggWorld:
         self.arm(sprite)
 
     def on_pet_contact(self, sprite: Any, speed: float | None = None) -> None:
-        """飞行中再次撞到其它桌宠：低速则立刻回正（旧机同语义）。
+        """飞行中再次撞到其它肥鱼：低速则立刻回正（旧机同语义）。
 
         ``speed`` 缺省取 ``sprite.velocity``（碰撞世界在触发 listener 前已写回
         冲量，读到的是撞击后的速度）。

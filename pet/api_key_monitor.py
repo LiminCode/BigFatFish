@@ -25,13 +25,14 @@ import logging
 import threading
 from typing import Callable
 
+from .i18n import t
 from PySide6.QtCore import QObject, QTimer, Signal
 
 log = logging.getLogger(__name__)
 
 UNKNOWN, OK, BAD = "unknown", "ok", "bad"
 
-_CHECKING_TEXT = "正在检查 API 连接…"
+_CHECKING_TEXT_KEY = "api.checking"
 _FINGERPRINT_FIELDS = ("provider_id", "base_url", "chat_path", "model", "api_format")
 
 
@@ -88,10 +89,10 @@ class ApiKeyMonitor(QObject):
             return
         self._running = True
         if not self._chat_enabled:
-            self._set(UNKNOWN, "此版本没有 AI 对话，不检查 API")
+            self._set(UNKNOWN, t("api.no_chat"))
             return
         if self._fingerprint is None:
-            self._set(UNKNOWN, _CHECKING_TEXT)
+            self._set(UNKNOWN, t(_CHECKING_TEXT_KEY))
         self._timer.start(self.STARTUP_DELAY_MS)
 
     def stop(self) -> None:
@@ -116,7 +117,7 @@ class ApiKeyMonitor(QObject):
             return False
         resolved = self._resolve()
         if resolved is None:
-            self._set(UNKNOWN, "读取 AI 对话配置失败")
+            self._set(UNKNOWN, t("api.config_error"))
             self._timer.start(self.BAD_RECHECK_MS)
             return False
         self._launch(*resolved)
@@ -125,7 +126,7 @@ class ApiKeyMonitor(QObject):
     def note_success(self) -> None:
         """一次真实对话成功了：等同体检通过（不额外发请求）。"""
         if self._running and self._chat_enabled and self._state != OK:
-            self._set(OK, "最近一次对话成功")
+            self._set(OK, t("api.recent_success"))
 
     # ---------------------------------------------------------------- 内部
     def _resolve(self) -> tuple | None:
@@ -143,7 +144,7 @@ class ApiKeyMonitor(QObject):
 
     def _launch(self, provider, fingerprint: tuple) -> None:
         if self._fingerprint is not None and fingerprint != self._fingerprint:
-            self._set(UNKNOWN, _CHECKING_TEXT)   # 换了服务商 / Key：旧结论不能挂在新配置上
+            self._set(UNKNOWN, t(_CHECKING_TEXT_KEY))   # 换了服务商 / Key：旧结论不能挂在新配置上
         self._fingerprint = fingerprint
         self._generation += 1
         generation = self._generation
@@ -155,7 +156,7 @@ class ApiKeyMonitor(QObject):
             try:
                 ok, message = probe(provider)
             except Exception as exc:  # noqa: BLE001 - 任何失败都算「不可用」，线程不许带病退出
-                ok, message = False, f"检查失败：{exc}"
+                ok, message = False, t("api.failed", error=exc)
             try:
                 self._probed.emit(generation, bool(ok), str(message))
             except RuntimeError:

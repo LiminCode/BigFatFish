@@ -674,7 +674,7 @@ def test_announce_with_empty_title_still_resets_width_lock():
 #
 # 背景（fb38824 引入的缺陷）：_stop_sample_thread 把 _sample_thread 置 None 并
 # set 了 _sample_stop，但 _sample_stop **没有复位路径**。于是「关闭歌词 → 再打开」
-# 之后，新建的采样线程一进 while 就 break，歌词永久不再更新，直到重启桌宠。
+# 之后，新建的采样线程一进 while 就 break，歌词永久不再更新，直到重启肥鱼。
 # 这两个用例锁住该行为：线程可复用 + 重开后确实还在采样。
 
 

@@ -211,7 +211,7 @@ def test_proactive_trigger_speaks_on_sprite_bubble(tmp_path, monkeypatch):
 
 
 def test_island_chat_show_pets_brings_the_real_overlay_back(tmp_path):
-    """实机 bug（2026-10-11）：隐藏桌宠后在岛对话气泡里点「显示桌宠」，桌宠没回来。
+    """实机 bug（2026-10-11）：隐藏肥鱼后在岛对话气泡里点「显示肥鱼」，肥鱼没回来。
 
     用真实 OverlayShell 走一遍：隐藏 → AppShell 的气泡入口 → 合成窗必须重新可见，
     且岛的可见态是壳在显示之后同步的（不是入口自己抢先写的）。
@@ -434,14 +434,14 @@ def test_no_chat_module_degrades_quietly(tmp_path, monkeypatch):
 
 
 def test_chat_disabled_degrades_quietly(tmp_path):
-    """进程级 enable_chat=False（纯桌宠版）→ 快速对话入口与气泡点击一起降级。"""
+    """进程级 enable_chat=False（纯肥鱼版）→ 快速对话入口与气泡点击一起降级。"""
     shell, _ = _make_shell(tmp_path, real_config=True,
                            instance=_NoChatInstance(cap.CapConfig(tmp_path)))
     try:
         shell.overlay.show()
         assert shell.quick_chat_available() is False
         assert shell.open_quick_chat() is False
-        shell.show_bubble("纯桌宠版")
+        shell.show_bubble("纯肥鱼版")
         assert shell._speech_bubble.testAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         assert shell.on_look_synced is None

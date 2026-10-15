@@ -44,15 +44,15 @@ def _island_state(flags=collision.FLAG_STATIC) -> collision.MemberState:
 # ------------------------------------------------------------ 弹性规则（通用求解器）
 def test_static_wall_boosts_restitution_pet_bounces_off_faster():
     """FLAG_STATIC 静态岛加速弹开（e=1.3）：撞岛比撞墙弹得更快，像撞弹床。"""
-    pet = _pet(vx=600.0)  # 桌宠在岛左侧，向右（+x）撞岛
+    pet = _pet(vx=600.0)  # 肥鱼在岛左侧，向右（+x）撞岛
     island = _island_state()
-    # nx=-1：法线从 A(岛) 指向 B(桌宠)，接近速度 vn = 600*(-1) < 0
+    # nx=-1：法线从 A(岛) 指向 B(肥鱼)，接近速度 vn = 600*(-1) < 0
     jn, dvx_a, _dvy_a, dvx_b, _dvy_b = collision.solve_collision_impulse(
         island, pet, -1.0, 0.0,
         restitution=0.82, friction=0.08, impulse_cap=9000.0)
     assert jn > 0
     assert dvx_a == 0.0  # 岛无限质量，不动
-    # e=1.3 加速反弹：桌宠末速 = 600 * (-1.3) = -780（比入射更快地弹回）
+    # e=1.3 加速反弹：肥鱼末速 = 600 * (-1.3) = -780（比入射更快地弹回）
     assert pet.vx + dvx_b < -600.0
 
 
@@ -215,7 +215,7 @@ def _assert_body_out_of_stadium(win, body, msg=""):
 
 
 def test_body_start_stop_lifecycle(tmp_path):
-    """start 给桌宠挂同步硬墙 hook 并置 running；stop 清除（岛碰撞关闭后不设墙）。"""
+    """start 给肥鱼挂同步硬墙 hook 并置 running；stop 清除（岛碰撞关闭后不设墙）。"""
     _qapp()
     win = WallWin(1000, 1000, 200, 100)
     island, body = _make_body(tmp_path, pets=[win])
@@ -333,7 +333,7 @@ def test_wall_inactive_when_stopped_hidden_or_docked(tmp_path):
 
 
 def test_tall_pet_side_wall_uses_half_width(tmp_path):
-    """高瘦桌宠贴岛侧壁：同步墙按横向半宽推出（矩形口径），不再按身高的一半。"""
+    """高瘦肥鱼贴岛侧壁：同步墙按横向半宽推出（矩形口径），不再按身高的一半。"""
     _qapp()
     island, body = _make_body(tmp_path)
     try:
@@ -477,7 +477,7 @@ def test_slow_roaming_pet_is_pushed_without_feedback(tmp_path):
 
 
 def test_submit_flings_pet_when_island_swept_onto_it(tmp_path):
-    """拖岛拍鱼（原有业务）：岛被快速拖向静止桌宠，桌宠沿相对运动方向被拍飞
+    """拖岛拍鱼（原有业务）：岛被快速拖向静止肥鱼，肥鱼沿相对运动方向被拍飞
     + 反馈（岛速参与结算，submit 事件驱动，无定时器）。"""
     _qapp()
     island, body = _make_body(tmp_path)
@@ -492,7 +492,7 @@ def test_submit_flings_pet_when_island_swept_onto_it(tmp_path):
         body._last_center = (float(rect.center().x()) - 40.0,
                              float(rect.center().y()))
         body._last_motion_ts = time.monotonic() - 0.05
-        # 静止桌宠中心在岛右端帽外侧 20px（身体已越界，会被推出并判真撞）
+        # 静止肥鱼中心在岛右端帽外侧 20px（身体已越界，会被推出并判真撞）
         stadium = body._island_stadium()
         ax0, ax1, ay, rr, _h = stadium
         win = WallWin(ax1 + 20.0 - 60.0, ay - 60.0, 120, 120, vx=0.0)
@@ -512,7 +512,7 @@ def test_submit_flings_pet_when_island_swept_onto_it(tmp_path):
 
 
 def test_light_contact_cancels_pet_move_plan(tmp_path):
-    """轻贴推出取消桌宠自主移动计划（与旧分离同口径）——避免漫游原地踏步顶墙。"""
+    """轻贴推出取消肥鱼自主移动计划（与旧分离同口径）——避免漫游原地踏步顶墙。"""
     _qapp()
     island, body = _make_body(tmp_path)
     try:
@@ -534,7 +534,7 @@ def test_light_contact_cancels_pet_move_plan(tmp_path):
 
 
 def test_submit_pushes_out_resting_pet_when_island_moved_onto_it(tmp_path):
-    """岛被拖到静止桌宠身上：submit 事件驱动把桌宠推出（岛动桌宠没动也挡）。"""
+    """岛被拖到静止肥鱼身上：submit 事件驱动把肥鱼推出（岛动肥鱼没动也挡）。"""
     _qapp()
     island, body = _make_body(tmp_path)
     try:
@@ -543,13 +543,13 @@ def test_submit_pushes_out_resting_pet_when_island_moved_onto_it(tmp_path):
         stadium = body._island_stadium()
         ax0, ax1, ay, _rr, _h = stadium
         win = WallWin(1000, 1000, 200, 100)
-        # 让身体中心恰在岛轴上（模拟岛拖过来盖住静止桌宠）
+        # 让身体中心恰在岛轴上（模拟岛拖过来盖住静止肥鱼）
         win._x, win._y = (ax0 + ax1) / 2.0 - win._w / 2.0, ay - win._h / 2.0
         win._island_clamp_body = body._clamp_body
         body._pets_provider = lambda: [win]
         island.on_geometry_changed = body.submit  # 接线与 app.py 一致
         island.on_geometry_changed()
-        _assert_body_out_of_stadium(win, body, "岛拖到静止桌宠身上")
+        _assert_body_out_of_stadium(win, body, "岛拖到静止肥鱼身上")
     finally:
         island.hide()
         island.deleteLater()
@@ -557,7 +557,7 @@ def test_submit_pushes_out_resting_pet_when_island_moved_onto_it(tmp_path):
 
 
 def test_wall_hook_covers_pet_window_created_after_start(tmp_path):
-    """启动之后新生的桌宠（生小肥鱼）也必须受硬墙约束。
+    """启动之后新生的肥鱼（生小肥鱼）也必须受硬墙约束。
 
     回归背景：硬墙 hook 只在 start() 挂到当时已存在的窗口上；本进程 spawn
     出来的新窗不在那一刻的列表里，且 start() 二次调用直接 return——新鱼于是
@@ -577,11 +577,11 @@ def test_wall_hook_covers_pet_window_created_after_start(tmp_path):
         body.refresh_hooks()
 
         assert callable(getattr(late, "_island_clamp_body", None)), (
-            "启动后新生的桌宠未挂上硬墙钩子——它会直接穿过灵动岛")
+            "启动后新生的肥鱼未挂上硬墙钩子——它会直接穿过灵动岛")
         stadium = body._island_stadium()
         ax0, ax1, ay, _rr, _h = stadium
         late._move_window_towards((ax0 + ax1) / 2.0 - late._w / 2.0, ay - late._h / 2.0)
-        _assert_body_out_of_stadium(late, body, "启动后新生的桌宠")
+        _assert_body_out_of_stadium(late, body, "启动后新生的肥鱼")
     finally:
         island.hide()
         island.deleteLater()

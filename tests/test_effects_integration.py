@@ -78,7 +78,7 @@ def test_modern_menu_has_golden_spin_and_edge_probe_in_pet_controls():
     menu = QMenu()
     pet = _Pet(template="modern")
     populate_context_menu(menu, pet)
-    controls = next(action.menu() for action in menu.actions() if action.text() == "桌宠控制")
+    controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     golden = _find_action(controls, "黄金回旋")
     edge = _find_action(controls, "边缘探头")
     assert edge.isCheckable()

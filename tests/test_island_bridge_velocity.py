@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""岛速通道回归：拖拽灵动岛撞桌宠要「有冲量弹开」，不是只平推。
+"""岛速通道回归：拖拽灵动岛撞肥鱼要「有冲量弹开」，不是只平推。
 
 根因：``sprite_collision._static_member_state`` 把岛（静态成员）速度写死
 ``vx=vy=0``，``add_static_member`` 也不收速度；求解器只认相对速度 → vn≈0 →
@@ -352,7 +352,7 @@ def test_paired_same_rect_reports_keep_valid_island_speed():
                                    ISLAND_H)
         assert world._static_member_velocity[ISLAND][0] == pytest.approx(800.0)
 
-        # 保留下来的岛速照样把贴上的桌宠弹开（不是「只剩平推」）
+        # 保留下来的岛速照样把贴上的肥鱼弹开（不是「只剩平推」）
         sprite = FakeSprite(*SPRITE_POS)
         events: list = []
         world.add_collision_listener(events.append)
@@ -441,7 +441,7 @@ def test_deadzone_release_sample_zeroes_velocity():
     真实顺序（``DynamicIsland.mouseReleaseEvent`` 在 ``_emit_geometry_changed()``
     之前先 ``_dragging = False``）——松手样本带「未拖拽」标志落进死区，桥侧据此
     立即清零。失效模式（DS 全量审查 B1）：松手瞬间的 geometry 回调距上次接受
-    样本 < _MOTION_MIN_DT，死区早退不清零 → 静止的岛持残留速度把贴上来的桌宠
+    样本 < _MOTION_MIN_DT，死区早退不清零 → 静止的岛持残留速度把贴上来的肥鱼
     拍进 THROWN。本用例不注入「停止时刻的 dt≥0.01 样本」——产品里停止根本不
     会产生那种回调。
     """
@@ -459,7 +459,7 @@ def test_deadzone_release_sample_zeroes_velocity():
                                ISLAND_H)
         assert world._static_member_velocity[ISLAND][:2] == (0.0, 0.0)
 
-        # 幽灵速度闸：清零后贴上来的桌宠只被位置分离，不进 THROWN
+        # 幽灵速度闸：清零后贴上来的肥鱼只被位置分离，不进 THROWN
         sprite = FakeSprite(*SPRITE_POS)
         events: list = []
         world.add_collision_listener(events.append)
@@ -473,7 +473,7 @@ def test_deadzone_release_sample_zeroes_velocity():
 @pytest.mark.parametrize("gap", [0.005, 0.1], ids=["deadzone", "over-min-dt"])
 def test_release_sample_with_moved_rect_zeroes_velocity(gap):
     """松手样本带「未拖拽」标志但 rect 已经变了（松手时被夹回屏幕/落位到停靠位）：
-    必须立即清零——否则旧岛速挂在新 rect 上、带新鲜时间戳，继续把贴上的桌宠拍飞。
+    必须立即清零——否则旧岛速挂在新 rect 上、带新鲜时间戳，继续把贴上的肥鱼拍飞。
 
     ``gap`` = 松手回调距上次采样的间隔，两种都要覆盖：<10ms（死区，几何被当成
     重复上报）与 ≥10ms（走正常采样路径，位移会被估成「新岛速」= 幽灵撞击）。
@@ -509,7 +509,7 @@ def test_release_resets_sampling_baseline_so_next_report_is_not_estimated(gap):
     松手样本要么落进死区（不刷新采样点）、要么走正常路径顺便把采样点挪到松手
     位置；两种情况下若基线仍指向**拖拽期**的采样点，紧随其后的第一份非拖拽几何
     上报都会按「跨松手的过期位移 / 间隔」算出岛速 → 松手后岛自己动一下就把
-    贴上的桌宠拍飞。判据是「拖拽 → 松手」的状态切换，不是几何是否重复。
+    贴上的肥鱼拍飞。判据是「拖拽 → 松手」的状态切换，不是几何是否重复。
     """
     world = SpriteCollisionWorld()
     clock = FakeClock()
@@ -529,7 +529,7 @@ def test_release_resets_sampling_baseline_so_next_report_is_not_estimated(gap):
         bridge.update_geometry(ISLAND_LEFT + 70.0, ISLAND_TOP, ISLAND_W,
                                ISLAND_H)
         # 基线若未作废：这 30px 会按「跨松手的过期间隔」算成 150~300px/s 幽灵岛速
-        # （都超过 STATIC_HIT_MIN_DV=60 → 静止的岛把贴上的桌宠拍飞）
+        # （都超过 STATIC_HIT_MIN_DV=60 → 静止的岛把贴上的肥鱼拍飞）
         assert world._static_member_velocity[ISLAND][:2] == (0.0, 0.0)
     finally:
         bridge.detach()
@@ -553,7 +553,7 @@ def test_real_island_drag_into_pet_throws_with_paired_reports(tmp_path):
 
     ``mouseMoveEvent`` 里 ``move()`` 触发 Move 事件 → 桥喂一遍几何，
     紧接着 ``_emit_geometry_changed()`` 再喂一遍同一个 rect；两遍之后世界里岛速
-    必须非零 → 拖岛撞桌宠产生冲量（事件 + THROWN + 岛 bump 反馈）；松手后岛速
+    必须非零 → 拖岛撞肥鱼产生冲量（事件 + THROWN + 岛 bump 反馈）；松手后岛速
     立即归零，不留幽灵速度。
 
     采样节奏取 8ms（真实 125Hz 鼠标）：一次 ``mouseMoveEvent`` 的**两路**喂入
@@ -598,7 +598,7 @@ def test_real_island_drag_into_pet_throws_with_paired_reports(tmp_path):
         vx = world._static_member_velocity[ISLAND][0]
         assert abs(vx) > STATIC_HIT_MIN_DV, f"拖拽中岛速被重复上报清掉：{vx}"
 
-        # 岛前进方向的胶囊端点圆正前方 32px 处放一只静止桌宠 → 岛撞上去
+        # 岛前进方向的胶囊端点圆正前方 32px 处放一只静止肥鱼 → 岛撞上去
         rect = island.geometry()
         chain = capsule_circles(rect.x(), rect.y(), rect.width(), rect.height())
         cx, cy, _r = chain[-1] if step > 0 else chain[0]
@@ -608,7 +608,7 @@ def test_real_island_drag_into_pet_throws_with_paired_reports(tmp_path):
         world.add_collision_listener(events.append)
         world.tick([sprite], 1 / 60)
 
-        assert [e for e in events if ISLAND in (e.a, e.b)], "岛撞桌宠未产生撞击事件"
+        assert [e for e in events if ISLAND in (e.a, e.b)], "岛撞肥鱼未产生撞击事件"
         assert sprite.interaction_state == "thrown"
         assert bumps, "岛 bump 反馈未触发"
 
@@ -627,7 +627,7 @@ def test_stale_velocity_expires_without_any_callback():
     """按住不动（零回调）场景的世界侧兜底：速度样本超 TTL 未刷新按 0 处理。
 
     拖拽中按住不动 = 不再有几何回调，桥侧无从纠正；世界在读速度时按
-    写入时刻过期（STATIC_VELOCITY_TTL_SECS），静止岛不得再拍飞桌宠。
+    写入时刻过期（STATIC_VELOCITY_TTL_SECS），静止岛不得再拍飞肥鱼。
     """
     world = SpriteCollisionWorld()
     try:

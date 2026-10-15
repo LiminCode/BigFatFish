@@ -398,3 +398,19 @@ def test_facade_persists_the_row_count_and_refreshes_the_island(overlay_shell):
     SpriteMenuFacade(overlay_shell).set_session_history_rows(8)
     assert overlay_shell._config.get("agent_link")["session_history_rows"] == 8
     assert seen == [1]
+
+
+def test_rows_from_the_app_say_where_each_conversation_lives():
+    """岛上每行的图标靠这个字段：VS Code / 本机终端 / WSL 终端 / 脚本。"""
+    from pet.claude_session_history import HistoryEntry
+
+    def host(**over):
+        return HistoryEntry(**{"agent": "claude", "session_id": "x", **over}).host
+
+    assert host(entrypoint="claude-vscode") == "vscode"
+    assert host(agent="claude_wsl", entrypoint="claude-vscode") == "vscode", "WSL 里的 VS Code 仍是 VS Code"
+    assert host(entrypoint="cli") == "terminal"
+    assert host(agent="claude_wsl", entrypoint="cli") == "wsl"
+    assert host(agent="claude_wsl") == "wsl"
+    assert host(entrypoint="sdk-cli") == "script"
+    assert host() == ""

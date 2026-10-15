@@ -107,7 +107,7 @@ class MessageBubble(QFrame):
         super().__init__(parent)
         self.role = role
         self.character_id = character_id
-        # 展示名（用户给角色起的名字）：头像首字与署名用它；没给就退回角色 id / 「桌宠」
+        # 展示名（用户给角色起的名字）：头像首字与署名用它；没给就退回角色 id / 「肥鱼」
         self.display_name = str(display_name or "").strip()
         self.state = "normal"
         self.setObjectName("message-bubble")
@@ -129,7 +129,7 @@ class MessageBubble(QFrame):
         panel = QVBoxLayout()
         panel.setContentsMargins(0, 0, 0, 0)
         panel.setSpacing(5)
-        self.meta = QLabel("你" if role == "user" else (self.display_name or "桌宠"))
+        self.meta = QLabel("你" if role == "user" else (self.display_name or "肥鱼"))
         self.meta.setObjectName("bubble-meta")
         panel.addWidget(self.meta)
 
@@ -196,7 +196,7 @@ class ChatComposer(QFrame):
 
         self.input = QPlainTextEdit()
         self.input.setObjectName("chat-input")
-        self.input.setPlaceholderText("和桌宠说点什么…  Enter 发送，Shift+Enter 换行")
+        self.input.setPlaceholderText("和肥鱼说点什么…  Enter 发送，Shift+Enter 换行")
         self.input.setMinimumHeight(82)
         self.input.setMaximumHeight(150)
         self.input.installEventFilter(self)
@@ -1102,7 +1102,7 @@ class ChatWindow(QDialog):
         self._update_bubble_widths()
 
     def closeEvent(self, event) -> None:
-        """关闭=隐藏并复用窗口：停止生成、解除桌宠位置监听，避免泄漏。"""
+        """关闭=隐藏并复用窗口：停止生成、解除肥鱼位置监听，避免泄漏。"""
         self.service.stop()
         self.set_pet_window(None)
         self.hide()

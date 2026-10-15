@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Claude 通道（Anthropic Messages API，官方 SDK），与 OpenAI 兼容通道并存。
 
-桌宠的会话、识屏、文件解读都按 OpenAI 的消息形状组织（``role`` + ``content``，
+肥鱼的会话、识屏、文件解读都按 OpenAI 的消息形状组织（``role`` + ``content``，
 图片是 ``image_url``）。本模块在边界上把它换成 Messages API 的形状，其余代码
 不必知道对面是哪家：
 
@@ -234,7 +234,7 @@ def _check_final(final) -> None:
 
 
 def _translate_error(sdk, exc: Exception, model: str) -> ProviderError:
-    """SDK 的类型化异常 → 桌宠统一的 ProviderError（由具体到宽泛逐级匹配）。"""
+    """SDK 的类型化异常 → 肥鱼统一的 ProviderError（由具体到宽泛逐级匹配）。"""
     if isinstance(exc, sdk.AuthenticationError):
         return ProviderError("认证失败：API Key 无效或已失效", 401)
     if isinstance(exc, sdk.PermissionDeniedError):

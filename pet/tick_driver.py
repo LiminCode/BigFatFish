@@ -459,7 +459,7 @@ class TickDriver(QObject):
         """真实用户输入（按下/右键）的挂起自愈：输入到达即证明用户在屏幕前。
 
         解锁/恢复消息丢失（或注册因原生窗口重建失效）时，挂起态会把档位钉在
-        T3 且逐 sprite 停播放节拍，直到下次显隐。用户点到桌宠就解除挂起——
+        T3 且逐 sprite 停播放节拍，直到下次显隐。用户点到肥鱼就解除挂起——
         优先走宿主注入的 ``on_user_resume``（壳侧同拍续预热），缺省直接
         ``set_suspended(False)``。非挂起态无操作。"""
         if not self._suspended:
@@ -495,7 +495,7 @@ class TickDriver(QObject):
           挂起期流逝）。
 
         **只降档**：不隐藏窗口、不动全屏/光标 watcher（唤醒后可见性/交互面
-        必须原样，否则桌宠会"醒来不回来"）。幂等。
+        必须原样，否则肥鱼会"醒来不回来"）。幂等。
         """
         suspended = bool(suspended)
         if suspended == self._suspended:

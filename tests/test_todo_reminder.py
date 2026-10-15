@@ -352,7 +352,7 @@ def test_service_tick_notifies_when_settings_open(tmp_path):
 
 
 def test_service_notify_gated_by_system_notifications(tmp_path):
-    """桌宠隐藏 + 系统通知总开关关闭 → 桌面通知分支静默（与 chat 调用方同规）。"""
+    """肥鱼隐藏 + 系统通知总开关关闭 → 桌面通知分支静默（与 chat 调用方同规）。"""
     _qapp()
     app = _FakeApp(tmp_path, visible=False)
     _due_item_in_store(app.config.dir)

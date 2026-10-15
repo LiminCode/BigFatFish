@@ -441,7 +441,7 @@ class DestroyedClip(FakeClip):
 
 
 def test_bind_clip_survives_a_clip_destroyed_by_its_library():
-    """实机 bug（2026-10-11）：切换角色后桌宠卡死，切回来也没用。
+    """实机 bug（2026-10-11）：切换角色后肥鱼卡死，切回来也没用。
 
     换角色 = 换素材库，旧库 shutdown 把 clip 销毁了，sprite 手上却还攥着它；
     下一次换绑要先「停掉旧 clip」，这一步抛异常，新的 clip 永远绑不上。

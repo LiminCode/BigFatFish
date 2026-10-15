@@ -12,7 +12,6 @@ import sys
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
-    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -53,6 +52,7 @@ from .settings_widgets import (
     ResourcePathPicker,
     ResponsiveToggleActionRow,
     SettingRow,
+    TiltButton,
     ToggleSwitch,
     _line_edit,
 )
@@ -65,7 +65,7 @@ from .speech_bubble_text import (
 
 
 #: 「直播捕获兼容」基础文案（描述能力本身）；legacy 拓扑逐字用它。
-STREAM_CAPTURE_HINT = "让 OBS 等工具能够枚举并捕获桌宠窗口。"
+STREAM_CAPTURE_HINT = "让 OBS 等工具能够枚举并捕获肥鱼窗口。"
 #: overlay 拓扑：该键无任何消费者（不建 PetWindow，壳上也无运行期入口），
 #: 重启同样不生效——如实说明不支持（配合置灰控件）。
 STREAM_CAPTURE_OVERLAY_HINT = (
@@ -81,7 +81,7 @@ IDLE_LOW_FPS_OVERLAY_HINT = (
     "动画帧率不受影响：闲置时的系统降载自动进行，与本开关无关。"
 )
 IDLE_LOW_FPS_LEGACY_HINT = (
-    "一段时间不操作桌宠时，动画按半帧率呈现（24fps 素材 → 12fps 效果）"
+    "一段时间不操作肥鱼时，动画按半帧率呈现（24fps 素材 → 12fps 效果）"
     "并停止后台动画预热，任何交互立即恢复全帧率。"
 )
 
@@ -99,7 +99,7 @@ OVERLAY_WINDOW_SCOPE_IDS = (
 )
 
 #: 子宠设置页对这些键的补充说明。
-ALL_PETS_SCOPE_NOTE = "（对所有桌宠生效）"
+ALL_PETS_SCOPE_NOTE = "（对所有肥鱼生效）"
 
 
 def _is_overlay_topology() -> bool:
@@ -134,7 +134,7 @@ def idle_low_fps_hint() -> str:
 
 
 def _apply_window_scope_rows(host) -> None:
-    """overlay 一窗多宠：子宠设置页给窗口级键补「对所有桌宠生效」。
+    """overlay 一窗多宠：子宠设置页给窗口级键补「对所有肥鱼生效」。
 
     子宠页写的是自己的 ``config-slot-N.json``，但这些键在单合成窗里作用于整窗
     ——不提示的话用户会以为改的只是那一只。主宠页不加（它本来就是全局视角），
@@ -190,7 +190,7 @@ def build_pet_controls(host) -> None:
     host.spawn_inherit_dynamic_island_check.setChecked(
         bool(host.config.get("spawn_inherit_dynamic_island", False))
     )
-    host.clear_spawned_pets_btn = QPushButton("一键退出…", host)
+    host.clear_spawned_pets_btn = TiltButton("一键退出…", host)
     host.clear_spawned_pets_btn.clicked.connect(host._on_clear_spawned_pets)
     if host.config.instance_id:
         # 子肥鱼不能关闭主肥鱼进程，只允许主肥鱼执行退出操作。
@@ -270,7 +270,7 @@ def build_pet_controls(host) -> None:
     host.autostart_check.setChecked(host._autostart_initial)
     if host.config.instance_id:
         host.autostart_check.setEnabled(False)
-        host.autostart_check.setToolTip("仅主桌宠可设置")
+        host.autostart_check.setToolTip("仅主肥鱼可设置")
     host.dock_icon_check = None
     if sys.platform == "darwin":
         host.dock_icon_check = ToggleSwitch(host)
@@ -289,7 +289,7 @@ def build_pet_controls(host) -> None:
     click_vol = float(host.config.get("click_sound_volume", 0.70))
     host.click_sound_volume_spin.setValue(int(round(click_vol * 100)))
 
-    host.click_sound_preview_btn = QPushButton("试听", host)
+    host.click_sound_preview_btn = TiltButton("试听", host)
     host.click_sound_preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
     host.click_sound_preview_btn.setFixedWidth(72)
     host.click_sound_preview_btn.clicked.connect(host._preview_click_sound)
@@ -298,10 +298,6 @@ def build_pet_controls(host) -> None:
     # 音效开关即时生效：对话框的批量写回发生在关闭时，但声音开关是即时
     # 听觉反馈——用户关掉后期望立刻静音，而不是等关对话框。
     host.click_sound_check.toggled.connect(host._apply_click_sound_enabled_now)
-    host.click_balance_check = None
-    if host.include_ai:
-        host.click_balance_check = ToggleSwitch(host)
-        host.click_balance_check.setChecked(bool(host.config.get("click_show_balance", False)))
     host.click_self_talk_check = ToggleSwitch(host)
     host.click_self_talk_check.setChecked(bool(host.config.get("click_show_self_talk", False)))
     host.click_self_talk_speak_check = ToggleSwitch(host)
@@ -323,8 +319,6 @@ def build_pet_controls(host) -> None:
         host.music_browser_media_check.setChecked(
             bool(host.config.get("music_browser_media_enabled", False))
         )
-    host.agent_cost_check = ToggleSwitch(host)
-    host.agent_cost_check.setChecked(bool(host.config.get("agent_cost_enabled", False)))
     host.music_lyric_lead_spin = BrowserDoubleSpinBox(host)
     host.music_lyric_lead_spin.setRange(LEAD_MIN_SECONDS, LEAD_MAX_SECONDS)
     host.music_lyric_lead_spin.setSingleStep(0.1)
@@ -339,31 +333,6 @@ def build_pet_controls(host) -> None:
     host.golden_spin_direct_check.setChecked(bool(host.config.get("golden_spin_direct", False)))
     host.edge_probe_check = ToggleSwitch(host)
     host.edge_probe_check.setChecked(bool(host.config.get("edge_probe_enabled", False)))
-    host.balance_refresh_spin = None
-    host.balance_tier_mode_select = None
-    host.balance_tier_peak_edit = None
-    host.balance_tier_idle_edit = None
-    host.balance_tier_color_check = None
-    if host.include_ai:
-        host.balance_refresh_spin = BrowserSpinBox(host)
-        host.balance_refresh_spin.setRange(0, 1440)
-        host.balance_refresh_spin.setSuffix(" 分钟")
-        host.balance_refresh_spin.setValue(int(host.config.get("balance_refresh_minutes", 0) or 0))
-        host.balance_tier_mode_select = ModernSelect(host, width=180)
-        host.balance_tier_mode_select.addItem("空闲 / 高峰（默认）", "default")
-        host.balance_tier_mode_select.addItem("梁文谷 / 梁文峰", "liangwen")
-        host.balance_tier_mode_select.addItem("自定义", "custom")
-        host.balance_tier_mode_select.setCurrentData(
-            str(host.config.get("balance_tier_labels_mode", "default") or "default")
-        )
-        host.balance_tier_peak_edit = QLineEdit(host)
-        host.balance_tier_peak_edit.setPlaceholderText("高峰文本，例如：梁文峰")
-        host.balance_tier_peak_edit.setText(str(host.config.get("balance_tier_label_peak", "") or ""))
-        host.balance_tier_idle_edit = QLineEdit(host)
-        host.balance_tier_idle_edit.setPlaceholderText("空闲文本，例如：梁文谷")
-        host.balance_tier_idle_edit.setText(str(host.config.get("balance_tier_label_idle", "") or ""))
-        host.balance_tier_color_check = ToggleSwitch(host)
-        host.balance_tier_color_check.setChecked(bool(host.config.get("balance_tier_color_enabled", True)))
     host.auto_hide_fullscreen_check = None
     host.stream_capture_check = None
     if sys.platform == "win32":
@@ -452,7 +421,7 @@ def build_pet_controls(host) -> None:
     host.bubble_text_scale_spin.setRange(50, 300)
     host.bubble_text_scale_spin.setSuffix(" %")
     host.bubble_text_scale_spin.setValue(int(host.config.get("bubble_text_scale", 100)))
-    host.click_talk_bindings_btn = QPushButton("编辑…", host)
+    host.click_talk_bindings_btn = TiltButton("编辑…", host)
     host.click_talk_bindings_btn.setObjectName("clickTalkBindingsButton")
     host.click_talk_bindings_btn.clicked.connect(host._open_click_talk_bindings)
 
@@ -535,10 +504,10 @@ def build_pet_controls(host) -> None:
     )
     host.dialogue_template_import_edit.setMinimumHeight(92)
     host.dialogue_template_import_edit.setMaximumHeight(180)
-    host.dialogue_template_export_btn = QPushButton("一键复制模板", host)
+    host.dialogue_template_export_btn = TiltButton("一键复制模板", host)
     host.dialogue_template_export_btn.setObjectName("dialogueTemplateExportButton")
     host.dialogue_template_export_btn.clicked.connect(host._export_dialogue_template)
-    host.dialogue_template_import_btn = QPushButton("导入模板", host)
+    host.dialogue_template_import_btn = TiltButton("导入模板", host)
     host.dialogue_template_import_btn.setObjectName("dialogueTemplateImportButton")
     host.dialogue_template_import_btn.clicked.connect(host._import_dialogue_template_json)
     host.dialogue_template_actions = QWidget(host)
@@ -560,7 +529,7 @@ def build_pet_controls(host) -> None:
         toggle.setChecked(bool(agent_link_cfg.get(f"sound_{evt_key}_enabled", True)))
         path_val = str(agent_link_cfg.get(f"sound_{evt_key}_path") or default_builtin)
         picker = ResourcePathPicker(path_val, name_filter=AUDIO_NAME_FILTER, parent=host)
-        preview_btn = QPushButton("试听", host)
+        preview_btn = TiltButton("试听", host)
         preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
         preview_btn.setFixedWidth(72)
         preview_btn.clicked.connect(lambda _, k=evt_key: host._preview_agent_sound(k))
@@ -693,9 +662,9 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
 
 
 def build_island_card_source_select(host, island_cfg: dict):
-    """灵动岛「卡片内容」下拉：自动 / DeepSeek 余额 / Claude Code 会话。"""
+    """灵动岛「卡片内容」下拉：自动 / Claude Code 会话（余额项 2026-10-14 下线，值 balance 仍认但不再可选）。"""
     select = ModernSelect(host, width=160)
-    for label, value in (("自动", "auto"), ("DeepSeek 余额", "balance"), ("Claude Code 会话", "claude")):
+    for label, value in (("自动", "auto"), ("Claude Code 会话", "claude")):
         select.addItem(label, value)
     select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
     return select

@@ -26,6 +26,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from . import claude_session_history as history_mod
+from .i18n import t
 from . import claude_session_info, claude_session_jump
 from .claude_session_history import HistoryEntry, SessionHistory
 
@@ -252,25 +253,25 @@ class SessionHistoryActions:
     def _do_terminal(self, entry: HistoryEntry) -> str:
         argv = history_mod.terminal_resume_argv(entry, which=self._which, wsl=self._wsl)
         if argv is None or not self._popen(argv):
-            return "打不开终端，可以改用「复制恢复命令」"
-        return f"已在终端里恢复：{entry.label}"
+            return t("history.result.no_terminal")
+        return t("history.result.resumed", label=entry.label)
 
     def _do_vscode(self, entry: HistoryEntry) -> str:
         if self._open_vscode(self._detail(entry)):
-            return f"已在 VS Code 里打开：{entry.folder or entry.cwd}"
+            return t("history.result.opened_vscode", path=entry.folder or entry.cwd)
         if self._do_folder(entry) == "":
-            return "找不到 code 命令，已改为打开文件夹"
-        return "找不到 code 命令，文件夹也打不开"
+            return t("history.result.no_code_opened_folder")
+        return t("history.result.no_code_no_folder")
 
     def _do_folder(self, entry: HistoryEntry) -> str:
         path = claude_session_jump.explorer_path(self._detail(entry))
-        return "" if path and self._open_path(path) else "打不开这个文件夹"
+        return "" if path and self._open_path(path) else t("history.result.no_folder")
 
     def _do_copy_path(self, entry: HistoryEntry) -> str:
-        return self._copied(entry.cwd, "路径已复制")
+        return self._copied(entry.cwd, t("history.result.copied_path"))
 
     def _do_copy_resume(self, entry: HistoryEntry) -> str:
-        return self._copied(entry.resume_command, "恢复命令已复制（要在那个目录里执行）")
+        return self._copied(entry.resume_command, t("history.result.copied_resume"))
 
     def _copied(self, text: str, said: str) -> str:
         if self._copy is None or not text:

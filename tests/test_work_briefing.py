@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """工作简报：让 WSL 里登录着工作账号的 Claude Code 汇总 Jira / PR / Slack / 日程。
 
-桌宠自己用的是另一个账号的 API key，读不到工作账号的东西；它只负责定时触发、把结果
+肥鱼自己用的是另一个账号的 API key，读不到工作账号的东西；它只负责定时触发、把结果
 摆出来。这里守住的几条线：
 
 - 交给 Claude Code 的工具只有读取类的，内置工具（Bash / 读写文件）一个不给；
@@ -136,7 +136,7 @@ def test_the_command_runs_headless_with_builtin_tools_switched_off():
     assert " claude -p " in command and "--output-format json" in command
     assert "--tools ''" in command, "Bash / 读写文件这些内置工具一个不给"
     assert "--no-session-persistence" in command, "不在工作账号的会话列表里留一条"
-    assert f"{ch.HEADLESS_ENV}=1 " in command, "让桌宠自己的 hook 认出这次运行"
+    assert f"{ch.HEADLESS_ENV}=1 " in command, "让肥鱼自己的 hook 认出这次运行"
     assert "bypassPermissions" not in command and "dangerously" not in command
 
 
@@ -145,7 +145,7 @@ def test_a_strange_model_name_never_reaches_the_shell():
     assert "--model 'claude-opus-5-5'" in wb.claude_command("claude-opus-5-5")
 
 
-# ---------------------------------------------------------------- PR 列表（桌宠自己用 gh 查）
+# ---------------------------------------------------------------- PR 列表（肥鱼自己用 gh 查）
 
 def test_pull_requests_are_listed_under_two_headings():
     text = wb.format_pull_requests(_prs("Fix login", "Add cache") + f"\n{wb.PR_MARK}\n" + _prs("My change"))

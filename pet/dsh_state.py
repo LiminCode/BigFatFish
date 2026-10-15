@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """DSH 统一状态收敛（纯逻辑，无 Qt/线程/定时器）。
 
-数据源：随桌宠内置的 DSH 桥接插件 ``integrations/dsh-pet-bridge`` 写入的
+数据源：随肥鱼内置的 DSH 桥接插件 ``integrations/dsh-pet-bridge`` 写入的
 ``<数据基目录>/dsh-pet-bridge/dsh-{pid}.jsonl``（多实例分区写入；消费端
 glob ``dsh*.jsonl``，兼容旧版单文件 ``dsh.jsonl``）。
 
 减法后（2026-10）本模块只剩**纯函数/纯类**：唯一的桥接读方是
 ``pet/agent_link.py`` 的 ``DshMonitor``（一个 DirGlobTailer + 一个轮询线程，
 解析一次记录，分发给信号分派与本收敛器两个消费者）。本模块负责把桥接事件
-收敛为统一桌宠可见状态：
+收敛为统一肥鱼可见状态：
 
     offline / idle / thinking / working / waiting_approval / waiting_question /
     success / error
@@ -37,12 +37,12 @@ from typing import Optional
 log = logging.getLogger("big-fat-fish")
 
 # 审批锁存兜底：若 approval/decided 长时间未到，强制解除审批态回 working，
-# 避免桌宠卡死在 waiting_approval（DSH 异常漏发 decided 的防线）。
+# 避免肥鱼卡死在 waiting_approval（DSH 异常漏发 decided 的防线）。
 APPROVAL_LATCH_TIMEOUT_S = 120.0
 
 
 class DshState(str, Enum):
-    """桌宠可见的 DSH 统一状态。"""
+    """肥鱼可见的 DSH 统一状态。"""
     OFFLINE = "offline"
     IDLE = "idle"
     THINKING = "thinking"
@@ -129,10 +129,10 @@ def map_event_to_state(record: dict) -> Optional[DshState]:
 def candidate_ports(port: Optional[int] = None) -> list[int]:
     """待探测的 DSH 端口候选（offline 判定的唯一来源）。
 
-    DSH 可能跑在 3080（web 真实默认）或 38080（桌宠 harness_launcher 启动
+    DSH 可能跑在 3080（web 真实默认）或 38080（肥鱼 harness_launcher 启动
     时的避让端口），desktop 桌面端固定在 127.0.0.1:19387，也可能通过
     DSH_PORT 环境变量指定——全部探测，任一在线即视为 DSH 在线（兼容
-    「用户自己开的 DSH」与「桌宠一键启动的 DSH」）。
+    「用户自己开的 DSH」与「肥鱼一键启动的 DSH」）。
     """
     ports: set[int] = {3080, 38080, 19387}
     if port is not None:

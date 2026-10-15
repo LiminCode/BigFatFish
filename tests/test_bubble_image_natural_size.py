@@ -187,7 +187,7 @@ def test_settings_offer_the_limit_next_to_the_image_scale(tmp_path, monkeypatch)
     assert Config(tmp_path).get("self_talk_image_max_edge") == 480
 
 
-# ---------------------------------------------------------------- 桌宠（单合成窗壳）
+# ---------------------------------------------------------------- 肥鱼（单合成窗壳）
 
 def _talk_shell(tmp_path, **values):
     import tests.test_overlay_self_talk as st

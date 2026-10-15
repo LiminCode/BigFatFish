@@ -14,7 +14,7 @@
   ``set_stream_capture_mode``），重启也不生效 → 置灰 + 如实说明。
 - T3 窗口级键（置顶/鼠标穿透/不透明度/锁定位置/SHIFT 拖拽/光标隐藏穿透/全屏
   自动隐藏）在 overlay 一窗多宠下物理上只能整窗生效 → 子宠设置页补一句
-  「对所有桌宠生效」；主宠页与 legacy 拓扑不加。
+  「对所有肥鱼生效」；主宠页与 legacy 拓扑不加。
 
 纪律：offscreen；同步直调，不 sleep；不 mock 产品对象。
 """
@@ -41,8 +41,8 @@ WINDOW_SCOPE_IDS = (
     "auto_hide_fullscreen",
 )
 
-SCOPE_NOTE = "对所有桌宠生效"
-LEGACY_STREAM_CAPTURE_HINT = "让 OBS 等工具能够枚举并捕获桌宠窗口。"
+SCOPE_NOTE = "对所有肥鱼生效"
+LEGACY_STREAM_CAPTURE_HINT = "让 OBS 等工具能够枚举并捕获肥鱼窗口。"
 
 
 def _dialog(tmp_path, monkeypatch, *, topology: str = "overlay", instance_id: str = "",
@@ -153,7 +153,7 @@ def test_stream_capture_unchanged_under_legacy(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 @pytest.mark.parametrize("setting_id", WINDOW_SCOPE_IDS)
 def test_child_page_marks_window_scope_keys_as_global(tmp_path, monkeypatch, setting_id):
-    """overlay + 子宠页：窗口级键补「对所有桌宠生效」，可访问说明同步。"""
+    """overlay + 子宠页：窗口级键补「对所有肥鱼生效」，可访问说明同步。"""
     import pet.modern_settings_dialog as settings_mod
 
     dialog = _dialog(tmp_path, monkeypatch, instance_id="slot-1")

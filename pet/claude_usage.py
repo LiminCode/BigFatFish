@@ -23,6 +23,8 @@
 
 from __future__ import annotations
 
+from .i18n import t
+
 import json
 import time
 from dataclasses import dataclass
@@ -68,13 +70,13 @@ class UsageTotals:
 
     @property
     def headline(self) -> str:
-        return f"今日 {format_tokens(self.tokens)}"
+        return t("usage.headline", tokens=format_tokens(self.tokens))
 
     @property
     def detail(self) -> str:
-        return (f"今日 Claude Code 用量 {format_tokens(self.tokens)}：输出 {format_tokens(self.output)}"
-                f" · 输入 {format_tokens(self.input)} · 缓存写入 {format_tokens(self.cache_write)}"
-                f"（另有缓存读取 {format_tokens(self.cache_read)}，不计入）")
+        return t("usage.detail", total=format_tokens(self.tokens), output=format_tokens(self.output),
+                 input=format_tokens(self.input), cache_write=format_tokens(self.cache_write),
+                 cache_read=format_tokens(self.cache_read))
 
 
 def local_midnight(now: float) -> float:

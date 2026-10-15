@@ -172,7 +172,7 @@ def _make_slot_shell(tmp_path, **config_values):
 
     与上面 ``fac._make_shell``（dict 假 config）不同：per-slot 用例必须走真配置
     文件——``_spawn_slot`` 会用 ``slot_manager.seed_slot_config_from_main`` 把主
-    配置落种成 ``config-slot-N.json``，这正是旧架构"每个桌宠各自 config"的物质
+    配置落种成 ``config-slot-N.json``，这正是旧架构"每个肥鱼各自 config"的物质
     基础。所有写盘都在 tmp_path 内。
     """
     from pet.config import Config

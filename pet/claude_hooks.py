@@ -11,7 +11,7 @@
    ``tool_response`` 可以有几百 KB（shell 的 ``read`` 逐字节读，300KB 实测 600ms）。
 2. **settings.json 合并**（``merge_hooks`` / ``strip_hooks``）：只动带
    ``x-dsh-pet`` 标记的条目，用户自己的 hooks 原样保留。
-3. **WSL 通道**（``WslSettingsStore`` / ``to_wsl_path``）：桌宠跑在 Windows，
+3. **WSL 通道**（``WslSettingsStore`` / ``to_wsl_path``）：肥鱼跑在 Windows，
    Claude Code 跑在 WSL 发行版里——读写发行版内的 ``~/.claude/settings.json``
    一律经 ``wsl.exe``，事件文件仍落在 Windows 侧（WSL 里看是 ``/mnt/c/…``）。
 4. **会话收敛**（``ClaudeSessionTracker``）：同一个 Claude Code 可以同时开多个
@@ -25,11 +25,14 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable
+
+from .i18n import t
 
 #: 注入的 hook 事件。Stop / StopFailure 是回合边界；Notification 用来感知
 #: 「在等用户批准」；SessionEnd 让关掉的会话不再占着「忙」。
@@ -37,15 +40,15 @@ HOOK_EVENTS = (
     "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure",
     "SessionStart", "SessionEnd", "UserPromptSubmit", "Notification",
 )
-HOOK_FLAG = "x-dsh-pet"            # 本桌宠注入条目的结构化标记
+HOOK_FLAG = "x-dsh-pet"            # 本肥鱼注入条目的结构化标记
 HOOK_SCRIPT_NAME = "claude_event_hook.sh"
-#: 桌宠自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
+#: 肥鱼自己无界面跑 Claude Code 时（工作简报）带上这个环境变量：hook 认出来就什么都
 #: 不落，这次运行不会冒出一只会话小鱼。
 HEADLESS_ENV = "BIG_FAT_FISH_HEADLESS"
 #: 无标记旧条目的兜底识别（早期版本注入）：命令里带这些脚本文件名才算我们的。
 _LEGACY_SCRIPT_MARKERS = ("claude_event_hook.ps1", "claude_event_hook.py", HOOK_SCRIPT_NAME)
 
-_HOOK_SCRIPT = r"""# dsh-pet: Claude Code 事件 hook。由桌宠生成、每次启动刷新，请勿手改。
+_HOOK_SCRIPT = r"""# dsh-pet: Claude Code 事件 hook。由肥鱼生成、每次启动刷新，请勿手改。
 # 由 hook 命令 source 执行；事件名 / Agent 名 / 输出文件经环境变量传入。
 # 只落元数据（时间戳、事件名、会话 ID、工具名、通知类型），其余一概不写。
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -53,7 +56,7 @@ if [ -n "${BASH_VERSION:-}" ]; then
 else
     _dp_in=$(head -c 4096)
 fi
-[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 桌宠自己起的无界面运行：不报
+[ -z "${BIG_FAT_FISH_HEADLESS:-}" ] || return 0   # 肥鱼自己起的无界面运行：不报
 _dp_pick() {
     case $_dp_in in
         *"\"$1\":\""*) _dp_v=${_dp_in#*"\"$1\":\""}; _dp_v=${_dp_v%%\"*} ;;
@@ -92,7 +95,7 @@ case ${DSH_PET_EVENT:-} in
         _dp_cwd=$_dp_v
         _dp_proj=${_dp_v##*/}; _dp_proj=${_dp_proj##*\\}
         _dp_raw transcript_path
-        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=
+        _dp_path=$_dp_v; _dp_tpath=$_dp_v; _dp_title=; _dp_model=
         if [ -n "$_dp_path" ]; then
             # Windows 路径在 JSON 里是 C:\\Users\\…：还原成单反斜杠（bash 专有语法放进 eval，dash 不解析）
             [ -z "${BASH_VERSION:-}" ] || eval '_dp_path=${_dp_path//\\\\/\\}'
@@ -107,11 +110,19 @@ case ${DSH_PET_EVENT:-} in
                     _dp_title=${_dp_tail##*\"aiTitle\":\"}
                     _dp_title=${_dp_title%%\"*}; _dp_title=${_dp_title%%\\*} ;;
             esac
+            # 最近一轮用的模型（assistant 记录里的 "model":"claude-…"）：给小鱼戴桂冠用。
+            # 只认 claude- 开头、字母数字点横线组成的；别的（含怪字符）当没有。
+            case $_dp_tail in
+                *'"model":"claude-'*)
+                    _dp_model=${_dp_tail##*\"model\":\"}
+                    _dp_model=${_dp_model%%\"*}
+                    case $_dp_model in *[!A-Za-z0-9.-]*) _dp_model= ;; esac ;;
+            esac
         fi
         # cwd / transcript 是 stdin 里原样截出的 JSON 字符串片段（Windows 路径的反斜杠
         # 已经是转义好的 \\），直接嵌回去；它们只是两条路径，不含对话内容。
-        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s"}\n' \
-            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
+        { printf '{"agent":"%s","event":"SessionMeta","sessionId":"%s","project":"%s","title":"%s","cwd":"%s","transcript":"%s","model":"%s"}\n' \
+            "${DSH_PET_AGENT:-claude}" "$_dp_sid" "$_dp_proj" "$_dp_title" "$_dp_cwd" "$_dp_tpath" "$_dp_model" >> "$DSH_PET_OUT"; } 2>/dev/null || : ;;
 esac
 """
 
@@ -164,7 +175,7 @@ def _sq(value: str) -> str:
 def sh_hook_command(script: str, out: str, agent: str, event: str) -> str:
     """hook 命令：脚本存在才 source，且永远以 0 退出。
 
-    脚本缺失时（桌宠卸载了但 hooks 还在）直接 ``.`` 一个不存在的文件会让非交互
+    脚本缺失时（肥鱼卸载了但 hooks 还在）直接 ``.`` 一个不存在的文件会让非交互
     shell 报错退出，Claude Code 每个事件都要记一条 hook 失败——所以先 ``[ -r ]``。
     """
     return (
@@ -215,7 +226,7 @@ def find_git_bash() -> str | None:
 # ---------------------------------------------------------------- settings.json 合并
 
 def is_our_entry(entry: Any) -> bool:
-    """是不是本桌宠注入的 matcher 组（新格式认标记，旧格式认脚本文件名）。"""
+    """是不是本肥鱼注入的 matcher 组（新格式认标记，旧格式认脚本文件名）。"""
     if not isinstance(entry, dict):
         return False
     if entry.get(HOOK_FLAG) is True:
@@ -228,7 +239,7 @@ def is_our_entry(entry: Any) -> bool:
 
 
 def strip_hooks(data: dict) -> dict:
-    """移除本桌宠的全部条目（就地改并返回）；清空的事件键一并删掉。"""
+    """移除本肥鱼的全部条目（就地改并返回）；清空的事件键一并删掉。"""
     hooks = data.get("hooks")
     if not isinstance(hooks, dict):
         return data
@@ -283,7 +294,7 @@ def run_wsl(args: list[str], *, input_text: str | None = None,
             timeout: float = _WSL_TIMEOUT_S) -> tuple[int, str]:
     """在默认发行版里跑一条命令，返回 (返回码, stdout)。任何失败都折成非零返回码。
 
-    ``CREATE_NO_WINDOW``：桌宠由 pythonw / GUI exe 启动时没有控制台，不带它每次调用
+    ``CREATE_NO_WINDOW``：肥鱼由 pythonw / GUI exe 启动时没有控制台，不带它每次调用
     都会闪一个终端窗口。``WSL_UTF8=1``：否则 wsl.exe 自己的输出是 UTF-16。
     """
     exe = wsl_exe()
@@ -344,14 +355,28 @@ class WslSettingsStore:
 #: 逐会话阶段 → 标签上的状态文案（会话小鱼与灵动岛卡片共用）。
 #: ``review``（回合结束、用户还没去看）不是收敛器报的：呈现层
 #: （``SessionPetController``）在 ``resting`` 上按「看过没有」分出来的。
-PHASE_TEXT = {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中"}
-_PHASE_COUNT_TEXT = {"waiting": "{n} 个等你批准", "review": "{n} 个等你回复",
-                     "working": "{n} 个在干活", "resting": "{n} 个休息中"}
+class _PhaseText(Mapping):
+    """阶段 → 当前语言的状态文案（``session.phase.*``）。像字典一样用，但每次取都按当前语言。"""
+
+    _PHASES = ("working", "waiting", "review", "resting")
+
+    def __getitem__(self, phase: str) -> str:
+        if phase not in self._PHASES:
+            raise KeyError(phase)
+        return t(f"session.phase.{phase}")
+
+    def __iter__(self):
+        return iter(self._PHASES)
+
+    def __len__(self) -> int:
+        return len(self._PHASES)
+
+
+PHASE_TEXT: Mapping[str, str] = _PhaseText()
 #: 汇总时的排序：最需要人管的排最前
 _PHASE_ORDER = ("waiting", "review", "working", "resting")
-#: 灵动岛胶囊上的计数：(阶段, 短标签)，按显示顺序
-_CAPSULE_PHASES = (("working", "工作中"), ("resting", "休息中"), ("review", "待回复"),
-                   ("waiting", "等待中"))
+#: 灵动岛胶囊上的计数：阶段，按显示顺序（短标签见 ``session.capsule.*``）
+_CAPSULE_PHASES = ("working", "resting", "review", "waiting")
 #: 两个通道可能开着同名项目：WSL 那边的加个后缀区分
 CHANNEL_SUFFIX = {"claude_wsl": " (WSL)"}
 
@@ -368,8 +393,8 @@ def session_counts(sessions: list[dict]) -> list[tuple[str, str]]:
 
     灵动岛胶囊用：一眼看出几个在干活、几个歇着、几个在等你。
     """
-    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase, _ in _CAPSULE_PHASES}
-    return [(phase, f"{counts[phase]} {text}") for phase, text in _CAPSULE_PHASES if counts[phase]]
+    counts = {phase: sum(1 for s in sessions if s.get("phase") == phase) for phase in _CAPSULE_PHASES}
+    return [(phase, f"{counts[phase]} {t(f'session.capsule.{phase}')}") for phase in _CAPSULE_PHASES if counts[phase]]
 
 
 def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[str, str]:
@@ -379,16 +404,16 @@ def summarize_sessions(sessions: list[dict], *, detail_max: int = 2) -> tuple[st
     """
     live = [s for s in sessions if s.get("phase") in PHASE_TEXT]
     if not live:
-        return "Claude Code · 没有在用的会话", "会话提问后会出现在这里"
+        return t("session.none"), t("session.none_hint")
     counts = {phase: sum(1 for s in live if s["phase"] == phase) for phase in _PHASE_ORDER}
     headline = "Claude Code · " + " · ".join(
-        _PHASE_COUNT_TEXT[phase].format(n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
+        t(f"session.count.{phase}", n=counts[phase]) for phase in _PHASE_ORDER if counts[phase])
     ordered = sorted(live, key=lambda s: _PHASE_ORDER.index(s["phase"]))
     detail = " ｜ ".join(
         f"{session_label(str(s.get('agent') or ''), s)} · {PHASE_TEXT[s['phase']]}"
         for s in ordered[:detail_max])
     if len(ordered) > detail_max:
-        detail += f" 等 {len(ordered)} 个"
+        detail += t("session.more", n=len(ordered))
     return headline, detail
 
 
@@ -401,7 +426,7 @@ class ClaudeSessionTracker:
 
     - ``("state", 状态)``：Agent 级状态，交给既有状态机；
     - ``("session_done", {...})``：一个会话收工，但同 Agent 还有别的会话在忙——
-      只该弹一条提示，不能动状态机（否则桌宠会切回待机）；
+      只该弹一条提示，不能动状态机（否则肥鱼会切回待机）；
     - ``("approval_request" | "approval_resolved", {"approvalId": ...})``：
       会话停在权限确认上 / 之后又动了。
 
@@ -409,7 +434,7 @@ class ClaudeSessionTracker:
     Code 的实际语义决定的：
 
     - ``PostToolUseFailure`` 算 **working**：工具失败（grep 没匹配、测试没过）是
-      常态，回合照常继续。按通用映射算 error 的话，模型多想 0.8 秒桌宠就会报
+      常态，回合照常继续。按通用映射算 error 的话，模型多想 0.8 秒肥鱼就会报
       「那边停了」。真正的回合失败是 ``StopFailure``。
     - ``SessionStart`` **不产生状态**：自动压缩上下文会在回合中途触发它
       （``source=compact``），当成 idle 会误报完成。
@@ -439,7 +464,7 @@ class ClaudeSessionTracker:
     _PATH_MAX = 520
     #: 随逐会话更新捎带的附加字段：有值才出现，值变了不单独触发一条更新
     #: （``tool`` 每次工具调用都变，单独上报会把呈现层刷爆）。
-    _EXTRA_KEYS = ("cwd", "transcript", "tool")
+    _EXTRA_KEYS = ("cwd", "transcript", "tool", "model")
 
     def __init__(self) -> None:
         self._busy: dict[str, str] = {}       # 会话 ID → thinking / working
@@ -536,7 +561,8 @@ class ClaudeSessionTracker:
         if event == "SessionMeta":
             paths_changed = self._note_extra(
                 sid, cwd=str(record.get("cwd") or "")[:self._PATH_MAX],
-                transcript=str(record.get("transcript") or "")[:self._PATH_MAX])
+                transcript=str(record.get("transcript") or "")[:self._PATH_MAX],
+                model=self._label(record.get("model"))[:60])
             before = len(self._updates)
             self._session_update(sid, title=self._label(record.get("title")),
                                  project=self._label(record.get("project")))

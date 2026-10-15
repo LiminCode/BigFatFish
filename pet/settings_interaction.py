@@ -46,21 +46,11 @@ def _page(dialog, title: str, sections: list[tuple[str, list[SettingRow]]]) -> Q
 def build_click_rows(dialog) -> list[SettingRow]:
     """「点击反馈」组的行（顺序与既有渲染顺序一致，多处用例按顺序/组名断言）。"""
     rows = [
-        SettingRow("click_sound", "点击音效", "点击桌宠时播放轻量反馈音效。", dialog.click_sound_check),
+        SettingRow("click_sound", "点击音效", "点击肥鱼时播放轻量反馈音效。", dialog.click_sound_check),
         SettingRow("click_sound_pack", "音效音源", "选择预设音效包、自定义音频文件或文件夹随机播放。", dialog.click_sound_picker, stacked=True),
         SettingRow("click_sound_volume", "音效音量", "调整点击音效播放音量。", dialog.click_sound_volume_spin),
         SettingRow("click_sound_preview", "试听音效", "测试当前选择的点击音效。", dialog.click_sound_preview_btn),
     ]
-    if getattr(dialog, "click_balance_check", None) is not None:
-        # 余额能力可用时才出现（与控件创建口径一致），位置保持在「试听音效」之后。
-        rows.append(
-            SettingRow(
-                "click_balance",
-                "点击显示余额",
-                "点击桌宠时查询并用气泡展示模型服务余额。",
-                dialog.click_balance_check,
-            )
-        )
     rows.extend(
         [
             SettingRow("click_self_talk", "点击触发自言自语", "点击时随机显示一条自言自语内容；打开后可用下方两项把同一句读出来。", dialog.click_self_talk_check),
@@ -82,7 +72,7 @@ def build_click_rows(dialog) -> list[SettingRow]:
             SettingRow(
                 "golden_spin_click",
                 "点击触发黄金回旋",
-                "开启后点击桌宠触发原地逆时针 360° 旋转；下方子开关可选择跳过点击动画直接回旋。",
+                "开启后点击肥鱼触发原地逆时针 360° 旋转；下方子开关可选择跳过点击动画直接回旋。",
                 dialog.golden_spin_click_check,
             ),
             SettingRow(
@@ -103,10 +93,10 @@ def build_self_talk_rows(dialog) -> list[SettingRow]:
         SettingRow(
             "self_talk_bubble_style",
             "气泡方案",
-            "选择气泡视觉与相对桌宠的位置；贴近屏幕边缘时自动换位。",
+            "选择气泡视觉与相对肥鱼的位置；贴近屏幕边缘时自动换位。",
             dialog.bubble_style_select,
         ),
-        SettingRow("self_talk", "气泡自言自语", "让桌宠偶尔显示一条随机思考气泡。", dialog.self_talk_check),
+        SettingRow("self_talk", "气泡自言自语", "让肥鱼偶尔显示一条随机思考气泡。", dialog.self_talk_check),
         SettingRow("self_talk_duration", "显示时间", "每条文字或图片气泡保持显示的时间。", dialog.self_talk_duration_spin),
         SettingRow("self_talk_min", "最短间隔", "上一条气泡消失后，到下一条出现前的最短空闲时间。", dialog.min_spin),
         SettingRow("self_talk_max", "最长间隔", "上一条气泡消失后，到下一条出现前的最长空闲时间。", dialog.max_spin),
@@ -156,7 +146,7 @@ def build_interaction_domain(dialog) -> QWidget:
                         SettingRow(
                             "mouse_through",
                             "鼠标穿透",
-                            "开启后桌宠不接收鼠标事件，点击穿透到下层窗口。",
+                            "开启后肥鱼不接收鼠标事件，点击穿透到下层窗口。",
                             dialog.mouse_through_check,
                         )
                     ],

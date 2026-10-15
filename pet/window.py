@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-桌宠主窗口 —— 透明无边框置顶窗口 + 动画链状态机 + 移动驱动 + 交互。
+肥鱼主窗口 —— 透明无边框置顶窗口 + 动画链状态机 + 移动驱动 + 交互。
 
 
 状态机（对应原插件 dsh-pet lib/client.js 的链式模型，行为 1:1 移植）：
@@ -136,15 +136,15 @@ def _resolve_self_talk_image_dir(raw: str) -> str:
 
 
 # 直播捕获兼容模式下窗口标题（普通顶层窗口需要可见标题，供直播姬/OBS 选择）
-STREAM_CAPTURE_TITLE = 'dsh-pet 桌宠'
+STREAM_CAPTURE_TITLE = 'dsh-pet 肥鱼'
 
 IDLE = "IDLE"
 DRAGGING = "DRAGGING"
 SLINGSHOT_AIMING = "SLINGSHOT_AIMING"
 THROWN = "THROWN"
 COLLISION_HIT_MIN_DV = 300.0
-# 抛掷中的桌宠也只吸收超过此值的冲量修正：静置接触的 e=0 抵消微冲量
-# （十几 px/s）会把贴地桌宠永远顶在静止线以上，形成自供能原地抖动
+# 抛掷中的肥鱼也只吸收超过此值的冲量修正：静置接触的 e=0 抵消微冲量
+# （十几 px/s）会把贴地肥鱼永远顶在静止线以上，形成自供能原地抖动
 COLLISION_CONTACT_DV_FLOOR = 50.0
 # 普通拖拽合帧消费节奏：~120Hz（8ms）。高回报率鼠标（125-1000Hz）会在
 # 一个显示帧内触发多次 mouseMoveEvent，中间位置屏幕来不及显示；合帧 timer
@@ -158,7 +158,7 @@ DRAG_MOVE_COALESCE_MS = 8
 THROW_SLOW_ANIM_SPEED = 400.0
 
 # ---- 闲置降帧（性能调研 §4.3；批11 联动解码节流）----
-# 长时间不碰桌宠且可见时动画降帧。批11 起解码/消费联动降速：
+# 长时间不碰肥鱼且可见时动画降帧。批11 起解码/消费联动降速：
 # reader 入队由超时丢帧改为有界阻塞，被丢弃的帧在 reader 侧未解码。
 # 节流路径仍每帧消费源帧（帧号锚定源时间线），动画时长随解码减半。
 # 默认闲置阈值 30 秒（idle_low_fps_threshold）；开关默认关（灰度）。
@@ -175,7 +175,7 @@ _FRAME_FP_BLOCK = 64  # 头部/尾部各取 64 字节做弱指纹（webm 头尾�
 
 
 def build_window_flags(config, mouse_through: bool = False, stream_capture_mode: bool = False):
-    """构造桌宠窗口 flags。
+    """构造肥鱼窗口 flags。
 
     默认形态：FramelessWindowHint | Tool（Windows 上映射 WS_EX_TOOLWINDOW，
     不进任务栏/Alt+Tab，但直播姬、OBS 等窗口捕获软件会过滤掉 Tool 窗口）。
@@ -335,10 +335,10 @@ def _content_frame_rect(pet) -> QRect:
 
 
 class PetWindow(QWidget, WindowFeatureGateMixin):
-    """桌宠窗口本体。"""
+    """肥鱼窗口本体。"""
 
     look_done = Signal(str, str, bool)
-    fullscreen_changed = Signal(bool)  # 全屏 watcher 线程 → 主线程（隐藏/恢复桌宠）
+    fullscreen_changed = Signal(bool)  # 全屏 watcher 线程 → 主线程（隐藏/恢复肥鱼）
     cursor_visibility_changed = Signal(str)
     # 首帧就绪（一次性）：v4.2.1 起 GUI 线程不再同步解码首帧（da8f291），窗口刚
     # show() 时 icon_pixmap() 还是空图——托盘图标需要这个信号在上线后补画。
@@ -518,7 +518,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self.agent_link_manager = agent_link_manager
 
         # ---- 全屏应用自动隐藏（Windows）----
-        # 前台窗口覆盖整个屏幕几何（含任务栏区域）时自动隐藏桌宠，
+        # 前台窗口覆盖整个屏幕几何（含任务栏区域）时自动隐藏肥鱼，
         # 全屏退出后自动恢复。最大化窗口不覆盖任务栏，不会误触发。
         # 后台线程轮询 + 信号回主线程：QTimer 轮询在实测中多起「启动数秒后
         # 静默停发 timeout」的疑难，线程通道不受其影响；检测为纯 win32 调用。
@@ -537,14 +537,14 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
 
         # ---- 窗口属性：无边框 + 透明 + 不进任务栏；置顶可配置 ----
         # 直播捕获兼容模式（stream_capture_mode）：Tool → 普通顶层窗口 + 标题，
-        # 使直播姬/OBS 的窗口捕获能枚举到桌宠（Tool 窗口会被捕获软件过滤）。
+        # 使直播姬/OBS 的窗口捕获能枚举到肥鱼（Tool 窗口会被捕获软件过滤）。
         self._stream_capture_mode = bool(config.get('stream_capture_mode', False))
         self._capture_headroom = 0  # 捕获子气泡需要的透明头顶空间（逻辑像素）
         self._draw_delta = QPoint(0, 0)  # 贴边绘制偏移（见类属性注释）
         flags = build_window_flags(config, self.mouse_through, self._stream_capture_mode)
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # 透明桌宠不参与系统自动背景填充：减少偶发“频闪/背景闪一下”。
+        # 透明肥鱼不参与系统自动背景填充：减少偶发“频闪/背景闪一下”。
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         if self._stream_capture_mode:
@@ -788,7 +788,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         立即恢复全帧率呈现。
 
         活跃度判定范围（进入闲置降帧前的计时锚点）：
-        - 鼠标：到达桌宠窗口的按下/移动/松手（含点击、拖拽、弹弓瞄准；
+        - 鼠标：到达肥鱼窗口的按下/移动/松手（含点击、拖拽、弹弓瞄准；
           平台穿透 mask 已挡住透明区域，能到达窗口的鼠标事件视为用户注意，
           左右留白收到事件也计入——这是设计选择而非误计）；
         - 键盘：被窗口消费的按键（ESC 取消弹弓等，keyPressEvent）；
@@ -799,7 +799,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
 
         不计入的范围（自动产生的视觉/物理活动，不算用户活跃）：
         - 自动动画链/自动移动/物理抛掷/碰撞反弹/弹弓物理 tick
-          ——否则桌宠持续自动活动将永不进入降帧；
+          ——否则肥鱼持续自动活动将永不进入降帧；
         - 未到达窗口或被窗口忽略的输入。
         """
         self._last_activity_ts = self._clock()
@@ -1116,11 +1116,11 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
     def showEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
         """窗口显示时校正层级（延迟执行，避免被 Qt 窗口重建覆盖）。"""
         super().showEvent(event)
-        logging.info("[VIS] 桌宠显示 anim=%s", getattr(self, 'anim', '?'))  # 频闪排查观测
+        logging.info("[VIS] 肥鱼显示 anim=%s", getattr(self, 'anim', '?'))  # 频闪排查观测
         # 原生窗口此刻已就绪：接线 DPR 变化信号（跨屏/显示缩放 → 强制重建）。
         # 幂等；QWindow 被重建后再次 show 会重挂到新 handle。
         self._arm_dpr_change_watch()
-        # 原生窗口此刻已就绪：置位 WS_EX_NOACTIVATE，点击桌宠不夺前台（issue #98）。
+        # 原生窗口此刻已就绪：置位 WS_EX_NOACTIVATE，点击肥鱼不夺前台（issue #98）。
         # 放在 showEvent 是因为改 flags / 重建原生窗口都可能丢掉扩展样式位。
         self._apply_windows_no_activate()
         self._schedule_macos_window_level(bool(self.cfg.get('on_top', True)))
@@ -1137,7 +1137,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             self._hidden_paused = False
             self._phys_vel[:] = [0.0, 0.0]
             self._resume_activity()
-            # 恢复显示 = 用户重新看着桌宠：重置闲置计时，重新以全帧率呈现
+            # 恢复显示 = 用户重新看着肥鱼：重置闲置计时，重新以全帧率呈现
             # （只有再闲置 idle_low_fps_threshold 秒才进入降帧）
             self.mark_activity()
         music_timer = getattr(self, "_music_sing_timer", None)
@@ -1146,14 +1146,14 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self._effects_on_shown()
 
     def hide(self, *, notify: bool = True) -> None:
-        """隐藏桌宠。
+        """隐藏肥鱼。
 
         notify=False 供角色切换等内部替换使用（不弹托盘提示、不 arm Dock 点击恢复监听）。
         隐藏即暂停动画解码与全部活动定时器（低功耗：不可见就零消耗）。
         """
         if getattr(self, "_interaction_state", IDLE) == SLINGSHOT_AIMING:
             self._cancel_slingshot_to_anchor()
-        logging.info("[VIS] 桌宠隐藏 notify=%s anim=%s", notify, getattr(self, 'anim', '?'))  # 频闪排查观测
+        logging.info("[VIS] 肥鱼隐藏 notify=%s anim=%s", notify, getattr(self, 'anim', '?'))  # 频闪排查观测
         self._hidden_paused = True
         self._effects_on_hidden()
         self._pause_activity()
@@ -1201,7 +1201,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         # 停掉全部活动定时器并清空关联状态（含待重试被拒动画）。
         self._stop_all_timers()
         # 全屏 watcher 不能在"全屏自动隐藏"期间停：它是退出全屏后
-        # 重新 show() 的唯一检测路径，停了桌宠就再也回不来。
+        # 重新 show() 的唯一检测路径，停了肥鱼就再也回不来。
         # 只有手动隐藏（托盘/右键，_auto_hidden 为 False）才停它。
         if not self._auto_hidden:
             self._stop_fs_watch()
@@ -1437,7 +1437,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
 
 
     def _arm_dock_reactivate_restore(self) -> None:
-        """macOS：隐藏后点击 Dock 图标激活应用时自动恢复桌宠（一次性监听）。
+        """macOS：隐藏后点击 Dock 图标激活应用时自动恢复肥鱼（一次性监听）。
 
         连接只建立一次，用 _dock_reactivate_armed 控制响应次数，
         避免对销毁中的窗口反复 connect/disconnect。
@@ -2323,7 +2323,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
                     x, y, w, h = (content_rect.x() + sq_x, content_rect.y() + sq_y,
                                   sq_w, sq_h)
                 # 彩蛋/探头旋转在 squash 期间必须保持：碰撞触发 220ms Q 弹时丢
-                # 旋转会让头槌飞行中的桌宠闪一瞬间回正姿态（实机观感反馈），
+                # 旋转会让头槌飞行中的肥鱼闪一瞬间回正姿态（实机观感反馈），
                 # 且 _sync_mask 的旋转路径一直在转——不转会导致画面与 mask
                 # 轮廓错位。路径与 mask 分支一致：平移到绘制矩形左上角后绕中心旋转。
                 effects_angle = getattr(self, '_effects_current_angle', None)
@@ -3100,9 +3100,9 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self._drag_move_pending = None
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        # 任何到达桌宠窗口的按下都是"鼠标命中"：立即回满帧率（闲置降帧锚点）。
+        # 任何到达肥鱼窗口的按下都是"鼠标命中"：立即回满帧率（闲置降帧锚点）。
         # 窗口透明区域在 Windows 逐像素穿透/非 Windows mask 下不会收到事件，
-        # 因此能到达这里的一定是用户真的在点桌宠。
+        # 因此能到达这里的一定是用户真的在点肥鱼。
         self.mark_activity()
         buttons = event.buttons() | event.button()
         if event.button() == Qt.MouseButton.RightButton and buttons & Qt.MouseButton.LeftButton:
@@ -3319,7 +3319,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             self.on_open_quick_chat()
 
     def _try_open_quick_chat_from_bubble(self, global_pos) -> bool:
-        """点击桌宠头顶的气泡时打开快速对话（而不是触发 Q 弹）。"""
+        """点击肥鱼头顶的气泡时打开快速对话（而不是触发 Q 弹）。"""
         callback = getattr(self, "on_open_quick_chat", None)
         if not callable(callback):
             return False
@@ -3432,7 +3432,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         provider = copy.copy(settings.active_config)
         provider.api_key = self.cfg.resolve_api_key(provider)
         system_prompt = settings.default_system_prompt
-        # 自我识别提示用的角色显示名（截图里的桌宠就是它自己）；别名优先
+        # 自我识别提示用的角色显示名（截图里的肥鱼就是它自己）；别名优先
         pet_name = self.cfg.character_display_name(
             str(self.cfg.get('character', catalog.DEFAULT_CHARACTER))
         )
@@ -3710,7 +3710,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
     def show_bubble(self, text: str, duration_ms: int = 3200, subtitle: str | None = None,
                     *, sticky: bool = False, buttons: list[tuple[str, object]] | None = None,
                     title_first: bool = False, width_locked: bool = False) -> None:
-        """向桌宠头顶冒泡提示（app 层反馈用，非侵入）。重要气泡会占用气泡位。
+        """向肥鱼头顶冒泡提示（app 层反馈用，非侵入）。重要气泡会占用气泡位。
 
         ``sticky=True`` 显示「一直挂到主动关闭」的气泡（审批等）：不启动自动
         隐藏，且激活期间自言自语/普通气泡让路；被其他气泡临时盖掉后会自动恢复，
@@ -3994,18 +3994,18 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             self.movie.set_playback_speed(self.playback_speed)
 
     def _apply_windows_no_activate(self) -> None:
-        """Windows：置位 WS_EX_NOACTIVATE，点击桌宠不夺走前台（issue #98）。
+        """Windows：置位 WS_EX_NOACTIVATE，点击肥鱼不夺走前台（issue #98）。
 
-        现场症状：全局 Ctrl+C/Ctrl+V 失效（右键复制粘贴同样无效），退出桌宠后
-        恢复。根因是桌宠虽是 Tool 窗口但**可以**被点击激活——鼠标点击后它成为
-        前台窗口，用户随后的按键（含 Ctrl+C/Ctrl+V）全部投递给桌宠；而桌宠既不
+        现场症状：全局 Ctrl+C/Ctrl+V 失效（右键复制粘贴同样无效），退出肥鱼后
+        恢复。根因是肥鱼虽是 Tool 窗口但**可以**被点击激活——鼠标点击后它成为
+        前台窗口，用户随后的按键（含 Ctrl+C/Ctrl+V）全部投递给肥鱼；而肥鱼既不
         处理这两个快捷键、也没有任何控件持有键盘焦点，于是观感就是"整机剪切板
-        坏了"。实测（SendInput 真实点击，跨进程）：修复前 fg=桌宠，修复后
-        fg 仍是用户原来的应用，且桌宠照样收到 press/release。
+        坏了"。实测（SendInput 真实点击，跨进程）：修复前 fg=肥鱼，修复后
+        fg 仍是用户原来的应用，且肥鱼照样收到 press/release。
 
         WS_EX_NOACTIVATE 只关掉"激活"：窗口仍接收鼠标/键盘消息（点击、拖拽、
         逐像素穿透判定都照旧），但不会成为前台窗口，用户正在编辑的应用始终保有
-        输入焦点。代价是桌宠不再获得键盘焦点，弹弓的 ESC 取消随之失效（右键仍
+        输入焦点。代价是肥鱼不再获得键盘焦点，弹弓的 ESC 取消随之失效（右键仍
         可取消；focusOut 取消在"永不激活"下也不再触发）。
 
         无原生 handle 的平台（offscreen 等）与异常一律静默跳过：这只是体验加固，
@@ -4019,7 +4019,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             logging.debug('置位 WS_EX_NOACTIVATE 失败', exc_info=True)
 
     def set_mouse_through(self, on: bool) -> None:
-        """鼠标穿透：开启后桌宠不接收鼠标事件，点击会穿透到下层。"""
+        """鼠标穿透：开启后肥鱼不接收鼠标事件，点击会穿透到下层。"""
         self._user_mouse_through = bool(on)
         self.cfg.set('mouse_through', self._user_mouse_through)
         self.cfg.save()
@@ -4027,7 +4027,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         if on and self.isVisible() and not getattr(self, "_bubble_suppressed", False):
             tray_label = "点菜单栏托盘图标" if sys.platform == "darwin" else "右键系统托盘图标"
             self.show_bubble(
-                f"已开启鼠标穿透～我现在点不动啦。需要恢复点击时，{tray_label} → 取消勾选「鼠标穿透」，或到桌宠设置里关闭。",
+                f"已开启鼠标穿透～我现在点不动啦。需要恢复点击时，{tray_label} → 取消勾选「鼠标穿透」，或到肥鱼设置里关闭。",
                 duration_ms=7000,
             )
 
@@ -4046,7 +4046,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         was_visible = self.isVisible()  # setWindowFlag 重建原生窗口会先隐藏，
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, effective)
         if was_visible:
-            self.show()  # 只在原本可见时恢复：手动隐藏的桌宠不被设置保存意外唤出
+            self.show()  # 只在原本可见时恢复：手动隐藏的肥鱼不被设置保存意外唤出
 
     def set_drag_physics(self, on: bool) -> None:
         """拖动物理开关。"""
@@ -4057,7 +4057,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             self._stop_physics()
 
     def set_lock_position(self, on: bool) -> None:
-        """锁定位置：开启后桌宠不可拖动（点击互动仍有效）。"""
+        """锁定位置：开启后肥鱼不可拖动（点击互动仍有效）。"""
         self.lock_position = bool(on)
         self.cfg.set('lock_position', self.lock_position)
         self.cfg.save()
@@ -4079,7 +4079,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self.cfg.save()
 
     def set_pet_opacity(self, value: int) -> None:
-        """桌宠窗口不透明度（10-100）。"""
+        """肥鱼窗口不透明度（10-100）。"""
         self.pet_opacity = max(10, min(100, int(value)))
         self.cfg.set('pet_opacity', self.pet_opacity)
         self.cfg.save()

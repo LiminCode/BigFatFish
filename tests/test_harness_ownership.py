@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """dsh web 自拉起的门控与归属收口（K1 门控收紧 / K2 退出收口）。
 
-背景（实机调查 2026-09-27）：桌宠会拉起 ``dsh web --host 127.0.0.1 --port 38080
+背景（实机调查 2026-09-27）：肥鱼会拉起 ``dsh web --host 127.0.0.1 --port 38080
 --no-open`` 的 node.exe（实测常驻 41.9MB）。两处缺口：
 
 1. **门控太宽**：自动拉起只看 ``enable_chat and harness_autostart``，不看
    ``agent_link.dsh``——DSH 联动没开时那个服务没有任何消费者（桥接插件不装、
    DshMonitor（桥目录唯一读方）不跑），纯烧内存；
 2. **退出无收口**：``_spawn`` 用 CREATE_NO_WINDOW 起进程，父死子不死（实机确认
-   桌宠退出后 node 还活着），而 ``_on_about_to_quit`` 里没有任何 harness 调用。
+   肥鱼退出后 node 还活着），而 ``_on_about_to_quit`` 里没有任何 harness 调用。
 
 本文件是这两处的守卫：门控（联动关不拉、联动开才拉）、收口（只杀自己拉起的
 那一个，pid 登记 + 命令行复核双重复核）、保守（非自拉起 / 复核失败 / 关机注销
@@ -493,7 +493,7 @@ def test_config_change_stop_harness_runs_off_caller_thread(tmp_path, monkeypatch
     """G2：联动关闭触发的 harness 收口不得在调用线程（GUI 线程）同步执行进程操作。
 
     回归：进程反查（PowerShell ~10s 超时）+ taskkill（~15s 超时）原先在配置去抖
-    回调里同步执行——外部改配置关联动会卡死所有桌宠共用的 GUI 线程。
+    回调里同步执行——外部改配置关联动会卡死所有肥鱼共用的 GUI 线程。
     """
     shell = _real_shell(tmp_path, monkeypatch, dsh_link=False)
     seen: dict = {}
@@ -756,7 +756,7 @@ def test_autostart_delegates_existing_instance_check_to_launcher(tmp_path, monke
 
 
 def test_autostart_desktop_not_spawned_when_toggle_flipped_during_probe(tmp_path, monkeypatch):
-    """探测期间关掉「随桌宠启动」→ 桌面端不得被拉起（走产品的 cancel_check 门）。
+    """探测期间关掉「随肥鱼启动」→ 桌面端不得被拉起（走产品的 cancel_check 门）。
 
     回归（2026-10 双目标）：``_harness_autostart_wanted`` 只在调度时查一次，
     launch 的 cancel_check 原来只认退出/会话结束标记——用户在慢探测（真机是注册表

@@ -3,7 +3,7 @@
 
 现场（2026-10-10 起，edge-tts 上游 issue #490）：微软的旧端点
 ``speech.platform.bing.com/…/readaloud/edge/v1`` 对合成请求一律握手 403，音色列表仍
-正常；桌宠每个整点都弹「语音合成失败」。同一份请求发到新端点
+正常；肥鱼每个整点都弹「语音合成失败」。同一份请求发到新端点
 ``api.msedgeservices.com/tts/cognitiveservices/websocket/v1`` 能成功。
 
 边界用替身：一个假的 ``edge_tts`` 包，按当前 ``communicate.WSS_URL`` 决定成功还是 403。

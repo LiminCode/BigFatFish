@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""边缘探头：桌宠真实可见像素贴到屏幕左/右边缘后的持久探头状态机。
+"""边缘探头：肥鱼真实可见像素贴到屏幕左/右边缘后的持久探头状态机。
 
 状态机由 PetWindow 侧控制器持有，随窗口生命周期存在。隐藏时 pause() 冻结
 当前状态与倒计时，恢复后 resume() 从原进度继续。探头会话期间只允许待机/
@@ -17,7 +17,7 @@ from PySide6.QtCore import QEasingCurve, QPoint, QRect, Qt, QTimer
 
 from .window_effects import eased_progress, rotated_region_bounds
 
-# 用根 logger：桌宠的日志配置挂在根上，写进 pet-<pid>.log。
+# 用根 logger：肥鱼的日志配置挂在根上，写进 pet-<pid>.log。
 # 用户报「探头像是按框的区域来的」时需要这三个锚点数据才能定案——
 # 见 _maybe_enter / _apply_pose / edge_side_at_rest 的日志字段。
 log = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ EDGE_PROBE_ANGLE = 45.0
 # 露出比例以“当前姿态（含 ±45° 旋转）的投影 bbox 宽度”为分母；0.55 使常驻探头
 # 只露头/脸并贴住屏幕边缘，身体大部分留在屏幕外（0.70 曾导致整个角色探出过多）。
 EDGE_PEEK_EXPOSURE = 0.55
-# 点击拉直后基本全出（短暂查看完整桌宠）。
+# 点击拉直后基本全出（短暂查看完整肥鱼）。
 EDGE_ENGAGE_EXPOSURE = 0.82
 EDGE_ENTER_MS = 300
 EDGE_STRAIGHTEN_MS = 250
@@ -75,7 +75,7 @@ def probe_window_x(side: str, exposure: float, vis_local, avail) -> int:
 
 
 def edge_side_at_rest(win, avail) -> str | None:
-    """判断桌宠是否贴在屏幕左/右边缘。
+    """判断肥鱼是否贴在屏幕左/右边缘。
 
     优先用稳定身体框（虚拟窗口坐标）：与贴边 clamp 同源，且不受素材羽化
     边缘影响（alpha 16..128 的半透明过渡带不进 mask，像素口径会留出

@@ -66,7 +66,8 @@ def test_default_menu_layout_has_no_update_entries():
 
     found = set(ids(load_default_menu_layout("modern-default-v1")["nodes"]))
     assert found.isdisjoint(REMOVED_ACTIONS)
-    assert {"github_project", "balance", "harness", "deepseek_web"} <= found, "「工具与帮助」其余各项原样"
+    assert "github_project" in found, "「工具与帮助」里的项目页原样"
+    assert found.isdisjoint({"balance", "harness", "deepseek_web"}), "DeepSeek 三项 2026-10-14 下线"
 
 
 def test_saved_layout_drops_the_removed_update_entries(tmp_path):
@@ -122,12 +123,15 @@ def settings_dialog(tmp_path, monkeypatch):
     dialog.close()
 
 
-def test_settings_has_no_update_page_but_still_shows_the_version(settings_dialog):
+def test_settings_has_no_update_page_and_no_version_footer(settings_dialog):
     labels = [settings_dialog.sidebar.item(i).text() for i in range(settings_dialog.sidebar.count())]
     assert "更新" not in labels
     assert settings_dialog.select_page("更新") is False, "旧深链不再指向任何页"
-    assert settings_dialog.version_footer.objectName() == "settingsVersion"
-    assert settings_dialog.version_footer.text().startswith("版本 v")
+    # 2026-10-14：不再发版，侧栏左下角的版本号也去掉了
+    assert not hasattr(settings_dialog, "version_footer")
+    from PySide6.QtWidgets import QLabel
+
+    assert settings_dialog.findChild(QLabel, "settingsVersion") is None
 
 
 def test_settings_process_page_deep_link_is_passed(tmp_path, monkeypatch):

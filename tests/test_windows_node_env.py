@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Windows 环境适配回归：node/pnpm 定位不再写死（issue: 桌宠找不到 pnpm）。
+"""Windows 环境适配回归：node/pnpm 定位不再写死（issue: 肥鱼找不到 pnpm）。
 
 现象：用户用 nvm（POSIX/nvm-windows）管理 Node、或把 pnpm 装在自己的目录里，
-桌宠（PyInstaller 打包、常由开机自启/Explorer 拉起）仍报
+肥鱼（PyInstaller 打包、常由开机自启/Explorer 拉起）仍报
 「需要 pnpm，自动安装失败」。两处「环境写死」：
 
 1. ``node_runtime.augmented_path()`` 在 Windows 上直接返回进程 PATH，没有任何
@@ -117,7 +117,7 @@ class TestWindowsAugmentedPath:
 
     @pytest.mark.skipif(os.name != "nt", reason="shutil.which 的 PATHEXT 解析是 Windows 行为")
     def test_which_finds_pnpm_cmd_from_stale_env(self, tmp_path, monkeypatch):
-        """回归：登录时缓存的环境块里没有 nvm，桌宠仍要能找到 pnpm.cmd。"""
+        """回归：登录时缓存的环境块里没有 nvm，肥鱼仍要能找到 pnpm.cmd。"""
         layout = _FakeWindowsLayout(tmp_path)
         _file(layout.nvm_v18 / "pnpm.cmd", "@echo off\n")
         monkeypatch.setattr(node_runtime, "_windows_registry_env", lambda *a, **k: {})
@@ -351,7 +351,7 @@ class TestPosixEnvironment:
 
         真实 Linux 场景：环境里 NVM_DIR 残留旧路径（升级/换机/配置删除），目录
         已不存在——若按该变量直接探测，默认家目录下真实存在的 nvm/fnm 布局会
-        整个被丢弃，桌宠找不到全局 pnpm/npm（「需要 pnpm，自动安装失败」）。
+        整个被丢弃，肥鱼找不到全局 pnpm/npm（「需要 pnpm，自动安装失败」）。
         """
         posix = _FakePosixHome(tmp_path)
         posix.use(monkeypatch)

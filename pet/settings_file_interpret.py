@@ -58,7 +58,7 @@ def build_file_interpret_rows(dialog) -> list[SettingRow]:
         SettingRow(
             "file_interpret_enabled",
             "拖文件后询问解读",
-            "桌宠吃掉文件后弹气泡询问是否交给 AI 解读；关闭则只播吃动画，不询问。",
+            "肥鱼吃掉文件后弹气泡询问是否交给 AI 解读；关闭则只播吃动画，不询问。",
             dialog.file_interpret_enabled_check,
         ),
         SettingRow(

@@ -1,6 +1,6 @@
 # PR 报告：「跳到对话」在多文件夹工作区里不再新开一个 VS Code 窗口
 
-> **基线**：`1788043`（feat(work-briefing): 简报里的工单 / PR 点得开；灵动岛上加一个打开简报的按钮）
+> **基线**：`a44eacd`（feat(work-briefing): 简报里的工单 / PR 点得开；灵动岛上加一个打开简报的按钮）
 > **分支**：`feature/claude-session-fish`　**日期**：`2026-10-12`
 > **范围**：6 个文件（实现 2、测试 2、文档 2 含本报告）
 
@@ -45,7 +45,7 @@
 
 ## 二、修改文件说明
 
-增删取自 `git diff 1788043 --numstat`。
+增删取自 `git diff a44eacd --numstat`。
 
 ### 实现
 
@@ -215,7 +215,7 @@ vscode windows before / after: 8 8
 | 红 → 绿 | `pytest -q tests/test_session_jump_workspaces.py` | 第一批 18 条写在实现之前，当时整份文件因为缺 `OpenWorkspace` 导入失败，没有逐条的红；根因本身在实机上先复现过（§五「根因的现场」）。之后三批是先红后绿：并列情况 1 条（与实现同批）；启动目录 2 条 `2 failed, 20 passed` → 通过；状态库 4 条 `4 failed, 22 passed` → 通过。最终 `26 passed` |
 | 聚焦 + 相关 | 新文件 + `test_session_pet_details` `test_session_custom_title` `test_session_history_service` `test_claude_session_history` | 132 passed（加状态库那一批之前）；之后新文件与 `test_session_pet_details` 重跑 `61 passed` |
 | 受影响时序族满载 3 遍 | — | 不适用：都是纯函数与注入的替身，没有真实线程或等待 |
-| 全量 | `python -m pytest -q -p no:cacheprovider`（`QT_QPA_PLATFORM=offscreen`，`APPDATA` 指向临时目录；隔离的 git worktree，`1788043` 加本改动） | `5 failed, 5116 passed, 11 skipped in 446.94s`，在最终的代码上运行。5 个失败都是这台机器上固定的环境性失败（路径超 260、两条子进程按 cp1252 打印中文、真实第二进程、多显示器负原点），与工作简报那份报告里记的是同一批。这次运行之后只新增了本报告与索引登记，`tests/test_pr_report_discipline.py` 另外单独跑过 |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（`QT_QPA_PLATFORM=offscreen`，`APPDATA` 指向临时目录；隔离的 git worktree，`a44eacd` 加本改动） | `5 failed, 5116 passed, 11 skipped in 446.94s`，在最终的代码上运行。5 个失败都是这台机器上固定的环境性失败（路径超 260、两条子进程按 cp1252 打印中文、真实第二进程、多显示器负原点），与工作简报那份报告里记的是同一批。这次运行之后只新增了本报告与索引登记，`tests/test_pr_report_discipline.py` 另外单独跑过 |
 
 ## 七、已知限制与后续
 

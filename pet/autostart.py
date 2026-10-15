@@ -288,7 +288,7 @@ def _win_command() -> str:
         # onefile 的 runtime_tmpdir="." 是相对“当前工作目录”解析的；
         # 开机自启（HKCU Run）默认工作目录可能是 System32 等不可写目录。
         # 用 start 先切到 exe 所在目录再启动 exe，既保证解压目录在 exe 同目录，
-        # 又不会让 cmd 窗口一直等待桌宠退出。开机自启固定指定 --slot 0。
+        # 又不会让 cmd 窗口一直等待肥鱼退出。开机自启固定指定 --slot 0。
         exe = Path(sys.executable).resolve()
         return f'cmd /c start "" /D "{exe.parent}" "{exe}" --slot 0'
     return _win_source_command(_win_source_program())

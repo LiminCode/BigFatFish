@@ -78,9 +78,9 @@ PET_DIR = Path(__file__).resolve().parents[1] / "pet"
 # 常驻内存零增长），增量行数几乎全是线程安全性/实机教训注释；这些守卫与
 # _enter_physics_mode/_stop_physics 共享窗口状态流，拆控制器反而切断调用链，
 # 按约定只校准预算。
-# 2026-09-15 再上调到 4507：issue #98「点击桌宠导致全局复制粘贴失效」修复
+# 2026-09-15 再上调到 4507：issue #98「点击肥鱼导致全局复制粘贴失效」修复
 # （window.py +29，实测 4507）——新增 _apply_windows_no_activate() 在 showEvent
-# 置位 WS_EX_NOACTIVATE，使点击桌宠不再夺走前台/键盘焦点。原生样式操作本体放在
+# 置位 WS_EX_NOACTIVATE，使点击肥鱼不再夺走前台/键盘焦点。原生样式操作本体放在
 # pet/platform_win.py（+23，与 _set_windows_click_through 同处），window.py 侧只留
 # 一个带完整实机取证说明的委托方法：它必须留在 PetWindow 上（showEvent 是唯一
 # 可靠的"原生窗口已就绪/可能被重建"注入点，拆到独立模块反而会产生跨模块的
@@ -130,7 +130,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-09-05 建立（perf/memory-footprint 拆分批）。
 # 2026-09-06 上调到 1992：合入上游 main（PR73）带来动画预热开关等 +85 行
 # （实测 1942），预算随实测校准。
-# 2026-09-08 上调到 1996：新增「随桌宠启动 dsh 服务」开关行（+4，实测 1996）。
+# 2026-09-08 上调到 1996：新增「随肥鱼启动 dsh 服务」开关行（+4，实测 1996）。
 # 2026-09-08 上调到 2000：批 C 落种占位语义在保存路径加 user_customized 置位（+4，实测 2000）。
 # 2026-09-08 上调到 2009：批 E 清除子肥鱼走 shell 已接线回调（+9，实测 2009）——
 # _on_clear_spawned_pets 优先调 win.on_clear_spawned_pets（自带确认框与进程内
@@ -154,7 +154,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-09-17 上调到 2327：新增「语音」总域，并按主人定稿口径只收鱼开口说话
 # （TTS）类设置——语音报时整组 12 行 + 节日提醒 12 行（原「自动化与联动」域，带
 # speak/TTS 播报能力）；音效类回各自功能分组：点击音效 4 行回「互动 · 点击反馈」
-# （click_ 前缀整组认领，与 HEAD 行为一致）、碰撞音效 2 行回「桌宠」碰撞组，Agent 提示音效
+# （click_ 前缀整组认领，与 HEAD 行为一致）、碰撞音效 2 行回「肥鱼」碰撞组，Agent 提示音效
 # （agent_sound_*）留在 Agent 联动折叠框内。实测 2327；按文件约定只随实测校准，
 # 不为达标压缩行宽/合并语句；拆分仍是待办。
 # 2026-09-17 上调到 2341：灵动岛图标下拉框新增「鱼本体头像（推荐）」项，原 10 个
@@ -195,7 +195,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # pet/settings_interaction.py（页内任务标签「点击与音效 / 自言自语」），
 # 本文件净减 94 行（2441 → 2347）。这是本文件第一次**因拆分而下调**预算：
 # 靠搬代码而不是压行宽解决预算，正是预算作为「绊线」的预期用法。
-# 2026-09-23 上调到 2357：纯桌宠版岛隐藏死锁修复——新增
+# 2026-09-23 上调到 2357：纯肥鱼版岛隐藏死锁修复——新增
 # _chat_feature_available() 构建变体判定助手（+12）并将「隐藏时对话气泡」
 # SettingRow 改为按构建变体条件收录（净 +3，注释另计）：无 pet.chat 的
 # 打包变体不再展示该死路开关（运行时回退在 pet/dynamic_island.py 的
@@ -208,7 +208,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-09-24 上调到 2391：合入上游更新页接线（更新页主体在 pet/update_settings.py）。
 # 实测 2391；按文件约定只随实测校准，不为达标压行（拆分仍是待办）。
 # 2026-09-27 上调到 2393：overlay 文案如实（省电模式 hint 改调 settings_pet_controls、
-# 窗口级键「对所有桌宠生效」标注接线 +2 行）。
+# 窗口级键「对所有肥鱼生效」标注接线 +2 行）。
 # 2026-10-06 上调到 2403：清空陪伴记忆按 clear() 返回值如实提示（失败弹告警而不是
 # 一律「已清空」）+10 行；实测 2403，按文件约定只随实测校准（拆分仍是待办）。
 # 2026-10-06 上调到 2408：SMTC 工单「视频被当歌曲」新增设置行「浏览器媒体会话
@@ -232,7 +232,20 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 接线——import 1 行、把行并进「窗口与系统」1 行、保存 1 行。实测 2401。
 # 2026-10-12 上调到 2403：「配图尺寸上限」设置行（控件在 settings_pet_controls、行在
 # settings_interaction），这里是依赖登记 1 行 + 保存 1 行。实测 2403。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2403
+# 2026-10-13 上调到 2406：「VS Code 工作区」一节（控件、提示、保存都在 settings_vscode.py），这里是
+# import 1 行、插进「自动化与联动」1 行、保存 1 行。实测 2406。
+# 2026-10-14 上调到 2399：「界面语言」一节（控件、提示、保存都在 settings_language.py），这里是 import 1 行、
+# 插进「常规」1 行、领域认领 1 行、保存 1 行。实测 2399。
+# 2026-10-14 上调到 2401：「通知中心」一节（控件、提示、保存都在 settings_notifications.py），这里是
+# 插进「自动化与联动」1 行、保存 1 行（import 并进 settings_vscode 那一行）。实测 2401。
+# 2026-10-14 上调到 2403：「Slack 关注」一节（控件、提示、保存都在 settings_slack_watch.py），这里是
+# 插进「自动化与联动」1 行、保存 1 行（import 并进同一行）。实测 2403。
+# 2026-10-14 上调到 2405：设置页改 Metro 风格，侧栏装倾斜代理（import 1 行 + install 1 行；
+# 样式与控件都在 settings_theme_qss / settings_widgets）。实测 2405。
+# 2026-10-14 下调到 2373：「余额与服务状态」（DeepSeek）一节从设置页下线，建节 / 认领 / 保存三处删掉。实测 2373。
+# 2026-10-14 下调到 2296：「随肥鱼启动 dsh 服务 / 自启目标 / 点击显示余额」从设置页下线（控件、说明、保存都删）。实测 2296。
+# 2026-10-14 下调到 2291：侧栏左下角的版本号去掉（不再发版）。实测 2291。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2291
 
 
 def _read(name: str) -> str:
@@ -394,7 +407,7 @@ def test_modern_settings_dialog_py_line_budget():
 
 def test_modern_settings_dialog_no_top_level_chat_import():
     """no-chat 打包变体 excludes=['pet.chat']：modern_settings_dialog 顶层若直接
-    import pet.chat.*（如 ai_settings_page），产物运行时点「桌宠设置」会在模块
+    import pet.chat.*（如 ai_settings_page），产物运行时点「肥鱼设置」会在模块
     导入期抛 ModuleNotFoundError，导致设置界面整体打不开（测试环境因 pet.chat
     齐全而全绿，属打包专属回归）。chat 依赖必须延迟到 include_ai 分支内的
     函数级 import，no-chat 时 include_ai=False 不触发。"""

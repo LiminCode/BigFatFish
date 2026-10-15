@@ -3,28 +3,23 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
 import threading
-import time
 
 import shiboken6
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtCore import QUrl
 from PySide6.QtGui import QActionGroup, QDesktopServices, QIcon, QPixmap
-from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QMenu
 
 from .. import autostart as autostart_mod
 from .. import catalog
 from .. import claude_hooks
-from ..harness_launcher import launch_harness_gui
 from .icons import fitted_pet_pixmap_icon, pet_avatar_menu_icon, vector_menu_icon
 from .menu_styles.common import inherit_menu_style
 
 log = logging.getLogger(__name__)
 
-DEEPSEEK_WEB_URL = "https://chat.deepseek.com/"
 #: 「GitHub 项目页」打开的地址（上游仓库）
 REPO_URL = "https://github.com/MerZlin/dsh-pet-indesktop"
 
@@ -407,19 +402,47 @@ def add_work_briefing_menu(menu: QMenu, pet) -> None:
         connect_action(choice, lambda value=value: pet.set_work_briefing_time(value))
 
 
+def add_slack_watch_menu(menu: QMenu, pet) -> None:
+    """「Slack 关注」子菜单：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。
+
+    和「工作简报」同一个条件才出现（装了 WSL、宿主接了服务）。"""
+    state_of = getattr(pet, "slack_watch_settings", None)
+    settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
+    if settings is None:
+        return
+    from ..slack_watch import INTERVAL_CHOICES
+
+    sub = add_submenu(menu, "Slack 关注", None)
+    add_action(sub, "查看最近一次", None, pet.open_slack_watch, close_on_trigger=True)
+    add_action(sub, "现在检查", None, pet.check_slack_now, close_on_trigger=True)
+    sub.addSeparator()
+    act = sub.addAction("电脑在用时自动检查")
+    act.setCheckable(True)
+    act.setChecked(bool(settings["enabled"]))
+    act.toggled.connect(lambda on: pet.toggle_slack_watch(on))
+    interval_menu = add_submenu(sub, "检查间隔", None)
+    group = QActionGroup(interval_menu)
+    group.setExclusive(True)
+    for value in sorted({*INTERVAL_CHOICES, settings["interval_minutes"]}):
+        choice = interval_menu.addAction(f"每 {value} 分钟")
+        choice.setCheckable(True)
+        choice.setChecked(value == settings["interval_minutes"])
+        group.addAction(choice)
+        connect_action(choice, lambda value=value: pet.set_slack_watch_interval(value))
+
+
 def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
     sub = add_submenu(menu, "Agent 联动", None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
     agents = [
-        ('dsh', 'DeepSeek Harness (DSH)'),
         ('claude', 'Claude Code'),
         ('cursor', 'Cursor'),
         ('opencode', 'OpenCode'),
     ]
     # WSL 里的 Claude Code：只在装了 WSL 的 Windows 上才有这个通道
     if claude_hooks.wsl_exe():
-        agents.insert(2, ('claude_wsl', 'Claude Code (WSL)'))
+        agents.insert(1, ('claude_wsl', 'Claude Code (WSL)'))   # 紧跟 Claude Code（DSH 项 2026-10-14 下线后首位是 Claude Code）
     for agent_key, agent_label in agents:
         act = sub.addAction(agent_label)
         act.setCheckable(True)
@@ -459,6 +482,17 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(theme_id == current_theme)
                 theme_group.addAction(choice)
                 connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
+        crown_choices = getattr(pet, "crown_model_choices", None)
+        toggle_crown = getattr(pet, "toggle_crown_model", None)
+        if callable(crown_choices) and callable(toggle_crown):
+            # 测试替身的宿主可能对任何属性都回一个返回 None 的函数：按空清单处理
+            choices = crown_choices() or ()
+            crown_menu = add_submenu(sub, "桂冠给哪个模型", None)
+            for token, label, checked in choices:
+                choice = crown_menu.addAction(label)
+                choice.setCheckable(True)
+                choice.setChecked(bool(checked))
+                choice.toggled.connect(lambda on, token=token: toggle_crown(token, on))
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):
@@ -479,6 +513,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 rows_group.addAction(choice)
                 connect_action(choice, lambda rows=rows: set_rows(rows))
     add_work_briefing_menu(sub, pet)
+    add_slack_watch_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
@@ -522,8 +557,8 @@ def add_return_corner(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_hide_pet(menu: QMenu, pet, *, icons: bool = True):
-    # close_on_trigger：隐藏后菜单随之关闭，避免菜单悬空无法找回桌宠
-    return add_action(menu, "隐藏桌宠", "hide" if icons else None, pet.hide, close_on_trigger=True)
+    # close_on_trigger：隐藏后菜单随之关闭，避免菜单悬空无法找回肥鱼
+    return add_action(menu, "隐藏肥鱼", "hide" if icons else None, pet.hide, close_on_trigger=True)
 
 
 def add_look_screen(menu: QMenu, pet, *, icons: bool = True):
@@ -532,12 +567,6 @@ def add_look_screen(menu: QMenu, pet, *, icons: bool = True):
         return None
     return add_action(menu, "看看屏幕", "screen" if icons else None, callback, close_on_trigger=True)
 
-
-def add_balance(menu: QMenu, pet, *, icons: bool = True):
-    callback = getattr(pet, "on_show_balance", None)
-    if callback is None:
-        return None
-    return add_action(menu, "DeepSeek 余额", "balance" if icons else None, lambda: callback(pet), close_on_trigger=True)
 
 
 def add_no_move(menu: QMenu, pet, *, icons: bool = True):
@@ -613,7 +642,7 @@ def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
-    """右键菜单快捷入口：让桌宠原地逆时针旋转一圈。"""
+    """右键菜单快捷入口：让肥鱼原地逆时针旋转一圈。"""
     callback = getattr(pet, "trigger_golden_spin", None)
     return add_action(
         menu,
@@ -634,58 +663,6 @@ def add_edge_probe(menu: QMenu, pet, *, icons: bool = True):
     )
     return action
 
-
-def _dialog_parent(pet):
-    """模态对话框的父窗口。
-
-    ``pet`` 在窗口路径下就是 QWidget（PetWindow）；在 sprite 路径下是
-    ``SpriteMenuFacade`` 这样的 duck-typed 宿主，不能当 QMessageBox 的 parent，
-    此时用宿主自报的 ``dialog_parent``（overlay 窗）。PetWindow 没有该属性 →
-    原样返回自己，窗口路径逐位不变。
-    """
-    return getattr(pet, "dialog_parent", None) or pet
-
-
-def add_harness(menu: QMenu, pet, *, icons: bool = True):
-    """DeepSeek Harness 子菜单：启动 / 重启 / 停止。
-
-    为什么用子菜单而不是三个平级项：菜单模板（pet/menu_templates/*.json）与用户
-    自己编排过的布局里只有 ``harness`` 这一个 id，新增 id 对老布局不生效；子菜单
-    挂在既有 id 上，老用户的菜单立刻拿到完整生命周期入口。
-
-    重启/停止是破坏性动作（可能结束你自己在终端里跑着的 dsh），带确认框；启动
-    保持原语义（复用本机实例并打开页面）。
-    """
-    start_icon = "harness" if icons else None
-    submenu = add_submenu(menu, "DeepSeek Harness", start_icon)
-
-    def _launch(action: str = "start", target: str = "auto") -> None:
-        # 父窗口在**点击时**解析：宿主（facade）可能在菜单关闭后被回收，
-        # 这里只读它自报的 dialog_parent 面，不缓存对象。
-        launch_harness_gui(_dialog_parent(pet), action=action, target=target)
-
-    # 所有动作都 close_on_trigger：菜单先关闭、回调延迟到菜单关闭后执行——
-    # 重启/停止的确认框是模态框，macOS 原生菜单跟踪会话中弹模态框会被
-    # AppKit 抑制（与设置对话框首次点击无反应同源）。
-    # 启动分双目标（2026-10）：web 界面 / 桌面端界面；重启/停止只作用于
-    # web 服务进程（桌面端是用户的主力应用，桌宠绝不终止它）。
-    add_action(submenu, "启动 dsh web 界面", start_icon,
-               lambda: _launch("start", "web"),
-               close_on_trigger=True)
-    add_action(submenu, "启动桌面端界面", start_icon,
-               lambda: _launch("start", "desktop"),
-               close_on_trigger=True)
-    add_action(
-        submenu, "重启服务", "play" if icons else None,
-        lambda: _launch("restart"),
-        close_on_trigger=True,
-    )
-    add_action(
-        submenu, "停止服务", "quit" if icons else None,
-        lambda: _launch("stop"),
-        close_on_trigger=True,
-    )
-    return submenu
 
 
 def _music_controller(pet):
@@ -727,112 +704,35 @@ def set_music_mode(pet, on: bool) -> None:
         enable(on)
 
 
-class _MusicLaunchBridge(QObject):
-    """「打开播放器」worker → GUI 的气泡桥（与 proactive 的 _WatcherBridge 同款）。
+def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
+    """「VS Code 工作区」子菜单：开着的（带 ●）、最近用过的、用户目录里的；点一条切过去或打开。
 
-    后台线程只 emit；槽在 GUI 线程执行——跨线程直接碰 Qt 控件是未定义行为。
-    真实宿主（PetWindow 是 QObject）走 Qt 父子关系保活；非 QObject 宿主（测试
-    替身/最小外壳）没有 parent，由 :func:`_music_launch_bridge` 留一份强引用，
-    等 queued 信号投递完成后在槽里自删。
-    """
+    宿主没有这两个回调（旧 PetWindow）就不出这一项。条目在菜单弹出时现算
+    （``pet.vscode_workspace_entries``，读几个小文件，十几毫秒）。"""
+    entries_of = getattr(pet, "vscode_workspace_entries", None)
+    opener = getattr(pet, "open_vscode_workspace", None)
+    if not callable(entries_of) or not callable(opener):
+        return None
+    sub = add_submenu(menu, "VS Code 工作区", "application" if icons else None)
+    entries = list(entries_of() or [])
+    if not entries:
+        hint = sub.addAction("还没有开过的工作区；可在设置里指定工作区文件目录")
+        hint.setEnabled(False)
+        return sub
+    from .icons import badged_menu_icon, vector_menu_icon
 
-    notice = Signal(str)
-    # worker 收工（成功/失败都发）：桥的两种保活都要靠它收口——非 QObject 宿主
-    # 的强引用集合、真实宿主窗口上的子对象，否则每次点击都会多留一份。
-    _worker_done = Signal()
-
-    def __init__(self, pet) -> None:
-        parent = pet if isinstance(pet, QObject) else None
-        super().__init__(parent)
-        self._pet = pet
-        self.notice.connect(self._show_notice)
-        self._worker_done.connect(self._release)
-
-    @Slot(str)
-    def _show_notice(self, text: str) -> None:
-        _LAUNCH_BRIDGES.discard(self)
-        show = getattr(self._pet, "show_bubble", None)
-        if callable(show):
-            try:
-                show(text, duration_ms=6000)
-            except Exception:
-                log.debug("播放器提示气泡展示失败", exc_info=True)
-
-    @Slot()
-    def _release(self) -> None:
-        """worker 收工：摘掉强引用并把对象交还 Qt（成功路径也会走到这里）。"""
-        _LAUNCH_BRIDGES.discard(self)
-        self.deleteLater()
-
-
-# 非 QObject 宿主的强引用兜底：没有 Qt parent，不留住就被 GC 掉、queued 信号丢失。
-_LAUNCH_BRIDGES: set = set()
-
-
-def _music_launch_bridge(pet) -> _MusicLaunchBridge:
-    bridge = _MusicLaunchBridge(pet)
-    if bridge.parent() is None:
-        _LAUNCH_BRIDGES.add(bridge)
-    return bridge
-
-
-def _launch_player_and_play(player_key: str, pet) -> None:
-    """打开指定播放器并尽量让它开始播放。
-
-    "自动播放"是**尽力而为**：已经在跑的播放器可以直接发播放指令；刚启动的
-    需要等它初始化并出现在 SMTC 里（可能几秒），所以起一个后台线程轮询，
-    等到了就发播放。等不到也不报错——播放器自己是否自动续播由它决定，
-    这不是我们能控制的。
-
-    **路径解析（find_player）也在 worker 线程里**：缓存冷时它要浅扫目录（实测
-    6s+），以前这段跑在 GUI 线程，点一下菜单就卡住。找不到时不静默 return，
-    而是经 queued 信号回 GUI 线程弹气泡说明可以在配置文件里手动指定路径。
-    """
-    from .. import music_players, now_playing
-
-    label = music_players.player_label(player_key)
-    manual = ""
-    paths_cfg = pet.cfg.get("music_player_paths", {})
-    if isinstance(paths_cfg, dict):
-        manual = str(paths_cfg.get(player_key, "") or "")
-    bridge = _music_launch_bridge(pet)
-
-    def worker() -> None:
-        try:
-            exe = music_players.find_player(player_key, manual)
-            if not exe:
-                # 桥的生命周期挂在宿主窗口上：浅扫期间窗口被销毁（切换形象/退出）
-                # 时它已经是个死对象，emit 会抛 RuntimeError（同 agent_link 的
-                # 防护写法）。这里必须吞掉——否则 daemon 线程以未捕获异常收尾。
-                try:
-                    bridge.notice.emit(f"找不到{label}：可在 设置 → 桌宠 → 音乐关联 里指定它的程序位置")
-                except RuntimeError:
-                    pass
-                return
-            exe_name = os.path.basename(exe)
-            # 先给已经在跑的会话发播放指令：这条路径是确定的。
-            if now_playing.play_session_for(exe_name):
-                return
-            # 没在跑：启动它，然后轮询等它出现在 SMTC 里。
-            try:
-                if sys.platform == "win32":
-                    os.startfile(exe)  # noqa: S606 - 路径来自受控的播放器搜索
-                else:
-                    QProcess.startDetached(exe, [])
-            except Exception:
-                return
-            for _ in range(10):          # 最多等 10 秒
-                time.sleep(1.0)
-                if now_playing.play_session_for(exe_name):
-                    return
-        finally:
-            # 成功路径原先在这里直接 return，桥既不出队也不回收；无论成败都收口。
-            try:
-                bridge._worker_done.emit()
-            except RuntimeError:
-                pass  # 宿主窗口已销毁，桥随之一并没了
-
-    threading.Thread(target=worker, name="music-launch", daemon=True).start()
+    for entry in entries:
+        if icons:
+            # 图标说明在哪（Ubuntu = WSL，Windows = 本机）；开着的在图标右下角带一个绿点
+            label = entry.label
+        else:
+            label = f"{'● ' if entry.open else ''}{entry.label}{' [WSL]' if entry.wsl else ''}"
+        action = add_action(sub, label, None, lambda entry=entry: opener(entry), close_on_trigger=True)
+        if icons:
+            glyph = "ubuntu" if entry.wsl else "windows"
+            action.setIcon(badged_menu_icon(sub, glyph) if entry.open else vector_menu_icon(sub, glyph))
+        action.setToolTip(entry.target + ("（开着）" if entry.open else ""))
+    return sub
 
 
 def _run_off_main(callable_) -> None:
@@ -929,44 +829,21 @@ def add_music_lyric_align(menu: QMenu, pet, *, icons: bool = True):
     return submenu
 
 
-def _music_player_builder(player_key: str):
-    """生成"打开某播放器并播放"的 builder（两个播放器共用一套逻辑）。"""
-
-    def build(menu: QMenu, pet, *, icons: bool = True):
-        from .. import music_players
-
-        label = music_players.player_label(player_key)
-        manual = ""
-        paths_cfg = pet.cfg.get("music_player_paths", {})
-        if isinstance(paths_cfg, dict):
-            manual = str(paths_cfg.get(player_key, "") or "")
-        # 只读缓存的查询：菜单构建在 GUI 线程，缓存冷时扫目录会冻住菜单
-        # （实测 6.4s 全在 MainThread）。冷缓存按"乐观可用"处理，扫描交给
-        # 幂等的后台预热；真正的确定态最迟下次开菜单拿到。
-        # 路径本身这里不用：点击路径会在 worker 线程里再解析一次（权威结果）。
-        state, _path = music_players.cached_player(player_key, manual)
-        missing = state == music_players.CACHED_MISSING
-        action = add_action(
-            menu, f"打开{label}给主人放歌", None,
-            (lambda: _launch_player_and_play(player_key, pet)) if not missing else None,
-            close_on_trigger=True,
-        )
-        if missing:
-            action.setEnabled(False)
-            action.setToolTip(f"找不到{label}：可在 设置 → 桌宠 → 音乐关联 里指定它的程序位置")
-        elif state == music_players.CACHED_COLD:
-            music_players.warm_cache_async(player_key, manual)
-        return action
-
-    return build
+#: 「YouTube Music」打开的地址：首页，由默认浏览器打开（不带播放参数，不自动开始播放）
+YOUTUBE_MUSIC_URL = "https://music.youtube.com/"
 
 
-def add_music_open_netease(menu: QMenu, pet, *, icons: bool = True):
-    return _music_player_builder("netease")(menu, pet, icons=icons)
+def add_youtube_music(menu: QMenu, pet, *, icons: bool = True):
+    """「YouTube Music」：用默认浏览器打开 YouTube Music 首页。
 
-
-def add_music_open_qqmusic(menu: QMenu, pet, *, icons: bool = True):
-    return _music_player_builder("qqmusic")(menu, pet, icons=icons)
+    2026-10-15 取代「打开网易云 / QQ 音乐给主人放歌」：网页版就够，不找程序、不扫盘。
+    放歌之后的歌词气泡与唱歌联动照旧走系统媒体会话（需打开设置里的「浏览器媒体会话
+    参与歌词」）。"""
+    del pet
+    return add_action(
+        menu, "YouTube Music", "play" if icons else None,
+        lambda: QDesktopServices.openUrl(QUrl(YOUTUBE_MUSIC_URL)), close_on_trigger=True,
+    )
 
 
 def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):
@@ -993,13 +870,6 @@ def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):
     action.toggled.connect(_on_toggled)
     return action
 
-
-def open_deepseek_web() -> bool:
-    return bool(QDesktopServices.openUrl(QUrl(DEEPSEEK_WEB_URL)))
-
-
-def add_deepseek_web(menu: QMenu, *, icons: bool = True):
-    return add_action(menu, "打开网页版 DeepSeek", "web" if icons else None, open_deepseek_web, close_on_trigger=True)
 
 
 def add_template_switch(menu: QMenu, pet, label: str, target: str, *, icons: bool = True):

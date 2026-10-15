@@ -180,7 +180,7 @@ def test_launch_harness_prefers_configured_port(monkeypatch):
 
 
 def test_launch_harness_no_browser_when_autostart(monkeypatch):
-    """open_browser=False（随桌宠自启动）：只起服务，任何分支都不开浏览器。"""
+    """open_browser=False（随肥鱼自启动）：只起服务，任何分支都不开浏览器。"""
     from pet import harness_launcher as hl
 
     opened = []
@@ -285,7 +285,7 @@ def test_launch_harness_browser_ownership(monkeypatch):
 
     monkeypatch.setattr(hl.threading, "Thread", fake_thread)
 
-    # 不带 --no-open：dsh 自己开浏览器，桌宠不重复打开
+    # 不带 --no-open：dsh 自己开浏览器，肥鱼不重复打开
     monkeypatch.setattr(
         hl, "_find_launch_command",
         lambda port=None: ["dsh", "web", "--host", "127.0.0.1", "--port", "38080"],
@@ -295,7 +295,7 @@ def test_launch_harness_browser_ownership(monkeypatch):
     assert opened == []
     assert threads == []
 
-    # 带 --no-open：桌宠等待就绪后打开浏览器
+    # 带 --no-open：肥鱼等待就绪后打开浏览器
     monkeypatch.setattr(
         hl, "_find_launch_command",
         lambda port=None: ["dsh", "web", "--host", "127.0.0.1", "--port", "38080", "--no-open"],

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""桌宠槽位身份、配置播种与旧 spawn 迁移。
+"""肥鱼槽位身份、配置播种与旧 spawn 迁移。
 
 4.4b（PHASE4_DESIGN §3 T6）：多进程多宠退役层删除后，本模块**不再承载**
 跨进程 slot 文件锁（``acquire_pet_slot`` / ``acquire_file_lock`` /
@@ -82,7 +82,7 @@ def seed_slot_config_from_main(config_dir: Path | str, slot_id: int) -> bool:
     落种/刷新**永不写位置键**（_SEED_EXCLUDE_KEYS）：位置由各子肥鱼拖动后
     自存自管，生成逻辑不碰——同时根治"原来位置的设置被顶掉"。
 
-    用户反馈：多开出的新桌宠从零默认设置起步不合理，应跟随主设置。
+    用户反馈：多开出的新肥鱼从零默认设置起步不合理，应跟随主设置。
     返回 True 表示落种/刷新成功；False 表示跳过（slot 0 / 已自定义 / 读取失败）。
     """
     if not slot_id:
@@ -112,7 +112,7 @@ def seed_slot_config_from_main(config_dir: Path | str, slot_id: int) -> bool:
         return False
     seed = copy.deepcopy(data)
     seed["version"] = 4
-    # 副槽不继承主桌宠的位置/屏幕，避免新鱼叠在旧鱼身上；自启仍仅主槽。
+    # 副槽不继承主肥鱼的位置/屏幕，避免新鱼叠在旧鱼身上；自启仍仅主槽。
     seed["autostart_wanted"] = False
     seed["harness_autostart"] = False
     # 生小肥鱼大小策略：开启继承 → 跟主配置 scale 走，默认再小一号
@@ -255,7 +255,7 @@ def migrate_legacy_spawns(config_dir: Path | str) -> bool:
             data = json.loads(runtime_file.read_text(encoding="utf-8"))
             pid = data.get("pid")
             if pid and isinstance(pid, int) and pid_alive(pid):
-                logging.warning("检测到正在运行的桌宠进程 (PID: %s)，跳过旧 spawn 迁移", pid)
+                logging.warning("检测到正在运行的肥鱼进程 (PID: %s)，跳过旧 spawn 迁移", pid)
                 return False
         except Exception:
             pass

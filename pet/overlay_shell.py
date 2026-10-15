@@ -350,7 +350,7 @@ class _LinkAnimChain:
 
 # ---------------------------------------------------------------- B7b：per-slot 取源
 #
-# 旧架构：每只桌宠是**独立进程**，各读自己的 ``config-slot-N.json``
+# 旧架构：每只肥鱼是**独立进程**，各读自己的 ``config-slot-N.json``
 # （``Config(instance_id="slot-N")`` + ``window.py`` 逐键读 ``self.cfg``），
 # 所有 sprite 级设置天然各存各的。单进程壳只有一份 ``self._config``，本组常量
 # 与视图类把那条身份→配置的对应关系复原：
@@ -822,12 +822,12 @@ class ShellOverlayWindow(OverlayWindow):
         """4.1c：有全量菜单建造器（产品壳）走 facade 菜单，否则基类最小集。
 
         D13：把**被点中的 sprite** 透传给建造器——菜单里的设置入口要按它自己的
-        config 身份打开（否则右击子肥鱼的「桌宠设置」会静默打开主宠配置）。
+        config 身份打开（否则右击子肥鱼的「肥鱼设置」会静默打开主宠配置）。
 
         close_on_trigger 动作在菜单可见时会被 ``connect_action`` 挂起
         （``shared.defer_menu_callback`` → 根菜单 ``_deferred_callbacks``），
         window.py 在 ``menu.exec()`` 返回后统一派发；overlay 此前没人派发 →
-        所有 close_on_trigger 条目（AI 对话/桌宠设置/隐藏桌宠/退出…）点下去
+        所有 close_on_trigger 条目（AI 对话/肥鱼设置/隐藏肥鱼/退出…）点下去
         静默无反应。这里补上同一条收口。
         """
         builder = getattr(self, "_full_menu_builder", None)
@@ -1453,7 +1453,7 @@ class OverlayShell(QObject):
 
     # ---------------------------------------------------------------- B7b：per-slot 取源
     #
-    # 旧架构每只桌宠是独立进程，各读自己的 config-slot-N.json；单进程壳把这条
+    # 旧架构每只肥鱼是独立进程，各读自己的 config-slot-N.json；单进程壳把这条
     # 身份→配置的对应关系收敛成下面几个点：读（``_sprite_config``）、写
     # （``persist_sprite_setting``）、同步（``_apply_sprite_settings_to``）、以及
     # 子 sprite 各自的气泡/自言自语宿主。
@@ -1757,7 +1757,7 @@ class OverlayShell(QObject):
 
     @property
     def hidden_bubble_redirect(self):
-        """桌宠隐藏时的气泡改道面（灵动岛反馈气泡；``window_alerts`` 读它）。
+        """肥鱼隐藏时的气泡改道面（灵动岛反馈气泡；``window_alerts`` 读它）。
 
         可见时返回 None：改道只在隐藏期有意义，且 AppShell 的
         ``_island_feedback_bubble`` 用 ``_aggregate_pet_visible()``（读
@@ -2699,7 +2699,7 @@ class OverlayShell(QObject):
         幂等可重复调；island=None 即摘桥。world 必须是进程级 self.collision、
         overlay 必须是当前 overlay（原点来源）——否则墙挂到另一个世界/错位。
 
-        ``kinetic`` 接 ``self.driver.note_kinetic``（M-1）：桌宠静止时 tick 已降到
+        ``kinetic`` 接 ``self.driver.note_kinetic``（M-1）：肥鱼静止时 tick 已降到
         T2/T3（不跑仿真），而岛拖拽是几何回调驱动的用户输入、不经过 overlay 的
         鼠标事件（岛是独立顶层窗）——没有这条通道，快速甩岛过鱼可能整个手势
         期间一次碰撞结算都没发生。driver 未起（测试宿主/启动早期）时不强接。
@@ -3013,7 +3013,7 @@ class OverlayShell(QObject):
         - 多宠时逐只子菜单「主肥鱼 / 小肥鱼 [slot-N]」= legacy 每窗子菜单，
           含「回到右下角」「显示这只」（per-sprite visible，M14）「退出这只」；
           顶层「显示 / 隐藏」仍是整窗语义（overlay 单窗，全显全隐）；
-        - 「桌宠设置」按主身份路由（D13）、「退出」= app.quit；
+        - 「肥鱼设置」按主身份路由（D13）、「退出」= app.quit；
         - 「鼠标穿透」「开机自启」= legacy 托盘后段两项（穿透只有托盘/设置页能取消；
           自启勾选态按系统登录项实况，弹出前同步）。
         """
@@ -3045,9 +3045,9 @@ class OverlayShell(QObject):
                               lambda s=sprite: self.exit_pet(s))
         self._pet_visible_actions = visible_actions
         menu.addSeparator()
-        menu.addAction("桌宠设置", lambda: self.open_settings_for(self.sprite))
+        menu.addAction("肥鱼设置", lambda: self.open_settings_for(self.sprite))
         # legacy 托盘两项（app.py:3333-3343）：鼠标穿透的取消入口只有托盘/设置页，
-        # 开着时桌宠点不动；开机自启此前只有右键菜单有勾选项。
+        # 开着时肥鱼点不动；开机自启此前只有右键菜单有勾选项。
         mouse_through = menu.addAction("鼠标穿透")
         mouse_through.setCheckable(True)
         mouse_through.setChecked(bool(self._config.get("mouse_through", False)))
@@ -3145,8 +3145,8 @@ class OverlayShell(QObject):
         """首帧未就绪时的托盘占位图标 = legacy 同款宠物爪印（app.py:3127）。
 
         不用系统 ``SP_ComputerIcon``：首帧未就绪期间（首跑转码/慢启动）用户在
-        托盘里看到的会是「电脑」图标而不是桌宠图标，观感等同「托盘栏里没有
-        桌宠图标」。刻意不传本壳当主题色宿主——托盘观感与窗口 QSS 无关
+        托盘里看到的会是「电脑」图标而不是肥鱼图标，观感等同「托盘栏里没有
+        肥鱼图标」。刻意不传本壳当主题色宿主——托盘观感与窗口 QSS 无关
         （legacy ``_tray_placeholder_icon`` 同款口径）。
         """
         from .context_menus.icons import vector_menu_icon
@@ -3186,7 +3186,7 @@ class OverlayShell(QObject):
         legacy 用无时限的 ``frame_ready``（app.py:3185-3192 + window.py:347）
         换图；sprite 侧没有该信号，若照旧在 20 拍（10s）后永久停表，首帧晚于
         10s（首跑帧序列转码、慢启动、内存压力）就会让托盘**整个进程生命期**
-        停在占位图标——正是用户报的「托盘栏里没有桌宠图标」。降频而非保频是
+        停在占位图标——正是用户报的「托盘栏里没有肥鱼图标」。降频而非保频是
         为了不常驻 500ms 高频表。
         """
         self._tray_icon_retries += 1
@@ -3397,7 +3397,7 @@ class OverlayShell(QObject):
         cfg = self._sprite_config(sprite) if cfg is None else cfg
         sprite.throw_speed_cap = throw_speed_cap(cfg.get("throw_strength"))
         sprite.drag_physics = bool(cfg.get("drag_physics", False))
-        # 桌宠大小（scale）：旧机 refresh_pet_settings 即时 change_scale
+        # 肥鱼大小（scale）：旧机 refresh_pet_settings 即时 change_scale
         # （window.py:3937-3938），改完即改气泡画布/锚点。
         scale = self._config_scale(cfg)
         if sprite in self._session_pets:      # 会话小鱼：主肥鱼的一半大
@@ -3430,7 +3430,7 @@ class OverlayShell(QObject):
                 setter(playback)
 
     def _config_scale(self, cfg=None) -> float:
-        """config ``scale``（桌宠大小）→ sprite 缩放；缺键/坏值走默认。
+        """config ``scale``（肥鱼大小）→ sprite 缩放；缺键/坏值走默认。
 
         夹取范围同配置落库口径（config.py 对 ``spawn_scale`` 的 0.1~4.0），
         避免手工写坏的配置文件把 sprite 尺寸设成 0 或天文数字（sprite.scale
@@ -3446,7 +3446,7 @@ class OverlayShell(QObject):
     def _sync_collision_physics(self, cfg=None) -> None:
         """config 的碰撞物理 4 键 → ``SpriteCollisionWorld`` 求解参数。
 
-        旧架构每个桌宠进程逐窗读自己 cfg 的组策略并在逐次求解时使用
+        旧架构每个肥鱼进程逐窗读自己 cfg 的组策略并在逐次求解时使用
         （``collision_client.py:140-145`` policy 四键 / ``:558-563`` 传入
         ``solve_collision_impulse``）。overlay 世界在 __init__ 只用形参默认值
         建了一次，此后无任何写入点——设置页四个滑块（含重启）完全无效。
@@ -3500,7 +3500,7 @@ class OverlayShell(QObject):
     def _sprite_collision_enabled(self, sprite) -> bool:
         """该 sprite 的宠物间总碰撞资格（per-sprite 口径 = 各自的 config）。
 
-        旧契约（base-2786c15）：每个桌宠是独立进程、各读自己的 config
+        旧契约（base-2786c15）：每个肥鱼是独立进程、各读自己的 config
         （``window.py:3929``），子宠的 ``config-slot-N.json`` 由设置进程按其身份
         写就。本方法把这条身份→配置的对应关系在当前单进程壳里复原：
 
@@ -3826,11 +3826,12 @@ class OverlayShell(QObject):
         self._remove_spawned_sprite(sprite)
         self._refresh_tray_menu()
 
-    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "") -> None:
-        if sprite.caption == text and sprite.caption_tone == tone:
+    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "", badge: str = "") -> None:
+        if sprite.caption == text and sprite.caption_tone == tone and sprite.caption_badge == badge:
             return
         sprite.caption = text
         sprite.caption_tone = tone
+        sprite.caption_badge = badge
         self.overlay.update(QRegion(sprite.rect()))
 
     def _slot_writer(self, slot: int):
@@ -3990,7 +3991,7 @@ class OverlayShell(QObject):
         for sprite, _offset in moves:
             self.behavior.on_drag_started(sprite)    # 立刻切拖拽悬空动画，不等下一 tick
         if moves:
-            self.driver.note_kinetic()           # 桌宠静止时 tick 已降档：飞行要满速
+            self.driver.note_kinetic()           # 肥鱼静止时 tick 已降档：飞行要满速
         return len(moves)
 
     def _on_rally_arrived(self, sprite) -> None:
@@ -4567,7 +4568,7 @@ class OverlayShell(QObject):
                 logging.debug("overlay: 恢复动画预热失败", exc_info=True)
 
     def _notify_pet_hidden(self) -> None:
-        """用户主动隐藏桌宠 → 托盘提示（说明怎么恢复）。
+        """用户主动隐藏肥鱼 → 托盘提示（说明怎么恢复）。
 
         旧机由 app 注入 ``win.on_hidden``（``app.py:545`` → ``_notify_pet_hidden``，
         实现读 ``shell.tray``）；overlay 拓扑下托盘挂在**壳**上（``AppShell.tray``
@@ -5110,7 +5111,7 @@ class OverlayShell(QObject):
         ``pause_clip``，False 时续播 + 同帧回全速），**不**隐藏 overlay、**不**动
         全屏/光标 watcher——唤醒后可见性与交互面必须原样。预热同拍成对停/续
         （锁屏期间预热的 ffmpeg 没有可见收益；解锁必须补回，否则切动画退化到
-        冷首帧）。异常一律吞掉：事件过滤器在原生消息链上，绝不因桌宠内部错误
+        冷首帧）。异常一律吞掉：事件过滤器在原生消息链上，绝不因肥鱼内部错误
         打断 Qt 事件循环。
         """
         logging.info("overlay: 锁屏/挂起状态变化 active=%s reason=%s", active, reason)

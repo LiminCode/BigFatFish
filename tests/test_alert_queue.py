@@ -369,7 +369,7 @@ class _HiddenRedirectHost:
 
 
 def test_hidden_host_redirects_noninteractive_alert():
-    """桌宠隐藏：无按钮提醒改道灵动岛反馈面，不入队不丢弃。"""
+    """肥鱼隐藏：无按钮提醒改道灵动岛反馈面，不入队不丢弃。"""
     redirected = []
 
     def hook(text, subtitle="", duration_ms=3200):

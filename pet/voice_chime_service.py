@@ -758,10 +758,10 @@ class VoiceChimeService:
 
     # ------------------------------------------------------------ 提示
     def _bubble(self, text: str) -> None:
-        """桌宠气泡展示报时文字（受 voice_chime_show_bubble 开关控制）。
+        """肥鱼气泡展示报时文字（受 voice_chime_show_bubble 开关控制）。
 
         设置窗口打开等场景下 window.show_bubble 会被抑制（_bubble_suppressed），
-        报时属用户主动关注事件，此时直接经桌宠气泡位（_speech_bubble）展示，
+        报时属用户主动关注事件，此时直接经肥鱼气泡位（_speech_bubble）展示，
         避免“只听声不见字”。
 
         飞行期是唯一的例外：这是**瞬时**状态（鱼被撞飞几秒），此时连直写也

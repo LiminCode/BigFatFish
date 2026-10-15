@@ -112,7 +112,7 @@ def test_hook_reads_only_the_head_of_a_huge_payload(tmp_path):
 
 
 def test_hook_command_is_a_no_op_when_the_script_is_gone(tmp_path):
-    """桌宠卸载后 hooks 可能还留在 settings.json 里：不许让 Claude Code 每个事件都报错。"""
+    """肥鱼卸载后 hooks 可能还留在 settings.json 里：不许让 Claude Code 每个事件都报错。"""
     shell = _shell()
     if shell is None:
         pytest.skip("本机没有可用的 sh / Git Bash")
@@ -320,7 +320,7 @@ def test_to_wsl_path_uses_wslpath_and_rejects_failures():
 
 
 def test_run_wsl_hides_the_console_window(monkeypatch):
-    """桌宠由 pythonw / GUI exe 启动：不带 CREATE_NO_WINDOW 每次调用都闪一个终端窗口。"""
+    """肥鱼由 pythonw / GUI exe 启动：不带 CREATE_NO_WINDOW 每次调用都闪一个终端窗口。"""
     seen: dict = {}
 
     def _fake_run(argv, **kwargs):
@@ -529,7 +529,7 @@ def test_waiting_for_approval_is_its_own_phase():
 
 
 def test_session_first_seen_mid_turn_still_appears():
-    """桌宠在回合中途才启动：没见到提问，第一眼就是工具事件或权限确认。"""
+    """肥鱼在回合中途才启动：没见到提问，第一眼就是工具事件或权限确认。"""
     tracker = ClaudeSessionTracker()
     assert [u["phase"] for u in _updates(tracker, _ev("PostToolUse", "A"))] == ["working"]
     assert [u["phase"] for u in _updates(tracker, _ev("Notification", "B", ntype="permission_prompt"))] == ["waiting"]

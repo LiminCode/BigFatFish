@@ -98,7 +98,7 @@ class MultiWindowProxy:
                    buttons: list | None = None, sticky: bool = True,
                    alert_id: str = "", priority: int = 3,
                    alert_type: str = "watchdog", metadata: dict | None = None) -> None:
-        """把交互式提醒入队到**首个可见窗**（多窗只弹一处，避免每只桌宠重复轰炸）。
+        """把交互式提醒入队到**首个可见窗**（多窗只弹一处，避免每只肥鱼重复轰炸）。
 
         ``agent_link`` 会先 ``hasattr(win, "show_alert")`` 决定是否走队列提醒；本方法
         确保共享 manager 的 ``win`` 是 proxy 时仍走交互式提醒（审批/控制按钮不丢失）。
@@ -292,7 +292,7 @@ class SharedAgentLinkManager(AgentLinkManager):
     """进程级共享的 ``AgentLinkManager``：呈现扇出 + 生命周期按「任窗仍存活」处理。
 
     与每窗独立 manager 的差别：
-    - ``shutdown()`` / ``pause()`` / ``resume()`` 为 no-op——单个桌宠窗口关闭、
+    - ``shutdown()`` / ``pause()`` / ``resume()`` 为 no-op——单个肥鱼窗口关闭、
       隐藏、切换角色都不该停掉其它窗共享的监视器（否则一窗退、全局断）；
     - 真正的收口只在进程级 ``stop_all()``（由 AppShell 在 aboutToQuit 调用）。
     """

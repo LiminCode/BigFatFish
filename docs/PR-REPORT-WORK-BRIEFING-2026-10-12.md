@@ -1,6 +1,6 @@
 # PR 报告：工作简报——让 WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程
 
-> **基线**：`9bb7bb5`（feat(session-fish): 回合结束后先「等你回复」，看过才休息）
+> **基线**：`4bcd464`（feat(session-fish): 回合结束后先「等你回复」，看过才休息）
 > **分支**：`feature/claude-session-fish`　**日期**：`2026-10-12`
 > **范围**：12 个文件（实现 8、测试 2、文档 2 含本报告）
 
@@ -39,7 +39,7 @@ WSL 里无界面跑一次 `claude -p`，由那个账号自己读、自己总结�
 
 ## 二、修改文件说明
 
-增删取自 `git diff 9bb7bb5 --numstat`；新增文件给的是总行数。
+增删取自 `git diff 4bcd464 --numstat`；新增文件给的是总行数。
 
 ### 实现
 
@@ -251,7 +251,7 @@ window visible: True
 | 红 → 绿 | `pytest -q tests/test_work_briefing.py` | 测试先于实现写好。三个新模块不存在时整份文件导入失败，所以没有逐条的红；对既有代码的那一处改动单独验过红：去掉 hook 脚本里那一行，`test_the_headless_run_stays_out_of_the_event_file` 失败（`1 failed, 2 passed`），加回去通过。实现后 47 passed |
 | 聚焦 + 相关 | 新文件 + `test_architecture` `test_sprite_menu_parity` `test_sprite_menu_facade` `test_config_schema` `test_session_card_themes` `test_menu_layout` | 239 passed（加点名拒绝名单之前；之后新文件单独重跑 47 passed） |
 | 受影响时序族满载 3 遍 | — | 不适用：服务的用例把线程换成同步执行、时钟换成固定值，没有真实线程和等待 |
-| 全量 | `python -m pytest -q -p no:cacheprovider`（`QT_QPA_PLATFORM=offscreen`，`APPDATA` 指向临时目录） | `5 failed, 5072 passed, 11 skipped in 510.58s`，在隔离的 git worktree 里跑（`9bb7bb5` 加本改动；当时同一个工作区里还有别的会话在改文件）。5 个失败都是环境性的：4 个是这台机器固定的（路径超 260、子进程输出按 cp1252、真实第二进程、多显示器负原点）；第 5 个 `test_catalog_animation_count_guard_survives_optimize` 与其中的 `test_festival_id_guard_survives_optimize` 同因（子进程用 cp1252 打印中文报错），在不含本改动的干净 `9bb7bb5` 上单独跑同样失败。**这次全量之后还有改动**：`pet/work_briefing.py` 加了点名拒绝名单、新测试文件加了 1 条、本报告与索引登记。之后在同一个隔离副本里重跑了 ruff 与 11 个相关测试文件（新文件、`test_pr_report_discipline`、`test_architecture`、`test_config_schema`、菜单与 hook 各族）：`561 passed, 1 skipped`；没有再跑一次全量 |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（`QT_QPA_PLATFORM=offscreen`，`APPDATA` 指向临时目录） | `5 failed, 5072 passed, 11 skipped in 510.58s`，在隔离的 git worktree 里跑（`4bcd464` 加本改动；当时同一个工作区里还有别的会话在改文件）。5 个失败都是环境性的：4 个是这台机器固定的（路径超 260、子进程输出按 cp1252、真实第二进程、多显示器负原点）；第 5 个 `test_catalog_animation_count_guard_survives_optimize` 与其中的 `test_festival_id_guard_survives_optimize` 同因（子进程用 cp1252 打印中文报错），在不含本改动的干净 `4bcd464` 上单独跑同样失败。**这次全量之后还有改动**：`pet/work_briefing.py` 加了点名拒绝名单、新测试文件加了 1 条、本报告与索引登记。之后在同一个隔离副本里重跑了 ruff 与 11 个相关测试文件（新文件、`test_pr_report_discipline`、`test_architecture`、`test_config_schema`、菜单与 hook 各族）：`561 passed, 1 skipped`；没有再跑一次全量 |
 
 ## 七、已知限制与后续
 
@@ -277,7 +277,7 @@ window visible: True
 
 # 第二轮改进：工单 / PR 点得开，灵动岛上有个按钮
 
-> **基线**：`bd0e0ad`（本报告第一轮的提交）　**日期**：`2026-10-12`
+> **基线**：`4aa8195`（本报告第一轮的提交）　**日期**：`2026-10-12`
 > **范围**：10 个文件（实现 5、测试 3、文档 2）
 
 ## 九、第二轮：核心特性
@@ -313,7 +313,7 @@ window visible: True
 
 ## 十、第二轮：修改文件说明
 
-增删取自 `git diff bd0e0ad --numstat`。
+增删取自 `git diff 4aa8195 --numstat`。
 
 | 文件 | 增删 | 改动意图 |
 |---|---|---|
@@ -443,9 +443,9 @@ unread island width: 215 | button rect: QRectF(170, 0, 26, 44)
 | 红 → 绿 | `pytest -q tests/test_work_briefing_links_and_island.py` | 实现前 `13 failed`（当时 13 条）；岛的改动之后 4 条转绿，链接之后剩 2 条，窗口与控制器之后全绿。之后加的 2 条（AppShell 接线、没用过的人没有按钮）是和对应的实现一起写的，没有单独看过红。最终 `15 passed` |
 | 聚焦 + 相关 | 两个简报测试文件 + `test_architecture` + 岛的 15 个测试文件 + `test_sprite_menu_parity` | 327 passed |
 | 受影响时序族满载 3 遍 | — | 不适用：没有新增真实线程或定时等待 |
-| 全量，第一次 | `python -m pytest -q -p no:cacheprovider`（隔离的 git worktree，`bd0e0ad` 加当时的改动） | `6 failed, 5088 passed, 11 skipped in 466.23s`。其中 5 个是第一轮记过的环境性失败；**第 6 个是本轮引入的**：`test_single_process_shared.py::test_shared_island_toggle_all_windows` 用一个手写的假灵动岛走 `_sync_dynamic_island`，假岛没有新加的 `set_briefing_state`（`AttributeError`）。聚焦测试没有覆盖到这个文件 |
+| 全量，第一次 | `python -m pytest -q -p no:cacheprovider`（隔离的 git worktree，`4aa8195` 加当时的改动） | `6 failed, 5088 passed, 11 skipped in 466.23s`。其中 5 个是第一轮记过的环境性失败；**第 6 个是本轮引入的**：`test_single_process_shared.py::test_shared_island_toggle_all_windows` 用一个手写的假灵动岛走 `_sync_dynamic_island`，假岛没有新加的 `set_briefing_state`（`AttributeError`）。聚焦测试没有覆盖到这个文件 |
 | 修正后的相关族 | 所有提到 island / AppShell / work_briefing 的测试文件，加 `test_architecture` `test_pr_report_discipline` `test_config_schema` 与菜单两族 | `2 failed, 1884 passed, 3 skipped`，2 个都是环境性的（路径超 260、真实第二进程） |
-| 全量，最终代码 | 同上命令，同一个隔离副本，含上面那处修正与之后的全部改动 | `5 failed, 5090 passed, 11 skipped in 514.33s`，5 个就是第一轮记过的那 5 个环境性失败，`test_single_process_shared` 通过。跑的是 `bd0e0ad` 加本轮改动；期间另一个会话提交了 `70029ed`（只动菜单模板和 4 个测试文件，与本轮没有共同文件），提交前在含它的工作区里又跑了两个简报测试文件与菜单三族 |
+| 全量，最终代码 | 同上命令，同一个隔离副本，含上面那处修正与之后的全部改动 | `5 failed, 5090 passed, 11 skipped in 514.33s`，5 个就是第一轮记过的那 5 个环境性失败，`test_single_process_shared` 通过。跑的是 `4aa8195` 加本轮改动；期间另一个会话提交了 `bf6c4b8`（只动菜单模板和 4 个测试文件，与本轮没有共同文件），提交前在含它的工作区里又跑了两个简报测试文件与菜单三族 |
 
 ## 十五、第二轮：已知限制
 

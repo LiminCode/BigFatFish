@@ -15,18 +15,10 @@ from .shared import (
     add_autostart,
     add_clear_spawned_pets,
     add_drag_physics,
-    add_deepseek_web,
     add_edge_probe,
-    add_agent_cost,
-    add_submenu,
     add_golden_spin,
-    add_music_next,
-    add_music_open_netease,
-    add_music_open_qqmusic,
-    add_music_pause,
-    add_music_prev,
-    add_music_quit,
-    add_harness,
+    add_vscode_workspaces_menu,
+    add_youtube_music,
     add_no_move,
     add_on_top,
     add_quit,
@@ -51,7 +43,7 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     if chat_settings is not None:
         add_action(menu, "AI 设置", None, chat_settings, close_on_trigger=True)
     if legacy_settings is not None:
-        add_action(menu, "桌宠设置", None, legacy_settings, close_on_trigger=True)
+        add_action(menu, "肥鱼设置", None, legacy_settings, close_on_trigger=True)
 
     menu.addSeparator()
     build_animation_categories(menu, pet, icons=False, legacy_labels=True)
@@ -68,25 +60,16 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     add_rally_pets(menu, pet, icons=False)
     add_clear_spawned_pets(menu, pet, icons=False)
     add_golden_spin(menu, pet, icons=False)
-    add_agent_cost(menu, pet, icons=False)
     # legacy 布局约定无图标（测试 test_legacy_config_value_dispatches_legacy_layout 守着）
-    music_menu = add_submenu(menu, "音乐")
-    add_music_pause(music_menu, pet, icons=False)
-    add_music_next(music_menu, pet, icons=False)
-    add_music_prev(music_menu, pet, icons=False)
-    add_music_quit(music_menu, pet, icons=False)
-    music_menu.addSeparator()
-    add_music_open_netease(music_menu, pet, icons=False)
-    add_music_open_qqmusic(music_menu, pet, icons=False)
+    # 「音乐」子菜单 2026-10-13 从右键菜单下线（歌词气泡 / 唱歌联动保留，入口在设置页），
+    # 它的位置给了「VS Code 工作区」
+    add_vscode_workspaces_menu(menu, pet, icons=False)
+    add_youtube_music(menu, pet, icons=False)
     add_edge_probe(menu, pet, icons=False)
     build_size_menu(menu, pet, icons=False)
 
     menu.addSeparator()
-    # 纯桌宠（无 Chat/DSH 联动）版本不再显示“启动 DeepSeek Harness”，
-    # 仅保留“打开网页版 DeepSeek”。
-    if getattr(pet, "on_open_chat", None) is not None:
-        add_harness(menu, pet, icons=False)
-    add_deepseek_web(menu, icons=False)
+    # 「DeepSeek Harness」「打开网页版 DeepSeek」2026-10-14 下线（DeepSeek 的东西用不到了）
     add_proactive_menu(menu, pet)
     add_agent_link_menu(menu, pet)
 

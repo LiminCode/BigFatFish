@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """子项1 回归：灵动岛"鱼本体头像"的 overlay 拓扑路由（offscreen）。
 
-根因（实机截图）：overlay 拓扑下 ``instances[].win`` 恒为 None（桌宠在
+根因（实机截图）：overlay 拓扑下 ``instances[].win`` 恒为 None（肥鱼在
 OverlayShell 里），``AppShell._island_icon_pixmap`` 只遍历 PetWindow →
 provider 恒返回 None → 岛只能画蓝点默认图标。
 

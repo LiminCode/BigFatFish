@@ -180,7 +180,7 @@ def test_non_thrown_entry_keeps_jelly_trampoline():
     """对照（legacy 语义保留）：未抛掷的 sprite 撞岛的入场那一次仍是 1.3 弹床。
 
     对齐 ``island_collision._clamp_body`` 的非 throw 分支：撞岛像撞弹床、
-    并把桌宠切进抛掷物理；只有"已在抛掷中"的触岛才退化成 ≤1 的普通反弹。
+    并把肥鱼切进抛掷物理；只有"已在抛掷中"的触岛才退化成 ≤1 的普通反弹。
     同一几何 / 同一入射速度下两种状态必须给出不同的出射速度。
     """
     def outgoing(state: str) -> tuple[float, str]:

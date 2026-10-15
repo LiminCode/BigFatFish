@@ -393,7 +393,7 @@ class MessageBubble(QFrame):
         panel = QVBoxLayout()
         panel.setContentsMargins(0, 0, 0, 0)
         panel.setSpacing(5)
-        self.meta = QLabel("你" if role == "user" else "桌宠")
+        self.meta = QLabel("你" if role == "user" else "肥鱼")
         self.meta.setObjectName("bubble-meta")
         self.meta.hide()
 
@@ -605,7 +605,7 @@ class ChatComposer(QFrame):
 
         self.input = AttachmentTextEdit(self)
         self.input.setObjectName("chat-input")
-        self.input.setPlaceholderText("和桌宠说点什么…  Enter 发送，Shift+Enter 换行")
+        self.input.setPlaceholderText("和肥鱼说点什么…  Enter 发送，Shift+Enter 换行")
         self.input.setMinimumHeight(38)
         self.input.setMaximumHeight(68)
         self.input.installEventFilter(self)
@@ -1049,11 +1049,11 @@ class ChatWindow(QDialog):
         footer_actions.setSpacing(6)
         self.follow_button = QToolButton(sidebar_footer)
         self.follow_button.setObjectName("follow-pet-button")
-        self.follow_button.setText("跟随桌宠")
+        self.follow_button.setText("跟随肥鱼")
         self.follow_button.setCheckable(True)
         self.follow_button.setChecked(self.follow_pet)
-        self.follow_button.setToolTip("聊天窗口跟随桌宠移动")
-        self.follow_button.setAccessibleName("聊天窗跟随桌宠")
+        self.follow_button.setToolTip("聊天窗口跟随肥鱼移动")
+        self.follow_button.setAccessibleName("聊天窗跟随肥鱼")
         self.follow_button.setIcon(vector_widget_icon(self.follow_button, "pin", 14))
         self.follow_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.follow_button.setMinimumHeight(30)
@@ -1165,7 +1165,7 @@ class ChatWindow(QDialog):
         # meaningless scrollbar before any conversation exists.
         empty_layout.setContentsMargins(60, 20, 60, 20)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_state = QLabel("有什么可以帮你的吗？\n和桌宠开始一段新的对话")
+        self.empty_state = QLabel("有什么可以帮你的吗？\n和肥鱼开始一段新的对话")
         self.empty_state.setObjectName("empty-state")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_state.setWordWrap(True)
@@ -2226,7 +2226,7 @@ class ChatWindow(QDialog):
         return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:
-        """关闭=隐藏并复用窗口：停止生成、解除桌宠位置监听，避免泄漏。"""
+        """关闭=隐藏并复用窗口：停止生成、解除肥鱼位置监听，避免泄漏。"""
         self._typewriter_timer.stop()
         self.service.stop()
         self.set_pet_window(None)

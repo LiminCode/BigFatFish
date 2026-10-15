@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""灵动岛对话气泡：桌宠隐藏时岛作为对话代理（点击弹气泡 / 回复到达预览）。
+"""灵动岛对话气泡：肥鱼隐藏时岛作为对话代理（点击弹气泡 / 回复到达预览）。
 
-覆盖：岛单击路由（hidden_chat × click_action × 桌宠可见性）、
+覆盖：岛单击路由（hidden_chat × click_action × 肥鱼可见性）、
 IslandChatBubble 锚定定位与预览态、AppShell 接线（可用性判定、
-点击开关切换、显示桌宠、回复到达自动弹出与在场守卫）。
+点击开关切换、显示肥鱼、回复到达自动弹出与在场守卫）。
 """
 from __future__ import annotations
 
@@ -57,10 +57,10 @@ def _teardown_island(island: DynamicIsland) -> None:
 
 
 def test_click_when_pet_hidden_expands_the_card(tmp_path):
-    """桌宠隐藏时单击胶囊照常展开卡片（2026-10-11 用户要求）。
+    """肥鱼隐藏时单击胶囊照常展开卡片（2026-10-11 用户要求）。
 
     此前（hidden_chat 开）隐藏时单击改弹岛对话气泡，卡片上的 Claude Code 会话与
-    「最近的对话」就点不开了。恢复桌宠的入口是卡片上的「显示桌宠」。
+    「最近的对话」就点不开了。恢复肥鱼的入口是卡片上的「显示肥鱼」。
     """
     _qapp()
     island = _island(tmp_path)
@@ -74,7 +74,7 @@ def test_click_when_pet_hidden_expands_the_card(tmp_path):
         island._finish_animations()
         assert cards == [1]
         assert island._debug_state()["mode"] == "expanded"
-        assert island._card_toggle_btn.text() == "显示桌宠"
+        assert island._card_toggle_btn.text() == "显示肥鱼"
         island._card_toggle_btn.click()
         assert toggles == [1]
         assert not hasattr(island, "chat_requested"), "隐藏时弹对话气泡的路由已去掉"
@@ -84,7 +84,7 @@ def test_click_when_pet_hidden_expands_the_card(tmp_path):
 
 
 def test_click_when_pet_visible_still_expands_card(tmp_path):
-    """桌宠可见：单击展开卡片。"""
+    """肥鱼可见：单击展开卡片。"""
     _qapp()
     island = _island(tmp_path)
     try:
@@ -102,7 +102,7 @@ def test_click_when_pet_visible_still_expands_card(tmp_path):
 
 
 def test_click_toggle_pet_action_unaffected(tmp_path):
-    """click_action=toggle_pet：桌宠隐藏时单击仍是旧行为（发 clicked）。"""
+    """click_action=toggle_pet：肥鱼隐藏时单击仍是旧行为（发 clicked）。"""
     _qapp()
     island = _island(tmp_path, click_action="toggle_pet")
     try:
@@ -119,7 +119,7 @@ def test_click_toggle_pet_action_unaffected(tmp_path):
 
 
 def test_click_hidden_chat_disabled_also_expands_card(tmp_path):
-    """hidden_chat 关：桌宠隐藏时单击同样展开卡片（开关不再影响单击）。"""
+    """hidden_chat 关：肥鱼隐藏时单击同样展开卡片（开关不再影响单击）。"""
     _qapp()
     island = _island(tmp_path, hidden_chat=False)
     try:
@@ -183,7 +183,7 @@ def test_island_chat_show_reply_display_only(tmp_path):
 
 
 def test_island_chat_show_pet_button(tmp_path):
-    """「显示桌宠」按钮发出 show_pet_requested。"""
+    """「显示肥鱼」按钮发出 show_pet_requested。"""
     _qapp()
     bubble = IslandChatBubble(Config(base=tmp_path))
     try:
@@ -253,8 +253,8 @@ def test_island_chat_availability_gates(tmp_path):
 def test_shell_no_longer_routes_a_hidden_click_to_the_chat_bubble(tmp_path):
     """隐藏时单击岛由岛自己展开卡片；AppShell 不再有把它接到对话气泡的入口。
 
-    纯桌宠版（打包时排除 `pet.chat`）此前靠这条入口把桌宠叫回来（2026-09-23 的
-    「点灵动岛没反应」修复）；现在所有构建都走卡片上的「显示桌宠」，那个死锁
+    纯肥鱼版（打包时排除 `pet.chat`）此前靠这条入口把肥鱼叫回来（2026-09-23 的
+    「点灵动岛没反应」修复）；现在所有构建都走卡片上的「显示肥鱼」，那个死锁
     的前提（单击被路由到不存在的气泡）不复存在。
     """
     _qapp()
@@ -274,7 +274,7 @@ def test_shell_no_longer_routes_a_hidden_click_to_the_chat_bubble(tmp_path):
 
 
 def test_shell_show_pets_from_island_chat(tmp_path):
-    """气泡内「显示桌宠」：调 set_pet_visible(True) 并收起气泡（无实例时不出错）。"""
+    """气泡内「显示肥鱼」：调 set_pet_visible(True) 并收起气泡（无实例时不出错）。"""
     _qapp()
     shell = _make_shell(tmp_path)
     try:
@@ -292,7 +292,7 @@ def test_shell_show_pets_from_island_chat(tmp_path):
 
 
 def test_shell_auto_pop_on_global_chat_finished_when_hidden(tmp_path):
-    """桌宠隐藏 + 回复到达：自动弹预览气泡（不激活）；回复文本进展示层。"""
+    """肥鱼隐藏 + 回复到达：自动弹预览气泡（不激活）；回复文本进展示层。"""
     _qapp()
     shell = _make_shell(tmp_path)
     try:
@@ -312,7 +312,7 @@ def test_shell_auto_pop_on_global_chat_finished_when_hidden(tmp_path):
 
 
 def test_shell_no_auto_pop_when_pet_visible(tmp_path):
-    """桌宠可见：回复到达只推动效，不弹岛气泡。"""
+    """肥鱼可见：回复到达只推动效，不弹岛气泡。"""
     _qapp()
     shell = _make_shell(tmp_path)
 
@@ -335,14 +335,14 @@ def test_shell_no_auto_pop_when_pet_visible(tmp_path):
 
 
 def test_shell_no_auto_pop_when_full_chat_window_open(tmp_path):
-    """桌宠隐藏但完整聊天窗开着：回复已有去处，不弹岛预览。"""
+    """肥鱼隐藏但完整聊天窗开着：回复已有去处，不弹岛预览。"""
     _qapp()
     shell = _make_shell(tmp_path)
 
     class _Win:
         @staticmethod
         def isVisible():
-            return False  # 桌宠隐藏
+            return False  # 肥鱼隐藏
 
     class _ChatWin:
         @staticmethod
@@ -388,7 +388,7 @@ def test_island_chat_feedback_preview(tmp_path):
 
 
 def test_island_feedback_bubble_redirect_gates(tmp_path):
-    """AppShell 注入面：桌宠隐藏 + 岛可用 → 反馈弹到岛气泡；桌宠可见 → 拒绝。"""
+    """AppShell 注入面：肥鱼隐藏 + 岛可用 → 反馈弹到岛气泡；肥鱼可见 → 拒绝。"""
     _qapp()
     shell = _make_shell(tmp_path, hidden_chat=True)
     try:
@@ -402,7 +402,7 @@ def test_island_feedback_bubble_redirect_gates(tmp_path):
         assert bubble is not None and bubble.isVisible()
         assert "开始干活啦" in bubble.output.text()
 
-        # 桌宠可见时拒绝改道（返回 False，调用方走原路径）
+        # 肥鱼可见时拒绝改道（返回 False，调用方走原路径）
         shell._aggregate_pet_visible = lambda: True
         assert shell._island_feedback_bubble("第二条") is False
     finally:

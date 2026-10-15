@@ -13,7 +13,7 @@
    ``_any_wants()`` 恒 False → 常驻线程每秒空醒。overlay 拓扑不启该线程。
 
 装配口径：真 AppShell + 真 Config + 真共享子系统/跟踪器，真 ``AppShell.start()``；
-只有"起桌宠"那一层（建窗口/合成窗、托盘、会话结束探测器、灵动岛、可选服务）
+只有"起肥鱼"那一层（建窗口/合成窗、托盘、会话结束探测器、灵动岛、可选服务）
 置空——与 ``tests/test_desktop_pet_features.py`` 的 ``owner.start()`` 同款边界。
 """
 from __future__ import annotations
@@ -69,9 +69,9 @@ class _StubOverlayShell:
 
 def _start_shell(tmp_path, monkeypatch, *, dsh=False, topology="legacy",
                  win=None, ui_stub=True):
-    """真 AppShell.start()（"起桌宠"那一层置空）。
+    """真 AppShell.start()（"起肥鱼"那一层置空）。
 
-    默认显式走 ``legacy`` 拓扑：不建 OverlayShell / 素材库（起桌宠那一层），
+    默认显式走 ``legacy`` 拓扑：不建 OverlayShell / 素材库（起肥鱼那一层），
     与本文件被测的三件事（跟踪器门、共享全屏 watcher 门、应用链计数）无关；
     overlay 分支专门由 ``test_overlay_topology_skips_shared_fullscreen_watcher``
     用壳替身覆盖。

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """会话小鱼的交互面：详情卡、专属右键菜单、跳转（Qt 层）。
 
-会话小鱼是一个 Claude Code 会话的状态指示，不是另一只桌宠——主肥鱼那棵菜单
+会话小鱼是一个 Claude Code 会话的状态指示，不是另一只肥鱼——主肥鱼那棵菜单
 （动作点播、AI 对话、角色切换……）对它没有意义。这里给它两样自己的东西：
 
 - **单击 → 详情卡**：标题、状态与持续时间、最近的问题、在哪打开的（VS Code 插件 /
@@ -61,6 +61,11 @@ def status_line(detail: SessionDetail, since: float | None, now: float | None = 
     text = claude_hooks.PHASE_TEXT.get(detail.phase, "")
     if detail.phase == "waiting" and detail.tool:
         text = f"{_WAIT_TEXT}：{detail.tool}"
+    # 在用的模型与 effort（会话记录里读到才有）：「Fable 5.1 · high」
+    model = claude_session_info.model_label(detail.model)
+    for part in (model, detail.effort if model else ""):
+        if part:
+            text = f"{text} · {part}" if text else part
     if since:
         text = f"{text} · 已 {elapsed_text((now or time.time()) - since)}" if text else ""
     return text
@@ -109,7 +114,7 @@ class SessionDetailCard(QFrame):
         self._scale = _card_scale(config)
         self._theme_id = ""
         self._theme = session_card_themes.card_theme(None)
-        apply_family(self)   # 与桌宠气泡同一种字体（等线）
+        apply_family(self)   # 与肥鱼气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)
@@ -343,7 +348,7 @@ class SessionPetActions(QObject):
         cached = self._cache.get(key)
         if cached is not None:
             for name in ("last_prompt", "git_branch", "entrypoint", "version", "name", "pid",
-                         "started_at", "alive", "distro", "extra"):
+                         "started_at", "alive", "distro", "model", "effort", "extra"):
                 setattr(detail, name, getattr(cached, name))
             detail.cwd = detail.cwd or cached.cwd
         return detail
@@ -395,8 +400,10 @@ class SessionPetActions(QObject):
             action(card.key)
 
     def _on_detail_ready(self, key, detail) -> None:
-        # 读回来的标题以会话记录 / 运行清单为准（含用户改的名字）：同步给小鱼头顶
+        # 读回来的标题以会话记录 / 运行清单为准（含用户改的名字）：同步给小鱼头顶；
+        # 在用的模型同理（hook 只在回合边界报，中途换模型那一轮它报的还是旧的）→ 桂冠
         self._controller.retitle(tuple(key), getattr(detail, "title", ""))
+        self._controller.remodel(tuple(key), getattr(detail, "model", ""))
         self._cache[key] = detail
         card = self._card
         if (card is not None and shiboken6.isValid(card) and card.isVisible()

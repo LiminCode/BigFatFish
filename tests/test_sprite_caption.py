@@ -203,3 +203,13 @@ def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():
     assert _sprite("").caption_rect() == QRect()
     sprite = _sprite("x")
     assert sprite.rect().contains(sprite.caption_rect())
+
+
+def test_eliding_cuts_the_name_not_the_status_word():
+    """实机（2026-10-14）：英文下「claude --r…ing on you」——状态词被省略掉了一半。名字可以省，状态词不能。"""
+    sprite = _sprite("claude --resume session fork and then some more words · 等你回复")
+    _rect, text = sprite._caption_layout()
+    assert text.endswith(" · 等你回复") and "…" in text
+    assert text != sprite.caption
+    sprite.caption = "web · Your turn"
+    assert sprite._caption_layout()[1] == "web · Your turn", "放得下就一个字不动"

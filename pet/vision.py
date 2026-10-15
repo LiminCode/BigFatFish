@@ -373,8 +373,8 @@ def _post_vision_request(
     consume_budget: 可选，每次真实 HTTP 请求前被调用（主动识屏用于按真实请求
     次数消耗每日预算，避免一次触发多次重试却只记一次）。返回 False 表示预算
     已耗尽，函数直接抛出 VisionError 停止后续重试。
-    pet_name: 可选，桌宠角色显示名；用于在 user 文本里追加自我识别提示，
-    让模型认出截图角落里的桌宠就是自己，而不是陌生程序。"""
+    pet_name: 可选，肥鱼角色显示名；用于在 user 文本里追加自我识别提示，
+    让模型认出截图角落里的肥鱼就是自己，而不是陌生程序。"""
     # 延迟导入：无 Chat 变体（pet.chat 被排除）下本函数不会被调用
     from .chat.providers import _make_ssl_context, normalize_chat_endpoint, build_browser_headers
     # 视觉独立端点仅在「不同聊天模型」时生效；同聊天模型时强制跟随聊天配置，
@@ -392,7 +392,7 @@ def _post_vision_request(
     )
     if memory_context:
         user_text += f"\n（陪伴记忆：{memory_context}）"
-    # 自我识别：截图里通常也拍到了桌宠本体，不提示的话模型常把自己说成
+    # 自我识别：截图里通常也拍到了肥鱼本体，不提示的话模型常把自己说成
     # 「桌面上的陌生动画角色」。点名角色显示名效果更好。
     name_part = f'「{pet_name}」' if pet_name else ''
     user_text += (

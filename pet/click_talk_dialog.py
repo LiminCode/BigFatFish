@@ -56,7 +56,7 @@ class ClickTalkBindingsDialog(QDialog):
         layout = QVBoxLayout(self)
         hint = QLabel(
             "每个点击动画可绑定多条专属自言自语台词，每行一条。\n"
-            "点击桌宠时会优先播放当前动画绑定的台词；未绑定时回退全局随机自言自语。"
+            "点击肥鱼时会优先播放当前动画绑定的台词；未绑定时回退全局随机自言自语。"
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)

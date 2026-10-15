@@ -366,7 +366,7 @@ class FrameSeqClip(QObject):
         else:
             # 帧 0 尚未到货：**不清显示槽**——保留预热帧/上一圈末帧直到新帧
             # 交付（与 WebMClip edecd57 的语义对齐）。清空会让 sprite.paint
-            # 在帧 0 到货前取不到帧直接 return，sprite 区域画透明 = 桌宠闪
+            # 在帧 0 到货前取不到帧直接 return，sprite 区域画透明 = 肥鱼闪
             # 消失一瞬（每次切动画都触发）。新帧到货自然覆盖。
             self._set_awaiting(0)
             self._request(0)

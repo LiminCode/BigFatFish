@@ -2,7 +2,7 @@
 """灵动岛 AppShell 接线测试：碰撞体生命周期/挂起、no-chat 变体守卫。
 
 审查补票（P0-1/P0-2/P1-6）：碰撞体重开必须换新 session；pet.chat 被排除的
-打包变体不能崩；碰撞体随桌宠可见性挂起。
+打包变体不能崩；碰撞体随肥鱼可见性挂起。
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def test_shell_creates_island_and_local_collision_body(tmp_path):
         # 几何变化钩子与可见性回调都指向碰撞体
         assert island.on_geometry_changed == body.submit
         assert island.on_pet_visibility_changed == body.set_own_pet_visible
-        # pets_provider 返回本进程全部桌宠窗口（无窗时为空）
+        # pets_provider 返回本进程全部肥鱼窗口（无窗时为空）
         assert body._pets_provider() == []
     finally:
         _teardown_shell(shell)
@@ -166,7 +166,7 @@ def test_quiet_balance_refresh_paths(tmp_path, monkeypatch):
 
 def test_toggle_pet_from_island_routes_to_overlay_shell():
     """GPT 审查阻断：overlay 拓扑 instances[].win 恒为 None，岛单击显隐
-    必须路由到 OverlayShell._toggle_pet_visible（否则岛永远调不动桌宠）。"""
+    必须路由到 OverlayShell._toggle_pet_visible（否则岛永远调不动肥鱼）。"""
     shell = AppShell.__new__(AppShell)
     calls: list = []
 
@@ -182,8 +182,8 @@ def test_toggle_pet_from_island_routes_to_overlay_shell():
 
 
 def test_show_pets_from_island_chat_routes_to_overlay_shell():
-    """实机 bug（2026-10-11）：隐藏桌宠后点岛弹出对话气泡，气泡里的「显示桌宠」
-    在 overlay 拓扑下只遍历 instances[].win（恒为 None）——桌宠没回来，岛却被
+    """实机 bug（2026-10-11）：隐藏肥鱼后点岛弹出对话气泡，气泡里的「显示肥鱼」
+    在 overlay 拓扑下只遍历 instances[].win（恒为 None）——肥鱼没回来，岛却被
     写成「已显示」。必须交给 OverlayShell.set_pet_visible(True)。"""
     shell = AppShell.__new__(AppShell)
     calls: list = []
@@ -391,7 +391,7 @@ def _drag_event(kind, global_pos, buttons=None):
 def test_overlay_island_drag_wakes_tick_tier(tmp_path):
     """岛拖拽必须把 tick 档位同步唤回活跃档（M-1 kinetic）。
 
-    桌宠静止时 tick 会降到 T2（250ms 心跳，基本不跑仿真）；岛拖拽是几何回调
+    肥鱼静止时 tick 会降到 T2（250ms 心跳，基本不跑仿真）；岛拖拽是几何回调
     驱动的用户输入，不经过 overlay 的鼠标事件（岛是独立顶层窗），没有这条
     kinetic 通道就没人告诉 tick「有活动」——快速甩岛过鱼可能整个手势期间一次
     碰撞结算都没发生（用户反馈「拖岛撞鱼没反馈」的档位侧成因）。
@@ -417,7 +417,7 @@ def test_overlay_island_drag_wakes_tick_tier(tmp_path):
         driver.on_tick(1 / 60)  # 静默计时起算
         clock.advance(1.0)
         driver.on_tick(1 / 60)  # 连续静默 > DOWNGRADE_HOLD_MS → T2
-        assert driver.applied_tier == TIER_IDLE_STILL, "基线：静止桌宠应已降档"
+        assert driver.applied_tier == TIER_IDLE_STILL, "基线：静止肥鱼应已降档"
 
         press = island.pos() + QPoint(60, 20)
         island.mousePressEvent(_drag_event(QEvent.Type.MouseButtonPress, press))
@@ -567,7 +567,7 @@ def test_island_shows_the_api_key_verdict(tmp_path, monkeypatch):
         monitor.status_changed.emit("bad", "认证失败")
         assert (shell.island._api_state, shell.island.toolTip()) == ("bad", "认证失败")
 
-        # 桌宠在场（不走「桌宠隐藏 → 岛上弹回复预览」那条支线）
+        # 肥鱼在场（不走「肥鱼隐藏 → 岛上弹回复预览」那条支线）
         shell._overlay_shell = None
         shell._instances = [SimpleNamespace(win=SimpleNamespace(isVisible=lambda: True))]
         shell._on_global_chat_finished("你好")
@@ -674,7 +674,7 @@ def test_island_chat_button_opens_quick_chat_on_the_overlay(tmp_path):
 
 
 def test_island_chat_button_opens_the_full_chat_window_while_hidden(tmp_path):
-    """桌宠隐藏时点卡片的「聊天」：快速气泡锚不到桌宠，直接开完整聊天窗。
+    """肥鱼隐藏时点卡片的「聊天」：快速气泡锚不到肥鱼，直接开完整聊天窗。
 
     此前这里改弹岛对话气泡；隐藏时单击岛已改回展开卡片（2026-10-11），卡片上的
     「聊天」不该再绕回那个气泡。

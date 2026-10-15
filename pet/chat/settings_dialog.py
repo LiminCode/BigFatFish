@@ -10,7 +10,7 @@ from .anthropic_provider import test_connection
 from .themes import CHAT_UI_STYLE_LABELS, CHAT_UI_VIEW_ASPECT, theme_names
 from .utils import _safe_emit
 
-# 本对话框只读写经典风格的 chat_background 键（肥鱼版 DeepSeek 走主设置窗的
+# 本对话框只读写经典风格的 chat_background 键（肥鱼版宽屏 走主设置窗的
 # modern_chat_background），所以裁切入口按单一风格标注名称；名字取自 themes 的
 # 单一来源，不在本模块重复字面量。
 _CLASSIC_STYLE_LABEL = CHAT_UI_STYLE_LABELS['classic']

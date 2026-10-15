@@ -8,7 +8,7 @@ import 两个阈值常量做「单一来源」对拍）。本文件覆盖：
   普通抛掷（非探头状态被击飞）不 arm（批 A 现状）；
 - 角度跟随：屏幕坐标 y 朝下口径（右 90/下 180/上 0/左 270），触界 780 /
   空中 150 双阈值分档，低速冻结角度但会话继续（不设飞行时间硬上限）；
-- 回正三触发源：低速触界、飞行中低速撞其它桌宠、落地停稳（physics 把
+- 回正三触发源：低速触界、飞行中低速撞其它肥鱼、落地停稳（physics 把
   interaction_state 切回 normal）兜底——含真实 ThrowPhysicsController
   跑完整飞行并落地；
 - 多 sprite 各自独立；
@@ -453,7 +453,7 @@ def test_settled_and_dragged_sprites_recover_angle():
 
 
 def test_low_speed_pet_contact_recovers_but_fast_contact_keeps_following():
-    """飞行中再次撞其它桌宠：低速回正，高速继续跟随（旧 on_pet_contact）。"""
+    """飞行中再次撞其它肥鱼：低速回正，高速继续跟随（旧 on_pet_contact）。"""
     world = _world()
     slow = _sprite((400.0, 200.0))
     world.arm(slow)
