@@ -870,7 +870,7 @@ def add_claude_desktop(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_wsl_claude_code(menu: QMenu, pet, *, icons: bool = True):
-    """「Claude Code（WSL）」：在默认发行版的家目录开一个终端、起一个新的 claude 会话；没有 WSL 置灰。"""
+    """「Claude Code（WSL）」：在默认发行版的 ``~/workspace``（已信任过的目录）开一个终端、起一个新的 claude 会话；没有 WSL 置灰。"""
     argv = claude_launchers.wsl_claude_argv()
 
     def launch() -> None:

@@ -11,7 +11,7 @@
   本机实测枚举一次不到几毫秒），不起 PowerShell。
 - **Claude Code（WSL）**：照「最近的对话 → 在终端里继续」那条命令（
   ``claude_session_history.terminal_resume_argv``）：Windows Terminal 新开一个发行版标签，
-  ``--cd ~`` 进家目录，登录 shell 起 ``claude``（PATH 才齐），退出后留在 shell 里。
+  ``--cd ~/workspace`` 进用户选定的工作目录，登录 shell 起 ``claude``（PATH 才齐），退出后留在 shell 里。
 """
 
 from __future__ import annotations
@@ -96,6 +96,10 @@ def launch_claude_desktop(target: str) -> bool:
 
 
 # ---------------------------------------------------------------- Claude Code（WSL）
+#: 新会话开在哪个目录（``wsl.exe --cd`` 认 ``~/…``）。不用家目录：Claude Code 的「信任此文件夹」
+#: 按目录记，信任整个家目录等于放开家目录里的一切；``~/workspace`` 是用户 2026-10-15 选定的、
+#: 已经信任过的目录，点开直接进对话。
+WSL_START_DIR = "~/workspace"
 #: 登录 shell 里跑的那一行：起 claude，退出后留在 shell 里
 NEW_SESSION_SCRIPT = "claude; exec bash"
 
@@ -113,7 +117,7 @@ def wt_script(script: str) -> str:
 
 def wsl_claude_argv(*, which: Callable[[str], str | None] = shutil.which,
                     wsl: str | None = None, distro: str | None = None) -> list[str] | None:
-    """在家目录开一个终端并起一个新的 ``claude`` 会话的命令行；没有 WSL 返回 None。
+    """在 ``WSL_START_DIR`` 开一个终端并起一个新的 ``claude`` 会话的命令行；没有 WSL 返回 None。
 
     ``distro``：None = 本机默认发行版（``wsl_distros()`` 第一项），空串 = 不指定（由 wsl.exe 选）。
     """
@@ -122,7 +126,7 @@ def wsl_claude_argv(*, which: Callable[[str], str | None] = shutil.which,
         return None
     if distro is None:
         distro = next(iter(wsl_distros()), "")
-    inner = [wsl_path, *(["-d", distro] if distro else []), "--cd", "~", "--", "bash", "-lic"]
+    inner = [wsl_path, *(["-d", distro] if distro else []), "--cd", WSL_START_DIR, "--", "bash", "-lic"]
     terminal = which("wt")
     if terminal:
         return [terminal, *inner, wt_script(NEW_SESSION_SCRIPT)]

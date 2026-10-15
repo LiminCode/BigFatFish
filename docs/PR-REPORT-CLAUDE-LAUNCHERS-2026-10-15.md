@@ -210,3 +210,43 @@ tests/test_session_history_service.py tests/test_youtube_music.py tests/test_spr
 - 往 `wt` 传 shell 脚本，`;` 必须 `\;`，引号不保护。
 - 第一轮「实机运行记录」只看了进程表，没看终端窗口本身——多出来的错误标签是用户发现的。
   以后凡是「拉起一个窗口」的功能，实机记录要包含窗口 / 标签的观察，不能只数进程。
+
+---
+
+## 第三轮调整：新会话开在 `~/workspace`，不开在家目录
+
+### 现场
+
+修完分号后用户点入口，每次都停在 Claude Code 的「Accessing workspace: /home/limin … Yes, I trust
+this folder」上。查 WSL 里的配置：Claude Code 2.x 真正在写的是 `~/.claude/.config.json`
+（`~/.claude.json` 停在 8 月 21 日），信任按目录记在 `projects[<路径>].hasTrustDialogAccepted`；
+`/home/limin` 是 `False`，另外 8 个目录（含 `/home/limin/workspace`）是 `True`。没有「信任所有目录」
+的开关（公司下发的 remote-settings 也只有 `permissions.deny`）。
+
+用户的决定：不信任整个家目录（等于放开家目录里的一切），改成在已经信任过的 `~/workspace` 开新会话。
+
+### 改动
+
+| 文件 | 改动 |
+|---|---|
+| `pet/claude_launchers.py` | 常量 `WSL_START_DIR = "~/workspace"`（注释记着为什么不用家目录），`wsl_claude_argv` 用它。`wsl.exe --cd` 认 `~/…`：本机 `wsl.exe --cd ~/workspace -- pwd` → `/home/limin/workspace`。 |
+| `pet/context_menus/shared.py` | 叶子 docstring 改口。 |
+| `tests/test_claude_launchers.py` | 期望里的 `--cd ~` 改成 `--cd ~/workspace`；用例名改成 `…_in_the_trusted_workspace_folder`。 |
+
+不加配置项：目录是用户点名的一个固定值；要改目录是改一个常量。若以后想按人配置，再走
+`SETTINGS-CHANGE-GATES`。
+
+### 实机
+
+```
+argv = wsl.exe -d Ubuntu-24.04 --cd ~/workspace -- bash -lic claude\; exec bash
+launched True
+$ pwdx 133187 127806 125523
+133187: /home/limin/workspace    ← 这次（pts/13，21 秒）
+127806: /home/limin              ← 之前家目录版本的两次
+125523: /home/limin
+```
+
+新会话的工作目录是 `/home/limin/workspace`，该目录已信任，不再弹对话框。肥鱼已重启
+（`acquired pid=10404`，日志无 ERROR）。门：ruff 全过；`tests/test_claude_launchers.py` +
+`tests/test_claude_session_history.py` 63 通过。

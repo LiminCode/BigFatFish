@@ -26,7 +26,8 @@ app = QApplication.instance() or QApplication([])
 STORE_TARGET = r"shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude"
 WT = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe"
 WSL = r"C:\Windows\System32\wsl.exe"
-INNER = [WSL, "-d", "Ubuntu-24.04", "--cd", "~", "--", "bash", "-lic"]
+#: 新会话开在已经信任过的 ``~/workspace``，不是整个家目录（用户 2026-10-15 的决定）
+INNER = [WSL, "-d", "Ubuntu-24.04", "--cd", "~/workspace", "--", "bash", "-lic"]
 SCRIPT = "claude; exec bash"
 #: wt 把 ``;`` 当子命令分隔符（哪怕在引号里），交给它的脚本要写成 ``\;``
 WT_SCRIPT = "claude\\; exec bash"
@@ -58,7 +59,7 @@ def test_nothing_installed_means_an_empty_target(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------- WSL 里起 claude 的命令行
-def test_windows_terminal_opens_a_login_shell_in_the_home_directory():
+def test_windows_terminal_opens_a_login_shell_in_the_trusted_workspace_folder():
     argv = claude_launchers.wsl_claude_argv(which={"wt": WT}.get, wsl=WSL, distro="Ubuntu-24.04")
     assert argv == [WT, *INNER, WT_SCRIPT]
 
@@ -70,7 +71,7 @@ def test_without_windows_terminal_a_console_window_is_opened():
 
 def test_without_a_distro_name_the_default_distro_is_used():
     argv = claude_launchers.wsl_claude_argv(which={"wt": WT}.get, wsl=WSL, distro="")
-    assert argv == [WT, WSL, "--cd", "~", "--", "bash", "-lic", WT_SCRIPT]
+    assert argv == [WT, WSL, "--cd", "~/workspace", "--", "bash", "-lic", WT_SCRIPT]
 
 
 def test_the_semicolon_is_escaped_only_on_the_windows_terminal_path():
