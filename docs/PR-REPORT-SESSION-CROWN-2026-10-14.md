@@ -229,7 +229,7 @@ Fable 5.1。hook 只在回合开始 / 结束（`UserPromptSubmit` / `Stop`）时
 
 ```text
 排查（改动前）：
-  %APPDATA%ig-fat-fishgent-events\claude_wsl.jsonl 该会话最近 8 条 SessionMeta 全是 "model":"claude-opus-5-5"
+  %APPDATA%/big-fat-fish/agent-events/claude_wsl.jsonl 该会话最近 8 条 SessionMeta 全是 "model":"claude-opus-5-5"
   会话记录 15449ffb…jsonl 共 1589 行：最后一条 opus 在第 1473 行，之后 31 条 assistant 全是 claude-fable-5-1
   → hook 报的是上一轮的模型，详情卡读的是当前的。
 重启：00:21:45 pet-overlay-gate.log「acquired pid=24172」；pet-24172.log「Agent 监视器 [claude_wsl] 已启动」。
