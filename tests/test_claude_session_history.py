@@ -357,7 +357,9 @@ def test_terminal_resume_for_wsl_enters_the_distro_in_that_folder():
     entry = _entry("claude_wsl", cwd="/home/limin/work", distro="Ubuntu")
     argv = hist.terminal_resume_argv(entry, which=_which({"wt": "C:\\wt.exe"}), wsl="C:\\wsl.exe")
     assert argv == ["C:\\wt.exe", "C:\\wsl.exe", "-d", "Ubuntu", "--cd", "/home/limin/work", "--",
-                    "bash", "-lic", f"claude --resume {SID_A}; exec bash"]
+                    "bash", "-lic", f"claude --resume {SID_A}\\; exec bash"], "wt 把 ; 当子命令分隔符，要转义"
+    plain = hist.terminal_resume_argv(entry, which=_which({}), wsl="C:\\wsl.exe")
+    assert plain[-1] == f"claude --resume {SID_A}; exec bash", "不经 wt 的那条不能转义"
     assert hist.terminal_resume_argv(entry, which=_which({}), wsl="") is None, "没有 wsl.exe 就恢复不了"
 
 

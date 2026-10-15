@@ -96,6 +96,21 @@ def launch_claude_desktop(target: str) -> bool:
 
 
 # ---------------------------------------------------------------- Claude Code（WSL）
+#: 登录 shell 里跑的那一行：起 claude，退出后留在 shell 里
+NEW_SESSION_SCRIPT = "claude; exec bash"
+
+
+def wt_script(script: str) -> str:
+    r"""交给 Windows Terminal 的 shell 脚本：分号要写成 ``\;``。
+
+    ``wt`` 把参数里的 ``;`` 当成它自己的子命令分隔符——哪怕在引号里——
+    ``claude; exec bash`` 会被劈成两个标签，第二个拿着 ``exec bash`` 报 0x80070002
+    （2026-10-15 用户实机截图）。``\;`` 经 wt 还原成 ``;`` 再交给 wsl.exe（本机实测：
+    ``bash -lic "touch /tmp/x\; exit"`` 只建了 ``/tmp/x``）。``cmd /c start`` 那条路
+    不经 wt，不能转义。"""
+    return script.replace(";", "\\;")
+
+
 def wsl_claude_argv(*, which: Callable[[str], str | None] = shutil.which,
                     wsl: str | None = None, distro: str | None = None) -> list[str] | None:
     """在家目录开一个终端并起一个新的 ``claude`` 会话的命令行；没有 WSL 返回 None。
@@ -107,10 +122,11 @@ def wsl_claude_argv(*, which: Callable[[str], str | None] = shutil.which,
         return None
     if distro is None:
         distro = next(iter(wsl_distros()), "")
-    inner = [wsl_path, *(["-d", distro] if distro else []), "--cd", "~", "--",
-             "bash", "-lic", "claude; exec bash"]
+    inner = [wsl_path, *(["-d", distro] if distro else []), "--cd", "~", "--", "bash", "-lic"]
     terminal = which("wt")
-    return [terminal, *inner] if terminal else ["cmd", "/c", "start", "", *inner]
+    if terminal:
+        return [terminal, *inner, wt_script(NEW_SESSION_SCRIPT)]
+    return ["cmd", "/c", "start", "", *inner, NEW_SESSION_SCRIPT]
 
 
 def launch_wsl_claude(argv: list[str]) -> bool:

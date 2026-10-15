@@ -26,7 +26,10 @@ app = QApplication.instance() or QApplication([])
 STORE_TARGET = r"shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude"
 WT = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe"
 WSL = r"C:\Windows\System32\wsl.exe"
-INNER = [WSL, "-d", "Ubuntu-24.04", "--cd", "~", "--", "bash", "-lic", "claude; exec bash"]
+INNER = [WSL, "-d", "Ubuntu-24.04", "--cd", "~", "--", "bash", "-lic"]
+SCRIPT = "claude; exec bash"
+#: wt 把 ``;`` 当子命令分隔符（哪怕在引号里），交给它的脚本要写成 ``\;``
+WT_SCRIPT = "claude\\; exec bash"
 
 
 # ---------------------------------------------------------------- 找 Claude Desktop
@@ -57,17 +60,27 @@ def test_nothing_installed_means_an_empty_target(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- WSL 里起 claude 的命令行
 def test_windows_terminal_opens_a_login_shell_in_the_home_directory():
     argv = claude_launchers.wsl_claude_argv(which={"wt": WT}.get, wsl=WSL, distro="Ubuntu-24.04")
-    assert argv == [WT, *INNER]
+    assert argv == [WT, *INNER, WT_SCRIPT]
 
 
 def test_without_windows_terminal_a_console_window_is_opened():
     argv = claude_launchers.wsl_claude_argv(which=lambda name: None, wsl=WSL, distro="Ubuntu-24.04")
-    assert argv == ["cmd", "/c", "start", "", *INNER]
+    assert argv == ["cmd", "/c", "start", "", *INNER, SCRIPT], "不经 wt 的那条不能转义"
 
 
 def test_without_a_distro_name_the_default_distro_is_used():
     argv = claude_launchers.wsl_claude_argv(which={"wt": WT}.get, wsl=WSL, distro="")
-    assert argv == [WT, WSL, "--cd", "~", "--", "bash", "-lic", "claude; exec bash"]
+    assert argv == [WT, WSL, "--cd", "~", "--", "bash", "-lic", WT_SCRIPT]
+
+
+def test_the_semicolon_is_escaped_only_on_the_windows_terminal_path():
+    """2026-10-15 实机截图：wt 把 ``claude; exec bash`` 劈成两个标签，第二个拿着 ``exec bash``
+    报 0x80070002。``\\;`` 经 wt 还原成 ``;``；``cmd /c start`` 不经 wt，照原样。"""
+    assert claude_launchers.wt_script("claude; exec bash") == "claude\\; exec bash"
+    via_wt = claude_launchers.wsl_claude_argv(which={"wt": WT}.get, wsl=WSL, distro="")[-1]
+    via_cmd = claude_launchers.wsl_claude_argv(which=lambda name: None, wsl=WSL, distro="")[-1]
+    assert ";" not in via_wt.replace("\\;", ""), "交给 wt 的脚本里不能剩下裸分号"
+    assert via_cmd == SCRIPT
 
 
 def test_without_wsl_there_is_no_command():
@@ -82,7 +95,7 @@ def installed(monkeypatch):
     monkeypatch.setattr(claude_launchers, "claude_desktop_target", lambda: STORE_TARGET)
     monkeypatch.setattr(claude_launchers, "launch_claude_desktop",
                         lambda target: (launched.append(target), True)[1])
-    monkeypatch.setattr(claude_launchers, "wsl_claude_argv", lambda: [WT, *INNER])
+    monkeypatch.setattr(claude_launchers, "wsl_claude_argv", lambda: [WT, *INNER, WT_SCRIPT])
     monkeypatch.setattr(claude_launchers, "launch_wsl_claude",
                         lambda argv: (launched.append(list(argv)), True)[1])
     return launched
@@ -127,7 +140,7 @@ def test_clicking_launches_the_right_program(tmp_path, monkeypatch, installed, t
         assert wsl is not None and wsl.isEnabled(), f"{template} 菜单里要有「Claude Code（WSL）」"
         desktop.trigger()
         wsl.trigger()
-        assert installed == [STORE_TARGET, [WT, *INNER]]
+        assert installed == [STORE_TARGET, [WT, *INNER, WT_SCRIPT]]
     finally:
         shell._delete_runtime_marker()
 
@@ -148,7 +161,7 @@ def test_entries_are_greyed_out_when_nothing_is_installed(tmp_path, monkeypatch,
 def test_a_failed_launch_tells_the_user_in_a_bubble(tmp_path, monkeypatch):
     monkeypatch.setattr(claude_launchers, "claude_desktop_target", lambda: STORE_TARGET)
     monkeypatch.setattr(claude_launchers, "launch_claude_desktop", lambda target: False)
-    monkeypatch.setattr(claude_launchers, "wsl_claude_argv", lambda: [WT, *INNER])
+    monkeypatch.setattr(claude_launchers, "wsl_claude_argv", lambda: [WT, *INNER, WT_SCRIPT])
     monkeypatch.setattr(claude_launchers, "launch_wsl_claude", lambda argv: False)
     shell, menu = _overlay_menu(tmp_path, monkeypatch, "modern")
     said: list[str] = []
@@ -166,7 +179,7 @@ def test_the_old_petwindow_menu_has_them_too(installed):
     build_legacy_menu(menu, _LegacyHost(), load_menu_template("legacy"))
     _action(menu, "Claude Desktop").trigger()
     _action(menu, "Claude Code（WSL）").trigger()
-    assert installed == [STORE_TARGET, [WT, *INNER]]
+    assert installed == [STORE_TARGET, [WT, *INNER, WT_SCRIPT]]
 
 
 def test_a_saved_menu_layout_picks_them_up_beside_youtube_music():

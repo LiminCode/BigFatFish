@@ -31,7 +31,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable
 
-from . import claude_hooks, claude_session_info
+from . import claude_hooks, claude_launchers, claude_session_info
 from .i18n import t
 from .claude_session_info import ENTRY_CLI, ENTRY_VSCODE
 
@@ -424,8 +424,12 @@ def terminal_resume_argv(entry: HistoryEntry, *, which: Callable[[str], str | No
         if not wsl_path:
             return None
         inner = [wsl_path, *(["-d", entry.distro] if entry.distro else []), "--cd", entry.cwd, "--",
-                 "bash", "-lic", f"claude --resume {entry.session_id}; exec bash"]
-        return [terminal, *inner] if terminal else ["cmd", "/c", "start", "", *inner]
+                 "bash", "-lic"]
+        script = f"claude --resume {entry.session_id}; exec bash"
+        if terminal:
+            # wt 把 ``;`` 当子命令分隔符（哪怕在引号里），要转义；见 claude_launchers.wt_script
+            return [terminal, *inner, claude_launchers.wt_script(script)]
+        return ["cmd", "/c", "start", "", *inner, script]
     inner = ["cmd", "/k", "claude", "--resume", entry.session_id]
     if terminal:
         return [terminal, "-d", entry.cwd, *inner]

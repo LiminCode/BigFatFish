@@ -148,3 +148,65 @@ PATH 探过 `wsl_claude_argv(wsl="")` → `None`。
 - 影响面：右键菜单两条新项与一个新记号；不动配置、不动托盘、不动灵动岛、不动任何常驻路径。
 - 回滚：`git revert` 即可。用户保存过的菜单编排里若已补入这两个 id，回滚后
   `menu_layout` 会把未登记的 id 当未知项丢弃（既有行为），没有落盘残留。
+
+---
+
+## 第二轮修正：Windows Terminal 把分号当子命令分隔符
+
+### 现场（用户 2026-10-15 实机截图）
+
+点「Claude Code（WSL）」后 Windows Terminal 开了**两个**标签：第一个 `C:\WINDOWS\system32\wsl.ex…`
+（claude 其实在里面起来了），第二个标题 `exec bash`，内容：
+
+```
+[error 2147942402 (0x80070002) when launching `" exec bash"']
+The system cannot find the file specified.
+```
+
+根因：`wt` 把命令行参数里的 `;` 当成它自己的「子命令分隔符」，**哪怕在引号里**。
+`bash -lic "claude; exec bash"` 被劈成 `wsl.exe … bash -lic "claude` 和 `" exec bash"` 两个
+子命令。第一轮实机记录里「WSL 侧 pts/8 有 claude」就是第一个标签，错误标签当时没看到。
+现成的「最近的对话 → 在终端继续」（`claude_session_history.terminal_resume_argv`）用的是
+同一写法，有同样的毛病，一起修。
+
+### 修法与验证
+
+wt 文档的转义是 `\;`：先用无害命令实测——
+
+```
+wt.EXE wsl.exe -d Ubuntu-24.04 --cd ~ -- bash -lic "touch /tmp/bff-semi-test\; exit"
+$ ls /tmp/bff-semi-test*      → 只有 /tmp/bff-semi-test（没有 "bff-semi-test;"，也没有 /tmp/exit）
+```
+
+说明 wt 把 `\;` 还原成 `;` 再交给 wsl.exe，bash 收到的是真正的分隔符。**只有经 `wt` 的那条
+路转义**；`cmd /c start` 不经 wt，照原样。
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/claude_launchers.py` | +19 / −3 | `NEW_SESSION_SCRIPT` 常量；`wt_script()` 把 `;` 写成 `\;`（docstring 记着根因与实测）；`wsl_claude_argv` 的 wt 分支用它，cmd 分支不用。 |
+| `pet/claude_session_history.py` | +7 / −3 | `terminal_resume_argv` 的 WSL 分支同样处理（import `claude_launchers`，无循环：`-W error::SyntaxWarning` 下三模块导入正常）。 |
+| `tests/test_claude_launchers.py` | +21 / −8 | 期望值拆成 `SCRIPT` / `WT_SCRIPT`；新增 `test_the_semicolon_is_escaped_only_on_the_windows_terminal_path`（wt 路径里不许剩裸分号、cmd 路径原样）。 |
+| `tests/test_claude_session_history.py` | +3 / −1 | 「在终端继续」的 WSL 期望改成转义后的，并多断言 cmd 退路不转义。 |
+
+修后真实拉起一次（真实 PATH / 发行版）：
+
+```
+argv[-1] = claude\; exec bash
+launched True
+# 8 秒后 WSL 侧：
+ 125523       7 pts/10   claude                      ← 新标签里的新会话
+ 125236       7 bash -lic claude; exec bash          ← bash 收到的已经是去掉转义的分号
+```
+
+bash 的参数是完整的 `claude; exec bash`，不再有第二个 `exec bash` 标签。肥鱼已重启
+（`acquired pid=25652`，日志无 ERROR）。
+
+门：ruff 全过；`pytest -q tests/test_claude_launchers.py tests/test_claude_session_history.py
+tests/test_session_history_service.py tests/test_youtube_music.py tests/test_sprite_menu_parity.py`
+110 通过。第一轮全量之后只改了这两条命令行的拼法与其测试，不重跑全量。
+
+### 教训
+
+- 往 `wt` 传 shell 脚本，`;` 必须 `\;`，引号不保护。
+- 第一轮「实机运行记录」只看了进程表，没看终端窗口本身——多出来的错误标签是用户发现的。
+  以后凡是「拉起一个窗口」的功能，实机记录要包含窗口 / 标签的观察，不能只数进程。
