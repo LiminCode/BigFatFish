@@ -938,7 +938,7 @@ class Config:
             "pnpm_bin": "",
             "stream_capture_mode": False,  # 直播捕获兼容模式（Windows：Tool 窗口直播姬/OBS 枚举不到）
             "chat_background": "",  # 肥鱼牌小手机背景：空=纯色；builtin:* = 内置主题；否则为图片路径
-            "modern_chat_background": "",  # 肥鱼版 DeepSeek 背景：空=纯色；否则为自定义图片路径
+            "modern_chat_background": "",  # 肥鱼版宽屏 背景：空=纯色；否则为自定义图片路径
             "chat_background_opacity": 100,
             "chat_background_fill": "cover",
             "modern_chat_background_opacity": 100,

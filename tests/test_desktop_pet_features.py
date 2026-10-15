@@ -1713,13 +1713,13 @@ def test_chat_appearance_options_follow_selected_window_and_persist_independentl
     dialog = settings_mod.ModernSettingsDialog(config, include_ai=True)
 
     assert [dialog.ai_page.chat_ui_style.itemText(index) for index in range(2)] == [
-        "肥鱼版 DeepSeek", "肥鱼牌小手机",
+        "肥鱼版宽屏", "肥鱼牌小手机",
     ]
     assert dialog.ai_page.chat_ui_style.width() >= 180
     window_row = dialog.findChild(settings_mod.SettingRow, "settingRow_chat_ui_style")
     assert "宽屏现代体验" in window_row.hint_label.text()
     assert "紧凑经典体验" in window_row.hint_label.text()
-    # 内置主题两种风格都可选（肥鱼版 DeepSeek 与肥鱼牌小手机一致）
+    # 内置主题两种风格都可选（肥鱼版宽屏 与肥鱼牌小手机一致）
     modern_options = [
         dialog.ai_page.background_select.itemText(index)
         for index in range(dialog.ai_page.background_select.count())

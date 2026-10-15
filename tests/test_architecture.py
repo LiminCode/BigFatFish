@@ -242,7 +242,8 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 插进「自动化与联动」1 行、保存 1 行（import 并进同一行）。实测 2403。
 # 2026-10-14 上调到 2405：设置页改 Metro 风格，侧栏装倾斜代理（import 1 行 + install 1 行；
 # 样式与控件都在 settings_theme_qss / settings_widgets）。实测 2405。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2405
+# 2026-10-14 下调到 2373：「余额与服务状态」（DeepSeek）一节从设置页下线，建节 / 认领 / 保存三处删掉。实测 2373。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2373
 
 
 def _read(name: str) -> str:

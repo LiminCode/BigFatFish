@@ -2762,8 +2762,8 @@ def test_crop_row_label_refreshes_with_style(tmp_path, monkeypatch):
     app, cfg, page = _make_ai_page(tmp_path, monkeypatch)
     rows = page.appearance_rows()  # 宿主（外观页）挂行时才构建行引用；持有防 GC 带走控件
     row = page._background_crop_row
-    assert row.label.text() == "裁切取景（肥鱼版 DeepSeek）"
-    assert "肥鱼版 DeepSeek" in row.control.accessibleName()
+    assert row.label.text() == "裁切取景（肥鱼版宽屏）"
+    assert "肥鱼版宽屏" in row.control.accessibleName()
     assert row.control.accessibleName() == row.label.text(), "屏幕阅读器读到的风格必须与标签一致"
     assert "仅「填充裁剪」支持自定义取景" in page._background_detail_rows[1].hint_label.text()
     page.chat_ui_style.setCurrentData("classic")  # 风格切换即刷新，不用重开窗口
@@ -2771,8 +2771,8 @@ def test_crop_row_label_refreshes_with_style(tmp_path, monkeypatch):
     assert "肥鱼牌小手机" in row.control.accessibleName()
     assert row.control.accessibleName() == row.label.text()
     page.chat_ui_style.setCurrentData("modern")
-    assert row.label.text() == "裁切取景（肥鱼版 DeepSeek）"
-    assert "肥鱼版 DeepSeek" in row.control.accessibleName()
+    assert row.label.text() == "裁切取景（肥鱼版宽屏）"
+    assert "肥鱼版宽屏" in row.control.accessibleName()
     assert row.control.accessibleName() == row.label.text()
     assert row is rows[-2]  # 裁切取景是细节行组最后一行
     page.close()
@@ -2857,7 +2857,7 @@ def test_crop_editor_receives_current_style_name(tmp_path, monkeypatch):
 
     monkeypatch.setattr(crop_mod, "CropDialog", FakeDlg)
     page._crop_background()
-    assert seen["style"] == "肥鱼版 DeepSeek"
+    assert seen["style"] == "肥鱼版宽屏"
     page.chat_ui_style.setCurrentData("classic")
     page._crop_background()
     assert seen["style"] == "肥鱼牌小手机"
@@ -2957,7 +2957,7 @@ def test_crop_dialog_default_box_is_vertically_centered():
 
     app = QApplication.instance() or QApplication([])
     pix = QPixmap(400, 400)  # 1:1 底图 + modern：默认框不满高，居中可观测
-    dlg = CropDialog(pix, None, None, "肥鱼版 DeepSeek", CHAT_UI_VIEW_ASPECT["modern"])
+    dlg = CropDialog(pix, None, None, "肥鱼版宽屏", CHAT_UI_VIEW_ASPECT["modern"])
     try:
         x, y, w, h = dlg.canvas.box()
         assert h < 1.0
@@ -2971,7 +2971,7 @@ def test_crop_dialog_default_box_is_vertically_centered():
 
 @pytest.mark.parametrize(
     ("style_id", "style_name", "landscape"),
-    [("modern", "肥鱼版 DeepSeek", True), ("classic", "肥鱼牌小手机", False)],
+    [("modern", "肥鱼版宽屏", True), ("classic", "肥鱼牌小手机", False)],
 )
 def test_crop_dialog_box_keeps_style_view_aspect(style_id, style_name, landscape):
     """编辑器默认选区与滚轮缩放后的像素纵横比 = 当前风格窗口比例，方向也正确。"""

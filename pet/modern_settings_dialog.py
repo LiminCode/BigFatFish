@@ -534,29 +534,8 @@ class ModernSettingsDialog(QDialog):
         # 拓扑收口：「单进程多开」实验开关已从设置页移除，4.4b 起配置键
         # `experimental_single_process_spawn` 本身也随多进程多宠退役层删除
         # （进程内多窗是唯一多宠形态，不再是可切换的实验开关）。
-        if self.balance_refresh_spin is not None:
-            general_layout.addWidget(
-                SettingsSection(
-                    "后台服务",
-                    [
-                        SettingRow("balance_refresh", "余额自动刷新", "设置后台刷新间隔；0 分钟表示关闭。", self.balance_refresh_spin),
-                        SettingRow("balance_tier_mode", "峰谷提示文案", "选择 DeepSeek 高峰/空闲提示的显示风格。", self.balance_tier_mode_select),
-                        SettingRow(
-                            "balance_tier_peak", "高峰自定义文本", "仅“自定义”模式生效；留空回退默认“高峰”。", self.balance_tier_peak_edit, stacked=True
-                        ),
-                        SettingRow(
-                            "balance_tier_idle", "空闲自定义文本", "仅“自定义”模式生效；留空回退默认“空闲”。", self.balance_tier_idle_edit, stacked=True
-                        ),
-                        SettingRow(
-                            "balance_tier_color",
-                            "峰谷提示颜色",
-                            "开启后高峰显示红色、低谷显示绿色；关闭则使用普通气泡文字颜色。",
-                            self.balance_tier_color_check,
-                        ),
-                    ],
-                    general_content,
-                )
-            )
+        # 「余额与服务状态」（DeepSeek 余额刷新 / 峰谷文案 / 峰谷颜色）2026-10-14 从设置页下线：用不到 DeepSeek 了；
+        # 配置键与余额代码保留（见 docs/PR-REPORT-SETTINGS-METRO-2026-10-14.md 第二轮）。
         general_layout.addStretch(1)
         self._add_page("常规", "settings", self._page_shell("常规", general_content))
 
@@ -574,7 +553,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_info", "显示信息槽", "显示当前时间或 Claude Code 今日用量。", self.island_info_check),
                     SettingRow("dynamic_island_status", "显示状态灯", "显示右侧的 Claude Code 会话计数与 API 连接图标（绿 = 对话 API 可用，红 = 不可用）。", self.island_status_check),
                     SettingRow("dynamic_island_info_mode", "信息槽内容", "当前时间，或今日用量：今天所有 Claude Code 对话用掉的 token（输入 + 输出 + 缓存写入；悬停灵动岛看明细）。", self.island_info_mode_select),
-                    SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示 DeepSeek 余额与峰谷。", self.island_card_source_select),
+                    SettingRow("dynamic_island_card_source", "卡片内容", "展开卡片显示什么。自动：开着 Claude Code 联动就显示各会话状态，否则显示服务商余额。", self.island_card_source_select),
                     SettingRow(
                         "dynamic_island_style",
                         "背景风格",
@@ -1237,7 +1216,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("proactive_dwell", "窗口停留门限（秒）", "同一前台窗口持续停留该时长才可能触发。", self.pro_dwell_spin),
                     SettingRow("proactive_cooldown", "关怀冷却间隔", "两次关怀的最短间隔，支持秒/分钟。", self._pro_cooldown_row()),
                     SettingRow("proactive_min_interval", "最小请求间隔（秒）", "免费模型的硬保护，不建议调太小。", self.pro_min_interval_spin),
-                    SettingRow("proactive_daily_cap", "每日请求上限", "DeepSeek 视觉单次约 ¥0.003；上限 9999 约等于不限。", self.pro_cap_spin),
+                    SettingRow("proactive_daily_cap", "每日请求上限", "每天最多发多少次识屏请求；上限 9999 约等于不限。", self.pro_cap_spin),
                 ],
                 content,
             )
@@ -1820,7 +1799,6 @@ class ModernSettingsDialog(QDialog):
 
         ai_sections = None
         if self.ai_page is not None:
-            balance_rows = claim_prefix("balance_")
             appearance_rows = claim(
                 "chat_ui_style", "chat_background", "chat_background_file", "chat_background_opacity", "chat_background_fill", "chat_bg_crops", "modern_chat_card_opacity"
             )
@@ -1863,7 +1841,6 @@ class ModernSettingsDialog(QDialog):
                         True,
                     ),
                     ("对话窗口", appearance_rows),
-                    ("余额与服务状态", balance_rows),
                 ]
             )
             ai_sections.setObjectName("settingsDomain_ai")
@@ -2189,15 +2166,6 @@ class ModernSettingsDialog(QDialog):
         self.config.set("golden_spin_on_click", self.golden_spin_click_check.isChecked())
         self.config.set("golden_spin_direct", self.golden_spin_direct_check.isChecked())
         self.config.set("edge_probe_enabled", self.edge_probe_check.isChecked())
-        if self.balance_refresh_spin is not None:
-            self.config.set("balance_refresh_minutes", int(self.balance_refresh_spin.value()))
-            self.config.set(
-                "balance_tier_labels_mode",
-                str(self.balance_tier_mode_select.currentData() or "default"),
-            )
-            self.config.set("balance_tier_label_peak", self.balance_tier_peak_edit.text().strip())
-            self.config.set("balance_tier_label_idle", self.balance_tier_idle_edit.text().strip())
-            self.config.set("balance_tier_color_enabled", self.balance_tier_color_check.isChecked())
         if self.auto_hide_fullscreen_check is not None:
             self.config.set("auto_hide_fullscreen", self.auto_hide_fullscreen_check.isChecked())
         # 「单进程多开」键不落盘控件值：开关已隐藏（拓扑收口 Phase A），

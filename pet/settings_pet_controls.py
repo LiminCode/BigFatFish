@@ -12,7 +12,6 @@ import sys
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
-    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -338,31 +337,6 @@ def build_pet_controls(host) -> None:
     host.golden_spin_direct_check.setChecked(bool(host.config.get("golden_spin_direct", False)))
     host.edge_probe_check = ToggleSwitch(host)
     host.edge_probe_check.setChecked(bool(host.config.get("edge_probe_enabled", False)))
-    host.balance_refresh_spin = None
-    host.balance_tier_mode_select = None
-    host.balance_tier_peak_edit = None
-    host.balance_tier_idle_edit = None
-    host.balance_tier_color_check = None
-    if host.include_ai:
-        host.balance_refresh_spin = BrowserSpinBox(host)
-        host.balance_refresh_spin.setRange(0, 1440)
-        host.balance_refresh_spin.setSuffix(" 分钟")
-        host.balance_refresh_spin.setValue(int(host.config.get("balance_refresh_minutes", 0) or 0))
-        host.balance_tier_mode_select = ModernSelect(host, width=180)
-        host.balance_tier_mode_select.addItem("空闲 / 高峰（默认）", "default")
-        host.balance_tier_mode_select.addItem("梁文谷 / 梁文峰", "liangwen")
-        host.balance_tier_mode_select.addItem("自定义", "custom")
-        host.balance_tier_mode_select.setCurrentData(
-            str(host.config.get("balance_tier_labels_mode", "default") or "default")
-        )
-        host.balance_tier_peak_edit = QLineEdit(host)
-        host.balance_tier_peak_edit.setPlaceholderText("高峰文本，例如：梁文峰")
-        host.balance_tier_peak_edit.setText(str(host.config.get("balance_tier_label_peak", "") or ""))
-        host.balance_tier_idle_edit = QLineEdit(host)
-        host.balance_tier_idle_edit.setPlaceholderText("空闲文本，例如：梁文谷")
-        host.balance_tier_idle_edit.setText(str(host.config.get("balance_tier_label_idle", "") or ""))
-        host.balance_tier_color_check = ToggleSwitch(host)
-        host.balance_tier_color_check.setChecked(bool(host.config.get("balance_tier_color_enabled", True)))
     host.auto_hide_fullscreen_check = None
     host.stream_capture_check = None
     if sys.platform == "win32":
@@ -692,9 +666,9 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
 
 
 def build_island_card_source_select(host, island_cfg: dict):
-    """灵动岛「卡片内容」下拉：自动 / DeepSeek 余额 / Claude Code 会话。"""
+    """灵动岛「卡片内容」下拉：自动 / 服务商余额 / Claude Code 会话。"""
     select = ModernSelect(host, width=160)
-    for label, value in (("自动", "auto"), ("DeepSeek 余额", "balance"), ("Claude Code 会话", "claude")):
+    for label, value in (("自动", "auto"), ("服务商余额", "balance"), ("Claude Code 会话", "claude")):
         select.addItem(label, value)
     select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
     return select
