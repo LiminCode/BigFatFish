@@ -250,3 +250,69 @@ $ pwdx 133187 127806 125523
 新会话的工作目录是 `/home/limin/workspace`，该目录已信任，不再弹对话框。肥鱼已重启
 （`acquired pid=10404`，日志无 ERROR）。门：ruff 全过；`tests/test_claude_launchers.py` +
 `tests/test_claude_session_history.py` 63 通过。
+
+---
+
+## 第四轮：新开的终端窗口摆到主屏左半边
+
+### 现场
+
+用户：「打开后窗口大小不对，要现在的窗口的大小，或者至少不要超过屏幕，主屏幕左半边也行。」
+本机（三屏都 125%）实测 Windows Terminal 自己开出来的新窗口尺寸不稳：
+
+```
+work area（物理像素）: 0 0 3840 1540        屏幕 3840×1600
+用户现有的终端窗口:   (242, 250, 1294, 755)
+wt 新开的窗口（一次）: (55, 64, 2039, 2280)   ← 比工作区还高 740 px
+wt 新开的窗口（另一次）: 1294×755，叠在现有窗口原位  ← 它记住的上一个窗口尺寸
+```
+
+`wt --size` 以字符格数计，换算成像素要知道字体与缩放，不稳；改成**窗口出现后直接
+`SetWindowPos` 到主屏左半边**（用户点名可接受的位置）。
+
+### 改动
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/claude_launchers.py` | +145 / −5 | `wsl_claude_argv` 的 wt 分支加 `-w new`（一定开新窗口，不往用户已开的窗口里塞标签）。新增零 Qt 的 Win32 小函数：`terminal_windows()`（枚举类名 `CASCADIA_HOSTING_WINDOW_CLASS` 的顶层窗口）、`primary_work_area()`（`SPI_GETWORKAREA`）、`left_half()`、`is_window_visible()`、`window_rect()`、`move_window()`（`SetWindowPos`，`NOZORDER|NOACTIVATE`）。`fit_new_window(before, …)`：等 `before` 之外第一个**显示出来**的终端窗口，摆到左半边，`settle` 0.3 s 后核对，不对再摆，最多 3 次；所有依赖可注入。`launch_wsl_claude` 多了 `popen` / `fit` 两个注入点：是 wt 时先记下现有窗口集合，Popen 后起一个 daemon 线程跑 `fit_new_window`；cmd 退路不摆。 |
+| `tests/test_claude_launchers.py` | +134 / −6 | argv 期望加 `-w new`；`_Desktop` 假桌面（窗口何时枚举到、何时显示、终端会不会改回去）；6 个用例：显示后才摆、被改回去再摆一次、3 次都被改回去就放弃、等不到窗口放弃、没有工作区不摆、经 wt 才摆且在后台线程、cmd 退路不摆、Popen 失败返回 False 且不摆。 |
+
+### 一个被集成验证抓住的坑
+
+第一版在窗口**一枚举到**（0.06 s，还没显示）就摆，手动探针里摆完站住了；但集成跑一次，
+新窗口最后停在 1294×755 的原位——终端显示窗口时又套了一次它记住的尺寸，把更早的摆位盖掉。
+第二个探针看清了时序：`0.10 s` 枚举到（不可见）→ `0.22 s` 显示 → 之后再摆就站得住。
+所以改成「等显示 + 摆完核对 + 最多 3 次」。
+
+### 性能
+
+| 指标 | 实测（n=200） | 归属 |
+|---|---|---|
+| `terminal_windows()`（`EnumWindows` 全桌面一遍） | 中位 1.673 ms，p95 5.29 ms，最大 14.3 ms | 新增：点击时 1 次 + 后台线程每 50 ms 一次直到窗口显示（实测 0.2～0.25 s，即 4～5 次） |
+| `primary_work_area()` | 0.0036 ms | 新增，每次点击 1 次 |
+| 后台线程 | 每次点击 1 个 daemon 线程，寿命 ≈ 0.25 s + 0.3 s 核对（最坏 8 s 超时 + 3×0.3 s） | 新增，不碰 Qt |
+
+稳态零开销（没点就什么都不跑）；点击后约半秒内总共十来次 Win32 调用；无网络、无磁盘。
+
+### 实机
+
+```
+# 经模块默认路径（launch_wsl_claude 自己起线程摆位）；探针进程非 DPI 感知，数字是 125% 虚拟化后的
+work area: (0, 0, 3072, 1232) | terminal windows before: 4
+launched: True
+new window: 2098006 after 0.24s
+rect after +1s: (0, 0, 1536, 1232) visible: True      ← 物理 1920×1540 = 主屏左半边
+rect after +3s: (0, 0, 1536, 1232) visible: True
+```
+
+肥鱼已重启（`acquired pid=46068`，日志无 ERROR）；肥鱼进程是 DPI 感知的，`SPI_GETWORKAREA`
+与 `SetWindowPos` 同一口径，摆出来同样是左半边。门：ruff 全过；`tests/test_claude_launchers.py`
++ `tests/test_claude_session_history.py` 72 通过。
+
+### 没做的
+
+- 「和现在的窗口一样大」：wt 记的「上一个窗口尺寸」本身就不稳（见现场），而且叠在原位会盖住
+  用户正在看的那个窗口；用户说左半边也行，就取左半边。要改成别的位置 / 比例，改 `left_half`
+  一处。
+- 「最近的对话 → 在终端继续」开的窗口同样由 wt 自己定尺寸，这轮没动它；要的话把
+  `session_history_service._popen` 换成 `claude_launchers.launch_wsl_claude` 即可。
