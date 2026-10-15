@@ -45,9 +45,7 @@ from . import slot_manager as slot_manager_mod
 from . import webm_clip as webm_clip_mod
 from .config import APP_DIR_NAME, Config, _default_base
 from .context_menus.icons import vector_menu_icon
-from .context_menus.shared import open_deepseek_web
 from .desktop_notify import DesktopNotification, position_stack
-from .harness_launcher import launch_harness_gui
 from .library import MovieLibrary
 from .window import PetWindow
 from .fun_image_popup import restore_ojingjing_windows
@@ -3914,14 +3912,7 @@ class AppShell:
 
         menu.aboutToShow.connect(sync_tray_checks)
 
-        menu.addSeparator()
-        if self.enable_chat:
-            menu.addAction('DeepSeek 余额', lambda: self.show_balance(win))
-            menu.addAction('启动 dsh web 界面', lambda: launch_harness_gui(win, target="web"))
-            menu.addAction('启动桌面端界面', lambda: launch_harness_gui(win, target="desktop"))
-        else:
-            # 纯桌宠版本不提供本地 DSH 启动入口，只保留网页版入口
-            menu.addAction('打开网页版 DeepSeek', open_deepseek_web)
+        # 托盘里的「DeepSeek 余额 / 启动 dsh / 网页版 DeepSeek」2026-10-14 下线
 
         # 批5.2a §③.3：多窗时单托盘 + 每窗一个子菜单（显示/隐藏、切换角色、退出这只），
         # 替代 spike 的平铺菜单项；图标仍单托盘，逐窗动作经子菜单路由。

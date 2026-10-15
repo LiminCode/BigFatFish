@@ -899,16 +899,17 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     assert next(action for action in menu.actions() if action.text() == "播放速率").menu() is not None
     assert next(action for action in menu.actions() if action.text() == "大小").menu() is not None
     tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    next(action for action in tools.actions() if action.text() == "打开网页版 DeepSeek").trigger()
-    assert opened_urls == [shared_menu_mod.DEEPSEEK_WEB_URL]
+    # 「打开网页版 DeepSeek」2026-10-14 下线：工具与帮助里剩下的外链入口是项目页
+    next(action for action in tools.actions() if action.text() == "GitHub 项目页").trigger()
+    assert opened_urls == [shared_menu_mod.REPO_URL]
     # 模板模式已迁入设置；默认菜单不再用低频迁移命令占据根菜单。
     assert all("旧版菜单" not in action.text() for action in menu.actions())
     menu.close()
     app.processEvents()
 
 
-def test_pure_pet_context_menu_keeps_web_but_hides_harness():
-    """纯桌宠（无 Chat/DSH 联动）右键菜单去掉 DeepSeek Harness，保留网页版。"""
+def test_context_menu_has_no_deepseek_entries():
+    """「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 全部下线（纯桌宠版同样没有）。"""
     from PySide6.QtWidgets import QApplication, QMenu
 
     from pet.context_menu import populate_context_menu
@@ -949,12 +950,9 @@ def test_pure_pet_context_menu_keeps_web_but_hides_harness():
         return labels
 
     labels = labels_in(menu)
-    # Harness 入口现为子菜单（标题 "DeepSeek Harness"），纯桌宠版整块不显示
-    assert "DeepSeek Harness" not in labels
-    assert "启动 dsh web 界面" not in labels
-    assert "启动桌面端界面" not in labels
-    assert "停止服务" not in labels
-    assert "打开网页版 DeepSeek" in labels
+    for label in ("DeepSeek 余额", "DeepSeek Harness", "启动 dsh web 界面", "启动桌面端界面", "停止服务", "打开网页版 DeepSeek"):
+        assert label not in labels, label
+    assert "GitHub 项目页" in labels
     menu.close()
     app.processEvents()
 
@@ -2031,11 +2029,10 @@ def test_legacy_config_value_dispatches_legacy_layout(monkeypatch):
     window_mod._populate_context_menu(menu, Pet())
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
     # legacy 布局：无图标、无现代专属入口（看看屏幕/更新与帮助/生小肥鱼层级不同）
-    # Pet 无 on_open_chat，属于纯桌宠版：不显示 DeepSeek Harness 子菜单，保留网页版
     assert labels.index("生小肥鱼") == labels.index("开机自启") + 1
-    assert "DeepSeek Harness" not in labels
-    assert "停止服务" not in labels
-    assert "打开网页版 DeepSeek" in labels
+    # DeepSeek 的三个入口 2026-10-14 全部下线
+    for gone in ("DeepSeek Harness", "停止服务", "打开网页版 DeepSeek", "DeepSeek 余额"):
+        assert gone not in labels
     assert menu.styleSheet() == ""
     icon_actions = [action.text() for action in menu.actions() if not action.icon().isNull()]
     assert icon_actions == []

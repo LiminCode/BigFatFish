@@ -321,9 +321,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "golden_spin",
         "edge_probe",
         "quick_launch",
-        "balance",
-        "harness",
-        "deepseek_web",
         "github_project",
         "agent_link",
         "proactive_screen",
@@ -559,27 +556,9 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "边缘探头",
     ]
     tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    expected_tools = [
-        "DeepSeek 余额",
-        "DeepSeek Harness",
-        "打开网页版 DeepSeek",
-        "GitHub 项目页",
-    ]
+    # 「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 下线：工具与帮助只剩项目页
+    expected_tools = ["GitHub 项目页"]
     assert [action.text() for action in tools.actions() if not action.isSeparator()] == expected_tools
-    # Harness 现在是子菜单（挂在既有 harness id 上，用户老布局无需迁移）：
-    # 启动（双目标：dsh web 界面 / 桌面端界面）+ 重启 / 停止必须齐全——
-    # 「停止」是用户关掉静默常驻服务的唯一入口。
-    harness_action = next(
-        action for action in tools.actions() if action.text() == "DeepSeek Harness"
-    )
-    harness_menu = harness_action.menu()
-    assert harness_menu is not None
-    assert [action.text() for action in harness_menu.actions()] == [
-        "启动 dsh web 界面",
-        "启动桌面端界面",
-        "重启服务",
-        "停止服务",
-    ]
     menu.close()
     app.processEvents()
 
@@ -1061,7 +1040,7 @@ def test_click_sound_rows_return_to_interaction_click_feedback(tmp_path, monkeyp
             "点击音效 4 行原本排在 click_self_talk 之前"
         )
         # click_ 前缀里另有余额 / 点击台词绑定，同样留在「互动」。
-        for setting_id in ("click_balance", "click_talk_bindings"):
+        for setting_id in ("click_talk_bindings",):
             keep_row = dialog.findChild(settings_mod.SettingRow, f"settingRow_{setting_id}")
             assert keep_row is not None, f"{setting_id} 行必须存在"
             assert interaction_page.isAncestorOf(keep_row), f"{setting_id} 必须留在「互动」域"

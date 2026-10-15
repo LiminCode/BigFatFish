@@ -2527,8 +2527,9 @@ class TestCustomAgentMenu:
             sub = menu.actions()[0].menu()
             texts = [a.text() for a in sub.actions()]
             # 内置 4 项仍在顶层，自定义项收进三级子菜单「自定义联动 Agent」
-            for label in ("DeepSeek Harness (DSH)", "Claude Code", "Cursor", "OpenCode"):
+            for label in ("Claude Code", "Cursor", "OpenCode"):
                 assert label in texts
+            assert "DeepSeek Harness (DSH)" not in texts, "DSH 的联动开关 2026-10-14 从菜单下线"
             assert "Gemini CLI" not in texts
             custom_sub = next(a.menu() for a in sub.actions() if a.text() == "自定义联动 Agent")
             custom_texts = [a.text() for a in custom_sub.actions()]

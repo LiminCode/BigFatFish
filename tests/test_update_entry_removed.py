@@ -66,7 +66,8 @@ def test_default_menu_layout_has_no_update_entries():
 
     found = set(ids(load_default_menu_layout("modern-default-v1")["nodes"]))
     assert found.isdisjoint(REMOVED_ACTIONS)
-    assert {"github_project", "balance", "harness", "deepseek_web"} <= found, "「工具与帮助」其余各项原样"
+    assert "github_project" in found, "「工具与帮助」里的项目页原样"
+    assert found.isdisjoint({"balance", "harness", "deepseek_web"}), "DeepSeek 三项 2026-10-14 下线"
 
 
 def test_saved_layout_drops_the_removed_update_entries(tmp_path):

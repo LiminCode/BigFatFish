@@ -77,13 +77,11 @@ REQUIRED_LABELS = (
     "黄金回旋",
     "边缘探头",
     "大小",
-    "DeepSeek Harness",
-    "打开网页版 DeepSeek",
     "主动识屏",
     "Agent 联动",
     "切换到新版菜单",
 )
-CHAT_GATED_LABELS = ("AI 对话", "AI 设置", "看看屏幕", "主动识屏", "DeepSeek 余额")
+CHAT_GATED_LABELS = ("AI 对话", "AI 设置", "看看屏幕", "主动识屏")
 # Windows 专有项：主动识屏 v1 依赖 win32 前台窗口/截屏能力（vision.py /
 # proactive.py 仅 win32 起监视器），菜单注册处 shared.add_proactive_menu 与
 # registry proactive_screen 均按 sys.platform == "win32" 门控——posix 上
@@ -349,45 +347,8 @@ def test_modern_template_exposes_same_capabilities(tmp_path):
         controls = _find(menu, "桌宠控制").menu()
         assert _find(controls, "生小肥鱼") is not None
         tools = _find(menu, "工具与帮助").menu()
-        for label in ("DeepSeek Harness", "打开网页版 DeepSeek", "GitHub 项目页"):
+        for label in ("GitHub 项目页",):
             assert _find(tools, label) is not None
-    finally:
-        shell._delete_runtime_marker()
-
-
-def test_harness_launcher_gets_widget_dialog_parent(tmp_path, monkeypatch):
-    """harness 四个入口的模态父必须是 QWidget（facade 不能当 QMessageBox parent）。
-
-    同时锁住宿主形气泡面：``launch_harness_gui`` 用 ``parent.show_bubble`` 反馈。
-    """
-    from PySide6.QtWidgets import QWidget
-
-    import pet.context_menus.shared as shared_mod
-
-    shell, _instance, _config = _make_overlay(tmp_path, template="legacy")
-    captured: list[tuple] = []
-    bubbles: list[tuple] = []
-    try:
-        monkeypatch.setattr(
-            shared_mod, "launch_harness_gui",
-            lambda parent=None, action="start", target="auto": captured.append(
-                (parent, action, target)))
-        monkeypatch.setattr(
-            shell, "show_bubble",
-            lambda text, duration_ms=3200, **kw: bubbles.append((text, duration_ms)))
-        facade = SpriteMenuFacade(shell)
-        facade.show_bubble("宿主形气泡", 1234)
-        assert bubbles == [("宿主形气泡", 1234)]
-
-        menu = build_sprite_full_menu(shell)
-        harness = _find(menu, "DeepSeek Harness").menu()
-        for action in harness.actions():
-            action.trigger()            # 菜单未弹出 → 回调立即执行
-        assert [(action, target) for _, action, target in captured] == [
-            ("start", "web"), ("start", "desktop"), ("restart", "auto"), ("stop", "auto"),
-        ]
-        assert all(isinstance(parent, QWidget) for parent, _, _ in captured)
-        assert all(parent is shell.overlay for parent, _, _ in captured)
     finally:
         shell._delete_runtime_marker()
 
@@ -402,7 +363,7 @@ def test_chat_gated_entries_follow_chat_availability(tmp_path):
         _assert_reference_contained(overlay, reference)
         labels = _all_labels(overlay)
         assert "AI 对话" not in labels and "AI 设置" not in labels
-        assert "DeepSeek Harness" not in labels and "主动识屏" not in labels
+        assert "主动识屏" not in labels
         # 与基准逐点一致：基准也不含这些
         assert set(CHAT_GATED_LABELS).isdisjoint(_all_labels(reference))
     finally:

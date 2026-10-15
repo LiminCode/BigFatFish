@@ -10,21 +10,19 @@ import time
 
 import shiboken6
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QActionGroup, QDesktopServices, QIcon, QPixmap
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtGui import QActionGroup, QIcon, QPixmap
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QMenu
 
 from .. import autostart as autostart_mod
 from .. import catalog
 from .. import claude_hooks
-from ..harness_launcher import launch_harness_gui
 from .icons import fitted_pet_pixmap_icon, pet_avatar_menu_icon, vector_menu_icon
 from .menu_styles.common import inherit_menu_style
 
 log = logging.getLogger(__name__)
 
-DEEPSEEK_WEB_URL = "https://chat.deepseek.com/"
 #: 「GitHub 项目页」打开的地址（上游仓库）
 REPO_URL = "https://github.com/MerZlin/dsh-pet-indesktop"
 
@@ -441,14 +439,13 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     sub = add_submenu(menu, "Agent 联动", None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
     agents = [
-        ('dsh', 'DeepSeek Harness (DSH)'),
         ('claude', 'Claude Code'),
         ('cursor', 'Cursor'),
         ('opencode', 'OpenCode'),
     ]
     # WSL 里的 Claude Code：只在装了 WSL 的 Windows 上才有这个通道
     if claude_hooks.wsl_exe():
-        agents.insert(2, ('claude_wsl', 'Claude Code (WSL)'))
+        agents.insert(1, ('claude_wsl', 'Claude Code (WSL)'))   # 紧跟 Claude Code（DSH 项 2026-10-14 下线后首位是 Claude Code）
     for agent_key, agent_label in agents:
         act = sub.addAction(agent_label)
         act.setCheckable(True)
@@ -574,12 +571,6 @@ def add_look_screen(menu: QMenu, pet, *, icons: bool = True):
     return add_action(menu, "看看屏幕", "screen" if icons else None, callback, close_on_trigger=True)
 
 
-def add_balance(menu: QMenu, pet, *, icons: bool = True):
-    callback = getattr(pet, "on_show_balance", None)
-    if callback is None:
-        return None
-    return add_action(menu, "DeepSeek 余额", "balance" if icons else None, lambda: callback(pet), close_on_trigger=True)
-
 
 def add_no_move(menu: QMenu, pet, *, icons: bool = True):
     action = add_action(menu, "不移动", "pause" if icons else None)
@@ -675,58 +666,6 @@ def add_edge_probe(menu: QMenu, pet, *, icons: bool = True):
     )
     return action
 
-
-def _dialog_parent(pet):
-    """模态对话框的父窗口。
-
-    ``pet`` 在窗口路径下就是 QWidget（PetWindow）；在 sprite 路径下是
-    ``SpriteMenuFacade`` 这样的 duck-typed 宿主，不能当 QMessageBox 的 parent，
-    此时用宿主自报的 ``dialog_parent``（overlay 窗）。PetWindow 没有该属性 →
-    原样返回自己，窗口路径逐位不变。
-    """
-    return getattr(pet, "dialog_parent", None) or pet
-
-
-def add_harness(menu: QMenu, pet, *, icons: bool = True):
-    """DeepSeek Harness 子菜单：启动 / 重启 / 停止。
-
-    为什么用子菜单而不是三个平级项：菜单模板（pet/menu_templates/*.json）与用户
-    自己编排过的布局里只有 ``harness`` 这一个 id，新增 id 对老布局不生效；子菜单
-    挂在既有 id 上，老用户的菜单立刻拿到完整生命周期入口。
-
-    重启/停止是破坏性动作（可能结束你自己在终端里跑着的 dsh），带确认框；启动
-    保持原语义（复用本机实例并打开页面）。
-    """
-    start_icon = "harness" if icons else None
-    submenu = add_submenu(menu, "DeepSeek Harness", start_icon)
-
-    def _launch(action: str = "start", target: str = "auto") -> None:
-        # 父窗口在**点击时**解析：宿主（facade）可能在菜单关闭后被回收，
-        # 这里只读它自报的 dialog_parent 面，不缓存对象。
-        launch_harness_gui(_dialog_parent(pet), action=action, target=target)
-
-    # 所有动作都 close_on_trigger：菜单先关闭、回调延迟到菜单关闭后执行——
-    # 重启/停止的确认框是模态框，macOS 原生菜单跟踪会话中弹模态框会被
-    # AppKit 抑制（与设置对话框首次点击无反应同源）。
-    # 启动分双目标（2026-10）：web 界面 / 桌面端界面；重启/停止只作用于
-    # web 服务进程（桌面端是用户的主力应用，桌宠绝不终止它）。
-    add_action(submenu, "启动 dsh web 界面", start_icon,
-               lambda: _launch("start", "web"),
-               close_on_trigger=True)
-    add_action(submenu, "启动桌面端界面", start_icon,
-               lambda: _launch("start", "desktop"),
-               close_on_trigger=True)
-    add_action(
-        submenu, "重启服务", "play" if icons else None,
-        lambda: _launch("restart"),
-        close_on_trigger=True,
-    )
-    add_action(
-        submenu, "停止服务", "quit" if icons else None,
-        lambda: _launch("stop"),
-        close_on_trigger=True,
-    )
-    return submenu
 
 
 def _music_controller(pet):
@@ -1065,13 +1004,6 @@ def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):
     action.toggled.connect(_on_toggled)
     return action
 
-
-def open_deepseek_web() -> bool:
-    return bool(QDesktopServices.openUrl(QUrl(DEEPSEEK_WEB_URL)))
-
-
-def add_deepseek_web(menu: QMenu, *, icons: bool = True):
-    return add_action(menu, "打开网页版 DeepSeek", "web" if icons else None, open_deepseek_web, close_on_trigger=True)
 
 
 def add_template_switch(menu: QMenu, pet, label: str, target: str, *, icons: bool = True):

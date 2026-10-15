@@ -327,17 +327,3 @@ def test_balance_worker_start_failure_never_leaves_busy(monkeypatch, tmp_path):
     assert owner._balance_busy is False
     # 清空本测试排队的 singleShot(done.emit(...))，不泄漏给下一个测试
     app.processEvents()
-
-
-def test_menu_balance_action_calls_bound_window_callback():
-    from PySide6.QtWidgets import QApplication, QMenu
-    from pet.context_menus.shared import add_balance
-    app = QApplication.instance() or QApplication([])
-    calls = []
-    pet = type("Pet", (), {"on_show_balance": lambda self, parent=None: calls.append(parent)})()
-    menu = QMenu()
-    action = add_balance(menu, pet, icons=False)
-    assert action is not None
-    action.trigger()
-    app.processEvents()
-    assert calls == [pet]

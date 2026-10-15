@@ -28,7 +28,7 @@ EXPECTED_TABS = (("click", "点击与音效"), ("self_talk", "自言自语"))
 ROWS_BY_TAB = {
     "click": (
         "mouse_through", "click_sound", "click_sound_pack", "click_sound_volume",
-        "click_sound_preview", "click_balance", "click_self_talk", "click_self_talk_speak",
+        "click_sound_preview", "click_self_talk", "click_self_talk_speak",
         "click_self_talk_precache", "click_talk_bindings", "golden_spin_click",
         "golden_spin_direct",
     ),

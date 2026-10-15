@@ -298,10 +298,6 @@ def build_pet_controls(host) -> None:
     # 音效开关即时生效：对话框的批量写回发生在关闭时，但声音开关是即时
     # 听觉反馈——用户关掉后期望立刻静音，而不是等关对话框。
     host.click_sound_check.toggled.connect(host._apply_click_sound_enabled_now)
-    host.click_balance_check = None
-    if host.include_ai:
-        host.click_balance_check = ToggleSwitch(host)
-        host.click_balance_check.setChecked(bool(host.config.get("click_show_balance", False)))
     host.click_self_talk_check = ToggleSwitch(host)
     host.click_self_talk_check.setChecked(bool(host.config.get("click_show_self_talk", False)))
     host.click_self_talk_speak_check = ToggleSwitch(host)
@@ -666,9 +662,9 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
 
 
 def build_island_card_source_select(host, island_cfg: dict):
-    """灵动岛「卡片内容」下拉：自动 / 服务商余额 / Claude Code 会话。"""
+    """灵动岛「卡片内容」下拉：自动 / Claude Code 会话（余额项 2026-10-14 下线，值 balance 仍认但不再可选）。"""
     select = ModernSelect(host, width=160)
-    for label, value in (("自动", "auto"), ("服务商余额", "balance"), ("Claude Code 会话", "claude")):
+    for label, value in (("自动", "auto"), ("Claude Code 会话", "claude")):
         select.addItem(label, value)
     select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
     return select

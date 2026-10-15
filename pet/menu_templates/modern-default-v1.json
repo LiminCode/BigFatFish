@@ -42,9 +42,6 @@
       "visible": true,
       "section": "tools",
       "children": [
-        {"type": "action", "id": "balance", "visible": true},
-        {"type": "action", "id": "harness", "visible": true},
-        {"type": "action", "id": "deepseek_web", "visible": true},
         {"type": "action", "id": "github_project", "visible": true}
       ]
     },

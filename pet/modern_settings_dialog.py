@@ -70,7 +70,6 @@ from PySide6.QtWidgets import (
 from . import __version__
 from . import autostart as autostart_mod
 from . import catalog
-from . import harness_launcher as harness_mod
 from .click_sound import warm_click_sound_effects
 from .config import (
     DEFAULT_CONTEXT_MENU_APPEARANCE,
@@ -335,44 +334,7 @@ class ModernSettingsDialog(QDialog):
         self._build_file_interpret_controls()
         # 「音乐播放器路径」控件同样在本模块构建（行数预算原因），见 settings_music。
         settings_music.create_music_player_controls(self)
-        # 「随桌宠启动 dsh 服务」开关（origin/main #80 合入带回）：构建留在
-        # 对话框本体（upstream 代码所在宿主），供下方 launch_rows 引用。
-        self.harness_autostart_check = ToggleSwitch(self)
-        self._harness_autostart_initial = bool(self.config.get("harness_autostart", False))
-        self.harness_autostart_check.setChecked(self._harness_autostart_initial)
-        # 自启目标下拉（2026-10 双目标）：auto=检测到桌面端优先桌面端、否则 web；
-        # 只作用于「随桌宠启动」，菜单的两个启动入口是显式选择（不受本项影响）。
-        # 桌面端探测/自动拉起本轮只支持 Windows，唯一口径是
-        # harness_launcher.DESKTOP_SUPPORTED（不在设置页另写一份平台判定）。
-        # 不支持的平台上该项**保留但置灰**（能力暂不可用 ≠ 永久不支持，见
-        # docs/SETTINGS-CHANGE-GATES.md §4「暂不可用的能力保留并解释原因」），
-        # 并保证 desktop 绝不会被写回：显示与保存两处都回落 auto（该平台上
-        # auto 解析就是 web），存量配置里的 desktop 因此不会变成无声死选项。
-        self._harness_desktop_available = bool(harness_mod.DESKTOP_SUPPORTED)
-        self.harness_launch_target_select = ModernSelect(self, width=190)
-        self.harness_launch_target_select.addItem(
-            "自动（桌面端优先）" if self._harness_desktop_available else "自动（dsh web 界面）",
-            "auto",
-        )
-        self.harness_launch_target_select.addItem("dsh web 界面", "web")
-        self.harness_launch_target_select.addItem("桌面端界面", "desktop")
-        if not self._harness_desktop_available:
-            self.harness_launch_target_select.setItemDisabled(
-                self.harness_launch_target_select.findData("desktop"), True
-            )
-            self.harness_launch_target_select.setToolTip(
-                "本平台暂不支持自动拉起桌面端（本版本仅 Windows）"
-            )
-        target = str(self.config.get("harness_launch_target", "auto") or "auto")
-        if target == "desktop" and not self._harness_desktop_available:
-            target = "auto"
-        idx = self.harness_launch_target_select.findData(target)
-        self.harness_launch_target_select.setCurrentIndex(max(0, idx))
-        if self.config.instance_id:
-            self.harness_autostart_check.setEnabled(False)
-            self.harness_autostart_check.setToolTip("仅主桌宠可设置")
-            self.harness_launch_target_select.setEnabled(False)
-            self.harness_launch_target_select.setToolTip("仅主桌宠可设置")
+        # 「随桌宠启动 dsh 服务」「自启目标」2026-10-14 从设置页下线（DeepSeek Harness 不再暴露入口；配置键保留）
 
         # 灵动岛控件构建保留在对话框本体，便于上游直接修改后上传。
         island_cfg = self.config.get("dynamic_island", {})
@@ -469,38 +431,8 @@ class ModernSettingsDialog(QDialog):
         general_layout.setContentsMargins(0, 0, 0, 0)
         general_layout.setSpacing(18)
         autostart_desc = "登录系统后自动启动桌宠。" if not self.config.instance_id else "登录系统后自动启动桌宠。（仅主桌宠可设置）"
-        # 「自启目标」的说明随平台变：桌面端项在非 Windows 上置灰，文案必须
-        # 说清原因（不能留着「自动 = 检测到桌面端就起桌面端」这种本平台做不到的话）。
-        if self._harness_desktop_available:
-            harness_target_hint = (
-                "只决定「随桌宠启动」拉起哪一个：自动 = 检测到桌面端安装则起桌面端、否则起 dsh web。"
-                "右键菜单/托盘的「启动 dsh web 界面」「启动桌面端界面」是你点哪项就起哪项，"
-                "不受本项影响；「重启/停止服务」始终只作用于 dsh web 服务。仅主桌宠可设置。"
-            )
-        else:
-            harness_target_hint = (
-                "只决定「随桌宠启动」拉起哪一个：本平台暂不支持自动拉起桌面端（本版本仅 Windows），"
-                "所以「桌面端界面」置灰、自动 = 起 dsh web；右键菜单里的「启动桌面端界面」会如实提示不支持、"
-                "不会静默改开网页。「重启/停止服务」始终只作用于 dsh web 服务。仅主桌宠可设置。"
-            )
         launch_rows = [
             SettingRow("autostart", "开机自启", autostart_desc, self.autostart_check),
-            SettingRow(
-                "harness_autostart",
-                "随桌宠启动 dsh 服务",
-                "桌宠启动后自动拉起下面「自启目标」：dsh web 时在后台静默起服务（不开浏览器、不弹窗口），桌面端界面时直接打开桌面端应用。"
-                "本项要同时开着 DSH 联动才会自启——联动关着时 dsh web 没有消费者，拉起只是白占一个进程。"
-                "关闭本项后不再自动拉起；已经跑起来的 dsh web 不因此退出，例外是刚在拉起探测期间关掉本项——"
-                "那一次刚拉起的实例会被立刻收掉。稳态下要等桌宠退出或关闭 DSH 联动时才收口。"
-                "桌面端是你自己的应用，桌宠退出或关闭本项都不会结束它。仅主桌宠生效。",
-                self.harness_autostart_check,
-            ),
-            SettingRow(
-                "harness_launch_target",
-                "自启目标",
-                harness_target_hint,
-                self.harness_launch_target_select,
-            ),
         ]
         if sys.platform == "darwin":
             launch_rows.append(
@@ -1717,7 +1649,7 @@ class ModernSettingsDialog(QDialog):
         general = page_content(
             [
                 ("语言 / Language", claim("ui_language")),
-                ("应用启动", claim("autostart", "harness_autostart", "harness_launch_target")),
+                ("应用启动", claim("autostart")),
                 ("窗口与系统", claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture", "tray_icon")),
                 # 「多开」分组已随拓扑收口 Phase A 隐藏（见上方注释）
             ]
@@ -2146,8 +2078,6 @@ class ModernSettingsDialog(QDialog):
                 "y": existing_island.get("y"),
             },
         )
-        if self.click_balance_check is not None:
-            self.config.set("click_show_balance", self.click_balance_check.isChecked())
         self.config.set("click_show_self_talk", self.click_self_talk_check.isChecked())
         self.config.set("self_talk_speak_enabled", self.click_self_talk_speak_check.isChecked())
         self.config.set("self_talk_voice_precache_enabled",
@@ -2309,13 +2239,6 @@ class ModernSettingsDialog(QDialog):
             )
             self.config.set("proactive_screen", pro_data)
         self.config.set("autostart_wanted", self.autostart_check.isChecked())
-        self.config.set("harness_autostart", self.harness_autostart_check.isChecked())
-        # 最后一道门：本平台不支持桌面端时绝不把 desktop 落盘（下拉里那项已置灰，
-        # 但存量配置/程序化设置仍可能带着它走到这里）——存下去就是无声死选项。
-        harness_target = str(self.harness_launch_target_select.currentData() or "auto")
-        if harness_target == "desktop" and not self._harness_desktop_available:
-            harness_target = "auto"
-        self.config.set("harness_launch_target", harness_target)
         # 批 C：落种占位语义——仅当用户在该子肥鱼自己的设置界面保存过才置真；
         # 位置自动保存等一切后台写盘不得置位。主配置（slot 0/主肥鱼）保存不置位。
         if self.config.instance_id:

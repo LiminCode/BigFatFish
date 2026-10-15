@@ -229,7 +229,7 @@ def test_first_frame_pixmap_is_null_before_any_frame(app, tmp_path):
     win.close()
 
 
-def test_tray_menu_keeps_two_flat_harness_launch_items(app, tmp_path):
+def test_tray_menu_has_no_deepseek_entries(app, tmp_path):
     """托盘里的 Harness 入口是**两个平铺启动项**，不是右键那个四项子菜单。
 
     对齐依据（2026-10 双目标）：`README.md` 现行段落写「右键菜单提供 DeepSeek
@@ -241,10 +241,9 @@ def test_tray_menu_keeps_two_flat_harness_launch_items(app, tmp_path):
         menu = tray.contextMenu()
         assert menu is not None, "托盘必须挂了上下文菜单"
         labels = [action.text() for action in menu.actions() if not action.isSeparator()]
-        assert "启动 dsh web 界面" in labels
-        assert "启动桌面端界面" in labels
-        assert "DeepSeek Harness" not in labels, "托盘不给 Harness 子菜单，只给两个平铺启动项"
-        for label in ("重启服务", "停止服务"):
-            assert label not in labels, f"托盘不提供「{label}」（那是右键子菜单的四项之一）"
+        # 2026-10-14：托盘里的 DeepSeek 入口（余额 / 启动 dsh / 网页版）全部下线
+        for label in ("DeepSeek 余额", "启动 dsh web 界面", "启动桌面端界面", "DeepSeek Harness", "打开网页版 DeepSeek",
+                      "重启服务", "停止服务"):
+            assert label not in labels, label
     finally:
         tray.hide()

@@ -51,16 +51,6 @@ def build_click_rows(dialog) -> list[SettingRow]:
         SettingRow("click_sound_volume", "音效音量", "调整点击音效播放音量。", dialog.click_sound_volume_spin),
         SettingRow("click_sound_preview", "试听音效", "测试当前选择的点击音效。", dialog.click_sound_preview_btn),
     ]
-    if getattr(dialog, "click_balance_check", None) is not None:
-        # 余额能力可用时才出现（与控件创建口径一致），位置保持在「试听音效」之后。
-        rows.append(
-            SettingRow(
-                "click_balance",
-                "点击显示余额",
-                "点击桌宠时查询并用气泡展示模型服务余额。",
-                dialog.click_balance_check,
-            )
-        )
     rows.extend(
         [
             SettingRow("click_self_talk", "点击触发自言自语", "点击时随机显示一条自言自语内容；打开后可用下方两项把同一句读出来。", dialog.click_self_talk_check),

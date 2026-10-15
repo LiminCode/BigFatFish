@@ -96,6 +96,8 @@ _MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quar
     "music_open_netease", "music_open_qqmusic",
     # 2026-10-13 「显示本轮消费」（DeepSeek 余额差）从右键菜单和设置页下线；配置键与结算代码保留
     "agent_cost",
+    # 2026-10-14 DeepSeek 的三个入口下线（余额查询 / Harness 启动器代码保留，只摘菜单）
+    "balance", "harness", "deepseek_web",
 })
 
 
