@@ -53,6 +53,7 @@ from .settings_widgets import (
     ResourcePathPicker,
     ResponsiveToggleActionRow,
     SettingRow,
+    TiltButton,
     ToggleSwitch,
     _line_edit,
 )
@@ -190,7 +191,7 @@ def build_pet_controls(host) -> None:
     host.spawn_inherit_dynamic_island_check.setChecked(
         bool(host.config.get("spawn_inherit_dynamic_island", False))
     )
-    host.clear_spawned_pets_btn = QPushButton("一键退出…", host)
+    host.clear_spawned_pets_btn = TiltButton("一键退出…", host)
     host.clear_spawned_pets_btn.clicked.connect(host._on_clear_spawned_pets)
     if host.config.instance_id:
         # 子肥鱼不能关闭主肥鱼进程，只允许主肥鱼执行退出操作。
@@ -289,7 +290,7 @@ def build_pet_controls(host) -> None:
     click_vol = float(host.config.get("click_sound_volume", 0.70))
     host.click_sound_volume_spin.setValue(int(round(click_vol * 100)))
 
-    host.click_sound_preview_btn = QPushButton("试听", host)
+    host.click_sound_preview_btn = TiltButton("试听", host)
     host.click_sound_preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
     host.click_sound_preview_btn.setFixedWidth(72)
     host.click_sound_preview_btn.clicked.connect(host._preview_click_sound)
@@ -450,7 +451,7 @@ def build_pet_controls(host) -> None:
     host.bubble_text_scale_spin.setRange(50, 300)
     host.bubble_text_scale_spin.setSuffix(" %")
     host.bubble_text_scale_spin.setValue(int(host.config.get("bubble_text_scale", 100)))
-    host.click_talk_bindings_btn = QPushButton("编辑…", host)
+    host.click_talk_bindings_btn = TiltButton("编辑…", host)
     host.click_talk_bindings_btn.setObjectName("clickTalkBindingsButton")
     host.click_talk_bindings_btn.clicked.connect(host._open_click_talk_bindings)
 
@@ -533,10 +534,10 @@ def build_pet_controls(host) -> None:
     )
     host.dialogue_template_import_edit.setMinimumHeight(92)
     host.dialogue_template_import_edit.setMaximumHeight(180)
-    host.dialogue_template_export_btn = QPushButton("一键复制模板", host)
+    host.dialogue_template_export_btn = TiltButton("一键复制模板", host)
     host.dialogue_template_export_btn.setObjectName("dialogueTemplateExportButton")
     host.dialogue_template_export_btn.clicked.connect(host._export_dialogue_template)
-    host.dialogue_template_import_btn = QPushButton("导入模板", host)
+    host.dialogue_template_import_btn = TiltButton("导入模板", host)
     host.dialogue_template_import_btn.setObjectName("dialogueTemplateImportButton")
     host.dialogue_template_import_btn.clicked.connect(host._import_dialogue_template_json)
     host.dialogue_template_actions = QWidget(host)
@@ -558,7 +559,7 @@ def build_pet_controls(host) -> None:
         toggle.setChecked(bool(agent_link_cfg.get(f"sound_{evt_key}_enabled", True)))
         path_val = str(agent_link_cfg.get(f"sound_{evt_key}_path") or default_builtin)
         picker = ResourcePathPicker(path_val, name_filter=AUDIO_NAME_FILTER, parent=host)
-        preview_btn = QPushButton("试听", host)
+        preview_btn = TiltButton("试听", host)
         preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
         preview_btn.setFixedWidth(72)
         preview_btn.clicked.connect(lambda _, k=evt_key: host._preview_agent_sound(k))

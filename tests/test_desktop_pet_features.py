@@ -1389,8 +1389,11 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert all(not dialog.sidebar.item(i).icon().isNull() for i in range(dialog.sidebar.count()))
     assert all(dialog.sidebar.item(i).sizeHint().height() >= 34 for i in range(dialog.sidebar.count()))
     assert "QListWidget#settingsSidebar::item:hover" in dialog.styleSheet()
-    assert "border-right: 1px solid #e3e5e8" in dialog.styleSheet()
-    assert "background: #f7f7f8" in dialog.styleSheet()
+    # Metro（2026-10-14）：侧栏是一整条深一点的带子，没有描边（明 / 暗各一个令牌：前面的用例可能把调色板留成深色）
+    from pet.settings_theme_qss import METRO_TOKENS
+
+    assert any(f"QFrame#sidebarPane {{ background: {tokens['sidebar']}; border: none; }}" in dialog.styleSheet()
+               for tokens in METRO_TOKENS.values())
     section_titles = [label.text() for label in dialog.findChildren(settings_mod.QLabel, "sectionTitle")]
     assert {
         "应用启动", "窗口与系统", "动画与移动", "点击反馈", "自言自语",
@@ -1419,7 +1422,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert "QSpinBox::up-button" in stylesheet
     assert "QScrollBar::handle:vertical" in stylesheet
     assert "font-size: 13px" in stylesheet
-    assert "font-size: 22px" in stylesheet
+    assert "font-size: 30px" in stylesheet          # Metro 页标题
     assert "min-height: 20px" in stylesheet
     dialog.scale_combo.setCurrentIndex(dialog.scale_combo.findData(0.85))
     dialog.on_top_check.setChecked(False)

@@ -1074,15 +1074,19 @@ def test_settings_stylesheet_has_dark_overrides(monkeypatch):
     """深色系统下新版设置必须追加深色覆盖段（白底白字不可读问题）。"""
     from pet.modern_settings_dialog import _settings_stylesheet
 
+    from pet.settings_theme_qss import METRO_TOKENS
+
+    dark, light = METRO_TOKENS["dark"], METRO_TOKENS["light"]
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: True)
     qss = _settings_stylesheet()
-    assert "background: #202024" in qss
-    assert "color: #e4e4e9" in qss
+    assert f"background: {dark['page']}" in qss
+    assert f"color: {dark['text']}" in qss
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: False)
     qss_light = _settings_stylesheet()
-    assert "background: #202024" not in qss_light
-    # 浅色也必须显式给按钮补文字色（防深色 palette 白字）
-    assert "QPushButton { color: #202020; }" in qss_light
+    assert f"background: {dark['page']}" not in qss_light
+    # 浅色也必须显式给按钮补文字色（防深色 palette 白字）：按钮块里有 color
+    button_block = qss_light.split("\nQPushButton {", 1)[1].split("}", 1)[0]
+    assert f"color: {light['text']}" in button_block
 
 
 def test_settings_window_uses_the_explicit_dark_appearance_on_a_light_system(
@@ -1100,7 +1104,7 @@ def test_settings_window_uses_the_explicit_dark_appearance_on_a_light_system(
     config.set("context_menu_appearance", {"theme": "dark"})
 
     dialog = settings_mod.ModernSettingsDialog(config, include_ai=False)
-    assert "QDialog { background: #202024" in dialog.styleSheet()
+    assert "background: #1b1b1f" in dialog.styleSheet()       # METRO_TOKENS["dark"]["page"]
 
     dialog.close()
     app.processEvents()
@@ -1118,11 +1122,11 @@ def test_settings_window_rethemes_immediately_with_the_appearance_selector(
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: False)
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=False)
-    assert "QDialog { background: #202024" not in dialog.styleSheet()
+    assert "background: #1b1b1f" not in dialog.styleSheet()
 
     dialog.menu_theme_select.setCurrentData("dark")
     app.processEvents()
-    assert "QDialog { background: #202024" in dialog.styleSheet()
+    assert "background: #1b1b1f" in dialog.styleSheet()
 
     dialog.menu_theme_select.setCurrentData("light")
     app.processEvents()

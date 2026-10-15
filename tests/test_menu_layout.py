@@ -1336,8 +1336,9 @@ def test_settings_visual_hierarchy_uses_shared_product_tokens(tmp_path, monkeypa
     page_title = dialog.pages.currentWidget().findChild(settings_mod.QLabel, "pageTitle")
     section_title = dialog.pages.currentWidget().findChild(settings_mod.QLabel, "sectionTitle")
     row = dialog.findChild(SettingRow, "settingRow_autostart")
-    assert page_title.font().pixelSize() == 22
-    assert section_title.font().pixelSize() == 13
+    assert page_title.font().pixelSize() == 30          # Metro：大而轻的页标题（2026-10-14）
+    assert page_title.font().weight() <= 400
+    assert section_title.font().pixelSize() == 15
     assert row.label.font().pixelSize() == 13
     assert row.label.font().weight() == 500
     assert row.hint_label.font().pixelSize() == 12
@@ -2243,7 +2244,7 @@ def test_settings_action_popups_share_the_modern_select_visual_tokens():
         editor.customize_menu, editor.more_menu, launcher.add_menu,
     ]
     assert all(menu.objectName() == "SettingsPopup" for menu in menus)
-    assert all("border-radius: 10px" in menu.styleSheet() for menu in menus)
+    assert all("border-radius: 0" in menu.styleSheet() for menu in menus), "Metro：弹出面板也是方角"
     assert all("padding: 6px" in menu.styleSheet() for menu in menus)
     assert all("min-height: 22px" in menu.styleSheet() for menu in menus)
     editor.close()
@@ -2307,24 +2308,38 @@ def test_menu_editor_header_columns_are_user_resizable():
     app.processEvents()
 
 
-def test_settings_tabs_are_compact_left_aligned_plugin_style_navigation():
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
+def test_settings_tabs_are_a_vertical_accordion_of_full_width_tiles():
+    """2026-10-14 起页内任务不再是左右的分段标签，而是上下折叠的磁贴表头（Windows Phone）：
+    表头占满宽度、一次只开一页、点别的表头就切过去。"""
+    from PySide6.QtWidgets import QApplication, QWidget
 
     from pet.modern_settings_dialog import SettingsTabContainer
+    from pet.settings_widgets import SettingsDisclosureHeader
 
     app = QApplication.instance() or QApplication([])
     tabs = SettingsTabContainer()
+    pages = []
     for key, label in (("layout", "菜单编排"), ("launcher", "快捷启动"), ("appearance", "外观")):
-        tabs.addTab(key, label, QWidget())
+        page = QWidget()
+        pages.append(page)
+        tabs.addTab(key, label, page)
     tabs.resize(900, 420)
     tabs.show()
     app.processEvents()
 
-    assert tabs.tab_bar.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Maximum
-    assert tabs.tab_layout.alignment() & Qt.AlignmentFlag.AlignLeft
-    assert tabs.tab_bar.width() < tabs.width() * 0.7
-    assert all(button.property("navigationStyle") == "plugin" for button in tabs._buttons)
+    headers = tabs.headers()
+    assert len(headers) == 3 and all(isinstance(h, SettingsDisclosureHeader) for h in headers)
+    assert all(h.width() == tabs.width() for h in headers), "表头是满宽的磁贴"
+    assert [h.isChecked() for h in headers] == [True, False, False]
+    assert [p.isVisibleTo(tabs) for p in pages] == [True, False, False], "一次只开一页"
+    assert all(h.property("navigationStyle") == "accordion" for h in headers)
+    headers[2].click()
+    app.processEvents()
+    assert tabs.currentKey() == "appearance"
+    assert [p.isVisibleTo(tabs) for p in pages] == [False, False, True]
+    assert headers[2].accessibleName().startswith("收起") and headers[0].accessibleName().startswith("展开")
+    headers[2].click()                                   # 点开着的那块：保持打开，不会整页空掉
+    assert tabs.currentKey() == "appearance" and headers[2].isChecked()
     tabs.close()
     app.processEvents()
 

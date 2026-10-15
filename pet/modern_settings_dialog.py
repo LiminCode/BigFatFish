@@ -117,6 +117,8 @@ from .settings_widgets import (
     SETTINGS_DOMAIN_NAV,
     BROWSER_CONTROL_STYLESHEET,
     _widget_dark,
+    TiltButton,
+    TiltItemDelegate,
     ToggleSwitch,
     IMAGE_NAME_FILTER,
     AUDIO_NAME_FILTER,
@@ -147,7 +149,6 @@ from .settings_widgets import (
     SettingsCard,
     SettingsDisclosureHeader,
     SettingsSection,
-    _CurrentPageStack,
     SettingsTabContainer,
     _SettingsPageShell,
     _line_edit,
@@ -289,7 +290,7 @@ class ModernSettingsDialog(QDialog):
         sidebar_layout = QVBoxLayout(sidebar_pane)
         sidebar_layout.setContentsMargins(12, 16, 12, 12)
         sidebar_layout.setSpacing(9)
-        self.save_exit_button = QPushButton("保存并退出", sidebar_pane)
+        self.save_exit_button = TiltButton("保存并退出", sidebar_pane)
         self.save_exit_button.setObjectName("saveAndExit")
         self.save_exit_button.setIcon(vector_widget_icon(self.save_exit_button, "back", 16))
         self.save_exit_button.clicked.connect(self._save)
@@ -316,6 +317,7 @@ class ModernSettingsDialog(QDialog):
         self.sidebar.setObjectName("settingsSidebar")
         self.sidebar.setIconSize(QSize(18, 18))
         self.sidebar.setSpacing(2)
+        TiltItemDelegate.install(self.sidebar)      # Metro：被悬停的侧栏项像磁贴一样朝光标倾斜
         sidebar_layout.addWidget(self.sidebar, 1)
         self.version_footer = QLabel(f"版本 v{__version__}", sidebar_pane)
         self.version_footer.setObjectName("settingsVersion")
@@ -1103,14 +1105,14 @@ class ModernSettingsDialog(QDialog):
         self.pro_whitelist_edit.setPlainText("\n".join(str(x) for x in pro["whitelist"]))
         self.pro_whitelist_edit.setMinimumHeight(72)
 
-        self.pro_add_btn = QPushButton("从当前前台窗口添加…", self)
+        self.pro_add_btn = TiltButton("从当前前台窗口添加…", self)
         self.pro_add_btn.setProperty("variant", "ghost")
         self.pro_add_btn.clicked.connect(self._on_pro_add_foreground)
         self._pro_add_timer = QTimer(self)
         self._pro_add_timer.setSingleShot(True)
         self._pro_add_timer.timeout.connect(self._do_pro_add_foreground)
 
-        self.pro_clear_mem_btn = QPushButton("清除陪伴记忆", self)
+        self.pro_clear_mem_btn = TiltButton("清除陪伴记忆", self)
         self.pro_clear_mem_btn.setProperty("variant", "ghost")
         self.pro_clear_mem_btn.clicked.connect(self._on_pro_clear_memory)
 
@@ -1689,7 +1691,7 @@ class ModernSettingsDialog(QDialog):
 
     def _add_page(self, label: str, icon_name: str, page: QWidget) -> None:
         item = QListWidgetItem(vector_widget_icon(self, icon_name, 16), label)
-        item.setSizeHint(QSize(0, 34))
+        item.setSizeHint(QSize(0, 38))
         self.sidebar.addItem(item)
         self.pages.addWidget(page)
 

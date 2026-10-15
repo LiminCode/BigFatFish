@@ -240,7 +240,9 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 插进「自动化与联动」1 行、保存 1 行（import 并进 settings_vscode 那一行）。实测 2401。
 # 2026-10-14 上调到 2403：「Slack 关注」一节（控件、提示、保存都在 settings_slack_watch.py），这里是
 # 插进「自动化与联动」1 行、保存 1 行（import 并进同一行）。实测 2403。
-MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2403
+# 2026-10-14 上调到 2405：设置页改 Metro 风格，侧栏装倾斜代理（import 1 行 + install 1 行；
+# 样式与控件都在 settings_theme_qss / settings_widgets）。实测 2405。
+MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET = 2405
 
 
 def _read(name: str) -> str:

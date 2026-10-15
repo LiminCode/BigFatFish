@@ -23,10 +23,10 @@ import sys
 import time
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QMessageBox, QPushButton
+from PySide6.QtWidgets import QMessageBox
 
 from . import music_players
-from .settings_widgets import ResourcePathPicker, SettingRow
+from .settings_widgets import ResourcePathPicker, SettingRow, TiltButton
 
 log = logging.getLogger("big-fat-fish")
 
@@ -61,7 +61,7 @@ def create_music_player_controls(dialog) -> None:
             parent=dialog,
         )
         setattr(dialog, _PICKER_ATTR[key], picker)
-    button = QPushButton(_DETECT_BUTTON_LABEL, dialog)
+    button = TiltButton(_DETECT_BUTTON_LABEL, dialog)
     button.setObjectName("musicPlayerDetectButton")
     button.clicked.connect(lambda: start_detect(dialog))
     dialog.music_player_detect_btn = button
