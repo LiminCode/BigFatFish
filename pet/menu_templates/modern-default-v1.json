@@ -13,6 +13,7 @@
     {"type": "action", "id": "playback_speed", "visible": true, "section": "playback"},
     {"type": "action", "id": "size", "visible": true, "section": "playback"},
     {"type": "action", "id": "vscode_workspaces", "visible": true, "section": "playback"},
+    {"type": "action", "id": "youtube_music", "visible": true, "section": "playback"},
     {"type": "separator", "id": "default.separator-playback", "visible": true},
     {
       "type": "submenu",

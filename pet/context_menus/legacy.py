@@ -18,6 +18,7 @@ from .shared import (
     add_edge_probe,
     add_golden_spin,
     add_vscode_workspaces_menu,
+    add_youtube_music,
     add_no_move,
     add_on_top,
     add_quit,
@@ -63,6 +64,7 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     # 「音乐」子菜单 2026-10-13 从右键菜单下线（歌词气泡 / 唱歌联动保留，入口在设置页），
     # 它的位置给了「VS Code 工作区」
     add_vscode_workspaces_menu(menu, pet, icons=False)
+    add_youtube_music(menu, pet, icons=False)
     add_edge_probe(menu, pet, icons=False)
     build_size_menu(menu, pet, icons=False)
 

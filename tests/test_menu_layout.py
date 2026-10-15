@@ -22,6 +22,7 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "playback_speed",
         "size",
         "vscode_workspaces",
+        "youtube_music",
         "default.separator-playback",
         "pet_controls",
         "quick_launch",
@@ -308,6 +309,7 @@ def test_missing_user_layout_resolves_versioned_default():
         "playback_speed",
         "size",
         "vscode_workspaces",
+        "youtube_music",
         "drag_physics",
         "no_move",
         "mouse_through",
@@ -351,6 +353,7 @@ def test_missing_user_layout_resolves_versioned_default():
         "playback_speed",
         "size",
         "vscode_workspaces",
+        "youtube_music",
         "pet_controls",
         "quick_launch",
         "tools_help",
@@ -513,6 +516,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "播放速率",
         "大小",
         "VS Code 工作区",
+        "YouTube Music",
         "肥鱼控制",
         "快捷启动",
         "工具与帮助",
@@ -531,7 +535,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     expected_rendered = [
         "厉害了我的鲸", "|",
         "护驾", "AI 对话", "看看屏幕", "|",
-        "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "|",
+        "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music", "|",
         "肥鱼控制", "快捷启动", "|",
         "工具与帮助", "Agent 联动", "|",
         "肥鱼设置", "退出",
@@ -842,8 +846,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     assert owner("api_url") == "AI 与对话"
     assert owner("voice_chime_enabled") == "语音"
     assert owner("file_interpret_enabled") == "文件识别"
-    assert owner("music_player_netease") == "肥鱼"
-    assert owner("music_player_qqmusic") == "肥鱼"
+    assert owner("music_lyric") == "肥鱼"
     assert "待分类（开发期）" not in [
         label.text() for label in dialog.findChildren(settings_mod.QLabel)
     ]

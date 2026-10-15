@@ -610,26 +610,6 @@ def _bool_or_default(value, default):
     return bool(default)
 
 
-def _clean_music_player_paths(value) -> dict:
-    """手动指定的播放器可执行文件路径 {播放器键: 路径}。
-
-    键只认 music_players.PLAYERS 里的两个播放器（其余键丢弃，避免手改配置塞进
-    任何多余东西）；值必须是字符串路径，空串/非字符串一律丢弃。限长与其它路径键
-    同规（500 字符），只做配置面清洗，不碰文件系统——路径是否存在由消费方判定。
-    """
-    if not isinstance(value, dict):
-        return {}
-    cleaned = {}
-    for key in ("netease", "qqmusic"):
-        raw = value.get(key)
-        if not isinstance(raw, str):
-            continue
-        path = raw.strip()
-        if path:
-            cleaned[key] = path[:500]
-    return cleaned
-
-
 def _clean_self_talk_texts(value):
     if not isinstance(value, list):
         return list(DEFAULT_SELF_TALK_TEXTS)
@@ -923,7 +903,6 @@ class Config:
             "music_browser_media_enabled": False,
             # 手动指定播放器路径 {netease|qqmusic: exe 路径}：自动搜索找不到时的
             # 逃生口，只能手改 config.json（暂无设置页控件），空 = 走自动搜索。
-            "music_player_paths": {},
             "agent_cost_enabled": False,  # Agent 本轮结束时显示消费金额（用余额差值估算）
             "golden_spin_on_click": False,  # 点击回应动画结束后自动接一段黄金回旋
             "golden_spin_direct": False,  # 点击触发黄金回旋时跳过点击动画，直接回旋并逐圈加速
@@ -1197,7 +1176,6 @@ class Config:
             "music_lyric_cache_limit",
             "music_lyric_lead_seconds",
             "music_browser_media_enabled",
-            "music_player_paths",
             "agent_cost_enabled",
             "golden_spin_on_click",
             "golden_spin_direct",
@@ -1575,7 +1553,6 @@ class Config:
         )
         # 手动播放器路径：此前只有消费方读、没有 schema 登记，手改 config.json 会
         # 被 reload() 静默丢弃（交付前审查 P1-3）。清洗成 {netease|qqmusic: 路径}。
-        self.data["music_player_paths"] = _clean_music_player_paths(self.data.get("music_player_paths"))
         prewarm = str(self.data.get("media_prewarm", "balanced") or "balanced").strip().lower()
         self.data["media_prewarm"] = prewarm if prewarm in {"full", "balanced", "minimal"} else "balanced"
         # 批10-A3：默认 32→8（预测式预热使能）；32 是批9 引入仅一天的旧默认，
@@ -1717,7 +1694,6 @@ class Config:
             "music_lyric_cache_limit",
             "music_browser_media_enabled",
             "agent_cost_enabled",
-            "music_player_paths",
             "character_profiles",
             "chat_always_on_top",
             "dynamic_island",

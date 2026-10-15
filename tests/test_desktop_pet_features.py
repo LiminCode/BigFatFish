@@ -872,6 +872,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "播放速率",
         "大小",
         "VS Code 工作区",
+        "YouTube Music",
         "肥鱼控制",
         "快捷启动",
         "工具与帮助",

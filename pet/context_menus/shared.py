@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
 import threading
-import time
 
 import shiboken6
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
-from PySide6.QtGui import QActionGroup, QIcon, QPixmap
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QActionGroup, QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import QMenu
 
 from .. import autostart as autostart_mod
@@ -707,114 +704,6 @@ def set_music_mode(pet, on: bool) -> None:
         enable(on)
 
 
-class _MusicLaunchBridge(QObject):
-    """「打开播放器」worker → GUI 的气泡桥（与 proactive 的 _WatcherBridge 同款）。
-
-    后台线程只 emit；槽在 GUI 线程执行——跨线程直接碰 Qt 控件是未定义行为。
-    真实宿主（PetWindow 是 QObject）走 Qt 父子关系保活；非 QObject 宿主（测试
-    替身/最小外壳）没有 parent，由 :func:`_music_launch_bridge` 留一份强引用，
-    等 queued 信号投递完成后在槽里自删。
-    """
-
-    notice = Signal(str)
-    # worker 收工（成功/失败都发）：桥的两种保活都要靠它收口——非 QObject 宿主
-    # 的强引用集合、真实宿主窗口上的子对象，否则每次点击都会多留一份。
-    _worker_done = Signal()
-
-    def __init__(self, pet) -> None:
-        parent = pet if isinstance(pet, QObject) else None
-        super().__init__(parent)
-        self._pet = pet
-        self.notice.connect(self._show_notice)
-        self._worker_done.connect(self._release)
-
-    @Slot(str)
-    def _show_notice(self, text: str) -> None:
-        _LAUNCH_BRIDGES.discard(self)
-        show = getattr(self._pet, "show_bubble", None)
-        if callable(show):
-            try:
-                show(text, duration_ms=6000)
-            except Exception:
-                log.debug("播放器提示气泡展示失败", exc_info=True)
-
-    @Slot()
-    def _release(self) -> None:
-        """worker 收工：摘掉强引用并把对象交还 Qt（成功路径也会走到这里）。"""
-        _LAUNCH_BRIDGES.discard(self)
-        self.deleteLater()
-
-
-# 非 QObject 宿主的强引用兜底：没有 Qt parent，不留住就被 GC 掉、queued 信号丢失。
-_LAUNCH_BRIDGES: set = set()
-
-
-def _music_launch_bridge(pet) -> _MusicLaunchBridge:
-    bridge = _MusicLaunchBridge(pet)
-    if bridge.parent() is None:
-        _LAUNCH_BRIDGES.add(bridge)
-    return bridge
-
-
-def _launch_player_and_play(player_key: str, pet) -> None:
-    """打开指定播放器并尽量让它开始播放。
-
-    "自动播放"是**尽力而为**：已经在跑的播放器可以直接发播放指令；刚启动的
-    需要等它初始化并出现在 SMTC 里（可能几秒），所以起一个后台线程轮询，
-    等到了就发播放。等不到也不报错——播放器自己是否自动续播由它决定，
-    这不是我们能控制的。
-
-    **路径解析（find_player）也在 worker 线程里**：缓存冷时它要浅扫目录（实测
-    6s+），以前这段跑在 GUI 线程，点一下菜单就卡住。找不到时不静默 return，
-    而是经 queued 信号回 GUI 线程弹气泡说明可以在配置文件里手动指定路径。
-    """
-    from .. import music_players, now_playing
-
-    label = music_players.player_label(player_key)
-    manual = ""
-    paths_cfg = pet.cfg.get("music_player_paths", {})
-    if isinstance(paths_cfg, dict):
-        manual = str(paths_cfg.get(player_key, "") or "")
-    bridge = _music_launch_bridge(pet)
-
-    def worker() -> None:
-        try:
-            exe = music_players.find_player(player_key, manual)
-            if not exe:
-                # 桥的生命周期挂在宿主窗口上：浅扫期间窗口被销毁（切换形象/退出）
-                # 时它已经是个死对象，emit 会抛 RuntimeError（同 agent_link 的
-                # 防护写法）。这里必须吞掉——否则 daemon 线程以未捕获异常收尾。
-                try:
-                    bridge.notice.emit(f"找不到{label}：可在 设置 → 肥鱼 → 音乐关联 里指定它的程序位置")
-                except RuntimeError:
-                    pass
-                return
-            exe_name = os.path.basename(exe)
-            # 先给已经在跑的会话发播放指令：这条路径是确定的。
-            if now_playing.play_session_for(exe_name):
-                return
-            # 没在跑：启动它，然后轮询等它出现在 SMTC 里。
-            try:
-                if sys.platform == "win32":
-                    os.startfile(exe)  # noqa: S606 - 路径来自受控的播放器搜索
-                else:
-                    QProcess.startDetached(exe, [])
-            except Exception:
-                return
-            for _ in range(10):          # 最多等 10 秒
-                time.sleep(1.0)
-                if now_playing.play_session_for(exe_name):
-                    return
-        finally:
-            # 成功路径原先在这里直接 return，桥既不出队也不回收；无论成败都收口。
-            try:
-                bridge._worker_done.emit()
-            except RuntimeError:
-                pass  # 宿主窗口已销毁，桥随之一并没了
-
-    threading.Thread(target=worker, name="music-launch", daemon=True).start()
-
-
 def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
     """「VS Code 工作区」子菜单：开着的（带 ●）、最近用过的、用户目录里的；点一条切过去或打开。
 
@@ -940,44 +829,21 @@ def add_music_lyric_align(menu: QMenu, pet, *, icons: bool = True):
     return submenu
 
 
-def _music_player_builder(player_key: str):
-    """生成"打开某播放器并播放"的 builder（两个播放器共用一套逻辑）。"""
-
-    def build(menu: QMenu, pet, *, icons: bool = True):
-        from .. import music_players
-
-        label = music_players.player_label(player_key)
-        manual = ""
-        paths_cfg = pet.cfg.get("music_player_paths", {})
-        if isinstance(paths_cfg, dict):
-            manual = str(paths_cfg.get(player_key, "") or "")
-        # 只读缓存的查询：菜单构建在 GUI 线程，缓存冷时扫目录会冻住菜单
-        # （实测 6.4s 全在 MainThread）。冷缓存按"乐观可用"处理，扫描交给
-        # 幂等的后台预热；真正的确定态最迟下次开菜单拿到。
-        # 路径本身这里不用：点击路径会在 worker 线程里再解析一次（权威结果）。
-        state, _path = music_players.cached_player(player_key, manual)
-        missing = state == music_players.CACHED_MISSING
-        action = add_action(
-            menu, f"打开{label}给主人放歌", None,
-            (lambda: _launch_player_and_play(player_key, pet)) if not missing else None,
-            close_on_trigger=True,
-        )
-        if missing:
-            action.setEnabled(False)
-            action.setToolTip(f"找不到{label}：可在 设置 → 肥鱼 → 音乐关联 里指定它的程序位置")
-        elif state == music_players.CACHED_COLD:
-            music_players.warm_cache_async(player_key, manual)
-        return action
-
-    return build
+#: 「YouTube Music」打开的地址：首页，由默认浏览器打开（不带播放参数，不自动开始播放）
+YOUTUBE_MUSIC_URL = "https://music.youtube.com/"
 
 
-def add_music_open_netease(menu: QMenu, pet, *, icons: bool = True):
-    return _music_player_builder("netease")(menu, pet, icons=icons)
+def add_youtube_music(menu: QMenu, pet, *, icons: bool = True):
+    """「YouTube Music」：用默认浏览器打开 YouTube Music 首页。
 
-
-def add_music_open_qqmusic(menu: QMenu, pet, *, icons: bool = True):
-    return _music_player_builder("qqmusic")(menu, pet, icons=icons)
+    2026-10-15 取代「打开网易云 / QQ 音乐给主人放歌」：网页版就够，不找程序、不扫盘。
+    放歌之后的歌词气泡与唱歌联动照旧走系统媒体会话（需打开设置里的「浏览器媒体会话
+    参与歌词」）。"""
+    del pet
+    return add_action(
+        menu, "YouTube Music", "play" if icons else None,
+        lambda: QDesktopServices.openUrl(QUrl(YOUTUBE_MUSIC_URL)), close_on_trigger=True,
+    )
 
 
 def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):

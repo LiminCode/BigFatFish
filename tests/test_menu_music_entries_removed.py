@@ -132,6 +132,7 @@ def test_a_saved_layout_that_still_has_the_group_renders_without_an_empty_shell(
 
 def test_the_lyric_feature_itself_is_untouched(tmp_path):
     config = Config(tmp_path)
-    assert "music_lyric_enabled" in config.data and "music_player_paths" in config.data
+    assert "music_lyric_enabled" in config.data
     text = json.dumps(menu_layout.load_default_menu_layout(), ensure_ascii=False)
-    assert "音乐" not in text and "music" not in text
+    # 2026-10-15 起菜单里有「YouTube Music」（youtube_music），但仍没有「音乐」这一组
+    assert "音乐" not in text and "music_" not in text.replace("youtube_music", "")

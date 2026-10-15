@@ -327,8 +327,6 @@ class ModernSettingsDialog(QDialog):
         self._build_pet_controls()
         # 「文件识别」域控件在本模块构建（行数预算原因），见 settings_file_interpret。
         self._build_file_interpret_controls()
-        # 「音乐播放器路径」控件同样在本模块构建（行数预算原因），见 settings_music。
-        settings_music.create_music_player_controls(self)
         # 「随肥鱼启动 dsh 服务」「自启目标」2026-10-14 从设置页下线（DeepSeek Harness 不再暴露入口；配置键保留）
 
         # 灵动岛控件构建保留在对话框本体，便于上游直接修改后上传。
@@ -556,7 +554,7 @@ class ModernSettingsDialog(QDialog):
                 "音乐关联",
                 [
                     SettingRow("music_sing", "音乐自动唱歌", "检测到后台播放音乐时，自动播放唱歌动画。", self.music_sing_check),
-                    SettingRow("music_lyric", "显示歌词", "在气泡里显示当前播放歌曲的歌词。仅 Windows 可用；需要播放器支持系统媒体控制（SMTC），酷狗等需在播放器设置里手动开启。网易云音乐不上报播放进度，歌词按开始时间估算——快进或从中途开始播放后，用右键菜单「音乐 → 歌词对齐」校正。", self.music_lyric_check),
+                    SettingRow("music_lyric", "显示歌词", "在气泡里显示当前播放歌曲的歌词。仅 Windows 可用；需要播放器支持系统媒体控制（SMTC），酷狗等需在播放器设置里手动开启。在浏览器里听 YouTube Music 还要打开下面的「浏览器媒体会话参与歌词」。", self.music_lyric_check),
                     SettingRow("music_lyric_lead", "歌词提前量", "歌词相对音频的时间偏移。正值让歌词抢先显示，负值让它延后；唱得比音乐早一点通常更自然。", self.music_lyric_lead_spin),
                 ] + settings_music.browser_media_rows(self),
                 behavior_content,
@@ -1663,8 +1661,7 @@ class ModernSettingsDialog(QDialog):
             [
                 ("显示", claim("scale", "bubble_text_scale", "pet_opacity")),
                 ("动画与移动", claim("playback_speed", "animation_gap", "idle_low_fps", "no_move")),
-                ("音乐关联", claim("music_sing", "music_lyric", "music_lyric_lead", "music_browser_media")
-                 + settings_music.build_music_player_rows(self)),
+                ("音乐关联", claim("music_sing", "music_lyric", "music_lyric_lead", "music_browser_media")),
                 ("拖拽与弹射", claim("drag_physics", "throw_strength", "slingshot_enabled", "lock_position", "shift_drag")),
                 ("边缘探头", claim("edge_probe")),
                 ("生小肥鱼", claim("spawn_inherit_size", "spawn_smaller_than_main", "spawn_scale", "spawn_inherit_dynamic_island", "clear_spawned_pets")),
@@ -2195,7 +2192,6 @@ class ModernSettingsDialog(QDialog):
         if self.ai_page is not None:
             self.ai_page.save()
         settings_file_interpret.save_file_interpret_settings(self)
-        settings_music.save_music_player_settings(self)
         settings_tray.save_tray_icon_setting(self)
         settings_language.save_language_setting(self)
         settings_vscode.save_workspace_settings(self)
