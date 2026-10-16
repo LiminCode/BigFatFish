@@ -31,15 +31,19 @@ SLACK = "https://acme.slack.com/archives/C1/p1"
 class _Fakes:
     """总结 / git / 打开 的替身：都同步跑，记下参数。"""
 
-    def __init__(self, *, ok=True, remind_at="2026-10-16T09:00:00", git_ok=True):
+    def __init__(self, *, ok=True, remind_at="2026-10-16T09:00:00", git_ok=True, fail_first=0):
         self.summaries: list[str] = []
         self.syncs: list[str] = []
         self.pulls = 0
         self.opened: list[str] = []
         self.ok, self.remind_at, self.git_ok = ok, remind_at, git_ok
+        self.fail_first = fail_first   # 前几次总结故意失败（模型偶尔不按约定输出）
 
     def summarize(self, note, now, model):
         self.summaries.append(note.name)
+        if self.fail_first > 0:
+            self.fail_first -= 1
+            return wn.SummaryResult(error="Claude Code 的回答不是约定的 JSON：…")
         if not self.ok:
             return wn.SummaryResult(error="Slack 读不到")
         return wn.SummaryResult(ok=True, summary=f"摘要：{note.title}", details="- 要点", remind_at=self.remind_at,
@@ -87,8 +91,8 @@ def test_adding_a_note_writes_the_file_summarizes_in_the_background_and_pushes(t
     saved = service.note(note.name)
     assert saved.original == f"{SLACK}\n老板说今天看" and saved.summary == "摘要：老板说今天看"
     assert saved.remind_at == "2026-10-16T09:00:00" and "slack" in saved.tags
-    assert fakes.summaries == [note.name] and fakes.syncs == ["note: 总结"]
-    assert summarized == [(note.name, True, "")] and synced == [(True, "")]
+    assert fakes.summaries == [note.name] and fakes.syncs == ["note: 记一条", "note: 总结"], "原文先推、总结完再推"
+    assert summarized == [(note.name, True, "")] and synced == [(True, ""), (True, "")]
     assert service.busy_names == frozenset() and service.last_error() == ""
     assert len(changes) >= 3, "落盘、开始总结、总结完各发一次"
 
@@ -105,8 +109,32 @@ def test_a_failed_summary_keeps_the_note_and_reports_the_reason(tmp_path, repo):
     note = service.add("看一下")
     saved = service.note(note.name)
     assert saved.summary == "" and saved.original == "看一下"
-    assert reports == [(note.name, False, "Slack 读不到")] and fakes.syncs == [], "没总结出来就不推"
+    assert reports == [(note.name, False, "Slack 读不到")]
+    assert fakes.summaries == [note.name, note.name], "失败自动再试一次，再失败才报"
+    assert fakes.syncs == ["note: 记一条"], "原文照样推上去，只是没有总结那一次"
     assert service.last_error() == "Slack 读不到"
+
+
+def test_a_flaky_first_answer_is_retried_once_and_then_saved(tmp_path, repo):
+    """2026-10-15 用户的第二条真实笔记：第一次 91 秒 5 轮失败，同一条再跑一次就成了。"""
+    fakes = _Fakes(fail_first=1)
+    service = _service(tmp_path, repo, fakes)
+    reports = []
+    service.summarized.connect(lambda *a: reports.append(a))
+    note = service.add("看一下")
+    assert fakes.summaries == [note.name, note.name]
+    assert service.note(note.name).summary == "摘要：看一下"
+    assert reports == [(note.name, True, "")], "中间那次失败不打扰用户"
+    assert fakes.syncs == ["note: 记一条", "note: 总结"]
+
+
+def test_a_missing_wsl_is_not_retried(tmp_path, repo):
+    fakes = _Fakes()
+    fakes.summarize = lambda note, now, model: (fakes.summaries.append(note.name),
+                                               wn.SummaryResult(error="没有找到 WSL：…"))[1]
+    service = _service(tmp_path, repo, fakes)
+    note = service.add("x")
+    assert fakes.summaries == [note.name]
 
 
 def test_git_failures_surface_in_last_error(tmp_path, repo):
@@ -124,7 +152,7 @@ def test_snooze_and_done_rewrite_the_file_and_push(tmp_path, repo):
     assert later.remind_at == "2026-10-15T20:40:00" and service.note(note.name).remind_at == "2026-10-15T20:40:00"
     done = service.mark_done(note.name)
     assert done.status == "done" and service.note(note.name).status == "done"
-    assert fakes.syncs == ["note: 总结", "note: 稍后再提醒", "note: 完成"]
+    assert fakes.syncs == ["note: 记一条", "note: 总结", "note: 稍后再提醒", "note: 完成"]
     assert service.snooze("nope", 60) is None and service.mark_done("nope") is None
 
 

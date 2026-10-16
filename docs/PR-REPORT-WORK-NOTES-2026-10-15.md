@@ -238,3 +238,52 @@ summary changed: True
 tests/test_work_briefing_links_and_island.py tests/test_slack_watch.py tests/test_island_english.py
 tests/test_sprite_menu_parity.py tests/test_menu_layout.py` 238 通过。第一轮全量之后只改了文案表、
 放行名单与界面文字，不重跑全量。
+
+---
+
+## 第三轮：第二条真实笔记「没更新」——总结偶发失败，改成失败自动再试、原文先推
+
+### 现场（用户 2026-10-15 20:52）
+
+用户记了一条只有 Slack 永久链接的笔记。标签页里摘要一直是「（还没有总结）」，仓库里那个文件
+也是未跟踪状态。日志：`工作笔记：总结失败，用时 91 秒，5 轮，被拒的工具 1 个`。
+
+诊断（`notes_diag.py`，同一条再跑一次 `claude -p`，只看状态）：
+
+```
+code: 0 | subtype: success | is_error: False | turns: 6
+denied: [('mcp__plugin_atlassian_atlassian__executeRead', ...listJiraIssueComments...)]   ← 按设计不放行，不影响
+parsed: ok=True error=''
+```
+
+同一条第二次就成了：模型第一次大概率没按约定输出 JSON 或用完了轮数（第一次的错误文字没进日志，
+那是故意的——错误里可能带模型转述的公司内容）。被拒的 `executeRead` 是它想读工单评论的通用读
+接口，名单里没放，模型随后用 `getJiraIssue` 照样完成了。
+
+两处产品问题：
+
+1. 总结失败只冒一句气泡，用户没看到就只剩一个空摘要；
+2. **原文没推上仓库**——第一版只在总结成功后才 `git push`，原文留在本地未跟踪。
+
+### 改动
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/work_notes_service.py` | +13 / −3 | `add()` 落盘后立刻推一次（`note: 记一条`），总结完再推一次；总结失败自动再试 `RETRIES = 1` 次（「没有找到 WSL」不重试），只有第二次也失败才发 `summarized(ok=False)`、冒气泡。 |
+| `tests/test_work_notes_ui.py` | +33 / −5 | 推送顺序改成「记一条 → 总结 → 稍后 → 完成」；失败再试一次才报；第一次失败第二次成功时用户看不到中间那次；没 WSL 不重试。 |
+
+### 实机
+
+```
+notes_resummarize.py 2026-10-15-2052-Slack-消息
+ok=True seconds=87.8 turns=5 denied=['mcp__plugin_atlassian_atlassian__executeRead'] error=''
+mentions-unauthorized: False
+remind_at: 2026-10-16T09:00:00 | tags: 4
+sync: True
+summary changed: True
+```
+
+那条笔记已有摘要并推到仓库。肥鱼已重启（`acquired pid=53908`，日志无 Traceback）。
+顺带看到仓库根下多了 `.obsidian/`——用户已把它登记成 Obsidian 库；肥鱼的 git 只 `add note/`，
+不会把 `.obsidian/` 提交上去。门：ruff 全过；`tests/test_work_notes.py tests/test_work_notes_ui.py
+tests/test_work_briefing.py` 98 通过。

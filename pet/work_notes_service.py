@@ -118,6 +118,8 @@ class WorkNotesService(QObject):
             self.changed.emit()
             return None
         self.changed.emit()
+        # 先把原文推上去（总结可能失败，原文不能因此留在本地）；总结完再推一次
+        self._start_sync("note: 记一条")
         self._start_summary(note)
         return note
 
@@ -162,7 +164,10 @@ class WorkNotesService(QObject):
         self._open(str(folder))
 
     # ---------------------------------------------------------- 后台：总结
-    def _start_summary(self, note: wn.Note) -> None:
+    #: 总结失败自动再试的次数（模型偶尔不按约定输出 JSON 或用完轮数；实测同一条第二次就成了）
+    RETRIES = 1
+
+    def _start_summary(self, note: wn.Note, *, attempt: int = 0) -> None:
         self._busy.add(note.name)
         generation, summarize = self._generation, self._summarize
         now, model, name = self._now(), self.settings()["model"], note.name
@@ -173,7 +178,7 @@ class WorkNotesService(QObject):
             except Exception as exc:  # noqa: BLE001
                 result = wn.SummaryResult(error=f"总结时出错：{type(exc).__name__}")
             try:
-                self._summary_done.emit(generation, name, result)
+                self._summary_done.emit(generation, name, (result, attempt))
             except RuntimeError:
                 pass
 
@@ -184,14 +189,19 @@ class WorkNotesService(QObject):
             self._busy.discard(note.name)
         self.changed.emit()
 
-    def _on_summary_done(self, generation: int, name: str, result: wn.SummaryResult) -> None:
+    def _on_summary_done(self, generation: int, name: str, payload) -> None:
         if generation != self._generation:
             return
+        result, attempt = payload if isinstance(payload, tuple) else (payload, self.RETRIES)
         self._busy.discard(name)
         note = self.note(name)
         if note is None:
             self.summarized.emit(name, False, "笔记文件不见了")
             self.changed.emit()
+            return
+        if not result.ok and attempt < self.RETRIES and "WSL" not in result.error:
+            log.info("工作笔记：总结失败（第 %d 次），再试一次", attempt + 1)
+            self._start_summary(note, attempt=attempt + 1)
             return
         if result.ok:
             try:
