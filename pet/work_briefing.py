@@ -59,7 +59,9 @@ _READ_ONLY_TOOLS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
       "slack_search_users", "slack_read_channel", "slack_read_thread",
       "slack_list_user_channels", "slack_read_user_profile")),
     (("mcp__plugin_atlassian_atlassian__", "mcp__claude_ai_Atlassian__"),
-     ("atlassianUserInfo", "getAccessibleAtlassianResources", "searchJiraIssuesUsingJql", "getJiraIssue")),
+     ("atlassianUserInfo", "getAccessibleAtlassianResources", "searchJiraIssuesUsingJql", "getJiraIssue",
+      # Confluence 的读取（2026-10-15 工作笔记里读会议纪要页面被拒后补上；工具名以插件版实测为准）
+      "getConfluenceContent", "searchConfluence", "search", "getGraphObject")),
     (("mcp__claude_ai_Google_Calendar__",), ("list_events", "list_calendars")),
 )
 # 明确拒绝的：这三个服务里会改东西的工具，外加整个邮件 / 网盘连接器（简报用不到）。

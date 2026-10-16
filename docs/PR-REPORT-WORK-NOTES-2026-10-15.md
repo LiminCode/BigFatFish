@@ -179,3 +179,62 @@ $ gh api repos/lwang-sc/AI-Base-Memory/contents/note → 那一个 .md
 - 数据：笔记在 `AI-Base-Memory/note/`（用户的仓库，回滚不动它）；状态文件
   `%APPDATA%\big-fat-fish\work-notes.json` 只记提醒过的时间点，可删。
 - 公司席位用量：每记一条约 10 秒的 `claude -p`；「重新总结」再来一次。
+
+---
+
+## 第二轮：Confluence 读不到、中英文、「稍后」是什么
+
+### 现场（用户 2026-10-15 晚）
+
+用户记了第一条真实笔记（Slack 里同事发来的 Confluence 会议纪要链接）。Slack 那条消息读到了、
+摘要与提醒都写了，但摘要里说「读取 Confluence 的工具调用没有获得授权」，日志
+`工作笔记：总结完成，用时 85 秒，2 轮，被拒的工具 1 个`。
+
+排查（脚本 `atlassian_probe.py`，两次 `claude -p`，各 ~10 s）：
+
+```
+== tools: 公司侧 Atlassian 是插件版命名 mcp__plugin_atlassian_atlassian__*，共 12 个：
+   atlassianUserInfo, discover, executeRead, getAccessibleAtlassianResources, getConfluenceContent,
+   getGraphContext, getGraphObject, getJiraIssue, getLoomVideo, search, searchConfluence, searchJiraIssuesUsingJql
+== auth: 调用 atlassianUserInfo → OK（连接器授权正常）
+```
+
+根因不是授权，是**放行名单**：简报 / 笔记共用的 `_READ_ONLY_TOOLS` 里 Atlassian 只有 Jira 的四个
+读取工具，没有 `getConfluenceContent` / `searchConfluence`，无界面模式下没放行的工具一律被拒。
+
+### 改动
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/work_briefing.py` | +? / −? | Atlassian 读取名单加 `getConfluenceContent`、`searchConfluence`、`search`、`getGraphObject`（简报也因此能读 Confluence；`executeRead` / `discover` / `getLoomVideo` 没放）。 |
+| `pet/locale/zh.json`、`pet/locale/en.json` | +? / −?、+? / −? | 笔记的全部文案 35 个键（`notes.*`、`briefing.tab.briefing`）。 |
+| `pet/work_notes_ui.py` | +? / −? | 所有界面文字、气泡、提醒按钮走 `i18n.t`。 |
+| `pet/work_notes.py` | +? / −? | 「稍后」几档改成文案键；稍后的理由走 `t`；提示词里摘要语言跟随界面语言（`notes.prompt.language`：中文 / English）。 |
+| `pet/work_briefing_ui.py`、`pet/app.py`、`pet/context_menus/shared.py` | +? / −?、+? / −?、+? / −? | 「简报」「笔记」标签与菜单「工作笔记」走 `t`。 |
+| `tests/test_work_notes_ui.py` | +? / −? | 英文界面用例（按钮、稍后菜单、列表行、原文标题、气泡、稍后理由、提示词语言、简报标签）；两张表都有全部 `notes.*` 键。 |
+
+用户的三个问题：
+
+- **「稍后」**：提醒气泡 / 标签页上的「稍后」= 把这条的提醒时间往后推（1 小时后、3 小时后、
+  或明早 9 点），笔记本身不动，到了新时间再提醒一次。
+- **中英文**：新功能文案全部进 `pet/locale`，跟随「界面语言」设置；换语言后重开简报窗口生效。
+- **设置页的解释**（下一轮）：用户要求进设置页时加一个浮动的「流程」图标，悬停解释这条流程
+  （记一条 → 公司 Claude 读链接 → 摘要 / 提醒 → 推到 AI-Base-Memory），记在 memory 里。
+
+### 实机
+
+放行名单补上后把那条笔记重新总结一次（`notes_resummarize.py`，只打印状态不打印内容）：
+
+```
+ok=True seconds=14.3 turns=2 denied=[] error=''
+mentions-unauthorized: False
+remind_at: 2026-10-16T09:00:00 | tags: 4
+sync: True
+summary changed: True
+```
+
+肥鱼已重启（`acquired pid=53596`），日志无 Traceback。门：ruff 全过；
+`tests/test_work_notes.py tests/test_work_notes_ui.py tests/test_i18n.py tests/test_work_briefing.py
+tests/test_work_briefing_links_and_island.py tests/test_slack_watch.py tests/test_island_english.py
+tests/test_sprite_menu_parity.py tests/test_menu_layout.py` 238 通过。第一轮全量之后只改了文案表、
+放行名单与界面文字，不重跑全量。

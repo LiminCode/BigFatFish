@@ -35,6 +35,7 @@ from urllib.parse import quote
 from . import claude_hooks
 from . import slack_watch as sw
 from . import work_briefing as wb
+from .i18n import t
 
 CONFIG_KEY = "work_notes"
 NOTES_DIR = "note"
@@ -48,8 +49,8 @@ MAX_TAG_CHARS = 24
 MAX_TAGS = 6
 BASE_TAG = "work/note"
 STATUS_OPEN, STATUS_DONE = "open", "done"
-#: 提醒气泡里「稍后」的几档（标签, 分钟）
-SNOOZE_CHOICES = (("1 小时后", 60), ("3 小时后", 180), ("明早 9 点", -1))
+#: 「稍后」的几档（文案键, 分钟；-1 = 明早 9 点）
+SNOOZE_CHOICES = (("notes.snooze.hour", 60), ("notes.snooze.three_hours", 180), ("notes.snooze.tomorrow", -1))
 PLACEHOLDER_SUMMARY = "（还没有总结）"
 PLACEHOLDER_REMIND = "（无）"
 
@@ -336,7 +337,7 @@ _PROMPT = """你是我的工作笔记助手。现在是 {now}（本地时间）�
 
 要做的事：
 1. 补背景：原文里有 Slack 永久链接就用 Slack 工具读那条消息和它所在的线程（最近 20 条以内）；有 Jira 工单号或 /browse/ 链接就用 Atlassian 工具读工单（标题、状态、负责人、截止、最近几条评论）；Confluence 链接同理读页面标题和开头。读不到就写明原因，不要编。什么链接都没有就只根据原文。
-2. 写摘要（中文）：`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
+2. 写摘要（用{language}写）：`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
 3. 定提醒：`remind_at` 是下次提醒我的本地时间（ISO 8601，精确到分钟，如 2026-10-16T09:00）；有截止、会议、等别人回复之类的明确节点就据此定，没有就定在我下次该回头看的时候（上班时间 9:00～18:00 内）；完全不需要提醒就写 null。`reason` 用一句话说明为什么是这个时候。
 4. 标签：`tags` 给 1～4 个，小写英文或中文，不带 #，例如 jira、slack、评审、等回复。
 
@@ -365,7 +366,7 @@ class SummaryResult:
 
 
 def build_prompt(note: Note, now: dt.datetime) -> str:
-    return _PROMPT.format(now=f"{now:%Y-%m-%d %H:%M}", original=note.original)
+    return _PROMPT.format(now=f"{now:%Y-%m-%d %H:%M}", original=note.original, language=t("notes.prompt.language"))
 
 
 def _clean_tags(raw) -> list[str]:
@@ -468,10 +469,10 @@ def snooze(note: Note, minutes: int, now: dt.datetime) -> Note:
     """``minutes < 0`` = 明早 9 点。"""
     if minutes < 0:
         when = (now + dt.timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
-        label = "稍后：明早再提醒"
+        label = t("notes.snooze.reason_tomorrow")
     else:
         when = now + dt.timedelta(minutes=minutes)
-        label = f"稍后：{minutes} 分钟后再提醒"
+        label = t("notes.snooze.reason_minutes", n=minutes)
     return note.replace(remind_at=_iso(when), reason=label, status=STATUS_OPEN)
 
 

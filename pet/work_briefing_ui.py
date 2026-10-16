@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTabWidget, QTextBrowser, QVBoxLayout, QWidget
 
 from . import work_briefing as wb
+from .i18n import t
 from .settings_widgets import _system_dark
 
 ALERT_ID = "work-briefing"
@@ -118,7 +119,7 @@ class WorkBriefingWindow(QWidget):
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("briefingTabs")
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self.briefing_page, "简报")
+        self.tabs.addTab(self.briefing_page, t("briefing.tab.briefing"))
         self.tabs.tabBar().setVisible(False)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)

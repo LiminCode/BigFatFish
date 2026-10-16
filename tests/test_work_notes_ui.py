@@ -310,6 +310,44 @@ def test_without_the_notes_service_the_menu_is_unchanged(briefing_shell):  # noq
     assert _find(menu, "工作笔记") is None
 
 
+def test_the_panel_speaks_english_when_the_ui_language_is_english(tmp_path, repo):
+    """用户 2026-10-15：新功能要支持中英文（界面语言已经能切）。"""
+    from pet import i18n
+
+    service = _service(tmp_path, repo, _Fakes(remind_at="2026-10-16T09:00:00"))
+    service._config.set("ui_language", "en")   # 和真实路径一样：语言由 Config 设置
+    try:
+        assert i18n.current_language() == "en"
+        host = _Host()
+        panel = WorkNotesController(host, service, colors=_COLORS).panel()
+        assert panel.add_btn.text() == "Save" and panel.obsidian_btn.text() == "Open in Obsidian"
+        assert [a.text() for a in panel.snooze_menu.actions()] == ["In 1 hour", "In 3 hours", "Tomorrow 9:00"]
+        assert "No notes yet" in panel.hint_label.text()
+        panel.input.setPlainText("look at this")
+        panel.add_btn.click()
+        assert panel.list.item(0).text() == "● look at this · remind 10-16 09:00"
+        assert "**Original**" in detail_markdown(service.notes()[0], False)
+        assert host.bubbles[-1].startswith("Saved")
+        later = service.snooze(service.notes()[0].name, 60)
+        assert later.reason == "Snoozed: remind again in 60 min"
+        assert "用English写" in wn.build_prompt(later, NOW)
+        window = WorkBriefingWindow()
+        assert window.tabs.tabText(0) == "Briefing"
+        window.close()
+    finally:
+        i18n.set_language("zh")
+
+
+def test_every_notes_string_has_both_languages():
+    from pet import i18n
+
+    zh, en = i18n.table("zh"), i18n.table("en")
+    keys = [k for k in zh if k.startswith("notes.")]
+    assert len(keys) >= 30 and all(k in en for k in keys)
+    for key, _minutes in wn.SNOOZE_CHOICES:
+        assert key in zh and key in en
+
+
 def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
     """接线函数本身：开关关着不建；开着就把页挂到简报控制器上。"""
     from pet.app import AppShell

@@ -3014,14 +3014,15 @@ class AppShell:
             return
         try:
             from .work_notes_service import WorkNotesService
+            from .i18n import t
             from .work_notes_ui import WorkNotesController
 
             service = WorkNotesService(self.config, parent=self.app)
             if not service.settings()["enabled"]:
                 return
             controller = WorkNotesController(self._overlay_shell, service,
-                                             open_window=lambda: briefing.open_window(tab="笔记"))
-            briefing.tab_providers.append(lambda: [("笔记", controller.panel())])
+                                             open_window=lambda: briefing.open_window(tab=t("notes.tab")))
+            briefing.tab_providers.append(lambda: [(t("notes.tab"), controller.panel())])
             self._work_notes = controller
             self._overlay_shell.work_notes = controller
             service.start()
