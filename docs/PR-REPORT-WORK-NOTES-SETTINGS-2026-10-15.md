@@ -108,3 +108,43 @@ sync: True
 ## 八、风险与回滚
 
 - 无配置迁移；`git revert` 即可。笔记文件里多出的字段对旧版本只是未知的 frontmatter 键，读不坏。
+
+---
+
+## 第二轮：流程说明改成折叠节、菜单入口上提一层、笔记可删
+
+### 现场（用户 2026-10-15 看了第一版之后）
+
+1. 悬停在流程图标上弹出的 tooltip **没有排版**（Qt 的 tooltip 把 `<b>` / `<br>` 当了纯文本）→ 改成设置页里
+   「这个功能怎么运作」**折叠节**（默认收起，展开是一块带排版的说明磁贴）。
+2. 右键菜单 Agent 联动 → 工作简报 → 工作笔记 **太深** → 「工作笔记」直接放在 Agent 联动 这一层。
+3. 笔记要能**删除**。
+
+### 改动
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/settings_work_notes.py` | +19 / −22 | 去掉流程图标；`flow_section()`：`SettingsSection(advanced=True)`（默认收起的折叠头）+ 一行，说明文字放在行的提示标签（`settingHint`）里，设成富文本、可选中；一个 0×0 的占位控件填控件格。 |
+| `pet/modern_settings_dialog.py` | +1 / −0 | 「自动化与联动」第 5 节挂上折叠节。 |
+| `pet/context_menus/shared.py` | +3 / −2 | 「工作笔记」从 `add_work_briefing_menu` 挪到 `add_agent_link_menu`，排在「工作简报」子菜单之前。 |
+| `pet/work_notes_service.py` | +16 / −0 | `delete(name)`：删文件、发 `changed`、推一次（`note: 删除`）。 |
+| `pet/work_notes_ui.py` | +33 / −3 | 面板「删除」按钮与 `delete_requested`；控制器 `delete()`：先问（`confirm` 可注入，默认 `QMessageBox.question`），确认才删，冒一句「删掉了」。 |
+| `pet/locale/zh.json`、`pet/locale/en.json` | +6 / −2、+6 / −2 | 删除按钮、问询标题 / 正文、删掉了；折叠节行的提示改口。 |
+| `scripts/capture_work_notes_settings.py` | +19 / −18 | 抓「工作笔记」两节（设置 + 展开的折叠节），抓之前先切到那一页（没显示过的页不排版，抓出来是空白）。 |
+| `tests/test_settings_work_notes.py` | +18 / −11 | 折叠节默认收起、点开展开、说明是富文本含 5 步；英文。 |
+| `tests/test_work_notes_ui.py` | +34 / −0 | 菜单入口是 Agent 联动 的直接子项且不在 工作简报 里；删除：拒绝不动、确认后文件没了并推送、列表清空、按钮置灰。 |
+
+### 一个截图抓出来的坑
+
+第一版折叠节的说明文字在截图里是空白：我给提示标签改了 objectName，设置页样式表里 `QLabel#settingHint`
+的颜色规则就不再命中，标签退回调色板的 WindowText——在这个对话框里是白色，白字白底。保持
+objectName 不动就好。第二个坑：抓一个从没显示过的页，控件没排版，抓出来也是空白——先 `setCurrentIndex`
+切过去再抓。
+
+### 实机
+
+- 截图重抓：`docs/screenshots/work-notes-settings-2026-10-15/`（明 / 暗 × 中 / 英，上半是设置节、下半是展开的
+  「这个功能怎么运作」，5 步排版可见）；`docs/screenshots/briefing-metro-2026-10-15/notes-*.png`（底部多了「删除」）。
+- 肥鱼已重启（`acquired pid=46568`，日志无 Traceback）。右键 Agent 联动 里现在直接有「工作笔记」。
+- 门：ruff 全过；`tests/test_settings_work_notes.py tests/test_work_notes_ui.py tests/test_work_notes.py tests/test_i18n.py
+  tests/test_sprite_menu_parity.py tests/test_work_briefing.py` 129 通过；全量：`4 failed, 5359 passed, 11 skipped in 443.06s (0:07:23)`，4 个失败是本机既有的环境性基线（同前）。

@@ -8,38 +8,39 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
 
 from . import claude_hooks
 from . import work_notes as wn
-from .context_menus.icons import vector_menu_icon
 from .i18n import t
-from .settings_widgets import ModernSelect, SettingRow, TiltButton, ToggleSwitch
+from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleSwitch
 
 #: 模型下拉里的几个常用名（和 Slack 关注一致）；配置里写了别的也认（当作自定义）
 MODEL_CHOICES = (("sonnet", "Sonnet"), ("haiku", "Haiku"), ("opus", "Opus"))
 CUSTOM = "__custom__"
-FLOW_ICON = "automation"
 
 
 def section_title() -> str:
     return t("notes.settings.section")
 
 
-def flow_button(parent) -> TiltButton:
-    """「流程」图标：一块小磁贴，悬停弹出完整流程的说明（富文本 tooltip）。"""
-    button = TiltButton("", parent)
-    button.setObjectName("workNotesFlow")
-    button.setIcon(vector_menu_icon(button, FLOW_ICON, 18))
-    button.setIconSize(QSize(18, 18))
-    button.setFixedSize(36, 30)
-    button.setCursor(Qt.CursorShape.WhatsThisCursor)
-    button.setToolTip(t("notes.settings.flow_tooltip"))
-    button.setAccessibleName(t("notes.settings.flow"))
-    button.setAccessibleDescription(t("notes.settings.flow_tooltip"))
-    button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-    return button
+def flow_section(dialog) -> SettingsSection:
+    """「这个功能怎么运作」：默认收起的折叠节，展开是一块带排版的说明磁贴（用户 2026-10-15：悬停的
+    tooltip 没有排版，改成折叠节）。说明文字放在设置行的提示标签里——它会按宽度换行、按主题取色；
+    一个零尺寸的占位控件填「控件」那一格。挂 ``dialog.work_notes_flow_label`` / ``work_notes_flow_section``。"""
+    placeholder = QWidget(dialog)
+    placeholder.setFixedSize(0, 0)
+    row = SettingRow("work_notes_flow", t("notes.settings.flow_hint"), t("notes.settings.flow_tooltip"), placeholder)
+    label: QLabel = row.hint_label      # 保持 objectName=settingHint：颜色由设置页样式表给，改名就成了白字
+    label.setTextFormat(Qt.TextFormat.RichText)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    label.setAccessibleName(t("notes.settings.flow"))
+    dialog.work_notes_flow_label = label
+    section = SettingsSection(t("notes.settings.flow"), [row], advanced=True)
+    dialog.work_notes_flow_section = section
+    return section
 
 
 def work_notes_rows(dialog) -> list[SettingRow]:
@@ -78,11 +79,7 @@ def work_notes_rows(dialog) -> list[SettingRow]:
     dialog.work_notes_model_select = select
     dialog.work_notes_model_edit = edit
 
-    flow = flow_button(dialog)
-    dialog.work_notes_flow_button = flow
-
     return [
-        SettingRow("work_notes_flow", t("notes.settings.flow"), t("notes.settings.flow_hint"), flow),
         SettingRow("work_notes_enabled", t("notes.settings.enabled"),
                    t("notes.settings.enabled_hint") if usable else t("notes.settings.no_wsl"), check),
         SettingRow("work_notes_repo_dir", t("notes.settings.repo_dir"), t("notes.settings.repo_dir_hint"), repo),

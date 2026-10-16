@@ -388,8 +388,6 @@ def add_work_briefing_menu(menu: QMenu, pet) -> None:
     sub = add_submenu(menu, "工作简报", None)
     add_action(sub, "查看最近一份", None, pet.open_work_briefing, close_on_trigger=True)
     add_action(sub, "现在生成", None, pet.generate_work_briefing, close_on_trigger=True)
-    if getattr(getattr(pet, "_shell", None), "work_notes", None) is not None:
-        add_action(sub, t("notes.menu.open"), None, pet.open_work_notes, close_on_trigger=True)
     sub.addSeparator()
     act = sub.addAction("工作日自动生成")
     act.setCheckable(True)
@@ -516,6 +514,9 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(rows == current_rows)
                 rows_group.addAction(choice)
                 connect_action(choice, lambda rows=rows: set_rows(rows))
+    # 「工作笔记」直接放在这一层（用户 2026-10-15：Agent 联动 → 工作简报 → 工作笔记 太深）
+    if getattr(getattr(pet, "_shell", None), "work_notes", None) is not None:
+        add_action(sub, t("notes.menu.open"), None, pet.open_work_notes, close_on_trigger=True)
     add_work_briefing_menu(sub, pet)
     add_slack_watch_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：

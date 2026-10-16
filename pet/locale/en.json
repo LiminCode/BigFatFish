@@ -162,6 +162,10 @@
   "notes.settings.custom_model": "Custom model name",
   "notes.settings.custom_choice": "Custom…",
   "notes.settings.flow": "How it works",
-  "notes.settings.flow_hint": "Hover the flow icon on the right for the whole flow, so the details are not forgotten over time.",
-  "notes.settings.flow_tooltip": "<b>How work notes flow</b><br>1. Paste a Slack / Jira link or a few words on the “Notes” page of the briefing window, Ctrl+Enter.<br>2. The fish writes the original verbatim to note/date-title.md (Obsidian format) and pushes it to AI-Base-Memory.<br>3. In the background, Claude Code in WSL (work account) follows the links <b>read-only</b>, writes a summary, picks the next reminder time and tags; the fish writes it back and pushes again. One automatic retry on failure.<br>4. When the time comes and you are at the computer, a sticky bubble appears: View / Later / Done.<br>5. “Open in Obsidian” jumps to the note (register the repo folder as a vault first).<br>Each note records which model it used, how many tokens and what it cost."
+  "notes.settings.flow_hint": "Expand to see the whole flow, so the details are not forgotten over time.",
+  "notes.settings.flow_tooltip": "<b>How work notes flow</b><br>1. Paste a Slack / Jira link or a few words on the “Notes” page of the briefing window, Ctrl+Enter.<br>2. The fish writes the original verbatim to note/date-title.md (Obsidian format) and pushes it to AI-Base-Memory.<br>3. In the background, Claude Code in WSL (work account) follows the links <b>read-only</b>, writes a summary, picks the next reminder time and tags; the fish writes it back and pushes again. One automatic retry on failure.<br>4. When the time comes and you are at the computer, a sticky bubble appears: View / Later / Done.<br>5. “Open in Obsidian” jumps to the note (register the repo folder as a vault first).<br>Each note records which model it used, how many tokens and what it cost.",
+  "notes.button.delete": "Delete",
+  "notes.confirm.delete_title": "Delete this note?",
+  "notes.confirm.delete_text": "“{title}” will be removed from the repo and pushed; it disappears from Obsidian too.",
+  "notes.bubble.deleted": "Deleted: {title}"
 }

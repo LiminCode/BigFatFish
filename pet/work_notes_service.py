@@ -151,6 +151,22 @@ class WorkNotesService(QObject):
         self._start_sync(message)
         return updated
 
+    def delete(self, name: str) -> wn.Note | None:
+        """删一条：文件从 note/ 里删掉，再推一次（仓库与 Obsidian 里一起消失）。不存在返回 None。"""
+        note = self.note(name)
+        if note is None:
+            return None
+        try:
+            (self.notes_dir() / note.filename).unlink()
+        except OSError as exc:
+            self._last_error = f"删不掉笔记文件：{exc.strerror or exc}"
+            self.changed.emit()
+            return None
+        self._busy.discard(name)
+        self.changed.emit()
+        self._start_sync("note: 删除")
+        return note
+
     def open_in_obsidian(self, name: str) -> bool:
         """在 Obsidian 里打开这条；仓库没登记成库就退回打开文件夹，返回 False 让调用方提示一句。"""
         note = self.note(name)

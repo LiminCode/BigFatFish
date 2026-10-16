@@ -15,7 +15,7 @@ os.environ["APPDATA"] = tempfile.mkdtemp(prefix="bff-capture-settings-")
 
 from PySide6.QtCore import QPoint  # noqa: E402
 from PySide6.QtGui import QColor, QPainter, QPixmap  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -24,8 +24,8 @@ from pet.config import Config  # noqa: E402
 from pet.settings_widgets import SettingRow, SettingsSection  # noqa: E402
 
 
-def _section_of(dialog) -> SettingsSection:
-    row = dialog.findChild(SettingRow, "settingRow_work_notes_flow")
+def _section_of(dialog, row_id: str) -> SettingsSection:
+    row = dialog.findChild(SettingRow, row_id)
     widget = row
     while widget is not None and not isinstance(widget, SettingsSection):
         widget = widget.parentWidget()
@@ -48,23 +48,24 @@ def capture(out_dir: Path) -> list[Path]:
             dialog.resize(1100, 760)
             dialog.show()
             app.processEvents()
-            section = _section_of(dialog)
-            section.setFixedWidth(820)
-            app.processEvents()
-            shot = section.grab()
-            # 把悬停说明画在截图下面（真实界面里是鼠标放到流程图标上弹出的 tooltip）
-            tip = QLabel(dialog.work_notes_flow_button.toolTip())
-            tip.setWordWrap(True)
-            tip.setFixedWidth(820)
-            tip.setStyleSheet("background: #fffbe6; color: #222; padding: 10px; font-size: 12px;")
-            tip.adjustSize()
-            app.processEvents()
-            tip_shot = tip.grab()
-            canvas = QPixmap(max(shot.width(), tip_shot.width()), shot.height() + tip_shot.height() + 12)
-            canvas.fill(QColor("#ffffff"))
+            section = _section_of(dialog, "settingRow_work_notes_enabled")
+            flow = dialog.work_notes_flow_section
+            # 切到这一节所在的页：没显示过的页不会排版，抓出来的是空白
+            for index in range(dialog.pages.count()):
+                if dialog.pages.widget(index).isAncestorOf(section):
+                    dialog.pages.setCurrentIndex(index)
+                    dialog.sidebar.setCurrentRow(index)
+            flow.toggle.setChecked(True)   # 展开「这个功能怎么运作」
+            for widget in (section, flow):
+                widget.setFixedWidth(820)
+            for _ in range(3):
+                app.processEvents()
+            shot, flow_shot = section.grab(), flow.grab()
+            canvas = QPixmap(max(shot.width(), flow_shot.width()), shot.height() + flow_shot.height() + 12)
+            canvas.fill(QColor(dialog.palette().window().color()))
             painter = QPainter(canvas)
             painter.drawPixmap(QPoint(0, 0), shot)
-            painter.drawPixmap(QPoint(0, shot.height() + 12), tip_shot)
+            painter.drawPixmap(QPoint(0, shot.height() + 12), flow_shot)
             painter.end()
             path = out_dir / f"settings-work-notes-{theme}-{language}.png"
             canvas.save(str(path))

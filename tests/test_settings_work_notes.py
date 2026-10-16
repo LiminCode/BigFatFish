@@ -13,7 +13,6 @@ from pet import i18n
 from pet import settings_work_notes as swn
 from pet import work_notes as wn
 from pet.config import Config
-from pet.settings_widgets import TiltButton
 
 app = QApplication.instance() or QApplication([])
 
@@ -66,16 +65,23 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
         _close(dialog)
 
 
-def test_the_flow_icon_explains_the_whole_flow_on_hover(tmp_path, monkeypatch):
-    """用户 2026-10-15：进设置页要带解释——一个浮动的流程图标，悬停讲清楚流程，免得日久忘了细节。"""
+def test_the_flow_lives_in_a_collapsed_section_with_formatted_text(tmp_path, monkeypatch):
+    """用户 2026-10-15：进设置页要带解释，免得日久忘了细节；悬停的 tooltip 没有排版，改成「这个功能怎么运作」折叠节。"""
+    from PySide6.QtCore import Qt
+
     _config, dialog = _dialog(tmp_path, monkeypatch)
     try:
-        button = dialog.work_notes_flow_button
-        assert isinstance(button, TiltButton) and not button.icon().isNull()
-        tip = button.toolTip()
-        for step in ("1.", "2.", "3.", "4.", "5.", "只读", "Obsidian", "AI-Base-Memory", "token"):
-            assert step in tip, step
-        assert button.accessibleDescription() == tip, "读屏也能拿到同一段说明"
+        section = dialog.work_notes_flow_section
+        assert section.toggle is not None and section.toggle.text() == "这个功能怎么运作"
+        assert not section.card.isVisibleTo(section), "默认收起"
+        section.toggle.setChecked(True)
+        assert section.card.isVisibleTo(section), "点一下展开"
+        label = dialog.work_notes_flow_label
+        assert label.textFormat() == Qt.TextFormat.RichText and label.wordWrap()
+        text = label.text()
+        for step in ("<b>", "1.", "2.", "3.", "4.", "5.", "只读", "Obsidian", "AI-Base-Memory", "token"):
+            assert step in text, step
+        assert _row_page(dialog, "work_notes_flow") == "自动化与联动"
     finally:
         _close(dialog)
 
@@ -119,8 +125,9 @@ def test_the_section_speaks_english(tmp_path, monkeypatch):
         from pet.settings_widgets import SettingRow
 
         assert dialog.findChild(SettingRow, "settingRow_work_notes_enabled").label.text() == "Enable work notes"
-        assert dialog.findChild(SettingRow, "settingRow_work_notes_flow").label.text() == "How it works"
-        assert "read-only" in dialog.work_notes_flow_button.toolTip()
+        assert dialog.findChild(SettingRow, "settingRow_work_notes_flow").label.text().startswith("Expand to see")
+        assert "read-only" in dialog.work_notes_flow_label.text()
+        assert dialog.work_notes_flow_section.toggle.text() == "How it works"
         assert dialog.work_notes_model_select.itemText(dialog.work_notes_model_select.findData(swn.CUSTOM)) == "Custom…"
     finally:
         _close(dialog)

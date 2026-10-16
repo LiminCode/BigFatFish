@@ -287,6 +287,37 @@ def test_obsidian_hint_when_the_vault_is_not_registered(tmp_path, repo, monkeypa
     assert any("Open folder as vault" in text for text in host.bubbles)
 
 
+def test_delete_asks_first_then_removes_the_file_and_pushes(tmp_path, repo):
+    """用户 2026-10-15：notes 要能删。删前问一句；确认了文件没了、推一次；拒绝了什么都不动。"""
+    fakes = _Fakes()
+    service = _service(tmp_path, repo, fakes)
+    host = _Host()
+    answers: list[bool] = []
+    asked: list[tuple[str, str]] = []
+
+    def confirm(title, text):
+        asked.append((title, text))
+        return answers.pop(0)
+
+    controller = WorkNotesController(host, service, colors=_COLORS, confirm=confirm)
+    panel = controller.panel()
+    note = service.add("要删的")
+    path = repo / "note" / note.filename
+    assert panel.delete_btn.isEnabled() and path.exists()
+
+    answers.append(False)
+    panel.delete_btn.click()
+    assert path.exists() and asked[-1][0] == "删除这条笔记？" and "要删的" in asked[-1][1]
+    assert fakes.syncs[-1] != "note: 删除"
+
+    answers.append(True)
+    panel.delete_btn.click()
+    assert not path.exists() and fakes.syncs[-1] == "note: 删除"
+    assert panel.list.count() == 0 and not panel.delete_btn.isEnabled()
+    assert host.bubbles[-1] == "删掉了：要删的"
+    assert service.delete("nope") is None
+
+
 # ---------------------------------------------------------------- 挂进简报窗口
 def test_the_briefing_window_mounts_a_second_pivot_page():
     window = WorkBriefingWindow()
@@ -325,6 +356,9 @@ def test_the_menu_offers_the_notes_page_under_the_briefing(briefing_shell, tmp_p
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
     entry = _find(menu, "工作笔记")
     assert entry is not None
+    agent_link = _find(menu, "Agent 联动").menu()
+    assert entry in agent_link.actions(), "用户 2026-10-15：直接放在 Agent 联动 这一层，不藏在 工作简报 里"
+    assert _find(_find(agent_link, "工作简报").menu(), "工作笔记") is None
     try:
         entry.trigger()
         assert briefing.window is not None and briefing.window.tabs.tabText(briefing.window.tabs.currentIndex()) == "笔记"

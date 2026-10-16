@@ -154,6 +154,10 @@
   "notes.settings.custom_model": "自定义模型名",
   "notes.settings.custom_choice": "自定义…",
   "notes.settings.flow": "这个功能怎么运作",
-  "notes.settings.flow_hint": "把鼠标放到右边的流程图标上，看完整流程——免得日子久了忘了细节。",
-  "notes.settings.flow_tooltip": "<b>工作笔记的流程</b><br>1. 在简报窗口「笔记」页粘贴 Slack / Jira 链接或一段话，Ctrl+Enter。<br>2. 肥鱼立刻把原文逐字写成 note/日期-标题.md（Obsidian 格式），git push 到 AI-Base-Memory。<br>3. 后台让 WSL 里的公司 Claude Code <b>只读</b>地顺着链接读消息 / 工单 / 页面，写摘要、定下次提醒、打标签；肥鱼写回文件、再 push。失败自动再试一次。<br>4. 到点且你在电脑前，冒一个留到点为止的气泡：查看 / 稍后 / 完成。<br>5. 「在 Obsidian 打开」跳到那条（仓库目录要先在 Obsidian 里登记成库）。<br>每条笔记底部记着用了哪个模型、多少 token、多少钱。"
+  "notes.settings.flow_hint": "展开看完整流程——免得日子久了忘了细节。",
+  "notes.settings.flow_tooltip": "<b>工作笔记的流程</b><br>1. 在简报窗口「笔记」页粘贴 Slack / Jira 链接或一段话，Ctrl+Enter。<br>2. 肥鱼立刻把原文逐字写成 note/日期-标题.md（Obsidian 格式），git push 到 AI-Base-Memory。<br>3. 后台让 WSL 里的公司 Claude Code <b>只读</b>地顺着链接读消息 / 工单 / 页面，写摘要、定下次提醒、打标签；肥鱼写回文件、再 push。失败自动再试一次。<br>4. 到点且你在电脑前，冒一个留到点为止的气泡：查看 / 稍后 / 完成。<br>5. 「在 Obsidian 打开」跳到那条（仓库目录要先在 Obsidian 里登记成库）。<br>每条笔记底部记着用了哪个模型、多少 token、多少钱。",
+  "notes.button.delete": "删除",
+  "notes.confirm.delete_title": "删除这条笔记？",
+  "notes.confirm.delete_text": "「{title}」会从仓库里删掉并推送，Obsidian 里也会消失。",
+  "notes.bubble.deleted": "删掉了：{title}"
 }

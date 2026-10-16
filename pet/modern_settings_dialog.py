@@ -1830,6 +1830,7 @@ class ModernSettingsDialog(QDialog):
         automation_layout.insertWidget(3, SettingsSection("Slack 关注", settings_slack_watch.slack_watch_rows(self), automation))
         automation_layout.insertWidget(4, SettingsSection(settings_work_notes.section_title(),
                                                           settings_work_notes.work_notes_rows(self), automation))
+        automation_layout.insertWidget(5, settings_work_notes.flow_section(self))
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报

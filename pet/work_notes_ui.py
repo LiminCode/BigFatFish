@@ -89,6 +89,7 @@ class WorkNotesPanel(QWidget):
     snooze_requested = Signal(str, int)
     obsidian_requested = Signal(str)
     folder_requested = Signal()
+    delete_requested = Signal(str)
 
     def __init__(self, colors: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -137,6 +138,8 @@ class WorkNotesPanel(QWidget):
         self.done_btn.clicked.connect(lambda: self._emit_current(self.done_requested))
         self.folder_btn = TiltButton(t("notes.button.folder"), self)
         self.folder_btn.clicked.connect(self.folder_requested)
+        self.delete_btn = TiltButton(t("notes.button.delete"), self)
+        self.delete_btn.clicked.connect(lambda: self._emit_current(self.delete_requested))
         self.status_label = QLabel("", self)
         self.status_label.setObjectName("notesStatus")
         self.status_label.setWordWrap(True)
@@ -148,7 +151,8 @@ class WorkNotesPanel(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         buttons.addWidget(self.status_label, 1)
-        for button in (self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn, self.folder_btn):
+        for button in (self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn, self.delete_btn,
+                       self.folder_btn):
             buttons.addWidget(button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -228,6 +232,7 @@ class WorkNotesPanel(QWidget):
         has = note is not None
         open_note = has and note.status != wn.STATUS_DONE
         self.obsidian_btn.setEnabled(has)
+        self.delete_btn.setEnabled(has)
         self.snooze_btn.setEnabled(open_note)
         self.done_btn.setEnabled(open_note)
         self.resummarize_btn.setEnabled(has and not busy)
@@ -237,16 +242,27 @@ class WorkNotesPanel(QWidget):
         self.detail.setMarkdown(detail_markdown(note, busy))
 
 
+def _ask(title: str, text: str) -> bool:
+    """删除前问一句（系统的问询框；测试里换成假函数）。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    answer = QMessageBox.question(None, title, text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                  QMessageBox.StandardButton.No)
+    return answer == QMessageBox.StandardButton.Yes
+
+
 class WorkNotesController(QObject):
-    """把服务接到标签页和提醒气泡上。``open_window``：怎么把简报窗口开到「笔记」那一页。"""
+    """把服务接到标签页和提醒气泡上。``open_window``：怎么把简报窗口开到「笔记」那一页；``confirm``：删除前的问询。"""
 
     def __init__(self, host, service, *, open_window: Callable[[], None] | None = None,
-                 colors: dict | None = None, parent: QObject | None = None) -> None:
+                 colors: dict | None = None, confirm: Callable[[str, str], bool] | None = None,
+                 parent: QObject | None = None) -> None:
         super().__init__(parent or service)
         self._host = host
         self.service = service
         self._open_window = open_window or (lambda: None)
         self._colors = colors
+        self._confirm = confirm or _ask
         self._panel: WorkNotesPanel | None = None
         service.changed.connect(self._refresh)
         service.summarized.connect(self._on_summarized)
@@ -265,6 +281,7 @@ class WorkNotesController(QObject):
             panel.snooze_requested.connect(self.service.snooze)
             panel.obsidian_requested.connect(self.open_in_obsidian)
             panel.folder_requested.connect(self.service.open_folder)
+            panel.delete_requested.connect(self.delete)
             self._panel = panel
             self._refresh()
         return self._panel
@@ -285,6 +302,19 @@ class WorkNotesController(QObject):
     def open_in_obsidian(self, name: str) -> None:
         if not self.service.open_in_obsidian(name):
             self._host.show_bubble(t("notes.bubble.obsidian_hint"), 8000)
+
+    def delete(self, name: str) -> bool:
+        """删一条：先问一句，确认了才删文件并推送。"""
+        note = self.service.note(name)
+        if note is None:
+            return False
+        if not self._confirm(t("notes.confirm.delete_title"), t("notes.confirm.delete_text", title=note.title)):
+            return False
+        if self.service.delete(name) is None:
+            self._host.show_bubble(self.service.last_error() or t("notes.bubble.not_saved", reason=""), 5000)
+            return False
+        self._host.show_bubble(t("notes.bubble.deleted", title=note.title), 3200)
+        return True
 
     # ---------------------------------------------------------- 服务回调
     def _refresh(self) -> None:
