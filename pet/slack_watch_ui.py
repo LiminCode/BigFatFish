@@ -11,12 +11,10 @@ from PySide6.QtCore import QObject, Signal
 
 from . import slack_watch as sw
 from . import work_briefing as wb
-from .work_briefing_ui import WorkBriefingWindow
+from .i18n import t
+from .work_briefing_ui import WorkBriefingWindow, theme_preference, save_theme_preference
 
 ALERT_ID = "slack-watch"
-WINDOW_TITLE = "Slack 关注"
-_EMPTY = "还没有检查过。点「现在检查」让 WSL 里的 Claude Code 看一眼 Slack，大约半分钟。"
-_BUSY = "正在看 Slack，大约半分钟…"
 
 
 def _as_briefing(result: sw.WatchResult) -> wb.Briefing:
@@ -42,14 +40,16 @@ class SlackWatchController(QObject):
     # ---------------------------------------------------------- 菜单动作
     def check_now(self) -> None:
         if self.service.busy:
-            self._host.show_bubble("还在看 Slack，再等一下～", 3200)
+            self._host.show_bubble(t("slack.bubble.busy"), 3200)
         elif self.service.check_now():
-            self._host.show_bubble("这就去看看 Slack，大约半分钟～", 4000)
+            self._host.show_bubble(t("slack.bubble.started"), 4000)
 
     def open_window(self) -> None:
         if self.window is None:
-            self.window = WorkBriefingWindow(title=WINDOW_TITLE, regenerate_label="现在检查",
-                                             empty_text=_EMPTY, busy_text=_BUSY)
+            self.window = WorkBriefingWindow(title=t("slack.app"), regenerate_label=t("slack.button.check"),
+                                             empty_text=t("slack.empty"), busy_text=t("slack.busy"),
+                                             page_label=t("slack.tab"), theme=theme_preference(self.service._config))
+            self.window.theme_changed.connect(lambda theme: save_theme_preference(self.service._config, theme))
             self.window.regenerate_requested.connect(self.service.check_now)
         self._refresh_window()
         self.window.show()
@@ -74,17 +74,17 @@ class SlackWatchController(QObject):
         fresh = list(fresh or [])
         if not result.ok:
             if manual:
-                self._host.show_bubble(f"Slack 没看成：{result.error}", 8000)
+                self._host.show_bubble(t("slack.bubble.failed", error=result.error), 8000)
             return
         if not fresh:
             if manual:
-                self._host.show_bubble("Slack 上没有新的需要你看的～", 4000)
+                self._host.show_bubble(t("slack.bubble.nothing"), 4000)
             return
         urgent = any(item.get("urgency") == "high" for item in fresh)
         text = result.summary or sw.ALERT_FALLBACK.format(n=len(fresh))
         self._host.show_alert(
-            text, subtitle=f"Slack · {len(fresh)} 条需要你看" + ("（有急的）" if urgent else ""), sticky=True,
-            buttons=[("查看", self._on_view), ("知道了", self._on_dismiss)],
+            text, subtitle=t("slack.alert.subtitle", n=len(fresh)) + (t("slack.alert.urgent") if urgent else ""), sticky=True,
+            buttons=[(t("briefing.alert.view"), self._on_view), (t("briefing.alert.dismiss"), self._on_dismiss)],
             alert_id=ALERT_ID, priority=1 if urgent else 2, alert_type="slack_watch",
         )
 

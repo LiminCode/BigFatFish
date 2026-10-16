@@ -141,3 +141,19 @@ Capture every affected settings domain at the top of its scroll view:
 Also capture 720 px for layout changes and `--dark` for color/surface changes. Inspect the images; file existence
 alone is not acceptance. The offscreen platform has no CJK font, so text renders as boxes there — real-window
 screenshots on the available desktop are the acceptance for typography.
+
+## Briefing / notes window (2026-10-15)
+
+`pet/work_briefing_ui.py` (`WorkBriefingWindow`, also used by Slack watch; hosts the work-notes page) reuses
+`METRO_TOKENS` plus two extra token pairs (`link`, `chip` / `chip_text`; see `briefing_tokens`). Composition:
+
+```text
+briefing window
+├── app line (12 px / 600, muted) … day/night toggle (☾ / ☀, writes context_menu_appearance.theme)
+├── pivot header (QTabBar: 28 px / 300; selected = title colour, others muted; always visible)
+└── page: flat tiles (no border, radius 0), outlined tilt buttons (2 px outline, pressed = inverted)
+```
+
+One stylesheet on the window styles every page by objectName; mounted pages only re-colour their link
+palette in `apply_theme(colors)`. Evidence: `scripts/capture_briefing_window.py` →
+`docs/screenshots/briefing-metro-2026-10-15/`.

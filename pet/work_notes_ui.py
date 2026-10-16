@@ -15,23 +15,15 @@ from typing import Callable
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QPushButton, QTextBrowser,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from . import work_notes as wn
 from .i18n import t
+from .settings_widgets import TiltButton
 
 ALERT_PREFIX = "work-note:"
-_QSS = """
-QPlainTextEdit#notesInput, QListWidget#notesList, QTextBrowser#notesDetail {{
-    background: {card}; color: {text}; border: 1px solid {border}; border-radius: 12px;
-    padding: 8px 10px; font-size: 13px;
-}}
-QListWidget#notesList::item {{ padding: 6px 4px; }}
-QListWidget#notesList::item:selected {{ background: {hover}; color: {title}; border-radius: 6px; }}
-QLabel#notesHint, QLabel#notesStatus {{ color: {muted}; font-size: 12px; }}
-"""
+# 样式由简报窗口的 Metro 样式表统一给（按 objectName 选中这里的控件）；面板自己只管颜色相关的调色板。
 
 
 def _when(value: str) -> str:
@@ -97,7 +89,6 @@ class WorkNotesPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("workNotes")
         self._colors = colors
-        self.setStyleSheet(_QSS.format(**colors))
         self._notes: dict[str, wn.Note] = {}
         self._busy: set[str] = set()
 
@@ -107,7 +98,7 @@ class WorkNotesPanel(QWidget):
         self.input.setFixedHeight(72)
         self.input.setAccessibleName(t("notes.tab"))
         self.input.submitted.connect(self._submit)
-        self.add_btn = QPushButton(t("notes.button.add"), self)
+        self.add_btn = TiltButton(t("notes.button.add"), self)
         self.add_btn.setAccessibleDescription(t("notes.button.add_hint"))
         self.add_btn.clicked.connect(self._submit)
         QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=self._submit)
@@ -127,18 +118,18 @@ class WorkNotesPanel(QWidget):
         self.detail.setPalette(palette)
         self.detail.setAccessibleName(t("notes.detail.original"))
 
-        self.obsidian_btn = QPushButton(t("notes.button.obsidian"), self)
+        self.obsidian_btn = TiltButton(t("notes.button.obsidian"), self)
         self.obsidian_btn.clicked.connect(lambda: self._emit_current(self.obsidian_requested))
-        self.resummarize_btn = QPushButton(t("notes.button.resummarize"), self)
+        self.resummarize_btn = TiltButton(t("notes.button.resummarize"), self)
         self.resummarize_btn.clicked.connect(lambda: self._emit_current(self.resummarize_requested))
-        self.snooze_btn = QPushButton(t("notes.button.snooze"), self)
+        self.snooze_btn = TiltButton(t("notes.button.snooze"), self)
         self.snooze_menu = QMenu(self.snooze_btn)
         for key, minutes in wn.SNOOZE_CHOICES:
             self.snooze_menu.addAction(t(key), lambda minutes=minutes: self._snooze(minutes))
         self.snooze_btn.setMenu(self.snooze_menu)
-        self.done_btn = QPushButton(t("notes.button.done"), self)
+        self.done_btn = TiltButton(t("notes.button.done"), self)
         self.done_btn.clicked.connect(lambda: self._emit_current(self.done_requested))
-        self.folder_btn = QPushButton(t("notes.button.folder"), self)
+        self.folder_btn = TiltButton(t("notes.button.folder"), self)
         self.folder_btn.clicked.connect(self.folder_requested)
         self.status_label = QLabel("", self)
         self.status_label.setObjectName("notesStatus")
@@ -185,6 +176,14 @@ class WorkNotesPanel(QWidget):
         if not repo_ready:
             status = t("notes.status.no_repo", path=repo_dir) + (f" · {error}" if error else "")
         self.status_label.setText(status)
+
+    def apply_theme(self, colors: dict) -> None:
+        """简报窗口换了白天 / 黑夜：只需换正文里链接的颜色，其余由窗口的样式表接管。"""
+        self._colors = colors
+        palette = self.detail.palette()
+        palette.setColor(QPalette.ColorRole.Link, QColor(colors["link"]))
+        self.detail.setPalette(palette)
+        self._show_current()
 
     def select(self, name: str) -> None:
         for row in range(self.list.count()):
@@ -250,10 +249,9 @@ class WorkNotesController(QObject):
     def panel(self) -> WorkNotesPanel:
         if self._panel is None:
             if self._colors is None:
-                from .settings_widgets import _system_dark
-                from .work_briefing_ui import _PALETTES
+                from .work_briefing_ui import briefing_tokens, resolve_dark, theme_preference
 
-                self._colors = _PALETTES[bool(_system_dark())]
+                self._colors = briefing_tokens(resolve_dark(theme_preference(self.service._config)))
             panel = WorkNotesPanel(self._colors)
             panel.add_requested.connect(self.add)
             panel.resummarize_requested.connect(self.service.resummarize)

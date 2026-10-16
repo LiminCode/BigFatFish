@@ -288,11 +288,11 @@ def test_obsidian_hint_when_the_vault_is_not_registered(tmp_path, repo, monkeypa
 
 
 # ---------------------------------------------------------------- 挂进简报窗口
-def test_the_briefing_window_shows_a_tab_bar_only_with_a_second_page():
+def test_the_briefing_window_mounts_a_second_pivot_page():
     window = WorkBriefingWindow()
-    assert not window.tabs.tabBar().isVisibleTo(window)
+    assert window.tabs.tabBar().isVisibleTo(window), "Metro 的 pivot 页头一直显示，哪怕只有一页"
     window.add_tab("笔记", WorkNotesPanel(_COLORS))
-    assert window.tabs.tabBar().isVisibleTo(window) and window.tabs.count() == 2
+    assert window.tabs.count() == 2
     assert window.select_tab("笔记") and window.tabs.currentIndex() == 1
     assert not window.select_tab("没有这页")
     window.close()
