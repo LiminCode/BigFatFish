@@ -387,5 +387,3 @@ class WorkBriefingController(QObject):
 
     def _on_dismiss(self) -> None:
         self._host.resolve_alert(ALERT_ID)
-
-
