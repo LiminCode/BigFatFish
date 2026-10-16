@@ -13,6 +13,7 @@ from .context_menus.menu_styles import (
     install_modern_check_indicators,
 )
 from .context_menus.menu_styles.common import install_responsive_menu_style, install_stay_open_interaction
+from .i18n import t
 
 TEMPLATE_IDS = ("legacy", "modern")
 
@@ -73,7 +74,7 @@ def load_menu_template(template_id: str) -> dict:
         # 打包资源缺失时回退内置模板，保证右键菜单始终可用
         return dict(_FALLBACK_TEMPLATES[template_id])
     if data.get("id") != template_id or not isinstance(data.get("groups"), list):
-        raise ValueError(f"无效的右键菜单模板: {template_id}")
+        raise ValueError(t("menu.context_menu.invalid_right_click_menu_template", template_id=template_id))
     return data
 
 

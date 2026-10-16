@@ -61,6 +61,7 @@ from .context_menus.menu_styles.common import (
     install_stay_open_interaction,
 )
 from .context_menus.shared import add_action as _add_action
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -474,13 +475,13 @@ class SpriteMenuFacade:
         cid = str(self.cfg.get("character", catalog.DEFAULT_CHARACTER))
         current = self.cfg.character_display_name(cid)
         name, ok = QInputDialog.getText(
-            getattr(self._shell, "overlay", None), "重命名角色",
-            f"给 {cid} 起个名字（留空恢复默认）：", text=current,
+            getattr(self._shell, "overlay", None), t("menu.facade.rename_character"),
+            t("menu.facade.name_cid_leave_blank_restore", cid=cid), text=current,
         )
         if not ok:
             return
         self.cfg.set_character_alias(cid, name)
-        self._bubble(f"角色名：{self.cfg.character_display_name(cid)}")
+        self._bubble(t("menu.facade.character_name_v", v=self.cfg.character_display_name(cid)))
 
     def on_spawn_pet(self) -> None:
         self._shell.spawn_pet()
@@ -551,11 +552,10 @@ class SpriteMenuFacade:
 
             eff = effective_proactive_config(self.cfg.get("proactive_screen", {}))
             if eff["whitelist"]:
-                self._bubble("主动识屏已开启～我会偶尔看看你正在用的软件", 4000)
+                self._bubble(t("menu.facade.screen_awareness_i_ll_glance"), 4000)
             else:
                 self._bubble(
-                    "主动识屏已开启～但白名单还是空的，在 右键→主动识屏→打开设置 "
-                    "里添加要观察的应用后我才会开始工作",
+                    t("menu.facade.screen_awareness_but_allow_list"),
                     6000,
                 )
 
@@ -747,7 +747,7 @@ class SpriteMenuFacade:
                 _ok, message = activate(entry)
             except Exception as exc:  # noqa: BLE001 - 后台线程不许带病退出
                 logging.exception("VS Code 工作区：打开失败")
-                message = f"打不开 {entry.label}：{type(exc).__name__}"
+                message = t("menu.facade.couldn_t_open_label_name", label=entry.label, name__=type(exc).__name__)
             try:
                 bridge.notice.emit(message)
             except RuntimeError:
@@ -776,7 +776,7 @@ class SpriteMenuFacade:
             self.cfg.set("agent_link", ag_data)
             self._save()
         if on:
-            self._bubble(f"已开启 {agent_key.upper()} 状态联动监听～", 4000)
+            self._bubble(t("menu.facade.now_listening_v_status", v=agent_key.upper()), 4000)
 
 
     # ---------------------------------------------------------------- 音乐（歌词）宿主
@@ -822,7 +822,7 @@ def _move_before_quit(menu: QMenu, action) -> None:
     for candidate in menu.actions():
         if candidate is action:
             continue
-        if candidate.text() == "退出":
+        if candidate.text() == t("menu.shared.quit"):   # 和 shared.add_quit 同一个键
             menu.removeAction(action)          # 显式摘除再插入 = 确定性移动
             menu.insertAction(candidate, action)
             return
@@ -886,12 +886,12 @@ def build_sprite_full_menu(shell, sprite=None) -> QMenu:
         #    设置入口，不补则切到旧版后无处可开设置；
         # 2) 隐藏肥鱼：overlay 的隐藏语义（set_pet_visible）没有别的菜单入口。
         settings_action = _add_action(
-            menu, "肥鱼设置", None, facade.on_open_modern_settings,
+            menu, t("menu.facade.fish_settings"), None, facade.on_open_modern_settings,
             close_on_trigger=True)
         _move_before_quit(menu, settings_action)
         hide_action = _add_action(
-            menu, "隐藏肥鱼", None, facade.hide, close_on_trigger=True)
-        if not _move_after_label(menu, "退出子肥鱼", hide_action):
+            menu, t("menu.facade.hide_fish"), None, facade.hide, close_on_trigger=True)
+        if not _move_after_label(menu, t("menu.shared.close_little_fish"), hide_action):   # 同 add_clear_spawned_pets
             _move_before_quit(menu, hide_action)
     else:
         apply_modern_menu_style(
@@ -903,7 +903,7 @@ def build_sprite_full_menu(shell, sprite=None) -> QMenu:
     # 「退出这只」只在多宠时出现（legacy parity：单窗不注入该入口，只有 app.quit
     # 语义的「退出」）——没有子肥鱼时它等价于「退出」，不重复列出
     if getattr(shell, "_spawned", None):
-        exit_action = _add_action(menu, "退出这只", None, facade.on_exit_pet,
+        exit_action = _add_action(menu, t("menu.facade.close_one"), None, facade.on_exit_pet,
                                   close_on_trigger=True)
         _move_before_quit(menu, exit_action)
     # F5 教训：facade 与菜单同寿命（wrapper 回收后回调命中失效引用）

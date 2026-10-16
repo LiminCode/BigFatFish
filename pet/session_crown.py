@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 from .claude_session_info import model_label
+from .i18n import t
 
 CONFIG_KEY = "crown_models"
 DEFAULT_TOKENS = ["fable"]
@@ -39,7 +40,7 @@ def is_crowned(model_id: str, tokens) -> bool:
 def choices(tokens, seen_models=()) -> list[tuple[str, str, bool]]:
     """菜单用：``(片段, 文案, 是否勾选)``——四个家族在前，在场会话的具体型号在后（去重）。"""
     tokens = list(tokens or ())
-    out = [(token, f"{label}（全部版本）", token in tokens) for token, label in FAMILIES]
+    out = [(token, t("menu.crown.family_all", family=label), token in tokens) for token, label in FAMILIES]
     listed = {token for token, _label, _on in out}
     for model in seen_models:
         token = str(model or "").strip().lower()

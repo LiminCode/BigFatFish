@@ -33,6 +33,7 @@ from .shared import (
     build_size_menu,
     build_speed_menu,
 )
+from ..i18n import t
 
 
 def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
@@ -41,11 +42,11 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     chat_settings = getattr(pet, "on_open_chat_settings", None)
     legacy_settings = getattr(pet, "on_open_legacy_settings", None)
     if chat is not None:
-        add_action(menu, "AI 对话", None, chat, close_on_trigger=True)
+        add_action(menu, t("menu.legacy.ai_chat"), None, chat, close_on_trigger=True)
     if chat_settings is not None:
-        add_action(menu, "AI 设置", None, chat_settings, close_on_trigger=True)
+        add_action(menu, t("menu.legacy.ai_settings"), None, chat_settings, close_on_trigger=True)
     if legacy_settings is not None:
-        add_action(menu, "肥鱼设置", None, legacy_settings, close_on_trigger=True)
+        add_action(menu, t("menu.legacy.fish_settings"), None, legacy_settings, close_on_trigger=True)
 
     menu.addSeparator()
     build_animation_categories(menu, pet, icons=False, legacy_labels=True)

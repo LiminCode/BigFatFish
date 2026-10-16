@@ -32,7 +32,7 @@ from .context_menus.icons import (
     custom_icon_file_error,
     vector_widget_icon,
 )
-from .context_menus.registry import CUSTOM_ICON_CHOICES, MENU_ACTIONS
+from .context_menus.registry import CUSTOM_ICON_CHOICES, MENU_ACTIONS, icon_choice_label
 from .menu_layout import (
     load_default_menu_layout,
     materialize_implicit_separators,
@@ -364,7 +364,7 @@ class MenuLayoutEditor(QWidget):
         node_type = str(node.get("type") or "")
         node_id = str(node.get("id") or "")
         alias = str(node.get("alias") or "").strip()
-        original = str(node.get("label") or MENU_ACTIONS.label(node_id))
+        original = MENU_ACTIONS.default_label({**node, "id": node_id})
         label = f"{alias}（{original}）" if alias else original
         if node_type == "separator":
             label = t("settings.menu_editor.divider")
@@ -524,7 +524,7 @@ class MenuLayoutEditor(QWidget):
         """Configure a node before insertion without coupling to tree ownership."""
         node_type = str(node.get("type") or "")
         node_id = str(node.get("id") or "")
-        original = str(node.get("label") or MENU_ACTIONS.label(node_id))
+        original = MENU_ACTIONS.default_label({**node, "id": node_id})
         alias = str(node.get("alias") or "").strip()
         label = (
             t("settings.menu_editor.divider") if node_type == "separator"
@@ -545,7 +545,7 @@ class MenuLayoutEditor(QWidget):
         alias = str(alias).strip()[:40]
         data["alias"] = alias
         item.setData(0, Qt.ItemDataRole.UserRole, data)
-        default = data.get("label") or MENU_ACTIONS.label(str(data.get("id") or ""))
+        default = MENU_ACTIONS.default_label(data)
         item.setText(0, f"{alias}（{default}）" if alias else str(default))
         self._on_changed()
 
@@ -581,10 +581,11 @@ class MenuLayoutEditor(QWidget):
         item = self.tree.currentItem()
         if item is None:
             return
-        labels = [label for label, _value in CUSTOM_ICON_CHOICES]
+        values = [value for _label, value in CUSTOM_ICON_CHOICES]
+        labels = [icon_choice_label(value) for value in values]
         selected, accepted = QInputDialog.getItem(self, t("settings.menu_editor.change_menu_icon"), t("settings.menu_editor.icon"), labels, 0, False)
         if accepted:
-            value = next(value for label, value in CUSTOM_ICON_CHOICES if label == selected)
+            value = values[labels.index(selected)]
             self._set_item_icon(item, value)
 
     def _choose_selected_file_icon(self) -> None:
@@ -786,7 +787,7 @@ class MenuLayoutEditor(QWidget):
                     target.addChild(clone)
                     continue
                 action_id = str(node.get("id") or "")
-                label = str(node.get("alias") or node.get("label") or MENU_ACTIONS.label(action_id))
+                label = str(node.get("alias") or MENU_ACTIONS.default_label({**node, "id": action_id}))
                 clone = QTreeWidgetItem([label])
                 icon = MENU_ACTIONS.icon(self, action_id, node.get("icon"))
                 if not icon.isNull():

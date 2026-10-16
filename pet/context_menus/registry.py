@@ -42,8 +42,10 @@ from .shared import (
     build_size_menu,
     build_speed_menu,
 )
+from ..i18n import maybe_t, t
 
 
+#: 动作的中文名（zh 原文；键是内部标识）。显示时经 MENU_ACTIONS.label() 取 menu.action.* 跟随界面语言。
 ACTION_LABELS = {
     "ojingjing": "厉害了我的鲸", "chat": "AI 对话", "look_screen": "看看屏幕",
     "animations_hub": "播放动画", "character": "切换角色", "playback_speed": "播放速率",
@@ -85,6 +87,7 @@ ACTION_ICONS = {
     "festival_now": "todo", "festival_toggle": "todo",
 }
 
+#: （中文名, 图标值）——中文名是 zh 原文，显示时用 icon_choice_label(值)
 CUSTOM_ICON_CHOICES = (
     ("默认图标", "default"), ("无图标", "none"),
     ("对话", "chat"), ("屏幕", "screen"), ("播放", "play"),
@@ -96,12 +99,24 @@ CUSTOM_ICON_CHOICES = (
 )
 
 
+#: 模板自带子菜单：id →（模板里的中文名, 文案键）
+SUBMENU_LABEL_KEYS = {
+    "pet_controls": ("肥鱼控制", "menu.submenu.pet_controls"),
+    "tools_help": ("工具与帮助", "menu.submenu.tools_help"),
+}
+
+
+def icon_choice_label(value: str) -> str:
+    """图标选项在当前语言下的名字。"""
+    return t(f"menu.icon.{value}")
+
+
 @dataclass(frozen=True)
 class MenuActionSpec:
     build: Builder
     available: Availability = lambda _pet: True
     enabled: Enablement = lambda _pet: True
-    disabled_reason: str = "当前功能未启用"
+    disabled_reason: str = "menu.registry.feature_not_enabled"   # 文案键（或现成文字），显示时 maybe_t
 
 
 def _callback_available(name: str) -> Availability:
@@ -109,25 +124,25 @@ def _callback_available(name: str) -> Availability:
 
 
 def _build_chat(menu, pet):
-    return add_action(menu, "AI 对话", "chat", pet.on_open_chat, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.ai_chat"), "chat", pet.on_open_chat, close_on_trigger=True)
 
 
 def _build_animations(menu, pet):
-    submenu = add_submenu(menu, "播放动画", "play")
+    submenu = add_submenu(menu, t("menu.registry.play_animation"), "play")
     build_animation_categories(submenu, pet, icons=False, leaf_role_icons=True)
     return submenu
 
 
 def _build_settings(menu, pet):
-    return add_action(menu, "肥鱼设置", "settings", pet.on_open_modern_settings, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.fish_settings"), "settings", pet.on_open_modern_settings, close_on_trigger=True)
 
 
 def _build_todo_panel(menu, pet):
-    return add_action(menu, "待办提醒", "todo", pet.on_open_todo_panel, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.do_reminders"), "todo", pet.on_open_todo_panel, close_on_trigger=True)
 
 
 def _build_voice_chime_now(menu, pet):
-    return add_action(menu, "立即报时", "chat", pet.on_voice_chime_now, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.say_time_now"), "chat", pet.on_voice_chime_now, close_on_trigger=True)
 
 
 def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
@@ -143,7 +158,7 @@ def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
         cfg = getattr(pet, "cfg", None)
         enabled = bool(cfg.get(key, False)) if cfg is not None else False
         return add_action(
-            menu, on_label if enabled else off_label, icon,
+            menu, t(on_label if enabled else off_label), icon,
             getattr(pet, callback), close_on_trigger=True,
         )
 
@@ -151,24 +166,24 @@ def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
 
 
 _build_voice_chime_toggle = _flag_toggle_spec(
-    "voice_chime_enabled", "关闭语音报时", "启用语音报时", "chat",
+    "voice_chime_enabled", "menu.toggle.voice_chime_off", "menu.toggle.voice_chime_on", "chat",
     "on_toggle_voice_chime",
 )
 
 _build_festival_toggle = _flag_toggle_spec(
-    "festival_reminder_enabled", "关闭节日提醒", "启用节日提醒", "todo",
+    "festival_reminder_enabled", "menu.toggle.festival_off", "menu.toggle.festival_on", "todo",
     "on_toggle_festival",
 )
 
 
 def _build_festival_now(menu, pet):
-    return add_action(menu, "今日节日", "todo", pet.on_festival_now, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.today_festival"), "todo", pet.on_festival_now, close_on_trigger=True)
 
 
 def _build_github(menu, _pet):
     return add_action(
         menu,
-        "GitHub 项目页",
+        t("menu.registry.github_project_page"),
         "web",
         lambda: QDesktopServices.openUrl(QUrl(REPO_URL)),
         close_on_trigger=True,
@@ -187,7 +202,7 @@ class MenuActionRegistry:
                 enabled=lambda pet: bool(
                     pet.cfg.get("menu_easter_egg", DEFAULT_MENU_EASTER_EGG).get("enabled", True)
                 ),
-                disabled_reason="彩蛋入口已在设置中停用",
+                disabled_reason="menu.registry.easter_egg_entry_turned_off",
             ),
             "chat": MenuActionSpec(_build_chat, _callback_available("on_open_chat")),
             "look_screen": MenuActionSpec(add_look_screen, _callback_available("on_look_screen")),
@@ -210,7 +225,7 @@ class MenuActionRegistry:
                 add_rally_pets,
                 _callback_available("on_rally_pets"),
                 enabled=lambda pet: bool(getattr(pet, "has_small_pets", False)),
-                disabled_reason="还没有小肥鱼",
+                disabled_reason="menu.registry.no_little_fish_yet",
             ),
             "youtube_music": MenuActionSpec(add_youtube_music),
             "claude_desktop": MenuActionSpec(add_claude_desktop),
@@ -225,7 +240,7 @@ class MenuActionRegistry:
             "quick_launch": MenuActionSpec(
                 lambda menu, pet: add_quick_launch_menu(menu, pet.cfg),
                 enabled=lambda pet: bool(configured_quick_apps(pet.cfg)),
-                disabled_reason="尚未配置快捷启动应用",
+                disabled_reason="menu.registry.no_quick_launch_apps_configured",
             ),
             "github_project": MenuActionSpec(_build_github),
             "agent_link": MenuActionSpec(add_agent_link_menu),
@@ -274,13 +289,24 @@ class MenuActionRegistry:
 
     def disabled_reason(self, action_id: str) -> str:
         spec = self._specs.get(action_id)
-        return spec.disabled_reason if spec is not None else "当前不可用"
+        return maybe_t(spec.disabled_reason) if spec is not None else t("menu.registry.unavailable_right_now")
 
     def default_icon(self, action_id: str) -> str:
         return ACTION_ICONS.get(action_id, "")
 
     def label(self, action_id: str) -> str:
-        return ACTION_LABELS.get(action_id, action_id)
+        """动作在当前语言下的名字；表外的 id 原样返回。"""
+        return t(f"menu.action.{action_id}") if action_id in ACTION_LABELS else action_id
+
+    def default_label(self, node) -> str:
+        """节点不算别名时的名字：模板自带的子菜单（名字还是模板里的中文原文）按界面语言翻译，
+        用户自建 / 改过名的子菜单原样；动作节点取 label()。"""
+        node_id = str(node.get("id") or "")
+        label = str(node.get("label") or "")
+        known = SUBMENU_LABEL_KEYS.get(node_id)
+        if known is not None and label in ("", known[0]):
+            return t(known[1])
+        return label or self.label(node_id)
 
     def icon(self, widget, action_id: str, override=None) -> QIcon:
         """Resolve semantic or local-file presentation with a safe fallback."""
@@ -315,7 +341,7 @@ class MenuActionRegistry:
             if node.get("type") == "submenu":
                 submenu = add_submenu(
                     menu,
-                    str(node.get("alias") or node.get("label") or ""),
+                    str(node.get("alias") or self.default_label(node)),
                 )
                 self.populate(
                     submenu, pet, node.get("children", ()), enabled_actions=enabled,

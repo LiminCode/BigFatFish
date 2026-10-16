@@ -36,38 +36,39 @@ from PySide6.QtWidgets import (
 from . import claude_hooks, claude_session_info, claude_session_jump, session_card_themes
 from .claude_session_info import SessionDetail
 from .ui_fonts import apply_family
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
 #: 详情卡相对系统默认字号 / 尺寸的放大倍数（再乘「气泡文字大小」设置）
 CARD_BASE_SCALE = 1.25
-_WAIT_TEXT = "在等你批准"
+_WAIT_TEXT = "menu.session.waiting_for_you"   # 文案键，用时 t()
 
 
 def elapsed_text(seconds: float) -> str:
     """持续时间的口语说法：刚刚 / 3 分钟 / 1 小时 5 分。"""
     seconds = max(0, int(seconds))
     if seconds < 60:
-        return "刚刚"
+        return t("menu.session.just_now")
     minutes = seconds // 60
     if minutes < 60:
-        return f"{minutes} 分钟"
+        return t("menu.session.minutes_min", minutes=minutes)
     hours, minutes = divmod(minutes, 60)
-    return f"{hours} 小时 {minutes} 分" if minutes else f"{hours} 小时"
+    return t("menu.session.hours_h_minutes_min", hours=hours, minutes=minutes) if minutes else t("menu.session.hours_h", hours=hours)
 
 
 def status_line(detail: SessionDetail, since: float | None, now: float | None = None) -> str:
     """「工作中 · 已 3 分钟」；等批准时点名在等哪个工具。"""
     text = claude_hooks.PHASE_TEXT.get(detail.phase, "")
     if detail.phase == "waiting" and detail.tool:
-        text = f"{_WAIT_TEXT}：{detail.tool}"
+        text = t("menu.session.waiting_for_tool", tool=detail.tool)
     # 在用的模型与 effort（会话记录里读到才有）：「Fable 5.1 · high」
     model = claude_session_info.model_label(detail.model)
     for part in (model, detail.effort if model else ""):
         if part:
             text = f"{text} · {part}" if text else part
     if since:
-        text = f"{text} · 已 {elapsed_text((now or time.time()) - since)}" if text else ""
+        text = t("menu.session.text_v", text=text, v=elapsed_text((now or time.time()) - since)) if text else ""
     return text
 
 
@@ -76,7 +77,7 @@ def where_line(detail: SessionDetail) -> str:
     if detail.cwd:
         parts.append(detail.cwd)
     if detail.git_branch and detail.git_branch != "HEAD":
-        parts.append(f"分支 {detail.git_branch}")
+        parts.append(t("menu.session.branch_git_branch", git_branch=detail.git_branch))
     return " · ".join(parts)
 
 
@@ -183,7 +184,7 @@ class SessionDetailCard(QFrame):
         self.status_label.setObjectName("session-card-status")
         layout.addWidget(self.status_label)
 
-        self.prompt_caption = QLabel("最近的问题")
+        self.prompt_caption = QLabel(t("menu.session.latest_question"))
         self.prompt_caption.setObjectName("session-card-caption")
         layout.addWidget(self.prompt_caption)
         self.prompt_label = QLabel("")
@@ -199,9 +200,9 @@ class SessionDetailCard(QFrame):
 
         buttons = QHBoxLayout()
         buttons.setSpacing(px(6))
-        self.jump_btn = QPushButton("跳到对话")
-        self.folder_btn = QPushButton("打开文件夹")
-        self.copy_btn = QPushButton("复制恢复命令")
+        self.jump_btn = QPushButton(t("menu.session.jump_chat"))
+        self.folder_btn = QPushButton(t("menu.session.open_folder"))
+        self.copy_btn = QPushButton(t("menu.session.copy_resume_command"))
         self.jump_btn.clicked.connect(self.jump_requested.emit)
         self.folder_btn.clicked.connect(self.folder_requested.emit)
         self.copy_btn.clicked.connect(self.copy_requested.emit)
@@ -226,9 +227,9 @@ class SessionDetailCard(QFrame):
         if detail.last_prompt:
             prompt = detail.last_prompt
         elif loading:
-            prompt = "读取中…"
+            prompt = t("menu.session.loading")
         else:
-            prompt = "（没读到）"
+            prompt = t("menu.session.couldn_t_read")
         self.prompt_label.setText(prompt)
         self.where_label.setText(where_line(detail))
         self.where_label.setVisible(bool(self.where_label.text()))
@@ -444,7 +445,7 @@ class SessionPetActions(QObject):
             # 去看了：「等你回复」落回「休息中」，开着的卡片跟着换（下面的线程用的
             # 还是上面那份 detail——跳转只要会话 ID / 路径，与阶段无关）
             self._refresh_card(key)
-        self._say(key, "正在切过去…")
+        self._say(key, t("menu.session.switching_over"))
 
         def work() -> None:
             try:
@@ -452,7 +453,7 @@ class SessionPetActions(QObject):
                 result = self.jumper(loaded, wsl_env=loaded.extra.get("env"))
             except Exception:
                 log.exception("跳到会话失败")
-                loaded, result = detail, claude_session_jump.JumpResult(False, "跳转出错了")
+                loaded, result = detail, claude_session_jump.JumpResult(False, t("menu.session.couldn_t_jump_there"))
             if shiboken6.isValid(self):
                 self._detail_ready.emit(key, loaded)
                 self._jump_done.emit(key, result)
@@ -484,7 +485,7 @@ class SessionPetActions(QObject):
     def _open_folder(self, key, detail: SessionDetail) -> bool:
         path = claude_session_jump.explorer_path(detail)
         if not path or not self.opener(path):
-            self._say(key, "打不开这个项目文件夹")
+            self._say(key, t("menu.session.couldn_t_open_project_folder"))
             return False
         return True
 
@@ -496,11 +497,11 @@ class SessionPetActions(QObject):
         detail = self._detail_for_key(key)
         if detail is None or not detail.resume_command:
             return False
-        return self._copy(key, detail.resume_command, "恢复命令已复制，到终端里粘贴即可")
+        return self._copy(key, detail.resume_command, t("menu.session.resume_command_copied_paste_terminal"))
 
     def copy_session_id(self, sprite) -> bool:
         key = self._controller.key_of(sprite)
-        return bool(key) and self._copy(key, key[1], "会话 ID 已复制")
+        return bool(key) and self._copy(key, key[1], t("menu.session.session_id_copied"))
 
     def _copy(self, key, text: str, said: str) -> bool:
         clipboard = QApplication.clipboard()
@@ -553,31 +554,31 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
             "title": detail.title, "project": detail.project, "sessionId": detail.session_id}))
         header.setEnabled(False)
         menu.addSeparator()
-    add_action(menu, "跳到这个对话", None, lambda: actions.jump(sprite), close_on_trigger=True)
-    add_action(menu, "查看详情", None, lambda: actions.show_card(sprite), close_on_trigger=True)
-    add_action(menu, "打开项目文件夹", None, lambda: actions.open_folder(sprite),
+    add_action(menu, t("menu.session.jump_chat_2"), None, lambda: actions.jump(sprite), close_on_trigger=True)
+    add_action(menu, t("menu.session.show_details"), None, lambda: actions.show_card(sprite), close_on_trigger=True)
+    add_action(menu, t("menu.session.open_project_folder"), None, lambda: actions.open_folder(sprite),
                close_on_trigger=True)
     menu.addSeparator()
-    add_action(menu, "复制恢复命令", None, lambda: actions.copy_resume(sprite),
+    add_action(menu, t("menu.session.copy_resume_command"), None, lambda: actions.copy_resume(sprite),
                close_on_trigger=True)
-    add_action(menu, "复制会话 ID", None, lambda: actions.copy_session_id(sprite),
+    add_action(menu, t("menu.session.copy_session_id"), None, lambda: actions.copy_session_id(sprite),
                close_on_trigger=True)
     menu.addSeparator()
-    add_action(menu, "让这只离场", None, lambda: actions.dismiss(sprite), close_on_trigger=True)
+    add_action(menu, t("menu.session.send_one_off"), None, lambda: actions.dismiss(sprite), close_on_trigger=True)
 
-    settings = add_submenu(menu, "会话小鱼设置")
-    enabled = settings.addAction("每个会话一只小鱼")
+    settings = add_submenu(menu, t("menu.session.session_fish_settings"))
+    enabled = settings.addAction(t("menu.session.one_fish_per_session"))
     enabled.setCheckable(True)
     enabled.setChecked(bool((facade.cfg.get("agent_link") or {}).get("session_pets", True)))
     enabled.toggled.connect(lambda on: facade.toggle_session_pets(on))
-    limit_menu = add_submenu(settings, "会话小鱼上限")
+    limit_menu = add_submenu(settings, t("menu.session.session_fish_limit"))
     current = shell._session_pet_limit()
     for limit in (3, 6, 9, 12, 16, 24):
-        item = limit_menu.addAction(f"{limit} 只")
+        item = limit_menu.addAction(t("menu.session.limit_fish", limit=limit))
         item.setCheckable(True)
         item.setChecked(limit == current)
         item.triggered.connect(lambda _checked=False, n=limit: facade.set_session_pets_max(n))
-    theme_menu = add_submenu(settings, "详情卡配色")
+    theme_menu = add_submenu(settings, t("menu.session.detail_card_colors"))
     current_theme = _configured_theme_id(facade.cfg)
     for theme_id, label in session_card_themes.theme_choices():
         item = theme_menu.addAction(label)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
+from .i18n import t
 
 # 大小档位（sprite.scale 预设值；默认档 0.72 = catalog.DEFAULT_SCALE）
 SCALE_PRESETS = (0.5, 0.72, 1.0, 1.3)
@@ -37,12 +38,12 @@ def build_sprite_menu(overlay, sprite, *, behavior=None) -> QMenu:
     """
     menu = QMenu(overlay if isinstance(overlay, QWidget) else None)
 
-    poke = menu.addAction("戳一下")
+    poke = menu.addAction(t("menu.sprite_menu.poke"))
     poke.setEnabled(behavior is not None)
     if behavior is not None:
         poke.triggered.connect(lambda: behavior.on_sprite_clicked(sprite))
 
-    size_menu = menu.addMenu("大小")
+    size_menu = menu.addMenu(t("menu.sprite_menu.size"))
     group = QActionGroup(size_menu)
     group.setExclusive(True)
     for value in SCALE_PRESETS:
@@ -55,7 +56,7 @@ def build_sprite_menu(overlay, sprite, *, behavior=None) -> QMenu:
 
     menu.addSeparator()
 
-    through = menu.addAction("鼠标穿透")
+    through = menu.addAction(t("menu.sprite_menu.click_through"))
     through.setCheckable(True)
     through.setChecked(bool(overlay.mouse_through))
     # 有统一直写点就走它（shell 收编为用户+自动穿透复合语义），demo 直接写字段
@@ -66,7 +67,7 @@ def build_sprite_menu(overlay, sprite, *, behavior=None) -> QMenu:
 
     menu.addSeparator()
 
-    quit_action = menu.addAction("退出")
+    quit_action = menu.addAction(t("menu.sprite_menu.quit"))
     # 调用点查表而非连接时绑定：测试可 monkeypatch QApplication.quit 记录调用
     quit_action.triggered.connect(lambda: QApplication.quit())
 

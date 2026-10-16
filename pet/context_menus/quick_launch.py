@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QFileIconProvider, QMenu
 from ..config import DEFAULT_QUICK_LAUNCH_APPS
 from .icons import vector_menu_icon
 from .shared import add_submenu, connect_action
+from ..i18n import t
 
 
 def configured_quick_apps(config) -> list[dict]:
@@ -83,15 +84,23 @@ def launch_quick_app(item: dict) -> bool:
     return bool(QProcess.startDetached(path, []))
 
 
+def _display_name(item: dict) -> str:
+    """菜单里显示的名字：默认浏览器那一项若还是内置的中文名，按界面语言显示（配置里存的名字不动）。"""
+    name = str(item.get("name") or "")
+    if item.get("kind") == "default_browser" and name in ("", "默认浏览器"):
+        return t("settings.ui.default_browser")
+    return name or t("menu.quick_launch.app")
+
+
 def add_quick_launch_menu(menu: QMenu, config) -> QMenu:
     apps = configured_quick_apps(config)
-    submenu = add_submenu(menu, "快捷启动", "application")
+    submenu = add_submenu(menu, t("menu.quick_launch.quick_launch"), "application")
     if not apps:
-        placeholder = submenu.addAction("尚未配置快捷项")
+        placeholder = submenu.addAction(t("menu.quick_launch.no_quick_launch_items_yet"))
         placeholder.setEnabled(False)
         return submenu
     for item in apps:
-        action = submenu.addAction(quick_app_icon(submenu, item), str(item.get("name") or "应用"))
+        action = submenu.addAction(quick_app_icon(submenu, item), _display_name(item))
         action.setProperty("closeOnTrigger", True)
         connect_action(action, lambda item=dict(item): launch_quick_app(item))
     return submenu

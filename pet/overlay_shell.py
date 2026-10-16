@@ -120,6 +120,7 @@ from .sprite_collision import SpriteCollisionWorld
 from .sprite_physics import ThrowPhysicsController
 from .sprite_sound import SpriteSoundPlayer
 from .tick_driver import TickDriver
+from .i18n import t
 
 ENV_TOPOLOGY = overlay_settings_command.ENV_TOPOLOGY
 TOPOLOGY_OVERLAY = overlay_settings_command.TOPOLOGY_OVERLAY
@@ -3024,36 +3025,36 @@ class OverlayShell(QObject):
         menu.aboutToShow.connect(self._hide_bubble_for_menu)
         # 弹出前同步逐只勾选态（外部改过 sprite.visible 也能反映）
         menu.aboutToShow.connect(self._sync_tray_pet_visibility)
-        menu.addAction("显示 / 隐藏", self._toggle_pet_visible)
-        menu.addAction("回到右下角", lambda: self._go_default_corner(self.sprite))
+        menu.addAction(t("menu.tray.show_hide"), self._toggle_pet_visible)
+        menu.addAction(t("menu.tray.back_to_corner"), lambda: self._go_default_corner(self.sprite))
         menu.addSeparator()
-        menu.addAction("生小肥鱼", self.spawn_pet)
-        menu.addAction("退出子肥鱼", self.clear_spawned_pets)
+        menu.addAction(t("menu.tray.spawn"), self.spawn_pet)
+        menu.addAction(t("menu.tray.close_little_fish"), self.clear_spawned_pets)
         visible_actions: list = []
         if self._spawned:
             menu.addSeparator()
             for sprite, label in self._pet_entries():
                 sub = menu.addMenu(label)
-                sub.addAction("回到右下角",
+                sub.addAction(t("menu.tray.back_to_corner"),
                               lambda s=sprite: self._go_default_corner(s))
                 toggle = sub.addAction(
-                    "显示这只", lambda s=sprite: self.toggle_sprite_visible(s))
+                    t("menu.tray.show_this_one"), lambda s=sprite: self.toggle_sprite_visible(s))
                 toggle.setCheckable(True)
                 toggle.setChecked(self._sprite_visible(sprite))
                 visible_actions.append((sprite, toggle))
-                sub.addAction("退出这只",
+                sub.addAction(t("menu.tray.close_this_one"),
                               lambda s=sprite: self.exit_pet(s))
         self._pet_visible_actions = visible_actions
         menu.addSeparator()
-        menu.addAction("肥鱼设置", lambda: self.open_settings_for(self.sprite))
+        menu.addAction(t("menu.tray.settings"), lambda: self.open_settings_for(self.sprite))
         # legacy 托盘两项（app.py:3333-3343）：鼠标穿透的取消入口只有托盘/设置页，
         # 开着时肥鱼点不动；开机自启此前只有右键菜单有勾选项。
-        mouse_through = menu.addAction("鼠标穿透")
+        mouse_through = menu.addAction(t("menu.tray.click_through"))
         mouse_through.setCheckable(True)
         mouse_through.setChecked(bool(self._config.get("mouse_through", False)))
         mouse_through.toggled.connect(self._on_user_through_changed)
         menu.addSeparator()
-        autostart = menu.addAction("开机自启")
+        autostart = menu.addAction(t("menu.tray.autostart"))
         autostart.setCheckable(True)
         autostart.setChecked(self._autostart_enabled())
         autostart.toggled.connect(self._set_autostart_from_tray)
@@ -3061,7 +3062,7 @@ class OverlayShell(QObject):
         menu.aboutToShow.connect(
             lambda: self._sync_tray_toggle_checks(mouse_through, autostart))
         menu.addSeparator()
-        menu.addAction("退出", self.app.quit)
+        menu.addAction(t("menu.tray.quit"), self.app.quit)
         old = self._tray_menu
         self.tray.setContextMenu(menu)  # 新菜单先接管，旧菜单才允许释放（F5）
         self._tray_menu = menu
@@ -3117,12 +3118,12 @@ class OverlayShell(QObject):
 
     def _pet_entries(self) -> list:
         """托盘逐只条目：(sprite, 标签)。主宠在前 = 活跃清单列表头口径。"""
-        entries = [(self.sprite, "主肥鱼")]
+        entries = [(self.sprite, t("menu.tray.main_fish"))]
         for sprite in self._spawned:
             slot = self._spawned_slots.get(sprite)
-            label = f"小肥鱼 [slot-{slot}]" if slot is not None else "小肥鱼"
+            label = t("menu.tray.little_fish_slot", slot=slot) if slot is not None else t("menu.tray.little_fish")
             if sprite in self._session_pets:
-                label = f"会话：{sprite.caption}" if sprite.caption else "会话小鱼"
+                label = t("menu.tray.session_fish_named", caption=sprite.caption) if sprite.caption else t("menu.tray.session_fish")
             entries.append((sprite, label))
         return entries
 

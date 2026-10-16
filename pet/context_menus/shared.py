@@ -281,16 +281,16 @@ def build_animation_categories(
     leaf_role_icons: bool = False,
 ) -> None:
     categories = (
-        ("待机", pet.idles, pet.switch_clip),
-        ("转向", pet.turns, pet.switch_clip),
-        ("移动", pet.moves, pet.trigger_move),
-        ("点击回应", pet.clicks, pet.switch_clip),
-        ("随机动作", pet.acts, pet.switch_clip),
+        (t("menu.shared.idle"), pet.idles, pet.switch_clip),
+        (t("menu.shared.turn"), pet.turns, pet.switch_clip),
+        (t("menu.shared.move"), pet.moves, pet.trigger_move),
+        (t("menu.shared.click_reactions"), pet.clicks, pet.switch_clip),
+        (t("menu.shared.random_action"), pet.acts, pet.switch_clip),
     )
     for label, entries, callback in categories:
         if not entries:
             continue
-        submenu = QMenu(f"动画 · {label}" if legacy_labels else label, menu)
+        submenu = QMenu(t("menu.shared.animation_label", label=label) if legacy_labels else label, menu)
         menu.addMenu(submenu)
         menu._owned_submenus = getattr(menu, "_owned_submenus", []) + [submenu]
         inherit_menu_style(menu, submenu)
@@ -304,7 +304,7 @@ def build_animation_categories(
 
 
 def build_speed_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
-    submenu = add_submenu(menu, "播放速率", "speed" if icons else None)
+    submenu = add_submenu(menu, t("menu.shared.playback_speed"), "speed" if icons else None)
     group = QActionGroup(submenu)
     group.setExclusive(True)
     for i in range(10, 21):
@@ -318,7 +318,7 @@ def build_speed_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
 
 
 def build_character_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
-    submenu = add_submenu(menu, "切换角色", "character" if icons else None)
+    submenu = add_submenu(menu, t("menu.shared.switch_character"), "character" if icons else None)
     group = QActionGroup(submenu)
     group.setExclusive(True)
     current = str(pet.cfg.get("character", catalog.DEFAULT_CHARACTER))
@@ -336,7 +336,7 @@ def build_character_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
     rename = getattr(pet, "rename_character", None)
     if callable(rename):
         submenu.addSeparator()
-        add_action(submenu, "重命名当前角色…", None, rename, close_on_trigger=True)
+        add_action(submenu, t("menu.shared.rename_current_character"), None, rename, close_on_trigger=True)
     return submenu
 
 
@@ -349,7 +349,7 @@ def add_proactive_menu(menu: QMenu, pet) -> None:
         return
     from ..proactive import effective_proactive_config
 
-    sub = add_submenu(menu, "主动识屏", None)
+    sub = add_submenu(menu, t("menu.shared.screen_awareness"), None)
     pro_cfg = effective_proactive_config(pet.cfg.get('proactive_screen', {}))
 
     def _toggle(text, checked, handler):
@@ -359,19 +359,19 @@ def add_proactive_menu(menu: QMenu, pet) -> None:
         act.toggled.connect(handler)
         return act
 
-    _toggle('开启主动识屏', pro_cfg.get('enabled', False), pet.toggle_proactive_enabled)
-    _toggle('鼠标穿透时仍允许主动识屏', pro_cfg.get('allow_when_mouse_through', True),
+    _toggle(t("menu.shared.turn_screen_awareness"), pro_cfg.get('enabled', False), pet.toggle_proactive_enabled)
+    _toggle(t("menu.shared.keep_looking_while_click_through"), pro_cfg.get('allow_when_mouse_through', True),
             lambda on: pet.set_proactive_option('allow_when_mouse_through', on))
-    _toggle('触发前先兆提示', pro_cfg.get('pre_cue', True),
+    _toggle(t("menu.shared.heads_up_before_look"), pro_cfg.get('pre_cue', True),
             lambda on: pet.set_proactive_option('pre_cue', on))
-    _toggle('仅当我闲置时触发', pro_cfg.get('require_idle', False),
+    _toggle(t("menu.shared.only_when_i_m_idle"), pro_cfg.get('require_idle', False),
             lambda on: pet.set_proactive_option('require_idle', on))
-    _toggle('dry-run 验证模式', pro_cfg.get('dry_run', False),
+    _toggle(t("menu.shared.dry_run_mode"), pro_cfg.get('dry_run', False),
             lambda on: pet.set_proactive_option('dry_run', on))
     sub.addSeparator()
     open_settings = getattr(pet, 'on_open_modern_settings', None) or getattr(pet, 'on_open_legacy_settings', None)
     if open_settings is not None:
-        add_action(sub, '打开设置…', None, open_settings, close_on_trigger=True)
+        add_action(sub, t("menu.shared.open_settings"), None, open_settings, close_on_trigger=True)
 
 
 def add_work_briefing_menu(menu: QMenu, pet) -> None:
@@ -385,15 +385,15 @@ def add_work_briefing_menu(menu: QMenu, pet) -> None:
         return
     from ..work_briefing import TIME_CHOICES
 
-    sub = add_submenu(menu, "工作简报", None)
-    add_action(sub, "查看最近一份", None, pet.open_work_briefing, close_on_trigger=True)
-    add_action(sub, "现在生成", None, pet.generate_work_briefing, close_on_trigger=True)
+    sub = add_submenu(menu, t("menu.shared.daily_briefing"), None)
+    add_action(sub, t("menu.shared.view_latest"), None, pet.open_work_briefing, close_on_trigger=True)
+    add_action(sub, t("menu.shared.generate_now"), None, pet.generate_work_briefing, close_on_trigger=True)
     sub.addSeparator()
-    act = sub.addAction("工作日自动生成")
+    act = sub.addAction(t("menu.shared.generate_weekdays"))
     act.setCheckable(True)
     act.setChecked(bool(settings["enabled"]))
     act.toggled.connect(lambda on: pet.toggle_work_briefing(on))
-    time_menu = add_submenu(sub, "生成时间", None)
+    time_menu = add_submenu(sub, t("menu.shared.generation_time"), None)
     group = QActionGroup(time_menu)
     group.setExclusive(True)
     for value in sorted({*TIME_CHOICES, settings["time"]}):
@@ -414,19 +414,19 @@ def add_slack_watch_menu(menu: QMenu, pet) -> None:
         return
     from ..slack_watch import INTERVAL_CHOICES
 
-    sub = add_submenu(menu, "Slack 关注", None)
-    add_action(sub, "查看最近一次", None, pet.open_slack_watch, close_on_trigger=True)
-    add_action(sub, "现在检查", None, pet.check_slack_now, close_on_trigger=True)
+    sub = add_submenu(menu, t("menu.shared.slack_watch"), None)
+    add_action(sub, t("menu.shared.view_latest_check"), None, pet.open_slack_watch, close_on_trigger=True)
+    add_action(sub, t("menu.shared.check_now"), None, pet.check_slack_now, close_on_trigger=True)
     sub.addSeparator()
-    act = sub.addAction("电脑在用时自动检查")
+    act = sub.addAction(t("menu.shared.check_automatically_while_i_m"))
     act.setCheckable(True)
     act.setChecked(bool(settings["enabled"]))
     act.toggled.connect(lambda on: pet.toggle_slack_watch(on))
-    interval_menu = add_submenu(sub, "检查间隔", None)
+    interval_menu = add_submenu(sub, t("menu.shared.check_interval"), None)
     group = QActionGroup(interval_menu)
     group.setExclusive(True)
     for value in sorted({*INTERVAL_CHOICES, settings["interval_minutes"]}):
-        choice = interval_menu.addAction(f"每 {value} 分钟")
+        choice = interval_menu.addAction(t("menu.shared.every_value_min", value=value))
         choice.setCheckable(True)
         choice.setChecked(value == settings["interval_minutes"])
         group.addAction(choice)
@@ -435,7 +435,7 @@ def add_slack_watch_menu(menu: QMenu, pet) -> None:
 
 def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
-    sub = add_submenu(menu, "Agent 联动", None)
+    sub = add_submenu(menu, t("menu.shared.agent_link"), None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
     agents = [
         ('claude', 'Claude Code'),
@@ -454,18 +454,18 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     toggle_session_pets = getattr(pet, "toggle_session_pets", None)
     if callable(toggle_session_pets):
         sub.addSeparator()
-        act = sub.addAction("每个会话一只小鱼")
+        act = sub.addAction(t("menu.shared.one_fish_per_session"))
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_pets", True)))
         act.toggled.connect(lambda on: toggle_session_pets(on))
         set_limit = getattr(pet, "set_session_pets_max", None)
         if callable(set_limit):
-            limit_menu = add_submenu(sub, "会话小鱼上限", None)
+            limit_menu = add_submenu(sub, t("menu.shared.session_fish_limit"), None)
             current = int(agent_cfg.get("session_pets_max", 6) or 6)
             group = QActionGroup(limit_menu)
             group.setExclusive(True)
             for limit in sorted({3, 6, 9, 12, 16, 24, current}):
-                choice = limit_menu.addAction(f"{limit} 只")
+                choice = limit_menu.addAction(t("menu.shared.limit_fish", limit=limit))
                 choice.setCheckable(True)
                 choice.setChecked(limit == current)
                 group.addAction(choice)
@@ -474,7 +474,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         if callable(set_card_theme):
             from ..session_card_themes import CONFIG_KEY, normalize_theme_id, theme_choices
 
-            theme_menu = add_submenu(sub, "详情卡配色", None)
+            theme_menu = add_submenu(sub, t("menu.shared.detail_card_colors"), None)
             current_theme = normalize_theme_id(agent_cfg.get(CONFIG_KEY))
             theme_group = QActionGroup(theme_menu)
             theme_group.setExclusive(True)
@@ -489,7 +489,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         if callable(crown_choices) and callable(toggle_crown):
             # 测试替身的宿主可能对任何属性都回一个返回 None 的函数：按空清单处理
             choices = crown_choices() or ()
-            crown_menu = add_submenu(sub, "桂冠给哪个模型", None)
+            crown_menu = add_submenu(sub, t("menu.shared.laurel_which_model"), None)
             for token, label, checked in choices:
                 choice = crown_menu.addAction(label)
                 choice.setCheckable(True)
@@ -498,18 +498,18 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):
-        act = sub.addAction("记录最近的对话")
+        act = sub.addAction(t("menu.shared.remember_recent_chats"))
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_history", True)))
         act.toggled.connect(lambda on: toggle_session_history(on))
         set_rows = getattr(pet, "set_session_history_rows", None)
         if callable(set_rows):
-            rows_menu = add_submenu(sub, "最近的对话显示行数", None)
+            rows_menu = add_submenu(sub, t("menu.shared.recent_chats_rows"), None)
             current_rows = int(agent_cfg.get("session_history_rows", 10) or 10)
             rows_group = QActionGroup(rows_menu)
             rows_group.setExclusive(True)
             for rows in sorted({5, 8, 10, 12, 15, 20, current_rows}):
-                choice = rows_menu.addAction(f"{rows} 行")
+                choice = rows_menu.addAction(t("menu.shared.rows_rows", rows=rows))
                 choice.setCheckable(True)
                 choice.setChecked(rows == current_rows)
                 rows_group.addAction(choice)
@@ -526,7 +526,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         if str(item.get('key') or '')
     ]
     if custom_items:
-        custom_sub = add_submenu(sub, "自定义联动 Agent", None)
+        custom_sub = add_submenu(sub, t("menu.shared.custom_linked_agent"), None)
         for item in custom_items:
             key = str(item.get('key'))
             act = custom_sub.addAction(str(item.get('name') or key))
@@ -536,7 +536,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
 
 
 def build_size_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
-    submenu = add_submenu(menu, "大小", "size" if icons else None)
+    submenu = add_submenu(menu, t("menu.shared.size"), "size" if icons else None)
     group = QActionGroup(submenu)
     group.setExclusive(True)
     for scale in catalog.SCALE_STEPS:
@@ -550,7 +550,7 @@ def build_size_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
 
 
 def add_drag_physics(menu: QMenu, pet, *, icons: bool = True):
-    action = add_action(menu, "拖动物理", "physics" if icons else None)
+    action = add_action(menu, t("menu.shared.drag_physics"), "physics" if icons else None)
     action.setCheckable(True)
     action.setChecked(pet.drag_physics)
     action.toggled.connect(lambda enabled, pet=pet: pet.set_drag_physics(enabled))
@@ -558,24 +558,24 @@ def add_drag_physics(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_return_corner(menu: QMenu, pet, *, icons: bool = True):
-    return add_action(menu, "回到右下角", "corner" if icons else None, pet.go_default_corner)
+    return add_action(menu, t("menu.shared.back_corner"), "corner" if icons else None, pet.go_default_corner)
 
 
 def add_hide_pet(menu: QMenu, pet, *, icons: bool = True):
     # close_on_trigger：隐藏后菜单随之关闭，避免菜单悬空无法找回肥鱼
-    return add_action(menu, "隐藏肥鱼", "hide" if icons else None, pet.hide, close_on_trigger=True)
+    return add_action(menu, t("menu.shared.hide_fish"), "hide" if icons else None, pet.hide, close_on_trigger=True)
 
 
 def add_look_screen(menu: QMenu, pet, *, icons: bool = True):
     callback = getattr(pet, "on_look_screen", None)
     if callback is None:
         return None
-    return add_action(menu, "看看屏幕", "screen" if icons else None, callback, close_on_trigger=True)
+    return add_action(menu, t("menu.shared.look_at_screen"), "screen" if icons else None, callback, close_on_trigger=True)
 
 
 
 def add_no_move(menu: QMenu, pet, *, icons: bool = True):
-    action = add_action(menu, "不移动", "pause" if icons else None)
+    action = add_action(menu, t("menu.shared.stay_put"), "pause" if icons else None)
     action.setCheckable(True)
     action.setChecked(pet.no_move)
     action.toggled.connect(lambda enabled, pet=pet: pet.set_no_move(enabled))
@@ -583,7 +583,7 @@ def add_no_move(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_on_top(menu: QMenu, pet, *, icons: bool = True):
-    action = add_action(menu, "窗口置顶", "pin" if icons else None)
+    action = add_action(menu, t("menu.shared.always_top"), "pin" if icons else None)
     action.setCheckable(True)
     action.setChecked(bool(pet.cfg.get("on_top", True)))
     action.toggled.connect(lambda enabled, pet=pet: pet.set_on_top(enabled))
@@ -591,7 +591,7 @@ def add_on_top(menu: QMenu, pet, *, icons: bool = True):
 
 
 def add_autostart(menu: QMenu, pet=None, *, icons: bool = True):
-    action = add_action(menu, "开机自启", "autostart" if icons else None)
+    action = add_action(menu, t("menu.shared.start_at_sign"), "autostart" if icons else None)
     action.setCheckable(True)
     action.setChecked(autostart_mod.is_enabled())
     def toggle(enabled: bool) -> None:
@@ -612,7 +612,7 @@ def add_spawn_pet(menu: QMenu, pet):
         icon = pet_avatar_menu_icon(menu, pet)
     else:
         icon = QIcon()
-    action = menu.addAction(icon, "生小肥鱼")
+    action = menu.addAction(icon, t("menu.shared.spawn_little_fish"))
     action.setProperty("closeOnTrigger", True)
     connect_action(action, callback)
     return action
@@ -625,7 +625,7 @@ def add_clear_spawned_pets(menu: QMenu, pet, *, icons: bool = True):
         return None
     return add_action(
         menu,
-        "退出子肥鱼",
+        t("menu.shared.close_little_fish"),
         "clear" if icons else None,
         callback,
         close_on_trigger=True,
@@ -639,7 +639,7 @@ def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
         return None
     return add_action(
         menu,
-        "护驾",
+        t("menu.shared.rally"),
         "interaction" if icons else None,
         callback,
         close_on_trigger=True,
@@ -651,7 +651,7 @@ def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
     callback = getattr(pet, "trigger_golden_spin", None)
     return add_action(
         menu,
-        "黄金回旋",
+        t("menu.shared.golden_spin"),
         "play" if icons else None,
         callback,
         close_on_trigger=True,
@@ -660,7 +660,7 @@ def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
 
 def add_edge_probe(menu: QMenu, pet, *, icons: bool = True):
     """右键菜单开关：开启/关闭拖到屏幕边缘后的自动探头。"""
-    action = add_action(menu, "边缘探头", "corner" if icons else None)
+    action = add_action(menu, t("menu.shared.peek_from_edge"), "corner" if icons else None)
     action.setCheckable(True)
     action.setChecked(bool(pet.cfg.get("edge_probe_enabled", False)))
     action.toggled.connect(
@@ -718,10 +718,10 @@ def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
     opener = getattr(pet, "open_vscode_workspace", None)
     if not callable(entries_of) or not callable(opener):
         return None
-    sub = add_submenu(menu, "VS Code 工作区", "application" if icons else None)
+    sub = add_submenu(menu, t("menu.shared.vs_code_workspaces"), "application" if icons else None)
     entries = list(entries_of() or [])
     if not entries:
-        hint = sub.addAction("还没有开过的工作区；可在设置里指定工作区文件目录")
+        hint = sub.addAction(t("menu.shared.no_workspaces_opened_yet_you"))
         hint.setEnabled(False)
         return sub
     from .icons import badged_menu_icon, vector_menu_icon
@@ -736,7 +736,7 @@ def add_vscode_workspaces_menu(menu: QMenu, pet, *, icons: bool = True):
         if icons:
             glyph = "ubuntu" if entry.wsl else "windows"
             action.setIcon(badged_menu_icon(sub, glyph) if entry.open else vector_menu_icon(sub, glyph))
-        action.setToolTip(entry.target + ("（开着）" if entry.open else ""))
+        action.setToolTip(entry.target + (t("menu.shared.open") if entry.open else ""))
     return sub
 
 
@@ -754,7 +754,7 @@ def add_music_pause(menu: QMenu, pet, *, icons: bool = True):
     from .. import now_playing
 
     return add_action(
-        menu, "让人家歇一会儿嘛（暂停 / 播放）", "pause" if icons else None,
+        menu, t("menu.shared.let_me_take_breather_pause"), "pause" if icons else None,
         lambda: _run_off_main(now_playing.toggle_play_pause), close_on_trigger=True,
     )
 
@@ -762,7 +762,7 @@ def add_music_pause(menu: QMenu, pet, *, icons: bool = True):
 def add_music_next(menu: QMenu, pet, *, icons: bool = True):
     """音乐子菜单：切歌。"""
     return add_action(
-        menu, "给主人换一首（切歌）", "play" if icons else None,
+        menu, t("menu.shared.play_you_another_one_next"), "play" if icons else None,
         lambda: _run_off_main(lambda: _skip_track(pet, "next")), close_on_trigger=True,
     )
 
@@ -770,14 +770,14 @@ def add_music_next(menu: QMenu, pet, *, icons: bool = True):
 def add_music_prev(menu: QMenu, pet, *, icons: bool = True):
     """音乐子菜单：切到上一首。"""
     return add_action(
-        menu, "人家想再听刚才那首（上一首）", "play" if icons else None,
+        menu, t("menu.shared.i_want_last_one_again"), "play" if icons else None,
         lambda: _run_off_main(lambda: _skip_track(pet, "previous")), close_on_trigger=True,
     )
 
 
 def add_music_quit(menu: QMenu, pet, *, icons: bool = True):
     """音乐子菜单开关：临时退出音乐模式（勾选=已退出）。"""
-    action = add_action(menu, "人家今天不唱了（退出音乐模式）", "stop" if icons else None)
+    action = add_action(menu, t("menu.shared.no_more_singing_today_leave"), "stop" if icons else None)
     action.setCheckable(True)
     action.setChecked(not music_mode_active(pet))
     action.toggled.connect(lambda off: set_music_mode(pet, not off))
@@ -820,16 +820,16 @@ def add_music_lyric_align(menu: QMenu, pet, *, icons: bool = True):
     一个一次点击就能对准的入口，是这个功能唯一诚实的做法。
     """
     icon = "play" if icons else None
-    submenu = add_submenu(menu, "歌词对齐", icon)
-    add_action(submenu, "回到开头（现在这句算开头）", icon,
+    submenu = add_submenu(menu, t("menu.shared.lyric_alignment"), icon)
+    add_action(submenu, t("menu.shared.back_start_line_start"), icon,
                lambda: _align_lyric(pet, "start"), close_on_trigger=True)
-    add_action(submenu, "上一句", icon,
+    add_action(submenu, t("menu.shared.previous_line"), icon,
                lambda: _align_lyric(pet, "prev"), close_on_trigger=True)
-    add_action(submenu, "下一句", icon,
+    add_action(submenu, t("menu.shared.next_line"), icon,
                lambda: _align_lyric(pet, "next"), close_on_trigger=True)
-    add_action(submenu, "后退 5 秒", icon,
+    add_action(submenu, t("menu.shared.back_5_seconds"), icon,
                lambda: _align_lyric(pet, "back5"), close_on_trigger=True)
-    add_action(submenu, "前进 5 秒", icon,
+    add_action(submenu, t("menu.shared.forward_5_seconds"), icon,
                lambda: _align_lyric(pet, "fwd5"), close_on_trigger=True)
     return submenu
 
@@ -864,12 +864,12 @@ def add_claude_desktop(menu: QMenu, pet, *, icons: bool = True):
 
     def launch() -> None:
         if not claude_launchers.launch_claude_desktop(target):
-            _tell(pet, "Claude Desktop 没能拉起来…")
+            _tell(pet, t("menu.shared.claude_desktop_didn_t_start"))
 
     action = add_action(menu, "Claude Desktop", "sparkle" if icons else None, launch, close_on_trigger=True)
     if not target:
         action.setEnabled(False)
-        action.setToolTip("没找到 Claude Desktop")
+        action.setToolTip(t("menu.shared.claude_desktop_not_found"))
     return action
 
 
@@ -879,12 +879,12 @@ def add_wsl_claude_code(menu: QMenu, pet, *, icons: bool = True):
 
     def launch() -> None:
         if not claude_launchers.launch_wsl_claude(list(argv or [])):
-            _tell(pet, "WSL 里的 Claude Code 没能拉起来…")
+            _tell(pet, t("menu.shared.claude_code_wsl_didn_t"))
 
-    action = add_action(menu, "Claude Code（WSL）", "ubuntu" if icons else None, launch, close_on_trigger=True)
+    action = add_action(menu, t("menu.shared.claude_code_wsl"), "ubuntu" if icons else None, launch, close_on_trigger=True)
     if argv is None:
         action.setEnabled(False)
-        action.setToolTip("没找到 WSL")
+        action.setToolTip(t("menu.shared.wsl_not_found"))
     return action
 
 
@@ -893,7 +893,7 @@ def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):
 
     与设置页开关同一份配置（``agent_cost_enabled``），两边实时联动。
     """
-    action = add_action(menu, "显示本轮消费", "balance" if icons else None)
+    action = add_action(menu, t("menu.shared.show_turn_cost"), "balance" if icons else None)
     action.setCheckable(True)
     action.setChecked(bool(pet.cfg.get("agent_cost_enabled", False)))
 
@@ -914,7 +914,15 @@ def add_agent_cost(menu: QMenu, pet, *, icons: bool = True):
 
 
 
+#: 模板 JSON 里的切换文字（zh 原文）→ 文案键
+_TEMPLATE_SWITCH_KEYS = {"切换到新版菜单": "menu.template.switch_to_modern",
+                         "切换回旧版菜单": "menu.template.switch_to_legacy"}
+
+
 def add_template_switch(menu: QMenu, pet, label: str, target: str, *, icons: bool = True):
+    key = _TEMPLATE_SWITCH_KEYS.get(label)
+    label = t(key) if key else label
+
     def switch_and_reopen() -> None:
         pet.set_context_menu_template(target)
         reopen = getattr(pet, "reopen_context_menu", None)
@@ -925,4 +933,4 @@ def add_template_switch(menu: QMenu, pet, label: str, target: str, *, icons: boo
 
 
 def add_quit(menu: QMenu, pet, *, icons: bool = True):
-    return add_action(menu, "退出", "exit" if icons else None, pet.request_quit, close_on_trigger=True)
+    return add_action(menu, t("menu.shared.quit"), "exit" if icons else None, pet.request_quit, close_on_trigger=True)

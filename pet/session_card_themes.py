@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from .i18n import t
+
 #: 顺序即菜单里的顺序
 CARD_THEMES: dict[str, dict[str, str]] = {
     "sea": {
@@ -67,7 +69,8 @@ def card_theme(value) -> dict[str, str]:
 
 def theme_choices() -> list[tuple[str, str]]:
     """``[(id, 名字), …]``，给菜单用。"""
-    return [(theme_id, theme["label"]) for theme_id, theme in CARD_THEMES.items()]
+    # 显示名跟随界面语言；CARD_THEMES 里的中文是 zh 原文
+    return [(theme_id, t(f"menu.card_theme.{theme_id}")) for theme_id in CARD_THEMES]
 
 
 def _luminance(color: str) -> float:
