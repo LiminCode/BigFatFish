@@ -1147,6 +1147,31 @@ def test_modern_menu_icons_are_crisp_outline_glyphs(monkeypatch):
     app.processEvents()
 
 
+def test_modern_menu_window_stays_per_pixel_alpha_after_the_fade_in():
+    """圆角四角发黑的回归（2026-10-16）。
+
+    Windows 平台只在「带 alpha 且 FramelessWindowHint」或「不透明度 < 1」时给窗口
+    WS_EX_LAYERED；QMenu 的窗口类型是 Qt.Popup，没有 Frameless 位，所以菜单只在
+    Qt 淡入动画（不透明度 < 1）期间是逐像素透明的，淡入一结束 Qt 就摘掉分层样式，
+    圆角外的透明区域合成成黑色。新版样式必须给菜单和每级子菜单都加上 Frameless 位。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    from pet.context_menus.menu_styles.common import inherit_menu_style
+    from pet.context_menus.menu_styles.modern import apply_modern_menu_style
+
+    QApplication.instance() or QApplication([])
+    menu = QMenu()
+    apply_modern_menu_style(menu, {"theme": "light", "translucent": False, "corner_radius": 18})
+    submenu = QMenu("more", menu)
+    inherit_menu_style(menu, submenu)
+    for widget in (menu, submenu):
+        assert widget.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        assert widget.windowFlags() & Qt.WindowType.FramelessWindowHint, "没有 Frameless 位，淡入后四角会黑"
+        assert widget.windowFlags() & Qt.WindowType.Popup, "仍然是弹出菜单"
+
+
 def test_modern_checked_action_is_painted_in_reserved_right_slot():
     from PySide6.QtWidgets import QApplication, QMenu, QWidget
 

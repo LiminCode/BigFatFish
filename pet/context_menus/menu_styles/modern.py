@@ -86,6 +86,12 @@ def apply_modern_menu_style(menu: QMenu, appearance: dict | None = None) -> None
     menu.setProperty("modernAppearance", appearance)
     menu.setProperty("modernDark", dark)
     menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+    # Windows 只给「带 alpha 且 FramelessWindowHint」或「不透明度 < 1」的窗口 WS_EX_LAYERED
+    # （qwindowswindow.cpp setWindowLayered）。QMenu 的类型是 Qt.Popup，本身没有 Frameless
+    # 位，于是菜单只在 Qt 的淡入动画期间逐像素透明，淡入一结束分层样式被摘掉，圆角外的
+    # 透明区域就合成成黑色四角（2026-10-16 实机 196~585 个黑像素）。加上 Frameless 位后
+    # 淡入前后都是分层窗口（实测 1~4 个像素，是阴影边缘）。
+    menu.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
     font_size = max(10, min(18, int(appearance.get("ui_font_size") or 13)))
     font = system_ui_font(font_size, QFont.Weight.Normal)
     requested_font = str(appearance.get("ui_font") or "system")

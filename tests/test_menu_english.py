@@ -153,6 +153,8 @@ def test_registry_tables_follow_the_language():
     assert MENU_ACTIONS.disabled_reason("nope") == "Unavailable right now"
     assert icon_choice_label("todo") == "To-do"
     assert MENU_ACTIONS.default_label({"type": "submenu", "id": "pet_controls", "label": "肥鱼控制"}) == "Fish controls"
+    assert MENU_ACTIONS.default_label({"type": "submenu", "id": "pet_controls", "label": "桌宠控制"}) == "Fish controls", \
+        "94b42b7 之前保存的编排里还叫「桌宠控制」，也是模板原名，不是用户改的名"
     assert MENU_ACTIONS.default_label({"type": "submenu", "id": "pet_controls", "label": "我的控制"}) == "我的控制", \
         "用户改过名的子菜单原样"
     assert MENU_ACTIONS.default_label({"type": "submenu", "id": "custom_1", "label": "常用"}) == "常用"
@@ -160,6 +162,7 @@ def test_registry_tables_follow_the_language():
     assert MENU_ACTIONS.label("rally_pets") == "护驾"
     assert MENU_ACTIONS.disabled_reason("rally_pets") == "还没有小肥鱼"
     assert MENU_ACTIONS.default_label({"type": "submenu", "id": "pet_controls", "label": "肥鱼控制"}) == "肥鱼控制"
+    assert MENU_ACTIONS.default_label({"type": "submenu", "id": "pet_controls", "label": "桌宠控制"}) == "肥鱼控制"
 
 
 def test_session_status_line_speaks_english():

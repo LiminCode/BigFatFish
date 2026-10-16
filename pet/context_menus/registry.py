@@ -99,10 +99,12 @@ CUSTOM_ICON_CHOICES = (
 )
 
 
-#: 模板自带子菜单：id →（模板里的中文名, 文案键）
+#: 模板自带子菜单：id →（模板里出现过的中文原名们, 文案键）
 SUBMENU_LABEL_KEYS = {
-    "pet_controls": ("肥鱼控制", "menu.submenu.pet_controls"),
-    "tools_help": ("工具与帮助", "menu.submenu.tools_help"),
+    # 用户在 94b42b7 之前保存的编排里仍是「桌宠控制」，那也是模板原名而不是用户改的名，
+    # 同样要跟界面语言走。
+    "pet_controls": (("肥鱼控制", "桌宠控制"), "menu.submenu.pet_controls"),
+    "tools_help": (("工具与帮助",), "menu.submenu.tools_help"),
 }
 
 
@@ -304,7 +306,7 @@ class MenuActionRegistry:
         node_id = str(node.get("id") or "")
         label = str(node.get("label") or "")
         known = SUBMENU_LABEL_KEYS.get(node_id)
-        if known is not None and label in ("", known[0]):
+        if known is not None and (label == "" or label in known[0]):
             return t(known[1])
         return label or self.label(node_id)
 
