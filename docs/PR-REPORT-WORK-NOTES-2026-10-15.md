@@ -206,12 +206,12 @@ $ gh api repos/lwang-sc/AI-Base-Memory/contents/note → 那一个 .md
 
 | 文件 | 增删 | 改动 |
 |---|---|---|
-| `pet/work_briefing.py` | +? / −? | Atlassian 读取名单加 `getConfluenceContent`、`searchConfluence`、`search`、`getGraphObject`（简报也因此能读 Confluence；`executeRead` / `discover` / `getLoomVideo` 没放）。 |
-| `pet/locale/zh.json`、`pet/locale/en.json` | +? / −?、+? / −? | 笔记的全部文案 35 个键（`notes.*`、`briefing.tab.briefing`）。 |
-| `pet/work_notes_ui.py` | +? / −? | 所有界面文字、气泡、提醒按钮走 `i18n.t`。 |
-| `pet/work_notes.py` | +? / −? | 「稍后」几档改成文案键；稍后的理由走 `t`；提示词里摘要语言跟随界面语言（`notes.prompt.language`：中文 / English）。 |
-| `pet/work_briefing_ui.py`、`pet/app.py`、`pet/context_menus/shared.py` | +? / −?、+? / −?、+? / −? | 「简报」「笔记」标签与菜单「工作笔记」走 `t`。 |
-| `tests/test_work_notes_ui.py` | +? / −? | 英文界面用例（按钮、稍后菜单、列表行、原文标题、气泡、稍后理由、提示词语言、简报标签）；两张表都有全部 `notes.*` 键。 |
+| `pet/work_briefing.py` | +3 / −1 | Atlassian 读取名单加 `getConfluenceContent`、`searchConfluence`、`search`、`getGraphObject`（简报也因此能读 Confluence；`executeRead` / `discover` / `getLoomVideo` 没放）。 |
+| `pet/locale/zh.json`、`pet/locale/en.json` | +36 / −1、+36 / −1 | 笔记的全部文案 35 个键（`notes.*`、`briefing.tab.briefing`）。 |
+| `pet/work_notes_ui.py` | +40 / −35 | 所有界面文字、气泡、提醒按钮走 `i18n.t`。 |
+| `pet/work_notes.py` | +7 / −6 | 「稍后」几档改成文案键；稍后的理由走 `t`；提示词里摘要语言跟随界面语言（`notes.prompt.language`：中文 / English）。 |
+| `pet/work_briefing_ui.py`、`pet/app.py`、`pet/context_menus/shared.py` | +2 / −1、+3 / −2、+2 / −1 | 「简报」「笔记」标签与菜单「工作笔记」走 `t`。 |
+| `tests/test_work_notes_ui.py` | +38 / −0 | 英文界面用例（按钮、稍后菜单、列表行、原文标题、气泡、稍后理由、提示词语言、简报标签）；两张表都有全部 `notes.*` 键。 |
 
 用户的三个问题：
 
