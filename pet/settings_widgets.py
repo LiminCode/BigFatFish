@@ -60,6 +60,7 @@ from .context_menus.icons import (
     vector_widget_icon,
 )
 from .context_menus.quick_launch import fitted_application_icon
+from .i18n import maybe_t, t
 
 
 def _system_font_families() -> tuple[str, ...]:
@@ -100,6 +101,26 @@ SETTINGS_DOMAIN_NAV = (
     ("语音", "sound"),
     ("文件识别", "file"),
 )
+
+#: 侧栏能力域的中文名 → 文案键。中文名是内部标识（测试、深链接 select_page、页面字典都按它认），
+#: 显示时经 domain_label 跟随界面语言。
+SETTINGS_DOMAIN_KEYS = {
+    "常规": "settings.domain.general",
+    "肥鱼": "settings.domain.pet",
+    "互动": "settings.domain.interaction",
+    "菜单": "settings.domain.menu",
+    "桌面组件": "settings.domain.desktop",
+    "AI 与对话": "settings.domain.ai",
+    "自动化与联动": "settings.domain.automation",
+    "语音": "settings.domain.voice",
+    "文件识别": "settings.domain.file",
+}
+
+
+def domain_label(name: str) -> str:
+    """能力域在当前语言下的显示名；不认识的名字原样返回。"""
+    key = SETTINGS_DOMAIN_KEYS.get(name)
+    return t(key) if key else name
 
 BROWSER_CONTROL_STYLESHEET = """
 QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
@@ -317,9 +338,10 @@ class ToggleSwitch(QAbstractButton):
         painter.setBrush(outline if self.isEnabled() else QColor("#9a9a9a"))
         painter.drawRect(QRect(knob_x, 0, 12, 20))
 
-IMAGE_NAME_FILTER = "图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff)"
+#: 文件对话框过滤器：存文案键，ResourcePathPicker 建控件时经 maybe_t 翻译（调用方也可以直接传现成的过滤器文字）
+IMAGE_NAME_FILTER = "settings.ui.filter_images"
 
-AUDIO_NAME_FILTER = "音频文件 (*.wav *.mp3 *.ogg *.flac *.m4a)"
+AUDIO_NAME_FILTER = "settings.ui.filter_audio"
 
 class ClickSoundPackPicker(QWidget):
     """点击音效包选择器（内置默认/小黄鸭/自定义单文件/自定义文件夹）。"""
@@ -329,10 +351,10 @@ class ClickSoundPackPicker(QWidget):
     def __init__(self, pack: dict | None = None, parent=None):
         super().__init__(parent)
         self.mode_select = ModernSelect(self, width=170)
-        self.mode_select.addItem("默认包", "builtin:default")
-        self.mode_select.addItem("小黄鸭包", "builtin:duck")
-        self.mode_select.addItem("自定义单文件", "file")
-        self.mode_select.addItem("自定义文件夹（随机）", "folder")
+        self.mode_select.addItem(t("settings.ui.default_pack"), "builtin:default")
+        self.mode_select.addItem(t("settings.ui.rubber_duck_pack"), "builtin:duck")
+        self.mode_select.addItem(t("settings.ui.custom_single_file"), "file")
+        self.mode_select.addItem(t("settings.ui.custom_folder_random"), "folder")
 
         self.file_picker = ResourcePathPicker("", name_filter=AUDIO_NAME_FILTER, parent=self)
         self.folder_picker = ResourcePathPicker("", directory=True, parent=self)
@@ -555,15 +577,15 @@ class ImagePreviewDrawer(QFrame):
         super().__init__(parent)
         self.setObjectName("imagePreviewDrawer")
         self.setProperty("surface", "drawer")
-        self.title_label = QLabel("图片预览", self)
+        self.title_label = QLabel(t("settings.ui.image_preview"), self)
         self.title_label.setObjectName("imagePreviewTitle")
-        self.count_label = QLabel("0 张图片", self)
+        self.count_label = QLabel(t("settings.ui.x_0_images"), self)
         self.count_label.setObjectName("imagePreviewCount")
         self.close_button = TiltButton(self)
         self.close_button.setObjectName("imagePreviewClose")
         self.close_button.setFixedSize(28, 28)
         self.close_button.setIcon(vector_widget_icon(self, "exit", 14))
-        self.close_button.setAccessibleName("关闭图片预览")
+        self.close_button.setAccessibleName(t("settings.ui.close_image_preview"))
         self.close_button.clicked.connect(self.hide)
         header = QHBoxLayout()
         header.addWidget(self.title_label)
@@ -580,7 +602,7 @@ class ImagePreviewDrawer(QFrame):
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.flow = MasonryFlow(column_count=3)
         self.scroll.setWidget(self.flow)
-        self.empty_label = QLabel("这个目录中没有可预览的图片", self)
+        self.empty_label = QLabel(t("settings.ui.no_images_preview_folder"), self)
         self.empty_label.setObjectName("imagePreviewEmpty")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root = QVBoxLayout(self)
@@ -642,7 +664,7 @@ class ImagePreviewDrawer(QFrame):
                 paths = []
         self.path_label.setText(str(directory))
         self.path_label.setToolTip(str(directory))
-        self.count_label.setText(f"{len(paths)} 张图片")
+        self.count_label.setText(t("settings.ui.v_images", v=len(paths)))
         self.flow.set_paths(paths)
         self.scroll.setVisible(bool(paths))
         self.empty_label.setVisible(not paths)
@@ -662,24 +684,24 @@ class ResourcePathPicker(QWidget):
     ):
         super().__init__(parent)
         self.directory = bool(directory)
-        self.name_filter = name_filter
+        self.name_filter = maybe_t(name_filter)   # 传的是文案键就在这里翻好（建控件时界面语言已定）
         # 选择对话框标题：默认沿用图片语义（既有调用方不变），非图片用途可覆盖
         # （例如「音乐播放器程序」选 .exe 时不该写「选择图片」）。
         self.dialog_title = str(
-            dialog_title or ("选择图片目录" if self.directory else "选择图片")
+            dialog_title or (t("settings.ui.choose_image_folder") if self.directory else t("settings.ui.choose_image"))
         )
         self.edit = QLineEdit(self)
         self.edit.setMinimumWidth(250)
         self.edit.setText(str(value))
-        self.button = TiltButton("选择…", self)
-        self.button.setFixedWidth(66)
+        self.button = TiltButton(t("settings.ui.choose"), self)
+        self.button.setMinimumWidth(66)   # 最小宽度：英文「Choose…」比中文长，定宽会被截
         self.button.clicked.connect(self.choose)
         path_row = QHBoxLayout()
         path_row.setContentsMargins(0, 0, 0, 0)
         path_row.setSpacing(6)
         path_row.addWidget(self.edit, 1)
         self.preview_button = (
-            TiltButton("预览", self) if self.directory and image_preview else None
+            TiltButton(t("settings.ui.preview"), self) if self.directory and image_preview else None
         )
         if self.preview_button is not None:
             self.preview_button.setIcon(vector_widget_icon(self, "screen", 14))
@@ -723,7 +745,7 @@ class ColorSwatchButton(QAbstractButton):
         self._color = QColor(value)
         self.setFixedSize(36, 32)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("选择颜色")
+        self.setToolTip(t("settings.ui.choose_color"))
 
     def color(self) -> QColor:
         return QColor(self._color)
@@ -763,7 +785,7 @@ class ColorPicker(QWidget):
 
     def choose(self) -> None:
         initial = QColor(self.text())
-        color = QColorDialog.getColor(initial if initial.isValid() else QColor("#ffffff"), self, "选择颜色")
+        color = QColorDialog.getColor(initial if initial.isValid() else QColor("#ffffff"), self, t("settings.ui.choose_color"))
         if color.isValid():
             self.edit.setText(color.name(QColor.NameFormat.HexRgb))
 
@@ -1322,7 +1344,7 @@ class SettingsDisclosureHeader(TiltButton):
         self.setChecked(False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName(f"展开{title}")
+        self.setAccessibleName(t("settings.ui.expand_title", title=title))
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
         return QSize(240, 44)
@@ -1373,7 +1395,7 @@ class SettingsSection(QWidget):
         self.card.setVisible(expanded)
         if self.toggle is not None:
             self.toggle.setAccessibleName(
-                f"{'收起' if expanded else '展开'}{self.toggle.text()}"
+                f"{t("settings.ui.collapse") if expanded else t("settings.ui.expand")}{self.toggle.text()}"
             )
             self.toggle.update()
 class CollapsibleGroup(QWidget):
@@ -1422,7 +1444,7 @@ class CollapsibleGroup(QWidget):
         self._sync_accessible_name()
 
     def _sync_accessible_name(self) -> None:
-        state = "收起" if self.toggle.isChecked() else "展开"
+        state = t("settings.ui.collapse") if self.toggle.isChecked() else t("settings.ui.expand")
         self.toggle.setAccessibleName(f"{state}{self.toggle.text()}")
 
 
@@ -1477,7 +1499,7 @@ class SettingsTabContainer(QWidget):
         header = SettingsDisclosureHeader(str(label), self)       # objectName 仍是 advancedSectionToggle：共用磁贴样式
         header.setProperty("navigationStyle", "accordion")
         header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        header.setAccessibleName(f"展开{label}")
+        header.setAccessibleName(t("settings.ui.expand_label", label=label))
         index = len(self._keys)
         # 按 toggled 而不是 clicked：程序里 setChecked(True)（截图脚本「全部展开」）也会切到那一页
         header.toggled.connect(lambda checked, index=index: self._on_header_toggled(index, checked))
@@ -1522,7 +1544,7 @@ class SettingsTabContainer(QWidget):
         for position, (header, page) in enumerate(zip(self._buttons, self._pages)):
             expanded = position == index
             header.setChecked(expanded)
-            header.setAccessibleName(f"{'收起' if expanded else '展开'}{self._labels[position]}")
+            header.setAccessibleName(f"{t("settings.ui.collapse") if expanded else t("settings.ui.expand")}{self._labels[position]}")
             page.setVisible(expanded)
             header.update()
         self._pages[index].updateGeometry()
@@ -1566,6 +1588,14 @@ def _line_edit(text: str = "", *, password: bool = False, width: int = 240) -> Q
         edit.setEchoMode(QLineEdit.EchoMode.Password)
     return edit
 
+def _quick_launch_display_name(app: dict) -> str:
+    """列表里显示的名字：默认浏览器那一项若还是内置的中文名，按界面语言显示（配置里存的名字不动）。"""
+    name = str(app.get("name") or "")
+    if app.get("kind") == "default_browser" and name in ("", "默认浏览器"):
+        return t("settings.ui.default_browser")
+    return name
+
+
 class QuickLaunchItemRow(QWidget):
     """Two-line quick-launch row; the owning list keeps selection and drag."""
 
@@ -1606,21 +1636,21 @@ class QuickLaunchEditor(QWidget):
         self.list.setSpacing(2)
         self.list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.list.viewport().installEventFilter(self)
-        self.count_label = QLabel("0 个快捷项", self)
+        self.count_label = QLabel(t("settings.ui.x_0_shortcuts"), self)
         self.count_label.setObjectName("quickLaunchCount")
-        self.empty_label = QLabel("还没有快捷启动项，可从“添加”开始。", self)
+        self.empty_label = QLabel(t("settings.ui.no_quick_launch_items_yet"), self)
         self.empty_label.setObjectName("quickLaunchEmpty")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setFixedHeight(64)
-        self.add_button = SettingsMenuButton("添加", self)
+        self.add_button = SettingsMenuButton(t("settings.ui.add"), self)
         self.add_button.setIcon(vector_widget_icon(self, "add", 15))
         self.add_menu = configure_settings_action_popup(SettingsPopupMenu(self.add_button))
-        self.choose_application_action = self.add_menu.addAction("选择应用…")
-        self.add_default_action = self.add_menu.addAction("添加默认浏览器")
+        self.choose_application_action = self.add_menu.addAction(t("settings.ui.choose_app"))
+        self.add_default_action = self.add_menu.addAction(t("settings.ui.add_default_browser"))
         self.choose_application_action.triggered.connect(self._choose_application)
         self.add_default_action.triggered.connect(self._add_default_browser)
         self.add_button.setPopupMenu(self.add_menu)
-        self.remove_button = TiltButton("移除所选", self)
+        self.remove_button = TiltButton(t("settings.ui.remove_selected"), self)
         self.remove_button.setIcon(vector_widget_icon(self, "remove", 15))
         self.remove_button.clicked.connect(self._remove_checked)
 
@@ -1645,7 +1675,7 @@ class QuickLaunchEditor(QWidget):
         app = dict(app)
         if app.get("kind") == "default_browser":
             icon = vector_widget_icon(self, "web", 22)
-            app = {"name": str(app.get("name") or "默认浏览器"), "path": "", "kind": "default_browser"}
+            app = {"name": str(app.get("name") or t("settings.ui.default_browser")), "path": "", "kind": "default_browser"}
         else:
             path = str(app.get("path") or "")
             if not path:
@@ -1660,11 +1690,11 @@ class QuickLaunchEditor(QWidget):
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
         item.setCheckState(Qt.CheckState.Unchecked)
         item.setData(Qt.ItemDataRole.UserRole, app)
-        item.setToolTip(app["path"] or "使用系统默认浏览器")
+        item.setToolTip(app["path"] or t("settings.ui.use_system_default_browser"))
         item.setSizeHint(QSize(0, 52))
         self.list.addItem(item)
-        detail = "系统默认浏览器" if app["kind"] == "default_browser" else app["path"]
-        self.list.setItemWidget(item, QuickLaunchItemRow(app["name"], detail, self.list))
+        detail = t("settings.ui.system_default_browser") if app["kind"] == "default_browser" else app["path"]
+        self.list.setItemWidget(item, QuickLaunchItemRow(_quick_launch_display_name(app), detail, self.list))
         self._sync_content_height()
 
     def apps(self) -> list[dict]:
@@ -1673,9 +1703,9 @@ class QuickLaunchEditor(QWidget):
     def _choose_application(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择需要快捷启动的应用",
+            t("settings.ui.choose_app_quick_launch"),
             "/Applications" if os.path.isdir("/Applications") else "",
-            "应用程序 (*.app);;所有文件 (*)",
+            t("settings.ui.applications_app_all_files"),
         )
         if path:
             self.add_app({"name": Path(path).stem, "path": path, "kind": "application"})
@@ -1692,7 +1722,7 @@ class QuickLaunchEditor(QWidget):
 
     def _sync_content_height(self) -> None:
         count = self.list.count()
-        self.count_label.setText(f"{count} 个快捷项")
+        self.count_label.setText(t("settings.ui.count_shortcuts", count=count))
         self.empty_label.setVisible(count == 0)
         self.list.setVisible(count > 0)
         if count:

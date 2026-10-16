@@ -12,17 +12,20 @@ from PySide6.QtWidgets import QLineEdit
 from . import claude_hooks
 from . import slack_watch as sw
 from .settings_widgets import BrowserSpinBox, ModernSelect, SettingRow, ToggleSwitch
+from .i18n import t
 
 #: 模型下拉里的几个常用名；配置里写了别的也认（当作自定义）
-MODEL_CHOICES = (("sonnet", "Sonnet（默认，便宜够用）"), ("haiku", "Haiku（最便宜）"), ("opus", "Opus（最贵）"))
+#: （值, 显示名的文案键）——显示名用时 t()
+MODEL_CHOICES = (("sonnet", "settings.slack.model_sonnet"), ("haiku", "settings.slack.model_haiku"),
+                 ("opus", "settings.slack.model_opus"))
 CUSTOM = "__custom__"
 
-_ENABLED_HINT = ("电脑在用时（没锁屏、最近动过键鼠）每隔一阵让 WSL 里的 Claude Code 经 Slack 连接器只读地看一眼，"
-                 "有需要你回复 / 处理的消息就冒气泡。每次检查都是一次真实的模型调用，走那个账号的额度。")
-_NO_WSL_HINT = "这台机器没有 WSL：Slack 关注要靠 WSL 里登录着工作账号的 Claude Code。"
-_INTERVAL_HINT = "隔几分钟检查一次（人在电脑前时才计）。按一天在用 8 小时算：15 分钟 = 最多 32 次。"
-_IDLE_HINT = "多久没动键鼠就算离开，离开后不检查；回来后下一分钟接着算。"
-_MODEL_HINT = "交给 Claude Code 的模型别名（claude -p --model）。选「自定义」可以填完整模型名；只认字母数字和 . _ -。"
+#: 提示文案存文案键，用时 t()
+_ENABLED_HINT = "settings.slack.enabled_hint"
+_NO_WSL_HINT = "settings.slack.no_wsl_hint"
+_INTERVAL_HINT = "settings.slack.interval_hint"
+_IDLE_HINT = "settings.slack.idle_hint"
+_MODEL_HINT = "settings.slack.model_hint"
 
 
 def slack_watch_rows(dialog) -> list[SettingRow]:
@@ -38,23 +41,23 @@ def slack_watch_rows(dialog) -> list[SettingRow]:
 
     interval = BrowserSpinBox(dialog)
     interval.setRange(*sw.INTERVAL_RANGE)
-    interval.setSuffix(" 分钟")
+    interval.setSuffix(t("settings.slack.min"))
     interval.setValue(settings["interval_minutes"])
     dialog.slack_watch_interval_spin = interval
 
     idle = BrowserSpinBox(dialog)
     idle.setRange(*sw.IDLE_RANGE)
-    idle.setSuffix(" 分钟")
+    idle.setSuffix(t("settings.slack.min"))
     idle.setValue(settings["idle_minutes"])
     dialog.slack_watch_idle_spin = idle
 
     select = ModernSelect(dialog, width=200)
     for value, label in MODEL_CHOICES:
-        select.addItem(label, value)
-    select.addItem("自定义…", CUSTOM)
+        select.addItem(t(label), value)
+    select.addItem(t("settings.slack.custom"), CUSTOM)
     edit = QLineEdit(dialog)
-    edit.setPlaceholderText("例如 claude-sonnet-5-5")
-    edit.setAccessibleName("自定义模型名")
+    edit.setPlaceholderText(t("settings.slack.e_g_claude_sonnet_5"))
+    edit.setAccessibleName(t("settings.slack.custom_model_name"))
     known = {value for value, _label in MODEL_CHOICES}
     if settings["model"] in known:
         select.setCurrentIndex(max(0, select.findData(settings["model"])))
@@ -67,11 +70,11 @@ def slack_watch_rows(dialog) -> list[SettingRow]:
     dialog.slack_watch_model_edit = edit
 
     return [
-        SettingRow("slack_watch_enabled", "电脑在用时自动检查", _ENABLED_HINT if usable else _NO_WSL_HINT, check),
-        SettingRow("slack_watch_interval", "检查间隔", _INTERVAL_HINT, interval),
-        SettingRow("slack_watch_idle", "多久没动算离开", _IDLE_HINT, idle),
-        SettingRow("slack_watch_model", "用哪个模型", _MODEL_HINT, select),
-        SettingRow("slack_watch_model_custom", "自定义模型名", "", edit, stacked=True),
+        SettingRow("slack_watch_enabled", t("settings.slack.check_automatically_while_i_m"), t(_ENABLED_HINT if usable else _NO_WSL_HINT), check),
+        SettingRow("slack_watch_interval", t("settings.slack.check_interval"), t(_INTERVAL_HINT), interval),
+        SettingRow("slack_watch_idle", t("settings.slack.away_after"), t(_IDLE_HINT), idle),
+        SettingRow("slack_watch_model", t("settings.slack.model"), t(_MODEL_HINT), select),
+        SettingRow("slack_watch_model_custom", t("settings.slack.custom_model_name"), "", edit, stacked=True),
     ]
 
 

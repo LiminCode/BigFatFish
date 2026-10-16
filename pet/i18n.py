@@ -87,3 +87,12 @@ def t(key: str, **values) -> str:
 
 def is_valid_key(key: str) -> bool:
     return bool(_KEY_RE.match(key))
+
+
+def maybe_t(value: str, **values) -> str:
+    """``value`` 是中文表里的键就翻译，否则原样返回——给「既可能传文案键、也可能传现成文字」的参数用
+    （例如文件对话框的过滤器：默认值是键，调用方也可以传自己拼好的过滤器）。"""
+    text = str(value or "")
+    if is_valid_key(text) and text in table(DEFAULT_LANGUAGE):
+        return t(text, **values)
+    return text

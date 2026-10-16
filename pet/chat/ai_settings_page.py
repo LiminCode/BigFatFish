@@ -33,6 +33,14 @@ from ..settings_widgets import (
 )
 from .themes import CHAT_UI_STYLE_LABELS, CHAT_UI_VIEW_ASPECT, theme_names
 from .utils import _safe_emit
+from ..i18n import t
+
+
+def chat_style_label(style_id: str) -> str:
+    """对话窗口风格的展示名（跟随界面语言）；themes.CHAT_UI_STYLE_LABELS 里的中文是 zh 原文。"""
+    if style_id in CHAT_UI_STYLE_LABELS:
+        return t(f"settings.ai.style_{style_id}")
+    return style_id
 
 
 class _AiSettingsPage(QWidget):
@@ -67,8 +75,8 @@ class _AiSettingsPage(QWidget):
         self.kb_sync_done.connect(self._on_kb_sync_done)
 
         self.provider_combo = ModernSelect(self, width=230)
-        self.add_provider_btn = QPushButton("添加", self)
-        self.delete_provider_btn = QPushButton("删除", self)
+        self.add_provider_btn = QPushButton(t("settings.ai.add"), self)
+        self.delete_provider_btn = QPushButton(t("settings.ai.delete"), self)
         for pid, provider_item in self.settings.providers.items():
             self.provider_combo.addItem(self._provider_label(provider_item), pid)
         self.provider_combo.setCurrentData(self.settings.active_provider)
@@ -83,7 +91,7 @@ class _AiSettingsPage(QWidget):
         self.about_user.setMinimumSize(240, 80)
         self.timeout = BrowserSpinBox()
         self.timeout.setRange(1, 600)
-        self.timeout.setSuffix(" 秒")
+        self.timeout.setSuffix(t("settings.ai.s"))
         self.timeout.setValue(int(provider.timeout))
         self.temperature = BrowserDoubleSpinBox()
         self.temperature.setRange(0.0, 2.0)
@@ -95,8 +103,8 @@ class _AiSettingsPage(QWidget):
         self.skip_ssl = ToggleSwitch()
         self.skip_ssl.setChecked(not provider.verify_ssl)
         self.effort = ModernSelect(self, width=160)
-        for label, value in (("低", "low"), ("中（默认）", "medium"), ("高", "high"),
-                             ("很高", "xhigh"), ("最高", "max")):
+        for label, value in ((t("settings.ai.low"), "low"), (t("settings.ai.medium_default"), "medium"), (t("settings.ai.high"), "high"),
+                             (t("settings.ai.very_high"), "xhigh"), (t("settings.ai.max"), "max")):
             self.effort.addItem(label, value)
         self.effort.setCurrentData(provider.effort)
         self.system_notify_check = ToggleSwitch()
@@ -107,8 +115,8 @@ class _AiSettingsPage(QWidget):
         self.system_notify_check.setChecked(bool(config.get("system_notifications_enabled", True)))
         self.chat_ui_style = ModernSelect(self, width=190)
         # 展示名与顺序（modern 在前 classic 在后）都取自 themes 的单一来源
-        for style_id, style_label in CHAT_UI_STYLE_LABELS.items():
-            self.chat_ui_style.addItem(style_label, style_id)
+        for style_id in CHAT_UI_STYLE_LABELS:
+            self.chat_ui_style.addItem(chat_style_label(style_id), style_id)
         self.chat_ui_style.setCurrentData(str(config.get("chat_ui_style", "modern")))
         self.vision_same = ToggleSwitch()
         self.vision_same.setChecked(bool(provider.vision_same_as_chat))
@@ -121,7 +129,7 @@ class _AiSettingsPage(QWidget):
         self.knowledge_base = ToggleSwitch()
         self.knowledge_base.setChecked(bool(self.settings.knowledge_base_enabled))
         self.knowledge_base_repo = _line_edit(self.settings.knowledge_base_repo)
-        self.knowledge_base_sync = QPushButton("立即同步", self)
+        self.knowledge_base_sync = QPushButton(t("settings.ai.sync_now"), self)
         self.knowledge_base_sync.clicked.connect(self._run_kb_sync)
 
         self._background_themes = list(theme_names())
@@ -155,9 +163,9 @@ class _AiSettingsPage(QWidget):
             int(config.get("modern_chat_card_opacity", 84) or 84)
         )
         self.background_fill = ModernSelect(self, width=160)
-        self.background_fill.addItem("填充裁剪", "cover")
-        self.background_fill.addItem("完整适应", "contain")
-        self.background_fill.addItem("拉伸铺满", "stretch")
+        self.background_fill.addItem(t("settings.ai.fill_crop"), "cover")
+        self.background_fill.addItem(t("settings.ai.fit"), "contain")
+        self.background_fill.addItem(t("settings.ai.stretch"), "stretch")
         # 裁切取景：编辑器结果按背景值记成编辑集（值为 None = 重置删除），save()
         # 时读磁盘最新配置后只合并编辑过的背景——整字典快照回写会把主设置窗打开
         # 期间外部（老聊天设置即存入口）对其他背景的裁切改动静默回滚。本页风格键
@@ -169,7 +177,7 @@ class _AiSettingsPage(QWidget):
         # _loading_background 挡住程序化赋值的误标。
         self._bg_edited_styles: set[str] = set()
         self._loading_background = False
-        self.background_crop_btn = QPushButton("裁切取景…", self)
+        self.background_crop_btn = QPushButton(t("settings.ai.crop_framing"), self)
         self.background_crop_btn.clicked.connect(self._crop_background)
         self._populate_background_options(self._background_style)
         self.chat_ui_style.currentIndexChanged.connect(self._on_chat_ui_style_changed)
@@ -181,9 +189,9 @@ class _AiSettingsPage(QWidget):
         self.background_fill.currentIndexChanged.connect(self._on_background_edited)
         # 填充方式改动要重估裁切行可见性：contain/stretch 下取景框不生效（themes.py 的 fill 语义）
         self.background_fill.currentIndexChanged.connect(self._update_background_visibility)
-        self.test_button = QPushButton("测试连接")
+        self.test_button = QPushButton(t("settings.ai.test_connection"))
         self.test_button.clicked.connect(self._run_test)
-        self.test_result = QLabel("验证当前 Provider、API 地址和凭据是否可用。")
+        self.test_result = QLabel(t("settings.ai.check_current_provider_api_address"))
         self.test_result.setWordWrap(True)
 
         root = QVBoxLayout(self)
@@ -193,75 +201,73 @@ class _AiSettingsPage(QWidget):
             self.provider_combo,
             [self.add_provider_btn, self.delete_provider_btn],
         )
-        root.addWidget(SettingsSection("API 列表", [
+        root.addWidget(SettingsSection(t("settings.ai.api_list"), [
             SettingRow(
-                "provider_list", "API 列表",
-                "选择要编辑/切换的模型服务；保存后当前选中项会作为 active_provider 生效。",
+                "provider_list", t("settings.ai.api_list"),
+                t("settings.ai.pick_model_service_edit_switch"),
                 provider_row,
             ),
         ], self))
-        root.addWidget(SettingsSection("模型与连接", [
-            SettingRow("provider_name", "Provider 名称", "用于区分当前使用的模型服务。", self.name),
-            SettingRow("api_url", "API 地址", "OpenAI Chat Completions 兼容服务地址。", self.url),
-            SettingRow("model", "模型", "发送请求时使用的模型标识。", self.model),
-            SettingRow("api_key", "API Key", "凭据优先保存到系统钥匙串。", self.key),
-            SettingRow("system_prompt", "System Prompt", "定义肥鱼对话时的身份、语气和行为。", self.prompt, stacked=True),
+        root.addWidget(SettingsSection(t("settings.ai.model_connection"), [
+            SettingRow("provider_name", t("settings.ai.provider_name"), t("settings.ai.tells_model_services_apart"), self.name),
+            SettingRow("api_url", t("settings.ai.api_address"), t("settings.ai.address_openai_chat_completions_compatib"), self.url),
+            SettingRow("model", t("settings.ai.model"), t("settings.ai.model_identifier_sent_each_request"), self.model),
+            SettingRow("api_key", "API Key", t("settings.ai.credentials_are_stored_system_keychain"), self.key),
+            SettingRow("system_prompt", "System Prompt", t("settings.ai.defines_fish_identity_tone_behavior"), self.prompt, stacked=True),
             SettingRow(
-                "about_user", "关于我",
-                "告诉肥鱼你是谁、你的资料在哪（比如哪个 GitHub 仓库）。对话时追加在人设后面，换角色、换人设都还在。",
+                "about_user", t("settings.ai.about_me"),
+                t("settings.ai.tell_fish_who_you_are"),
                 self.about_user, stacked=True,
             ),
-            SettingRow("connection_test", "连接测试", self.test_result.text(), self.test_button),
+            SettingRow("connection_test", t("settings.ai.connection_test"), self.test_result.text(), self.test_button),
         ], self))
-        root.addWidget(SettingsSection("系统通知", [
+        root.addWidget(SettingsSection(t("settings.ai.system_notifications"), [
             SettingRow(
-                "system_notifications_enabled", "系统通知",
-                "对话完成 / 生成失败 / 需要授权时，即使切走窗口也会在桌面右下角提醒。",
+                "system_notifications_enabled", t("settings.ai.system_notifications"),
+                t("settings.ai.when_reply_finishes_fails_needs"),
                 self.system_notify_check,
             ),
         ], self))
         vision_rows = [
-            SettingRow("vision_same", "视觉模型复用聊天模型", "开启后自动选择兼容的视觉模型，用于“看看屏幕”。", self.vision_same),
-            SettingRow("vision_model", "视觉模型", "关闭复用后使用的多模态模型标识；留空则自动推导。", self.vision_model),
-            SettingRow("vision_url", "视觉 API 地址", "留空复用聊天服务地址。", self.vision_url),
-            SettingRow("vision_key", "视觉 API Key", "留空复用聊天服务凭据。", self.vision_key),
+            SettingRow("vision_same", t("settings.ai.vision_reuses_chat_model"), t("settings.ai.when_compatible_vision_model_picked"), self.vision_same),
+            SettingRow("vision_model", t("settings.ai.vision_model"), t("settings.ai.multimodal_model_identifier_used_when"), self.vision_model),
+            SettingRow("vision_url", t("settings.ai.vision_api_address"), t("settings.ai.leave_blank_reuse_chat_service"), self.vision_url),
+            SettingRow("vision_key", t("settings.ai.vision_api_key"), t("settings.ai.leave_blank_reuse_chat_service_2"), self.vision_key),
         ]
-        root.addWidget(SettingsSection("视觉能力", vision_rows, self))
+        root.addWidget(SettingsSection(t("settings.ai.vision"), vision_rows, self))
         self._vision_override_rows = vision_rows[1:]
         self.vision_same.toggled.connect(self._update_vision_visibility)
         self._update_vision_visibility(self.vision_same.isChecked())
         self._github_token_row = SettingRow(
             "github_token", "GitHub Token",
-            "Personal Access Token，连接器与知识库（私有仓库）共用；保存到系统钥匙串，已保存的不回显，留空表示不修改。",
+            t("settings.ai.personal_access_token_shared_by"),
             self.github_token,
         )
-        root.addWidget(SettingsSection("连接器", [
+        root.addWidget(SettingsSection(t("settings.ai.connectors"), [
             SettingRow(
-                "github_connector", "GitHub（只读）",
-                "让肥鱼在对话里查你的 GitHub 仓库、Issue 和 PR，不能修改。仅直连 Claude API 时生效；"
-                "Token 会随请求发给 Anthropic，由它去连 GitHub。",
+                "github_connector", t("settings.ai.github_read_only"),
+                t("settings.ai.lets_fish_look_up_your"),
                 self.github_connector,
             ),
             self._github_token_row,
         ], self))
         self._kb_rows = [
             SettingRow(
-                "knowledge_base_repo", "GitHub 仓库",
-                "owner/repo 或仓库网址。只同步文本文件（.md / .txt 等），图片和点开头的目录不同步。",
+                "knowledge_base_repo", t("settings.ai.github_repo"),
+                t("settings.ai.owner_repo_repo_url_only"),
                 self.knowledge_base_repo,
             ),
             SettingRow(
-                "knowledge_base_sync", "同步",
+                "knowledge_base_sync", t("settings.ai.sync"),
                 self._kb.describe(config.dir, self._kb.parse_repo(self.settings.knowledge_base_repo)),
                 self.knowledge_base_sync,
             ),
         ]
         self.knowledge_base_status = self._kb_rows[1].hint_label
-        root.addWidget(SettingsSection("知识库", [
+        root.addWidget(SettingsSection(t("settings.ai.knowledge_base"), [
             SettingRow(
-                "knowledge_base_enabled", "本地知识库",
-                "把一个 GitHub 仓库当作你的资料库：每天同步到本机，对话时肥鱼只读本机这份副本。"
-                "仅 Claude 通道生效；读到的内容会随对话发给模型。",
+                "knowledge_base_enabled", t("settings.ai.local_knowledge_base"),
+                t("settings.ai.use_github_repo_as_your"),
                 self.knowledge_base,
             ),
             *self._kb_rows,
@@ -274,12 +280,12 @@ class _AiSettingsPage(QWidget):
         self._test_row = self.findChild(SettingRow, "settingRow_connection_test")
         if self._test_row is not None:
             self.test_result = self._test_row.hint_label
-        root.addWidget(SettingsSection("生成参数（高级）", [
-            SettingRow("timeout", "请求超时", "等待模型服务响应的最长时间。", self.timeout),
-            SettingRow("temperature", "Temperature", "数值越高，回答越随机。", self.temperature),
-            SettingRow("max_tokens", "最大输出 Token", "限制模型单次回复的最大长度。", self.tokens),
-            SettingRow("effort", "思考力度（Effort）", "仅 Claude 通道生效：越高想得越深，回答越慢、花费越多。", self.effort),
-            SettingRow("skip_ssl", "跳过 SSL 证书验证", "仅用于本地网关或自签名证书。", self.skip_ssl),
+        root.addWidget(SettingsSection(t("settings.ai.generation_parameters_advanced"), [
+            SettingRow("timeout", t("settings.ai.request_timeout"), t("settings.ai.longest_wait_model_service_respond"), self.timeout),
+            SettingRow("temperature", "Temperature", t("settings.ai.higher_values_give_more_random"), self.temperature),
+            SettingRow("max_tokens", t("settings.ai.max_output_tokens"), t("settings.ai.caps_length_single_reply"), self.tokens),
+            SettingRow("effort", t("settings.ai.effort"), t("settings.ai.claude_channel_only_higher_thinks"), self.effort),
+            SettingRow("skip_ssl", t("settings.ai.skip_ssl_certificate_verification"), t("settings.ai.only_local_gateways_self_signed"), self.skip_ssl),
         ], self, advanced=True))
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.add_provider_btn.clicked.connect(self._add_provider)
@@ -291,22 +297,22 @@ class _AiSettingsPage(QWidget):
         """Controls visually owned by the Appearance page, persisted with AI settings."""
         rows = [
             SettingRow(
-                "chat_ui_style", "对话窗口",
-                "肥鱼版宽屏 提供宽屏现代体验；肥鱼牌小手机保留紧凑经典体验。",
+                "chat_ui_style", t("settings.ai.chat_window"),
+                t("settings.ai.fish_widescreen_wide_modern_layout"),
                 self.chat_ui_style,
             ),
             SettingRow(
-                "chat_background", "对话背景",
-                "肥鱼版宽屏 与肥鱼牌小手机均支持纯色、内置主题或自定义图片。",
+                "chat_background", t("settings.ai.chat_background"),
+                t("settings.ai.both_fish_widescreen_fish_pocket"),
                 self.background_select,
             ),
-            SettingRow("chat_background_file", "自定义背景图片", "支持常见图片格式，使用绝对路径。", self.background_picker),
-            SettingRow("chat_background_opacity", "图片不透明度", "调节背景图可见强度；消息卡片会独立保证正文可读。", self.background_opacity),
-            SettingRow("chat_background_fill", "填充方式", "选择裁剪铺满、完整显示或拉伸铺满窗口；仅「填充裁剪」支持自定义取景。", self.background_fill),
-            SettingRow("chat_bg_crops", "裁切取景", "拖拽移动 + 滚轮缩放选区，决定背景取哪一块；不裁则按主题默认主体取景。", self.background_crop_btn),
+            SettingRow("chat_background_file", t("settings.ai.custom_background_image"), t("settings.ai.common_image_formats_use_absolute"), self.background_picker),
+            SettingRow("chat_background_opacity", t("settings.ai.image_opacity"), t("settings.ai.how_strongly_background_image_shows"), self.background_opacity),
+            SettingRow("chat_background_fill", t("settings.ai.fill_mode"), t("settings.ai.crop_fill_show_whole_stretch"), self.background_fill),
+            SettingRow("chat_bg_crops", t("settings.ai.crop_framing_2"), t("settings.ai.drag_move_scroll_zoom_selection"), self.background_crop_btn),
             SettingRow(
-                "modern_chat_card_opacity", "消息卡片不透明度",
-                "调节肥鱼版宽屏 消息卡片透出背景的程度。",
+                "modern_chat_card_opacity", t("settings.ai.message_card_opacity"),
+                t("settings.ai.how_much_fish_widescreen_message"),
                 self.message_card_opacity,
             ),
         ]
@@ -333,11 +339,11 @@ class _AiSettingsPage(QWidget):
         self._loading_background = True  # 程序化赋值不得误标脏
         try:
             self.background_select.clear()
-            self.background_select.addItem("纯色背景", "")
+            self.background_select.addItem(t("settings.ai.solid_color"), "")
             # 内置主题两种对话窗口风格都可用（肥鱼版宽屏 与肥鱼牌小手机一致）
             for key, label in self._background_themes:
                 self.background_select.addItem(label, f"builtin:{key}")
-            self.background_select.addItem("自定义图片", "custom")
+            self.background_select.addItem(t("settings.ai.custom_image"), "custom")
             value = str(self._background_values.get(style, "") or "")
             if value.startswith("builtin:") and self.background_select.findData(value) >= 0:
                 self.background_select.setCurrentData(value)
@@ -392,13 +398,13 @@ class _AiSettingsPage(QWidget):
             return
         repo = self._kb.parse_repo(self.knowledge_base_repo.text())
         if not repo:
-            self.knowledge_base_status.setText("仓库写成 owner/repo 或 GitHub 网址。")
+            self.knowledge_base_status.setText(t("settings.ai.write_repo_as_owner_repo"))
             return
         # 用表单里的值：刚填的仓库和 Token 不必先保存就能试
         token = self.github_token.text().strip() or self._secret_store_type().get(self._github_token_ref)
         self.knowledge_base_sync.setEnabled(False)
-        self.knowledge_base_sync.setText("同步中…")
-        self.knowledge_base_status.setText(f"正在从 GitHub 下载 {repo}…")
+        self.knowledge_base_sync.setText(t("settings.ai.syncing"))
+        self.knowledge_base_status.setText(t("settings.ai.downloading_repo_from_github", repo=repo))
         self._kb_sync_thread = threading.Thread(
             target=self._run_kb_sync_worker, args=(self.config.dir, repo, token),
             daemon=True, name="pet-settings-knowledge-sync",
@@ -410,18 +416,18 @@ class _AiSettingsPage(QWidget):
             self._kb_sync(config_dir, repo, token)
             result = (True, self._kb.describe(config_dir, repo))
         except Exception as exc:  # noqa: BLE001 - 无论抛什么都要把按钮恢复回来
-            result = (False, f"同步失败：{exc}")
+            result = (False, t("settings.ai.sync_failed_exc", exc=exc))
         _safe_emit(self, "kb_sync_done", *result)   # 窗口可能已在同步途中关闭销毁
 
     def _on_kb_sync_done(self, _ok: bool, message: str) -> None:
         self.knowledge_base_sync.setEnabled(True)
-        self.knowledge_base_sync.setText("立即同步")
+        self.knowledge_base_sync.setText(t("settings.ai.sync_now"))
         self.knowledge_base_status.setText(message)
         self._kb_sync_thread = None
 
     def _background_style_label(self) -> str:
         """当前对话窗口风格的展示名（裁切行标签、编辑器标题共用）。"""
-        return CHAT_UI_STYLE_LABELS.get(self._background_style, self._background_style)
+        return chat_style_label(self._background_style)
 
     def _background_fill_mode(self) -> str:
         return str(self.background_fill.currentData() or "cover")
@@ -445,12 +451,12 @@ class _AiSettingsPage(QWidget):
         if card_opacity_row is not None:
             card_opacity_row.setVisible(self._background_style == "modern")
         if crop_row is not None:
-            title = f"裁切取景（{self._background_style_label()}）"
+            title = t("settings.ai.crop_framing_v", v=self._background_style_label())
             if crop_row.label.text() != title:
                 crop_row.label.setText(title)
                 crop_row.control.setAccessibleName(title)
         if getattr(self, "background_crop_btn", None) is not None:
-            self.background_crop_btn.setText("裁切取景…")
+            self.background_crop_btn.setText(t("settings.ai.crop_framing"))
             self.background_crop_btn.setEnabled(True)
 
     def _crop_background(self) -> None:
@@ -463,7 +469,7 @@ class _AiSettingsPage(QWidget):
         value = self._current_background_value()
         pix = resolve_bg_pixmap(value) if value else None
         if pix is None:
-            self.background_crop_btn.setText("无可裁背景")
+            self.background_crop_btn.setText(t("settings.ai.no_background_crop"))
             self.background_crop_btn.setEnabled(False)
             return
         _unset = object()
@@ -556,7 +562,7 @@ class _AiSettingsPage(QWidget):
         new_id = self._new_provider_id()
         new = self._provider_config_type(
             new_id,
-            name=f"{base.name} 副本",
+            name=t("settings.ai.name_copy", name=base.name),
             base_url=base.base_url,
             chat_path=base.chat_path,
             model=base.model,
@@ -643,13 +649,13 @@ class _AiSettingsPage(QWidget):
             p.api_key_ref = p.api_key_ref or f"provider/{provider_id}"
             if not self._secret_store_type().set(p.api_key_ref, key):
                 p.api_key = key
-                QMessageBox.warning(self, "安全存储不可用", "无法使用系统安全存储，Key 仅本次运行保留，重启需重输。")
+                QMessageBox.warning(self, t("settings.ai.secure_storage_unavailable"), t("settings.ai.system_secure_storage_can_t"))
         vkey = str(draft.get("vision_key") or "")
         if vkey:
             p.vision_api_key_ref = p.vision_api_key_ref or f"provider/{provider_id}/vision"
             if not self._secret_store_type().set(p.vision_api_key_ref, vkey):
                 p.vision_api_key = vkey
-                QMessageBox.warning(self, "安全存储不可用", "无法使用系统安全存储，Key 仅本次运行保留，重启需重输。")
+                QMessageBox.warning(self, t("settings.ai.secure_storage_unavailable"), t("settings.ai.system_secure_storage_can_t"))
 
     def provisional_config(self):
         provider = self.settings.active_config
@@ -674,8 +680,8 @@ class _AiSettingsPage(QWidget):
         if self._test_thread is not None and self._test_thread.is_alive():
             return
         self.test_button.setEnabled(False)
-        self.test_button.setText("测试中…")
-        self.test_result.setText("正在连接模型服务…")
+        self.test_button.setText(t("settings.ai.testing"))
+        self.test_result.setText(t("settings.ai.connecting_model_service"))
         self._test_thread = threading.Thread(
             target=self._run_test_worker,
             args=(self.provisional_config(),),
@@ -690,14 +696,14 @@ class _AiSettingsPage(QWidget):
         except Exception as exc:
             # 无论测试抛什么都要把结果送回去：否则这个线程悄悄死掉，按钮永远停在
             # 「测试中…」（且是禁用态），只能关掉设置窗口重开。
-            result = (False, f"测试失败：{exc}")
+            result = (False, t("settings.ai.test_failed_exc", exc=exc))
         # 对话框可能在测试在飞时被关闭销毁（WA_DeleteOnClose）：直接
         # self.test_done.emit 会对已删 C++ 对象 RuntimeError。
         _safe_emit(self, "test_done", *result)
 
     def _on_test_done(self, ok: bool, message: str) -> None:
         self.test_button.setEnabled(True)
-        self.test_button.setText("测试连接")
+        self.test_button.setText(t("settings.ai.test_connection"))
         self.test_result.setText(message)
         self.test_result.setStyleSheet("color: #16843b;" if ok else "color: #c9362b;")
         self._test_thread = None
@@ -730,7 +736,7 @@ class _AiSettingsPage(QWidget):
             # 与 API Key 不同，这里不留「仅本次运行」的内存兜底：开着却没有 Token 的连接器
             # 什么都不会做，不如明说没存上。
             github_enabled = False
-            QMessageBox.warning(self, "安全存储不可用", "无法使用系统安全存储，GitHub Token 没有保存，连接器保持关闭。")
+            QMessageBox.warning(self, t("settings.ai.secure_storage_unavailable"), t("settings.ai.system_secure_storage_can_t_2"))
         self.settings.github_connector = github_enabled
         repo_text = self.knowledge_base_repo.text().strip()
         self.settings.knowledge_base_enabled = self.knowledge_base.isChecked()

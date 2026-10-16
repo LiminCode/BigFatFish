@@ -11,13 +11,14 @@ from PySide6.QtWidgets import QLineEdit
 
 from . import vscode_workspaces as vw
 from .settings_widgets import BrowserSpinBox, ResourcePathPicker, SettingRow
+from .i18n import t
 
-_SECTION_HINT = ("右键菜单「VS Code 工作区」除了列出开着的和最近用过的，还会列出下面这些目录里的 "
-                 "*.code-workspace 文件。留空就不列。")
-_LOCAL_HINT = "本机上的目录。" + _SECTION_HINT
-_WSL_HINT = "这个发行版里的目录，按它里面的写法填（如 /home/me/workspace）。"
-_MISSING_HINT = "这个目录现在打不开（不存在、没有权限，或发行版没在运行）；菜单里会少掉这一部分，其余照常。"
-_LIMIT_HINT = "菜单最多列几条。顺序：开着的 → 上面这些目录里的 → 其余最近用过的（按时间）。"
+#: 提示文案存文案键，用时 t()
+_SECTION_HINT = "settings.vscode.section_hint"
+_LOCAL_HINT = "settings.vscode.local_hint"   # 后面接 _SECTION_HINT
+_WSL_HINT = "settings.vscode.wsl_hint"
+_MISSING_HINT = "settings.vscode.missing_hint"
+_LIMIT_HINT = "settings.vscode.limit_hint"
 
 
 def workspace_rows(dialog) -> list[SettingRow]:
@@ -27,9 +28,9 @@ def workspace_rows(dialog) -> list[SettingRow]:
     rows: list[SettingRow] = []
 
     picker = ResourcePathPicker(settings["workspace_dir"], directory=True,
-                                dialog_title="选择工作区文件所在的目录", parent=dialog)
+                                dialog_title=t("settings.vscode.choose_folder_holds_workspace_files"), parent=dialog)
     dialog.vscode_workspace_dir_picker = picker
-    rows.append(_row_with_check("vscode_workspace_dir", "本机目录", _LOCAL_HINT, picker, picker.edit,
+    rows.append(_row_with_check("vscode_workspace_dir", t("settings.vscode.local_folders"), t(_LOCAL_HINT) + t(_SECTION_HINT), picker, picker.edit,
                                 lambda text: vw.directory_exists(text)))
 
     dialog.vscode_wsl_dir_edits = {}
@@ -39,17 +40,17 @@ def workspace_rows(dialog) -> list[SettingRow]:
         edit = QLineEdit(dialog)
         edit.setText(settings["wsl_dirs"].get(distro, ""))
         edit.setPlaceholderText("/home/…/workspace")
-        edit.setAccessibleName(f"{distro} 里的工作区目录")
+        edit.setAccessibleName(t("settings.vscode.workspace_folders_distro", distro=distro))
         dialog.vscode_wsl_dir_edits[distro] = edit
-        title = f"{distro}（默认发行版）" if distro == default else distro
-        rows.append(_row_with_check(f"vscode_wsl_dir_{index}", title, _WSL_HINT, edit, edit,
+        title = t("settings.vscode.distro_default_distro", distro=distro) if distro == default else distro
+        rows.append(_row_with_check(f"vscode_wsl_dir_{index}", title, t(_WSL_HINT), edit, edit,
                                     lambda text, distro=distro: vw.directory_exists(text, distro=distro)))
 
     spin = BrowserSpinBox(dialog)
     spin.setRange(*vw.LIMIT_RANGE)
     spin.setValue(settings["menu_limit"])
     dialog.vscode_menu_limit_spin = spin
-    rows.append(SettingRow("vscode_menu_limit", "菜单条数", _LIMIT_HINT, spin))
+    rows.append(SettingRow("vscode_menu_limit", t("settings.vscode.menu_items"), t(_LIMIT_HINT), spin))
     return rows
 
 
@@ -58,7 +59,7 @@ def _row_with_check(row_id, title, hint, control, edit, exists) -> SettingRow:
 
     def sync_hint(*_args) -> None:
         text = edit.text().strip()
-        row.hint_label.setText(hint if not text or exists(text) else _MISSING_HINT)
+        row.hint_label.setText(hint if not text or exists(text) else t(_MISSING_HINT))
 
     edit.textChanged.connect(sync_hint)
     sync_hint()

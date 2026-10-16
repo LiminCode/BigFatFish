@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from . import i18n
 from .settings_widgets import ModernSelect, SettingRow
+from .i18n import t
 
-_HINT = ("灵动岛胶囊与展开卡片上的文字用哪种语言；其余界面暂时仍是中文。保存后立即生效。 / "
-         "Language of the island capsule and its card; the rest of the UI is still Chinese for now.")
+#: 提示文案存文案键，用时 t()
+_HINT = "settings.language.hint"
 
 
 def language_rows(dialog) -> list[SettingRow]:
@@ -20,7 +21,7 @@ def language_rows(dialog) -> list[SettingRow]:
     current = i18n.normalize_language(dialog.config.get(i18n.CONFIG_KEY))
     select.setCurrentIndex(max(0, select.findData(current)))
     dialog.ui_language_select = select
-    return [SettingRow("ui_language", "界面语言 (Language)", _HINT, select)]
+    return [SettingRow("ui_language", t("settings.language.language"), t(_HINT), select)]
 
 
 def save_language_setting(dialog) -> None:

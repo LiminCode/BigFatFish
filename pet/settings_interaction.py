@@ -26,9 +26,11 @@ from __future__ import annotations
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from .settings_widgets import SettingRow, SettingsSection, SettingsTabContainer
+from .i18n import t
 
 TAB_KEYS = ("click", "self_talk")
-TAB_LABELS = ("点击与音效", "自言自语")
+#: 页签显示名的文案键（用时 t()）；身份认 TAB_KEYS
+TAB_LABELS = ("settings.interaction.tab_click", "settings.interaction.tab_self_talk")
 
 
 def _page(dialog, title: str, sections: list[tuple[str, list[SettingRow]]]) -> QWidget:
@@ -46,39 +48,37 @@ def _page(dialog, title: str, sections: list[tuple[str, list[SettingRow]]]) -> Q
 def build_click_rows(dialog) -> list[SettingRow]:
     """「点击反馈」组的行（顺序与既有渲染顺序一致，多处用例按顺序/组名断言）。"""
     rows = [
-        SettingRow("click_sound", "点击音效", "点击肥鱼时播放轻量反馈音效。", dialog.click_sound_check),
-        SettingRow("click_sound_pack", "音效音源", "选择预设音效包、自定义音频文件或文件夹随机播放。", dialog.click_sound_picker, stacked=True),
-        SettingRow("click_sound_volume", "音效音量", "调整点击音效播放音量。", dialog.click_sound_volume_spin),
-        SettingRow("click_sound_preview", "试听音效", "测试当前选择的点击音效。", dialog.click_sound_preview_btn),
+        SettingRow("click_sound", t("settings.interaction.click_sound"), t("settings.interaction.play_light_feedback_sound_when"), dialog.click_sound_check),
+        SettingRow("click_sound_pack", t("settings.interaction.sound_source"), t("settings.interaction.pick_preset_sound_pack_custom"), dialog.click_sound_picker, stacked=True),
+        SettingRow("click_sound_volume", t("settings.interaction.sound_volume"), t("settings.interaction.volume_click_sound"), dialog.click_sound_volume_spin),
+        SettingRow("click_sound_preview", t("settings.interaction.preview_sound"), t("settings.interaction.play_currently_selected_click_sound"), dialog.click_sound_preview_btn),
     ]
     rows.extend(
         [
-            SettingRow("click_self_talk", "点击触发自言自语", "点击时随机显示一条自言自语内容；打开后可用下方两项把同一句读出来。", dialog.click_self_talk_check),
+            SettingRow("click_self_talk", t("settings.interaction.self_talk_click"), t("settings.interaction.show_random_self_talk_line"), dialog.click_self_talk_check),
             SettingRow(
                 "click_self_talk_speak",
-                "点击台词朗读",
-                "点击触发自言自语时，用语音报时的音色把这句话读出来（与报时共用音频通道，不会叠音）。",
+                t("settings.interaction.read_click_lines_aloud"),
+                t("settings.interaction.when_click_triggers_self_talk"),
                 dialog.click_self_talk_speak_check,
             ),
             SettingRow(
                 "click_self_talk_precache",
-                "台词自动预缓存",
-                "保存设置后，在后台把点击台词与点击动画绑定台词合成为本机语音文件，"
-                "点击时秒出、断网也能说（需要本机 CosyVoice 语音服务在运行；"
-                "没装本地语音服务时保持关闭即可，新台词仍走在线合成）。",
+                t("settings.interaction.pre_cache_lines"),
+                t("settings.interaction.after_saving_synthesize_click_lines"),
                 dialog.self_talk_voice_precache_check,
             ),
-            SettingRow("click_talk_bindings", "点击动画台词绑定", "为每个点击动画设置专属自言自语台词。", dialog.click_talk_bindings_btn),
+            SettingRow("click_talk_bindings", t("settings.interaction.lines_click_animations"), t("settings.interaction.give_each_click_animation_its"), dialog.click_talk_bindings_btn),
             SettingRow(
                 "golden_spin_click",
-                "点击触发黄金回旋",
-                "开启后点击肥鱼触发原地逆时针 360° 旋转；下方子开关可选择跳过点击动画直接回旋。",
+                t("settings.interaction.golden_spin_click"),
+                t("settings.interaction.when_clicking_fish_spins_360"),
                 dialog.golden_spin_click_check,
             ),
             SettingRow(
                 "golden_spin_direct",
-                "点击回旋跳过动画",
-                "开启后点击直接开始黄金回旋，不播放 Q 弹与点击素材；连续点击会累计旋转圈数并逐圈加速。",
+                t("settings.interaction.spin_without_animation"),
+                t("settings.interaction.when_click_starts_golden_spin"),
                 dialog.golden_spin_direct_check,
                 stacked=True,
             ),
@@ -92,34 +92,32 @@ def build_self_talk_rows(dialog) -> list[SettingRow]:
     return [
         SettingRow(
             "self_talk_bubble_style",
-            "气泡方案",
-            "选择气泡视觉与相对肥鱼的位置；贴近屏幕边缘时自动换位。",
+            t("settings.interaction.bubble_style"),
+            t("settings.interaction.bubble_look_position_relative_fish"),
             dialog.bubble_style_select,
         ),
-        SettingRow("self_talk", "气泡自言自语", "让肥鱼偶尔显示一条随机思考气泡。", dialog.self_talk_check),
-        SettingRow("self_talk_duration", "显示时间", "每条文字或图片气泡保持显示的时间。", dialog.self_talk_duration_spin),
-        SettingRow("self_talk_min", "最短间隔", "上一条气泡消失后，到下一条出现前的最短空闲时间。", dialog.min_spin),
-        SettingRow("self_talk_max", "最长间隔", "上一条气泡消失后，到下一条出现前的最长空闲时间。", dialog.max_spin),
-        SettingRow("self_talk_texts", "候选内容", "每行一条；留空时恢复内置文本。", dialog.texts_edit, stacked=True),
+        SettingRow("self_talk", t("settings.interaction.bubble_self_talk"), t("settings.interaction.let_fish_show_random_thought"), dialog.self_talk_check),
+        SettingRow("self_talk_duration", t("settings.interaction.display_time"), t("settings.interaction.how_long_each_text_image"), dialog.self_talk_duration_spin),
+        SettingRow("self_talk_min", t("settings.interaction.shortest_gap"), t("settings.interaction.shortest_idle_time_between_one"), dialog.min_spin),
+        SettingRow("self_talk_max", t("settings.interaction.longest_gap"), t("settings.interaction.longest_idle_time_between_one"), dialog.max_spin),
+        SettingRow("self_talk_texts", t("settings.interaction.lines"), t("settings.interaction.one_per_line_leave_blank"), dialog.texts_edit, stacked=True),
         SettingRow(
             "self_talk_images",
-            "图片目录",
-            "从目录中的常见图片格式随机选择；默认使用内置彩蛋图片池，留空时只显示文本。",
+            t("settings.interaction.image_folder"),
+            t("settings.interaction.pick_at_random_from_common"),
             dialog.self_talk_image_dir_picker,
             stacked=True,
         ),
-        SettingRow("self_talk_image_scale", "配图大小", "气泡里的图片和动图相对原始大小的比例（100% = 原始大小）。", dialog.self_talk_image_scale_spin),
+        SettingRow("self_talk_image_scale", t("settings.interaction.image_size"), t("settings.interaction.scale_images_animations_bubbles_relative"), dialog.self_talk_image_scale_spin),
         SettingRow(
-            "self_talk_image_max_edge", "配图尺寸上限",
-            "配图气泡最大多大。图片长边超过这个值时等比缩小，比它小的保持原样；"
-            "吐气水泡样式下指整个水泡的宽度。数值越大，配图占用的内存越多。",
+            "self_talk_image_max_edge", t("settings.interaction.image_size_limit"),
+            t("settings.interaction.largest_image_bubble_can_get"),
             dialog.self_talk_image_max_edge_spin,
         ),
         SettingRow(
             "self_talk_image_chance",
-            "配图概率",
-            "点击/定时自言自语时显示配图的概率，其余显示文本；0% 表示只出文本。"
-            "图片目录里往往有几十张图，这一项决定文本还能不能轮到（默认 30%）。",
+            t("settings.interaction.image_chance"),
+            t("settings.interaction.chance_showing_image_click_timed"),
             dialog.self_talk_image_chance_spin,
         ),
     ]
@@ -135,29 +133,29 @@ def build_interaction_domain(dialog) -> QWidget:
     tabs = SettingsTabContainer(dialog)
     tabs.addTab(
         TAB_KEYS[0],
-        TAB_LABELS[0],
+        t(TAB_LABELS[0]),
         _page(
             dialog,
-            TAB_LABELS[0],
+            t(TAB_LABELS[0]),
             [
                 (
-                    "输入",
+                    t("settings.interaction.input"),
                     [
                         SettingRow(
                             "mouse_through",
-                            "鼠标穿透",
-                            "开启后肥鱼不接收鼠标事件，点击穿透到下层窗口。",
+                            t("settings.interaction.click_through"),
+                            t("settings.interaction.when_fish_ignores_mouse_clicks"),
                             dialog.mouse_through_check,
                         )
                     ],
                 ),
-                ("点击反馈", build_click_rows(dialog)),
+                (t("settings.interaction.click_feedback"), build_click_rows(dialog)),
             ],
         ),
     )
     tabs.addTab(
         TAB_KEYS[1],
-        TAB_LABELS[1],
-        _page(dialog, TAB_LABELS[1], [("自言自语", build_self_talk_rows(dialog))]),
+        t(TAB_LABELS[1]),
+        _page(dialog, t(TAB_LABELS[1]), [(t("settings.interaction.self_talk"), build_self_talk_rows(dialog))]),
     )
     return tabs

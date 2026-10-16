@@ -133,6 +133,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-SETTINGS-ENGLISH-2026-10-16.md`](PR-REPORT-SETTINGS-ENGLISH-2026-10-16.md) | 设置窗口英文化：AST 抽取 17 个设置模块的中文字面量（~660 条运行时 + 93 条导入时求值），人工译成英文，脚本改写成 `t("settings.…")`，797 个键；侧栏域名 / 事件名表保持中文作内部标识、显示时翻译；别的模块的下拉选项（报时频率、音色、气泡方案……）按 id 取键。英文界面下可见中文从 686 条降到 13 条有意保留的。含 9 张英文截图与「按钮被定宽截断」的修复。 | 新增或修改任何设置项文案之前必读（文案要直接写成 t() 并在两张表各加一条）；想继续翻右键菜单 / 托盘 / 聊天窗之前看这里的抽取与改写脚本思路。 |
 | [`PR-REPORT-WORK-NOTES-SETTINGS-2026-10-15.md`](PR-REPORT-WORK-NOTES-SETTINGS-2026-10-15.md) | 工作笔记进设置页（「自动化与联动」一节：悬停讲完整流程的图标、开关、仓库目录、模型）；每条笔记记下总结用的模型 / token / 费用 / 秒数（来自 claude -p 结果的 modelUsage）；「记下」按钮与输入框同高。4 张设置页截图在 `docs/screenshots/work-notes-settings-2026-10-15/`。 | 改工作笔记的设置、用量字段、或想给别的设置节加「流程解释图标」之前必读。 |
 | [`PR-REPORT-BRIEFING-METRO-2026-10-15.md`](PR-REPORT-BRIEFING-METRO-2026-10-15.md) | 工作简报窗口（含 Slack 关注、「笔记」页）改 Windows Phone / Metro：复用设置页的 `METRO_TOKENS`，pivot 页头、平铺磁贴、倾斜描边按钮；白天 / 黑夜跟随「外观」主题、右上角当场切换并写回；简报 / Slack 关注文案 27 个键进语言表。8 张 light/dark × zh/en 渲染截图在 `docs/screenshots/briefing-metro-2026-10-15/`。 | 改简报 / Slack 关注 / 笔记窗口的样式、主题或文案之前必读；想给别的窗口套 Metro 之前看这里怎么复用令牌。 |
 | [`PR-REPORT-WORK-NOTES-2026-10-15.md`](PR-REPORT-WORK-NOTES-2026-10-15.md) | 工作笔记：简报窗口新「笔记」页，随手记 Slack / Jira 链接或片段（原文逐字保留），落盘后 WSL 里的公司 Claude Code 只读地读链接、写摘要、定下次提醒（本机 9.7 秒一条），到点冒留到点为止的气泡；笔记是 Obsidian 风格 Markdown，存在公司私有仓库 AI-Base-Memory 的 `note/`（副本放 Windows，git 经 WSL 在 /mnt/c 里跑，3.5 秒一次）。含 Obsidian 不认 UNC / 映射盘 / `open?path=` 新建库的三次实测、论坛共识与改放 NTFS 的决定。 | 改工作笔记 / 简报窗口标签页 / `work_notes` 配置键之前必读；想让肥鱼与 Obsidian 库打交道、或往 AI-Base-Memory 仓库里写别的东西（公司 AI 记忆）之前必读。 |

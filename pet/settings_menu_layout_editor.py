@@ -45,6 +45,7 @@ from .settings_widgets import (
     SettingsPopupMenu,
     IMAGE_NAME_FILTER,
 )
+from .i18n import t
 
 
 class MenuLayoutEditor(QWidget):
@@ -63,7 +64,7 @@ class MenuLayoutEditor(QWidget):
         )
         self.tree = QTreeWidget(self)
         self.tree.setObjectName("menuLayoutTree")
-        self.tree.setHeaderLabels(["菜单项", "状态", "位置"])
+        self.tree.setHeaderLabels([t("settings.menu_editor.menu_item"), t("settings.menu_editor.status"), t("settings.menu_editor.position")])
         header = self.tree.header()
         header.setStretchLastSection(False)
         header.setSectionsMovable(False)
@@ -77,10 +78,10 @@ class MenuLayoutEditor(QWidget):
         self.tree.setIndentation(18)
         self.tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.tree.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.tree.setAccessibleName("右键菜单内容与布局")
-        self.editor_label = QLabel("菜单结构", self)
+        self.tree.setAccessibleName(t("settings.menu_editor.right_click_menu_content_layout"))
+        self.editor_label = QLabel(t("settings.menu_editor.menu_structure"), self)
         self.editor_label.setObjectName("menuLayoutEditorLabel")
-        self.editor_hint = QLabel("拖动表头分隔线调整列宽", self)
+        self.editor_hint = QLabel(t("settings.menu_editor.drag_header_dividers_resize_columns"), self)
         self.editor_hint.setObjectName("menuLayoutEditorHint")
         editor_panel = QFrame(self)
         editor_panel.setObjectName("menuLayoutEditorPanel")
@@ -99,8 +100,8 @@ class MenuLayoutEditor(QWidget):
         self.preview.setUniformRowHeights(True)
         self.preview.setIndentation(18)
         self.preview.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.preview.setAccessibleName("右键菜单实时预览")
-        self.preview_label = QLabel("实时菜单预览", self)
+        self.preview.setAccessibleName(t("settings.menu_editor.live_right_click_menu_preview"))
+        self.preview_label = QLabel(t("settings.menu_editor.live_menu_preview"), self)
         self.preview_label.setObjectName("menuLayoutPreviewLabel")
         preview_panel = QFrame(self)
         preview_panel.setObjectName("menuLayoutPreviewPanel")
@@ -110,46 +111,46 @@ class MenuLayoutEditor(QWidget):
         preview_layout.addWidget(self.preview_label)
         preview_layout.addWidget(self.preview)
 
-        self.order_button = SettingsMenuButton("排序", self)
+        self.order_button = SettingsMenuButton(t("settings.menu_editor.order"), self)
         self.order_button.setIcon(vector_widget_icon(self, "edit", 14))
         self.order_menu = configure_settings_action_popup(SettingsPopupMenu(self.order_button))
-        self.move_up_action = self.order_menu.addAction("上移")
-        self.move_down_action = self.order_menu.addAction("下移")
+        self.move_up_action = self.order_menu.addAction(t("settings.menu_editor.move_up"))
+        self.move_down_action = self.order_menu.addAction(t("settings.menu_editor.move_down"))
         self.move_up_action.triggered.connect(lambda: self._move_selected(-1))
         self.move_down_action.triggered.connect(lambda: self._move_selected(1))
         self.order_button.setPopupMenu(self.order_menu)
 
-        self.move_button = SettingsMenuButton("移动到", self)
+        self.move_button = SettingsMenuButton(t("settings.menu_editor.move"), self)
         self.move_button.setIcon(vector_widget_icon(self, "multi_select", 14))
         self.move_menu = configure_settings_action_popup(SettingsPopupMenu(self.move_button))
         self.move_menu.aboutToShow.connect(self._rebuild_move_menu)
         self.move_button.setPopupMenu(self.move_menu)
 
-        self.submenu_button = SettingsMenuButton("插入", self)
+        self.submenu_button = SettingsMenuButton(t("settings.menu_editor.insert"), self)
         self.submenu_button.setIcon(vector_widget_icon(self, "add", 14))
         self.submenu_menu = configure_settings_action_popup(SettingsPopupMenu(self.submenu_button))
-        self.new_submenu_action = self.submenu_menu.addAction("新建子菜单…")
-        self.insert_separator_action = self.submenu_menu.addAction("插入分割线")
+        self.new_submenu_action = self.submenu_menu.addAction(t("settings.menu_editor.new_submenu"))
+        self.insert_separator_action = self.submenu_menu.addAction(t("settings.menu_editor.insert_divider"))
         self.new_submenu_action.triggered.connect(self._create_submenu)
         self.insert_separator_action.triggered.connect(self._insert_separator_after_selected)
         self.submenu_button.setPopupMenu(self.submenu_menu)
 
-        self.customize_button = SettingsMenuButton("自定义", self)
+        self.customize_button = SettingsMenuButton(t("settings.menu_editor.customize"), self)
         self.customize_button.setIcon(vector_widget_icon(self, "edit", 14))
         self.customize_menu = configure_settings_action_popup(SettingsPopupMenu(self.customize_button))
-        self.rename_action = self.customize_menu.addAction("更换别名…")
-        self.change_icon_action = self.customize_menu.addAction("选择内置图标…")
-        self.choose_icon_file_action = self.customize_menu.addAction("选择图片文件…（最大 5 MB）")
+        self.rename_action = self.customize_menu.addAction(t("settings.menu_editor.rename"))
+        self.change_icon_action = self.customize_menu.addAction(t("settings.menu_editor.choose_built_icon"))
+        self.choose_icon_file_action = self.customize_menu.addAction(t("settings.menu_editor.choose_image_file_up_5"))
         self.choose_icon_file_action.setToolTip(
-            "支持 PNG、JPG、WebP、BMP、GIF、TIFF；作为静态方形菜单图标显示"
+            t("settings.menu_editor.png_jpg_webp_bmp_gif")
         )
-        self.icon_display_menu = configure_settings_action_popup(SettingsPopupMenu("图片显示方式", self.customize_menu))
-        self.icon_contain_action = self.icon_display_menu.addAction("完整显示")
-        self.icon_cover_action = self.icon_display_menu.addAction("裁切填满")
+        self.icon_display_menu = configure_settings_action_popup(SettingsPopupMenu(t("settings.menu_editor.image_fit"), self.customize_menu))
+        self.icon_contain_action = self.icon_display_menu.addAction(t("settings.menu_editor.fit"))
+        self.icon_cover_action = self.icon_display_menu.addAction(t("settings.menu_editor.crop_fill"))
         self.icon_contain_action.setCheckable(True)
         self.icon_cover_action.setCheckable(True)
         self.customize_menu.addMenu(self.icon_display_menu)
-        self.restore_presentation_action = self.customize_menu.addAction("恢复默认名称与图标")
+        self.restore_presentation_action = self.customize_menu.addAction(t("settings.menu_editor.restore_default_name_icon"))
         self.rename_action.triggered.connect(self._rename_selected)
         self.change_icon_action.triggered.connect(self._change_selected_icon)
         self.choose_icon_file_action.triggered.connect(self._choose_selected_file_icon)
@@ -162,13 +163,13 @@ class MenuLayoutEditor(QWidget):
         self.restore_presentation_action.triggered.connect(self._restore_selected_presentation)
         self.customize_button.setPopupMenu(self.customize_menu)
 
-        self.more_button = SettingsMenuButton("更多", self)
+        self.more_button = SettingsMenuButton(t("settings.menu_editor.more"), self)
         self.more_button.setIcon(vector_widget_icon(self, "more", 14))
         self.more_menu = configure_settings_action_popup(SettingsPopupMenu(self.more_button))
-        self.delete_submenu_action = self.more_menu.addAction("删除所选子菜单…")
-        self.delete_separator_action = self.more_menu.addAction("删除所选分割线")
+        self.delete_submenu_action = self.more_menu.addAction(t("settings.menu_editor.delete_selected_submenu"))
+        self.delete_separator_action = self.more_menu.addAction(t("settings.menu_editor.delete_selected_divider"))
         self.more_menu.addSeparator()
-        self.reset_action = self.more_menu.addAction("恢复默认布局")
+        self.reset_action = self.more_menu.addAction(t("settings.menu_editor.restore_default_layout"))
         self.delete_submenu_action.triggered.connect(self._delete_selected_submenu)
         self.delete_separator_action.triggered.connect(self._delete_selected_separator)
         self.reset_action.triggered.connect(self.reset_default)
@@ -302,7 +303,7 @@ class MenuLayoutEditor(QWidget):
 
     def _rebuild_move_menu(self) -> None:
         self.move_menu.clear()
-        root_action = self.move_menu.addAction("根菜单")
+        root_action = self.move_menu.addAction(t("settings.menu_editor.root_menu"))
         root_action.setData("__root__")
         root_action.triggered.connect(lambda: self._move_selected_to("__root__"))
         root = self.tree.invisibleRootItem()
@@ -366,7 +367,7 @@ class MenuLayoutEditor(QWidget):
         original = str(node.get("label") or MENU_ACTIONS.label(node_id))
         label = f"{alias}（{original}）" if alias else original
         if node_type == "separator":
-            label = "— 分割线"
+            label = t("settings.menu_editor.divider")
         item = QTreeWidgetItem([label, "", ""])
         item.setData(0, Qt.ItemDataRole.UserRole, {
             "type": node_type,
@@ -526,7 +527,7 @@ class MenuLayoutEditor(QWidget):
         original = str(node.get("label") or MENU_ACTIONS.label(node_id))
         alias = str(node.get("alias") or "").strip()
         label = (
-            "— 分割线" if node_type == "separator"
+            t("settings.menu_editor.divider") if node_type == "separator"
             else f"{alias}（{original}）" if alias else original
         )
         item.setText(0, label)
@@ -571,7 +572,7 @@ class MenuLayoutEditor(QWidget):
             return
         data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         text, accepted = QInputDialog.getText(
-            self, "更换菜单别名", "显示名称", text=str(data.get("alias") or "")
+            self, t("settings.menu_editor.rename_menu_item"), t("settings.menu_editor.display_name"), text=str(data.get("alias") or "")
         )
         if accepted:
             self._set_item_alias(item, text)
@@ -581,7 +582,7 @@ class MenuLayoutEditor(QWidget):
         if item is None:
             return
         labels = [label for label, _value in CUSTOM_ICON_CHOICES]
-        selected, accepted = QInputDialog.getItem(self, "更换菜单图标", "图标", labels, 0, False)
+        selected, accepted = QInputDialog.getItem(self, t("settings.menu_editor.change_menu_icon"), t("settings.menu_editor.icon"), labels, 0, False)
         if accepted:
             value = next(value for label, value in CUSTOM_ICON_CHOICES if label == selected)
             self._set_item_icon(item, value)
@@ -592,15 +593,15 @@ class MenuLayoutEditor(QWidget):
             return
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "选择菜单图标",
+            t("settings.menu_editor.choose_menu_icon"),
             str(Path.home()),
-            IMAGE_NAME_FILTER,
+            t(IMAGE_NAME_FILTER),
         )
         if not selected:
             return
         error = custom_icon_file_error(selected)
         if error:
-            QMessageBox.warning(self, "无法使用此图标", error)
+            QMessageBox.warning(self, t("settings.menu_editor.icon_can_t_used"), error)
             return
         self._set_item_file_icon(item, selected, "contain")
 
@@ -702,7 +703,7 @@ class MenuLayoutEditor(QWidget):
         self._on_changed()
 
     def _create_submenu(self) -> None:
-        label, accepted = QInputDialog.getText(self, "新建子菜单", "子菜单名称")
+        label, accepted = QInputDialog.getText(self, t("settings.menu_editor.new_submenu_2"), t("settings.menu_editor.submenu_name"))
         label = label.strip()
         if not accepted or not label:
             return
@@ -729,8 +730,8 @@ class MenuLayoutEditor(QWidget):
             return
         answer = QMessageBox.question(
             self,
-            "删除子菜单",
-            f"确定删除“{item.text(0)}”吗？\n其中的菜单项会保留并移到根菜单。",
+            t("settings.menu_editor.delete_submenu"),
+            t("settings.menu_editor.delete_v_its_items_are", v=item.text(0)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
@@ -756,20 +757,20 @@ class MenuLayoutEditor(QWidget):
                 item = source.child(index)
                 data = item.data(0, Qt.ItemDataRole.UserRole) or {}
                 if data.get("type") == "separator":
-                    item.setText(1, "布局")
-                    item.setText(2, "根菜单" if item.parent() is None else item.parent().text(0))
+                    item.setText(1, t("settings.menu_editor.layout"))
+                    item.setText(2, t("settings.menu_editor.root_menu") if item.parent() is None else item.parent().text(0))
                 elif item.data(0, Qt.ItemDataRole.UserRole + 1) is False:
-                    item.setText(1, "此平台不可用")
-                    item.setText(2, "根菜单" if item.parent() is None else item.parent().text(0))
+                    item.setText(1, t("settings.menu_editor.not_available_platform"))
+                    item.setText(2, t("settings.menu_editor.root_menu") if item.parent() is None else item.parent().text(0))
                 elif item.checkState(0) != Qt.CheckState.Checked:
-                    item.setText(1, "已隐藏")
-                    item.setText(2, "根菜单" if item.parent() is None else item.parent().text(0))
+                    item.setText(1, t("settings.menu_editor.hidden"))
+                    item.setText(2, t("settings.menu_editor.root_menu") if item.parent() is None else item.parent().text(0))
                 elif item.data(0, Qt.ItemDataRole.UserRole + 2) is False:
-                    item.setText(1, "已停用")
-                    item.setText(2, "根菜单" if item.parent() is None else item.parent().text(0))
+                    item.setText(1, t("settings.menu_editor.disabled"))
+                    item.setText(2, t("settings.menu_editor.root_menu") if item.parent() is None else item.parent().text(0))
                 else:
-                    item.setText(1, "已启用")
-                    item.setText(2, "根菜单" if item.parent() is None else item.parent().text(0))
+                    item.setText(1, t("settings.menu_editor.enabled"))
+                    item.setText(2, t("settings.menu_editor.root_menu") if item.parent() is None else item.parent().text(0))
                 item.setToolTip(2, item.text(2))
                 refresh_positions(item)
         refresh_positions(self.tree.invisibleRootItem())

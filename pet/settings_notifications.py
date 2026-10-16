@@ -11,12 +11,13 @@ from PySide6.QtWidgets import QLineEdit
 
 from . import notification_center as nc
 from .settings_widgets import BrowserSpinBox, SettingRow, ToggleSwitch
+from .i18n import t
 
-_ENABLED_HINT = ("把 Windows 通知中心里的 Slack 通知铺在灵动岛的卡片里（胶囊上多一个铃铛），点一条就跳到 "
-                 "Slack 里那条消息。Windows 要开着「让应用访问通知」。")
-_UNAVAILABLE_HINT = "这台机器上用不了：需要 Windows，并装上 winrt-Windows.UI.Notifications(.Management)。"
-_POLL_HINT = "隔几秒读一次通知中心（Windows 不给没有包身份的程序推送变更，只能自己看）。"
-_APPS_HINT = "认哪些应用的通知：应用名片段，逗号分隔，不分大小写。默认只认 Slack。"
+#: 提示文案存文案键，用时 t()
+_ENABLED_HINT = "settings.notifications.enabled_hint"
+_UNAVAILABLE_HINT = "settings.notifications.unavailable_hint"
+_POLL_HINT = "settings.notifications.poll_hint"
+_APPS_HINT = "settings.notifications.apps_hint"
 
 
 def notification_rows(dialog) -> list[SettingRow]:
@@ -32,7 +33,7 @@ def notification_rows(dialog) -> list[SettingRow]:
 
     spin = BrowserSpinBox(dialog)
     spin.setRange(*nc.POLL_RANGE)
-    spin.setSuffix(" 秒")
+    spin.setSuffix(t("settings.notifications.s"))
     spin.setValue(settings["poll_seconds"])
     dialog.notifications_poll_spin = spin
 
@@ -42,9 +43,9 @@ def notification_rows(dialog) -> list[SettingRow]:
     dialog.notifications_apps_edit = edit
 
     return [
-        SettingRow("notifications_enabled", "显示通知", _ENABLED_HINT if usable else _UNAVAILABLE_HINT, check),
-        SettingRow("notifications_poll_seconds", "读取间隔", _POLL_HINT, spin),
-        SettingRow("notifications_apps", "认哪些应用", _APPS_HINT, edit, stacked=True),
+        SettingRow("notifications_enabled", t("settings.notifications.show_notifications"), t(_ENABLED_HINT if usable else _UNAVAILABLE_HINT), check),
+        SettingRow("notifications_poll_seconds", t("settings.notifications.read_interval"), t(_POLL_HINT), spin),
+        SettingRow("notifications_apps", t("settings.notifications.which_apps"), t(_APPS_HINT), edit, stacked=True),
     ]
 
 

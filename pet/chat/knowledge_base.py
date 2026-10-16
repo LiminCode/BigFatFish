@@ -36,6 +36,7 @@ from typing import Any, Callable
 from . import models as _models
 from .anthropic_provider import uses_anthropic
 from .connectors import GITHUB_TOKEN_REF
+from ..i18n import t
 
 DIR_NAME = "knowledge-base"
 SYNC_INTERVAL_S = 24 * 3600
@@ -124,11 +125,11 @@ def describe(config_dir, repo: str) -> str:
     """给设置页看的一句话状态。"""
     state = load_state(config_dir)
     if state.error and state.attempted_repo == repo:
-        return f"同步失败：{state.error}"
+        return t("settings.ai.kb_failed", error=state.error)
     if has_copy(config_dir, repo):
         when = datetime.fromtimestamp(state.synced_at).strftime("%Y-%m-%d %H:%M")
-        return f"上次同步 {when}，{state.files} 个文件。之后每天自动同步一次。"
-    return "还没有同步过。保存后肥鱼会自动同步，也可以现在同步。"
+        return t("settings.ai.kb_synced", when=when, files=state.files)
+    return t("settings.ai.kb_never")
 
 
 # ---------------------------------------------------------------- 同步

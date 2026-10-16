@@ -20,6 +20,8 @@ _write_config 保存。
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QLineEdit,
@@ -52,6 +54,7 @@ from .voice_chime import (
     clean_voice,
     clean_volume,
 )
+from .i18n import maybe_t, t
 
 
 def _sync_voice_select(select: ModernSelect, config) -> None:
@@ -62,7 +65,7 @@ def _sync_voice_select(select: ModernSelect, config) -> None:
     """
     current = clean_voice(config.get("voice_chime_voice", DEFAULT_VOICE))
     if select.findData(current) < 0:
-        select.addItem(f"不在清单里：{current}", current)
+        select.addItem(t("settings.voice.not_list_current", current=current), current)
     select.setCurrentData(current)
 
 
@@ -83,17 +86,19 @@ class VoiceChimeSettingsPage(QWidget):
         # ---- 调度 ----
         self.schedule_select = ModernSelect(self, width=170)
         for key in SCHEDULE_KEYS:
-            self.schedule_select.addItem(SCHEDULE_LABELS[key], key)
+            self.schedule_select.addItem(maybe_t(f"settings.voice.schedule_{key}") if key in SCHEDULE_LABELS else key, key)
         self.schedule_select.setCurrentData(clean_schedule(self.config.get("voice_chime_schedule", "hourly")))
 
         self.custom_edit = QLineEdit(self)
         self.custom_edit.setText(str(self.config.get("voice_chime_custom_times", "") or ""))
-        self.custom_edit.setPlaceholderText("如 08:30, 12:00, 23:59（逗号分隔）")
+        self.custom_edit.setPlaceholderText(t("settings.voice.e_g_08_30_12"))
         self.schedule_select.currentIndexChanged.connect(self._refresh_custom_enabled)
 
         # ---- 语音 ----
         self.voice_select = ModernSelect(self, width=230)
         for value, label in VOICE_OPTIONS:
+            # 显示名跟随界面语言；VOICE_OPTIONS 里的中文是 zh 原文（也给服务层的提示用）
+            label = maybe_t("settings.voice.option_" + re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")) or label
             self.voice_select.addItem(label, value)
         _sync_voice_select(self.voice_select, self.config)
 
@@ -103,13 +108,13 @@ class VoiceChimeSettingsPage(QWidget):
         self.rate_spin.setRange(-100, 100)
         self.rate_spin.setSuffix(" %")
         self.rate_spin.setValue(clean_rate(self.config.get("voice_chime_rate", DEFAULT_RATE)))
-        self.rate_spin.setToolTip("语速偏移：0 为正常，正数更快，负数更慢")
+        self.rate_spin.setToolTip(t("settings.voice.rate_offset_0_normal_positive"))
 
         self.pitch_spin = BrowserSpinBox(self)
         self.pitch_spin.setRange(-50, 50)
         self.pitch_spin.setSuffix(" Hz")
         self.pitch_spin.setValue(clean_pitch(self.config.get("voice_chime_pitch", DEFAULT_PITCH)))
-        self.pitch_spin.setToolTip("音调偏移：0 为正常，正数更尖锐，负数更低沉")
+        self.pitch_spin.setToolTip(t("settings.voice.pitch_offset_0_normal_positive"))
 
         self.volume_spin = BrowserSpinBox(self)
         self.volume_spin.setRange(0, 100)
@@ -127,7 +132,7 @@ class VoiceChimeSettingsPage(QWidget):
         self.custom_zh_edit.setMinimumSize(280, 84)
         self.custom_zh_edit.setMaximumHeight(180)
         self.custom_zh_edit.setPlaceholderText(
-            "每行一条，例如：\n又是元气满满的一天～\n该起来喝口水、动一动啦。"
+            t("settings.voice.one_per_line_example_another")
         )
         self.custom_zh_edit.setPlainText(str(self.config.get("voice_chime_custom_quotes_zh", "") or ""))
 
@@ -139,8 +144,8 @@ class VoiceChimeSettingsPage(QWidget):
         )
         self.custom_en_edit.setPlainText(str(self.config.get("voice_chime_custom_quotes_en", "") or ""))
 
-        self.preview_btn = QPushButton("立即试听", self)
-        self.preview_btn.setToolTip("按当前配置立即播报一句报时+台词（无需等待报时点）")
+        self.preview_btn = QPushButton(t("settings.voice.preview_now"), self)
+        self.preview_btn.setToolTip(t("settings.voice.speak_one_time_announcement_line"))
         self.preview_btn.clicked.connect(self._on_preview_clicked)
 
         # ---- Layout ----
@@ -150,11 +155,11 @@ class VoiceChimeSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "基础设置",
+                t("settings.voice.basics"),
                 [
-                    SettingRow("voice_chime_enabled", "启用语音报时", "开启后按下方调度规则定时语音报时，并附台词/歌词（每天整套换新，日内按序取不同条目）。", self.enabled_check),
-                    SettingRow("voice_chime_schedule", "报时频率", "整点 / 每30分钟 / 每15分钟 / 每5分钟 / 每分钟 / 自定义时间点。", self.schedule_select),
-                    SettingRow("voice_chime_custom_times", "自定义时间点", "仅「自定义时间点」模式生效；HH:MM 逗号分隔，如 08:30, 12:00。", self.custom_edit),
+                    SettingRow("voice_chime_enabled", t("settings.voice.enable_spoken_time"), t("settings.voice.when_time_announced_aloud_schedule"), self.enabled_check),
+                    SettingRow("voice_chime_schedule", t("settings.voice.announcement_frequency"), t("settings.voice.hour_every_30_min_every"), self.schedule_select),
+                    SettingRow("voice_chime_custom_times", t("settings.voice.custom_times"), t("settings.voice.only_used_custom_times_mode"), self.custom_edit),
                 ],
                 self,
             )
@@ -162,21 +167,20 @@ class VoiceChimeSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "语音",
+                t("settings.voice.voice"),
                 [
                     SettingRow(
                         "voice_chime_voice",
-                        "音色",
-                        "内置中英文音色（edge-tts 在线合成，无需 API Key）；"
-                        "微软会下架音色——选到已不存在的音色时会自动改用默认音色并提示一次。",
+                        t("settings.voice.voice_2"),
+                        t("settings.voice.built_chinese_english_voices_edge"),
                         self.voice_select,
                     ),
-                    SettingRow("voice_chime_rate", "语速", "语速偏移百分比：0 为正常，正数更快，负数更慢。", self.rate_spin),
-                    SettingRow("voice_chime_pitch", "音调", "音调偏移（Hz）：0 为正常，正数更尖锐，负数更低沉。", self.pitch_spin),
-                    SettingRow("voice_chime_volume", "音量", "报时播放音量（0-100）。", self.volume_spin),
-                    SettingRow("voice_chime_show_bubble", "报时气泡", "报时时在肥鱼头顶显示气泡文字（含台词/歌词）。", self.bubble_check),
-                    SettingRow("voice_chime_show_quote", "台词/歌词", "报时时附带台词/歌词（每天整套换新，当天内每次报时按序取不同条目）；关闭后仅播报时间文本。", self.quote_check),
-                    SettingRow("voice_chime_preview", "立即试听", "按当前配置立即播报一句“报时文本 + 台词/歌词”，无需等待报时点。", self.preview_btn),
+                    SettingRow("voice_chime_rate", t("settings.voice.rate"), t("settings.voice.speaking_rate_offset_percent_0"), self.rate_spin),
+                    SettingRow("voice_chime_pitch", t("settings.voice.pitch"), t("settings.voice.pitch_offset_hz_0_normal"), self.pitch_spin),
+                    SettingRow("voice_chime_volume", t("settings.voice.volume"), t("settings.voice.announcement_volume_0_100"), self.volume_spin),
+                    SettingRow("voice_chime_show_bubble", t("settings.voice.announcement_bubble"), t("settings.voice.show_announcement_text_line_lyric"), self.bubble_check),
+                    SettingRow("voice_chime_show_quote", t("settings.voice.lines_lyrics"), t("settings.voice.add_line_lyric_each_announcement"), self.quote_check),
+                    SettingRow("voice_chime_preview", t("settings.voice.preview_now"), t("settings.voice.speak_one_time_announcement_line_2"), self.preview_btn),
                 ],
                 self,
             )
@@ -184,23 +188,19 @@ class VoiceChimeSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "台词/歌词",
+                t("settings.voice.lines_lyrics"),
                 [
                     SettingRow(
                         "voice_chime_custom_quotes_zh",
-                        "自定义台词/歌词（中文）",
-                        "每行一条，与内置中文库的关系：填了就整体替换内置库参与轮换"
-                        "（每天整套换新，当天内每次报时按序取不同条目）；"
-                        "留空则自动回退内置中文台词库。中文音色报时时使用这里的内容。",
+                        t("settings.voice.custom_lines_lyrics_chinese"),
+                        t("settings.voice.one_per_line_if_filled"),
                         self.custom_zh_edit,
                         stacked=True,
                     ),
                     SettingRow(
                         "voice_chime_custom_quotes_en",
-                        "自定义台词/歌词（英文）",
-                        "每行一条，规则同上（每天整套换新，当天内每次报时按序取不同条目）；"
-                        "留空则自动回退内置英文台词库，与中文库各自独立轮换。"
-                        "非中文音色报时时使用这里的内容。",
+                        t("settings.voice.custom_lines_lyrics_english"),
+                        t("settings.voice.one_per_line_same_rules"),
                         self.custom_en_edit,
                         stacked=True,
                     ),

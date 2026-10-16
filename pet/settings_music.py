@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 
 from .settings_widgets import SettingRow
+from .i18n import t
 
 
 def browser_media_supported() -> bool:
@@ -39,10 +40,8 @@ def browser_media_rows(dialog) -> list[SettingRow]:
     return [
         SettingRow(
             "music_browser_media",
-            "浏览器媒体会话参与歌词",
-            "关闭时，浏览器（Edge、Chrome、Firefox 等）里播放的内容不会被当作正在"
-            "播放的歌曲——浏览器把网页视频也上报成音乐类型，开着会对着视频显示"
-            "「我在唱」并取词。在浏览器里听 YouTube Music 需要打开它才能显示歌词。",
+            t("settings.music.browser_media_sessions_take_part"),
+            t("settings.music.when_off_whatever_plays_browser"),
             check,
         )
     ]

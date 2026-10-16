@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def _guard_voice_preview(dialog) -> None:
     if button is None:
         return
     button.setEnabled(False)
-    button.setToolTip("独立设置进程试听需要 edge-tts 库：请运行 pip install edge-tts 后重试")
+    button.setToolTip(t("settings.standalone.previewing_separate_settings_process_nee"))
 
 
 def preview_voice_chime(dialog, text: str = "") -> None:
