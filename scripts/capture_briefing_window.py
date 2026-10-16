@@ -37,7 +37,9 @@ def sample_notes() -> list[wn.Note]:
     first = wn.apply_summary(first, wn.SummaryResult(ok=True, summary="Steven 在等副本数与反亲和方案的答复",
                                                      details="- 工单 DEMO-9 状态 New，负责人是我\n- 下一步：查集群余量后回复",
                                                      remind_at=(now + dt.timedelta(hours=14)).isoformat(timespec="seconds"),
-                                                     reason="明早上班先回", tags=["jira", "等回复"]), now)
+                                                     reason="明早上班先回", tags=["jira", "等回复"],
+                                                     model="claude-sonnet-5-5", tokens_in=34641, tokens_out=612,
+                                                     cost_usd=0.0412, seconds=14.3), now)
     second = wn.new_note("周五前把季度报告发给 Amy", now - dt.timedelta(hours=3))
     return [first, second]
 

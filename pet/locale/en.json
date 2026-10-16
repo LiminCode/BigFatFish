@@ -149,5 +149,19 @@
   "slack.bubble.failed": "Couldn't check Slack: {error}",
   "slack.bubble.nothing": "Nothing new on Slack for you~",
   "slack.alert.subtitle": "Slack · {n} for you",
-  "slack.alert.urgent": " (some urgent)"
+  "slack.alert.urgent": " (some urgent)",
+  "notes.detail.usage": "{model} · {tokens_in} in / {tokens_out} out tokens · ${cost} · {seconds} s",
+  "notes.settings.section": "Work notes",
+  "notes.settings.enabled": "Enable work notes",
+  "notes.settings.enabled_hint": "Adds a “Notes” page to the briefing window: paste Slack / Jira links or snippets; Claude Code in WSL reads them read-only, summarizes and picks a reminder time; notes are pushed to the AI-Base-Memory repo. Each note is one real model call on that account's quota.",
+  "notes.settings.no_wsl": "No WSL on this machine: summarizing and pushing notes need Claude Code in WSL signed in to the work account.",
+  "notes.settings.repo_dir": "Repo folder",
+  "notes.settings.repo_dir_hint": "Local clone of AI-Base-Memory (Windows path). Notes go to its note/ folder and git runs from WSL under /mnt/…. Register this folder as an Obsidian vault and “Open in Obsidian” jumps straight to the note.",
+  "notes.settings.model": "Model",
+  "notes.settings.model_hint": "Model alias passed to claude -p --model. Each note is one call of about 10–90 s; pick “Custom” to type a full model name (letters, digits and . _ - only).",
+  "notes.settings.custom_model": "Custom model name",
+  "notes.settings.custom_choice": "Custom…",
+  "notes.settings.flow": "How it works",
+  "notes.settings.flow_hint": "Hover the flow icon on the right for the whole flow, so the details are not forgotten over time.",
+  "notes.settings.flow_tooltip": "<b>How work notes flow</b><br>1. Paste a Slack / Jira link or a few words on the “Notes” page of the briefing window, Ctrl+Enter.<br>2. The fish writes the original verbatim to note/date-title.md (Obsidian format) and pushes it to AI-Base-Memory.<br>3. In the background, Claude Code in WSL (work account) follows the links <b>read-only</b>, writes a summary, picks the next reminder time and tags; the fish writes it back and pushes again. One automatic retry on failure.<br>4. When the time comes and you are at the computer, a sticky bubble appears: View / Later / Done.<br>5. “Open in Obsidian” jumps to the note (register the repo folder as a vault first).<br>Each note records which model it used, how many tokens and what it cost."
 }

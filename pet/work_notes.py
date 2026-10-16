@@ -101,6 +101,11 @@ class Note:
     summary: str = ""              # 一句话
     details: str = ""              # Markdown 要点
     summarized_at: str = ""
+    model: str = ""                # 总结用的模型（claude -p 返回的 modelUsage 里的名字）
+    tokens_in: int = 0             # 输入 token（含缓存读写）
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    seconds: float = 0.0           # 那次总结用了多久
 
     def replace(self, **changes) -> "Note":
         return dataclasses.replace(self, **changes)
@@ -209,8 +214,13 @@ def _frontmatter(note: Note) -> str:
     lines = ["---"]
     for key, value in (("created", note.created), ("title", note.title), ("kind", note.kind),
                        ("status", note.status), ("remind_at", note.remind_at), ("remind_reason", note.reason),
-                       ("summarized_at", note.summarized_at)):
+                       ("summarized_at", note.summarized_at), ("model", note.model)):
         lines.append(f"{key}: {_fm_value(value)}")
+    if note.model:
+        lines.append(f"tokens_in: {int(note.tokens_in)}")
+        lines.append(f"tokens_out: {int(note.tokens_out)}")
+        lines.append(f"cost_usd: {note.cost_usd:.6f}")
+        lines.append(f"seconds: {note.seconds:.1f}")
     for key, items in (("links", note.links), ("tags", note.tags)):
         lines.append(f"{key}:")
         lines.extend(f"  - {_fm_value(item)}" for item in items)
@@ -293,7 +303,24 @@ def parse(text: str, name: str) -> Note:
                 kind=str(data.get("kind") or "text"), links=links, tags=tags,
                 status=STATUS_DONE if status == STATUS_DONE else STATUS_OPEN,
                 remind_at=remind_at if _parse_iso(remind_at) else "", reason=str(data.get("remind_reason") or ""),
-                summary=summary, details=details, summarized_at=str(data.get("summarized_at") or ""))
+                summary=summary, details=details, summarized_at=str(data.get("summarized_at") or ""),
+                model=str(data.get("model") or ""), tokens_in=_int(data.get("tokens_in")),
+                tokens_out=_int(data.get("tokens_out")), cost_usd=_float(data.get("cost_usd")),
+                seconds=_float(data.get("seconds")))
+
+
+def _int(value) -> int:
+    try:
+        return int(float(str(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _float(value) -> float:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def save(folder: Path | str, note: Note) -> Path:
@@ -365,6 +392,27 @@ class SummaryResult:
     seconds: float = 0.0
     turns: int = 0
     denied: list[str] = field(default_factory=list)
+    model: str = ""                # claude -p 返回的 modelUsage 里的模型名（多个用 + 连）
+    tokens_in: int = 0             # 输入 + 缓存读 + 缓存写
+    tokens_out: int = 0
+    cost_usd: float = 0.0          # total_cost_usd
+
+
+def usage_of(record: dict) -> tuple[str, int, int, float]:
+    """结果记录里的 (模型, 输入 token, 输出 token, 费用)；字段缺了就是空 / 0。"""
+    models = record.get("modelUsage") if isinstance(record.get("modelUsage"), dict) else {}
+    names, tokens_in, tokens_out = [], 0, 0
+    for name, usage in models.items():
+        if not isinstance(usage, dict):
+            continue
+        names.append(str(name))
+        tokens_in += _int(usage.get("inputTokens")) + _int(usage.get("cacheReadInputTokens")) + _int(usage.get("cacheCreationInputTokens"))
+        tokens_out += _int(usage.get("outputTokens"))
+    if not names:
+        usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
+        tokens_in = _int(usage.get("input_tokens")) + _int(usage.get("cache_read_input_tokens")) + _int(usage.get("cache_creation_input_tokens"))
+        tokens_out = _int(usage.get("output_tokens"))
+    return "+".join(names), tokens_in, tokens_out, _float(record.get("total_cost_usd"))
 
 
 def build_prompt(note: Note, now: dt.datetime) -> str:
@@ -408,10 +456,12 @@ def parse_summary(stdout: str, now: dt.datetime) -> SummaryResult:
     summary = " ".join(str(data.get("summary") or "").split())[:120]
     if not summary:
         return SummaryResult(error="Claude Code 没有写出摘要", denied=denied, turns=turns)
+    model, tokens_in, tokens_out, cost = usage_of(record)
     return SummaryResult(ok=True, summary=summary, details=str(data.get("details") or "").strip(),
                          remind_at=_clean_remind_at(data.get("remind_at"), now),
                          reason=" ".join(str(data.get("reason") or "").split())[:160],
-                         tags=_clean_tags(data.get("tags")), denied=denied, turns=turns)
+                         tags=_clean_tags(data.get("tags")), denied=denied, turns=turns,
+                         model=model, tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost)
 
 
 def summarize(note: Note, now: dt.datetime, model: str, *, run: wb.WslRunner | None = None,
@@ -441,7 +491,9 @@ def apply_summary(note: Note, result: SummaryResult, now: dt.datetime) -> Note:
         if tag not in tags:
             tags.append(tag)
     return note.replace(summary=result.summary, details=result.details, remind_at=result.remind_at,
-                        reason=result.reason, tags=tags, summarized_at=_iso(now))
+                        reason=result.reason, tags=tags, summarized_at=_iso(now),
+                        model=result.model, tokens_in=result.tokens_in, tokens_out=result.tokens_out,
+                        cost_usd=result.cost_usd, seconds=result.seconds)
 
 
 # ---------------------------------------------------------------- 提醒

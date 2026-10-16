@@ -23,6 +23,8 @@ from .i18n import t
 from .settings_widgets import TiltButton
 
 ALERT_PREFIX = "work-note:"
+#: 输入框与「记下」按钮一样高
+INPUT_HEIGHT = 72
 # 样式由简报窗口的 Metro 样式表统一给（按 objectName 选中这里的控件）；面板自己只管颜色相关的调色板。
 
 
@@ -53,6 +55,9 @@ def detail_markdown(note: wn.Note, busy: bool) -> str:
     if note.tags:
         meta.append(" ".join(f"`{tag}`" for tag in note.tags))
     parts.append(" · ".join(meta))
+    if note.model:
+        parts.append(t("notes.detail.usage", model=note.model, tokens_in=f"{note.tokens_in:,}",
+                       tokens_out=f"{note.tokens_out:,}", cost=f"{note.cost_usd:.3f}", seconds=f"{note.seconds:.0f}"))
     if busy:
         parts.append(f"*{t('notes.detail.busy')}*")
     elif note.summary:
@@ -95,10 +100,11 @@ class WorkNotesPanel(QWidget):
         self.input = _Input(self)
         self.input.setObjectName("notesInput")
         self.input.setPlaceholderText(t("notes.input.placeholder"))
-        self.input.setFixedHeight(72)
+        self.input.setFixedHeight(INPUT_HEIGHT)
         self.input.setAccessibleName(t("notes.tab"))
         self.input.submitted.connect(self._submit)
         self.add_btn = TiltButton(t("notes.button.add"), self)
+        self.add_btn.setFixedHeight(INPUT_HEIGHT)   # 和输入框一样高（用户 2026-10-15：之前只有一行高、贴在底边）
         self.add_btn.setAccessibleDescription(t("notes.button.add_hint"))
         self.add_btn.clicked.connect(self._submit)
         QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=self._submit)
@@ -138,7 +144,7 @@ class WorkNotesPanel(QWidget):
         top = QHBoxLayout()
         top.setSpacing(8)
         top.addWidget(self.input, 1)
-        top.addWidget(self.add_btn, 0, Qt.AlignmentFlag.AlignBottom)
+        top.addWidget(self.add_btn, 0)
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         buttons.addWidget(self.status_label, 1)

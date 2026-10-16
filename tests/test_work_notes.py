@@ -122,6 +122,27 @@ def test_a_good_answer_fills_summary_reminder_and_tags():
     assert result.tags == ["jira", "ops", "x" * wn.MAX_TAG_CHARS] and result.turns == 5
 
 
+def test_model_tokens_and_cost_come_from_the_result_record():
+    """用户 2026-10-15：每条笔记要能看到用了哪个模型、多少 token。字段来自 claude -p 的 modelUsage / total_cost_usd。"""
+    record = {"result": json.dumps({"summary": "s", "remind_at": None}), "subtype": "success", "num_turns": 2,
+              "total_cost_usd": 0.0283158,
+              "modelUsage": {"claude-sonnet-5-5": {"inputTokens": 2, "outputTokens": 4, "cacheReadInputTokens": 28278,
+                                                   "cacheCreationInputTokens": 6361, "costUSD": 0.0283158}}}
+    result = wn.parse_summary(json.dumps(record), NOW)
+    assert result.ok and result.model == "claude-sonnet-5-5"
+    assert result.tokens_in == 2 + 28278 + 6361 and result.tokens_out == 4 and result.cost_usd == pytest.approx(0.0283158)
+
+    note = wn.apply_summary(wn.new_note("x", NOW), wn.SummaryResult(ok=True, summary="s", model="claude-sonnet-5-5",
+                                                                   tokens_in=34641, tokens_out=4, cost_usd=0.0283158,
+                                                                   seconds=9.7), NOW)
+    back = wn.parse(wn.render(note), note.name)
+    assert (back.model, back.tokens_in, back.tokens_out, back.seconds) == ("claude-sonnet-5-5", 34641, 4, 9.7)
+    assert back.cost_usd == pytest.approx(0.0283158, abs=1e-6)
+    assert "model: claude-sonnet-5-5" in wn.render(note) and "tokens_in: 34641" in wn.render(note)
+    assert "tokens_in" not in wn.render(wn.new_note("y", NOW)), "没总结过的不写用量字段"
+    assert wn.usage_of({"usage": {"input_tokens": 5, "output_tokens": 7}}) == ("", 5, 7, 0.0), "没有 modelUsage 时退回 usage"
+
+
 def test_a_reminder_in_the_past_or_malformed_is_dropped():
     assert wn.parse_summary(_claude_json({"summary": "s", "remind_at": "2026-10-15T08:00"}), NOW).remind_at == ""
     assert wn.parse_summary(_claude_json({"summary": "s", "remind_at": "下周吧"}), NOW).remind_at == ""
