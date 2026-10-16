@@ -1155,11 +1155,11 @@ def test_modern_menu_window_stays_per_pixel_alpha_after_the_fade_in():
     Qt 淡入动画（不透明度 < 1）期间是逐像素透明的，淡入一结束 Qt 就摘掉分层样式，
     圆角外的透明区域合成成黑色。新版样式必须给菜单和每级子菜单都加上 Frameless 位。
     """
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QMenu
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
     from pet.context_menus.menu_styles.common import inherit_menu_style
-    from pet.context_menus.menu_styles.modern import apply_modern_menu_style
+    from pet.context_menus.menu_styles.modern import SHADOW_MARGIN, apply_modern_menu_style
 
     QApplication.instance() or QApplication([])
     menu = QMenu()
@@ -1170,6 +1170,15 @@ def test_modern_menu_window_stays_per_pixel_alpha_after_the_fade_in():
         assert widget.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         assert widget.windowFlags() & Qt.WindowType.FramelessWindowHint, "没有 Frameless 位，淡入后四角会黑"
         assert widget.windowFlags() & Qt.WindowType.Popup, "仍然是弹出菜单"
+        # Windows 自带的弹窗阴影是直角矩形，和圆角对不上：关掉它，在透明边距里自己画软阴影
+        assert widget.windowFlags() & Qt.WindowType.NoDropShadowWindowHint, "系统直角阴影没关"
+        assert f"margin: {SHADOW_MARGIN}px" in widget.styleSheet(), "没有留出画阴影的透明边距"
+        assert widget.findChild(QWidget, "modernShadowLayer") is not None
+    menu.addAction("one")
+    menu.popup(QPoint(40, 40))
+    QApplication.processEvents()
+    assert menu.actionGeometry(menu.actions()[0]).left() >= SHADOW_MARGIN, "条目要落在边距以内的本体里"
+    menu.close()
 
 
 def test_modern_checked_action_is_painted_in_reserved_right_slot():

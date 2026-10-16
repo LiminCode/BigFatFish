@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import QMenu, QWidget
 
 from .common import SYSTEM_FONT_STACK, system_ui_font
+
+#: 菜单四周的透明边距（px）：Windows 自带的弹窗阴影（CS_DROPSHADOW）是直角矩形，和圆角
+#: 对不上，所以关掉它（NoDropShadowWindowHint），在这圈边距里自己画跟着圆角走的软阴影。
+SHADOW_MARGIN = 10
 
 def modern_menu_stylesheet(appearance: dict | None = None, *, dark: bool = False) -> str:
     appearance = appearance or {}
@@ -34,6 +38,7 @@ QMenu {{
     color: {foreground};
     border: none;
     border-radius: {radius}px;
+    margin: {SHADOW_MARGIN}px;
     padding: 7px;
     font-family: {font_stack};
     font-size: {font_size}px;
@@ -92,6 +97,9 @@ def apply_modern_menu_style(menu: QMenu, appearance: dict | None = None) -> None
     # 透明区域就合成成黑色四角（2026-10-16 实机 196~585 个黑像素）。加上 Frameless 位后
     # 淡入前后都是分层窗口（实测 1~4 个像素，是阴影边缘）。
     menu.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+    # 用 setWindowFlags：PySide 6.12 的 setWindowFlag(NoDropShadowWindowHint, True) 不生效
+    # （实测 windowFlags() 里没有该位；Frameless 位用 setWindowFlag 则正常）。
+    menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.NoDropShadowWindowHint)
     font_size = max(10, min(18, int(appearance.get("ui_font_size") or 13)))
     font = system_ui_font(font_size, QFont.Weight.Normal)
     requested_font = str(appearance.get("ui_font") or "system")
@@ -99,9 +107,12 @@ def apply_modern_menu_style(menu: QMenu, appearance: dict | None = None) -> None
         font.setFamily(requested_font)
     menu.setFont(font)
     menu.setStyleSheet(modern_menu_stylesheet(appearance, dark=dark))
+    shadow = ModernShadowLayer(menu)
     border = ModernHairlineBorder(menu)
 
     def sync_border() -> None:
+        shadow.setGeometry(menu.rect())
+        shadow.show()
         border.setGeometry(menu.rect())
         border.show()
         border.raise_()
@@ -109,7 +120,46 @@ def apply_modern_menu_style(menu: QMenu, appearance: dict | None = None) -> None
     menu.aboutToShow.connect(
         lambda menu=menu: QTimer.singleShot(0, menu, sync_border)
     )
+    menu._modern_shadow_layer = shadow
     menu._modern_hairline_border = border
+
+
+def menu_body_rect(menu: QWidget) -> QRectF:
+    """菜单可见的那块（去掉阴影边距）。"""
+    m = float(SHADOW_MARGIN)
+    return QRectF(m, m, menu.width() - 2 * m, menu.height() - 2 * m)
+
+
+class ModernShadowLayer(QWidget):
+    """在透明边距里画一圈跟着圆角走的软阴影；只画边距，不碰菜单本体。"""
+
+    def __init__(self, parent: QMenu) -> None:
+        super().__init__(parent)
+        self.setObjectName("modernShadowLayer")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.hide()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        del event
+        body = menu_body_rect(self)
+        radius = float(self.parent().property("modernCornerRadius") or 12)
+        dark = bool(self.parent().property("modernDark"))
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        keep_out = QPainterPath()
+        keep_out.addRoundedRect(body, radius, radius)
+        whole = QPainterPath()
+        whole.addRect(QRectF(self.rect()))
+        painter.setClipPath(whole.subtracted(keep_out))
+        painter.setPen(Qt.PenStyle.NoPen)
+        # 由外向内叠加：越靠近本体越深，总和在贴边处约 0.22（深色菜单 0.34），往外二次衰减。
+        peak = 0.34 if dark else 0.22
+        rings = SHADOW_MARGIN - 2        # 最外两像素留空白，阴影不顶到窗口边缘
+        for ring in range(rings, 0, -1):
+            weight = (1.0 - (ring - 1) / rings) ** 2
+            color = QColor(0, 0, 0, max(1, round(255 * peak * weight / rings * 2)))
+            painter.setBrush(color)
+            painter.drawRoundedRect(body.adjusted(-ring, -ring + 1.5, ring, ring + 1.5), radius + ring, radius + ring)
 
 
 class ModernHairlineBorder(QWidget):
@@ -131,11 +181,7 @@ class ModernHairlineBorder(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor("#555555" if self.parent().property("modernDark") else "#d8d8d8"), 1.0 / dpr))
         radius = float(self.parent().property("modernCornerRadius") or 12)
-        painter.drawRoundedRect(
-            QRectF(inset, inset, self.width() - 2 * inset, self.height() - 2 * inset),
-            radius,
-            radius,
-        )
+        painter.drawRoundedRect(menu_body_rect(self).adjusted(inset, inset, -inset, -inset), radius, radius)
 
 
 class ModernCheckLayer(QWidget):
@@ -158,7 +204,7 @@ class ModernCheckLayer(QWidget):
             if not action.isCheckable() or not action.isChecked() or not action.isVisible():
                 continue
             rect = menu.actionGeometry(action)
-            center = QPointF(self.width() - 21.0, rect.center().y())
+            center = QPointF(self.width() - SHADOW_MARGIN - 21.0, rect.center().y())
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("#1677e8"))
             painter.drawEllipse(QRectF(center.x() - 6.5, center.y() - 6.5, 13.0, 13.0))
