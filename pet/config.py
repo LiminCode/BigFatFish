@@ -22,6 +22,7 @@ from . import i18n
 from .notification_center import normalize as normalize_notifications
 from .slack_watch import normalize as normalize_slack_watch
 from .work_briefing import normalize as normalize_work_briefing
+from .work_notes import normalize as normalize_work_notes
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
@@ -843,6 +844,8 @@ class Config:
             "notifications": normalize_notifications(None),
             # Slack 关注（电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack），见 pet/slack_watch.py
             "slack_watch": normalize_slack_watch(None),
+            # 工作笔记（随手记的 Slack / Jira 链接，由 WSL 里的 Claude Code 总结、定提醒），见 pet/work_notes.py
+            "work_notes": normalize_work_notes(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1118,6 +1121,7 @@ class Config:
             "vscode_workspaces",
             "notifications",
             "slack_watch",
+            "work_notes",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1512,6 +1516,7 @@ class Config:
         self.data["vscode_workspaces"] = normalize_vscode_workspaces(self.data.get("vscode_workspaces"))
         self.data["notifications"] = normalize_notifications(self.data.get("notifications"))
         self.data["slack_watch"] = normalize_slack_watch(self.data.get("slack_watch"))
+        self.data["work_notes"] = normalize_work_notes(self.data.get("work_notes"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1700,6 +1705,7 @@ class Config:
             "ui_language",
             "notifications",
             "slack_watch",
+            "work_notes",
         }:
             self._normalize_pet_settings()
 

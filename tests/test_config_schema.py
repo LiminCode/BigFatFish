@@ -148,6 +148,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "vscode_workspaces",
         "notifications",
         "slack_watch",
+        "work_notes",
         "festival_custom_quotes_cn",
         "festival_custom_quotes_west",
         "festival_reminder_cn",

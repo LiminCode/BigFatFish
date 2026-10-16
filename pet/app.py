@@ -3003,8 +3003,30 @@ class AppShell:
             self._overlay_shell.work_briefing = self._work_briefing
             self._work_briefing.state_changed.connect(self._push_island_briefing_state)
             service.start()
+            self._start_work_notes()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("工作简报接线失败")
+
+    def _start_work_notes(self) -> None:
+        """工作笔记（可选服务）：挂在简报窗口的「笔记」页里，总结靠 WSL 里的 Claude Code；没开就不接。"""
+        briefing = getattr(self, "_work_briefing", None)
+        if self._overlay_shell is None or briefing is None or getattr(self, "_work_notes", None) is not None:
+            return
+        try:
+            from .work_notes_service import WorkNotesService
+            from .work_notes_ui import WorkNotesController
+
+            service = WorkNotesService(self.config, parent=self.app)
+            if not service.settings()["enabled"]:
+                return
+            controller = WorkNotesController(self._overlay_shell, service,
+                                             open_window=lambda: briefing.open_window(tab="笔记"))
+            briefing.tab_providers.append(lambda: [("笔记", controller.panel())])
+            self._work_notes = controller
+            self._overlay_shell.work_notes = controller
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("工作笔记接线失败")
 
     def _start_slack_watch(self) -> None:
         """Slack 关注（可选服务）：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。"""

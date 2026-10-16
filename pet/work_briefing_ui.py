@@ -14,7 +14,7 @@ import datetime as dt
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTabWidget, QTextBrowser, QVBoxLayout, QWidget
 
 from . import work_briefing as wb
 from .settings_widgets import _system_dark
@@ -47,6 +47,13 @@ QPushButton {{
 QPushButton:hover {{ background: {hover}; }}
 QPushButton:focus {{ border-color: #0a84ff; }}
 QPushButton:disabled {{ color: {muted}; }}
+QTabWidget#briefingTabs::pane {{ border: 0; }}
+QTabBar::tab {{
+    background: transparent; color: {muted}; padding: 6px 14px; margin-right: 4px;
+    border: 0; border-bottom: 2px solid transparent; font-size: 13px;
+}}
+QTabBar::tab:selected {{ color: {title}; border-bottom-color: #0a84ff; }}
+QTabBar::tab:hover {{ color: {text}; }}
 """
 
 
@@ -100,13 +107,35 @@ class WorkBriefingWindow(QWidget):
         buttons.addWidget(self.status_label, 1)
         buttons.addWidget(self.regenerate_btn)
         buttons.addWidget(self.close_btn)
+        # 简报那一页；别的功能（工作笔记）用 add_tab 挂成第二页，只有一页时不显示标签栏
+        self.briefing_page = QWidget(self)
+        page = QVBoxLayout(self.briefing_page)
+        page.setContentsMargins(0, 8, 0, 0)
+        page.setSpacing(8)
+        page.addWidget(self.meta_label)
+        page.addWidget(self.body, 1)
+        page.addLayout(buttons)
+        self.tabs = QTabWidget(self)
+        self.tabs.setObjectName("briefingTabs")
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self.briefing_page, "简报")
+        self.tabs.tabBar().setVisible(False)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(8)
         layout.addWidget(self.title_label)
-        layout.addWidget(self.meta_label)
-        layout.addWidget(self.body, 1)
-        layout.addLayout(buttons)
+        layout.addWidget(self.tabs, 1)
+
+    def add_tab(self, label: str, widget: QWidget) -> None:
+        self.tabs.addTab(widget, label)
+        self.tabs.tabBar().setVisible(self.tabs.count() > 1)
+
+    def select_tab(self, label: str) -> bool:
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == label:
+                self.tabs.setCurrentIndex(index)
+                return True
+        return False
 
     def show_briefing(self, briefing: wb.Briefing | None, *, busy: bool = False, error: str = "") -> None:
         """摆上最近一份；``busy`` 时按钮变灰，``error`` 是最近一次失败的原因。"""
@@ -172,6 +201,8 @@ class WorkBriefingController(QObject):
         self.service = service
         self.window: WorkBriefingWindow | None = None
         self._unread = False
+        #: 建窗口时挂上的别的页：每个回调返回 [(标签, 部件)]（工作笔记用）
+        self.tab_providers: list = []
         service.started.connect(self._on_started)
         service.finished.connect(self._on_finished)
 
@@ -182,11 +213,17 @@ class WorkBriefingController(QObject):
         elif self.service.generate_now():
             self._host.show_bubble("这就去看看今天有什么，大约一分钟～", 4000)
 
-    def open_window(self) -> None:
+    def open_window(self, tab: str = "") -> None:
+        """开窗口；``tab`` 是要切到的标签（空 = 保持原样）。"""
         if self.window is None:
             self.window = WorkBriefingWindow()
             self.window.regenerate_requested.connect(self.service.generate_now)
+            for provider in self.tab_providers:
+                for label, widget in provider():
+                    self.window.add_tab(label, widget)
         self._refresh_window()
+        if tab:
+            self.window.select_tab(tab)
         self.window.show()
         self.window.raise_()
         self.window.activateWindow()

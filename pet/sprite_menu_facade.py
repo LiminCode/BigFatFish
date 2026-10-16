@@ -686,6 +686,12 @@ class SpriteMenuFacade:
         if controller is not None:
             controller.generate_now()
 
+    def open_work_notes(self) -> None:
+        """「工作笔记」：简报窗口开到「笔记」那一页；宿主没接笔记服务就什么都不做。"""
+        controller = getattr(self._shell, "work_notes", None)
+        if controller is not None:
+            controller.open_notes()
+
     # ---- Slack 关注（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
     def _slack_watch(self):
         return getattr(self._shell, "slack_watch", None)
