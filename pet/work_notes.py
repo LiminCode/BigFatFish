@@ -39,6 +39,8 @@ from .i18n import t
 
 CONFIG_KEY = "work_notes"
 NOTES_DIR = "note"
+#: 每次提交带上的路径：笔记目录 + Obsidian 的库配置（用户 2026-10-15 要求一起推；workspace.json 由仓库的 .gitignore 挡掉）
+SYNC_PATHS = (NOTES_DIR, ".obsidian")
 STATE_FILE = "work-notes.json"
 DEFAULT_MODEL = wb.DEFAULT_MODEL
 CLAUDE_TIMEOUT_S = 600.0
@@ -493,7 +495,8 @@ def wsl_path(path: str) -> str:
 
 def sync_command(repo_dir: str, message: str) -> str:
     repo = wb._sq(wsl_path(repo_dir))
-    return (f"cd {repo} && git add -A -- {wb._sq(NOTES_DIR)}"
+    paths = " ".join(wb._sq(path) for path in SYNC_PATHS)
+    return (f"cd {repo} && git add -A -- {paths}"
             f" && (git diff --cached --quiet || git commit -q -m {wb._sq(message)})"
             f" && git pull -q --rebase && git push -q")
 

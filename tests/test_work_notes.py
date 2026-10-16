@@ -207,7 +207,7 @@ def test_sync_adds_commits_pulls_and_pushes_only_the_note_folder():
     assert ok
     cmd = calls[-1]
     assert cmd.startswith("cd '/mnt/c/Users/me/WorkSpace/AI-Base-Memory' && ")
-    assert "git add -A -- 'note'" in cmd and "git commit -q -m 'note: 加一条'" in cmd
+    assert "git add -A -- 'note' '.obsidian'" in cmd, "笔记和 Obsidian 库配置一起推" and "git commit -q -m 'note: 加一条'" in cmd
     assert "git pull -q --rebase" in cmd and "git push -q" in cmd
     assert cmd.index("git add") < cmd.index("git commit") < cmd.index("git pull") < cmd.index("git push")
 

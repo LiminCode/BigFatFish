@@ -287,3 +287,12 @@ summary changed: True
 顺带看到仓库根下多了 `.obsidian/`——用户已把它登记成 Obsidian 库；肥鱼的 git 只 `add note/`，
 不会把 `.obsidian/` 提交上去。门：ruff 全过；`tests/test_work_notes.py tests/test_work_notes_ui.py
 tests/test_work_briefing.py` 98 通过。
+
+---
+
+## 第四轮：Obsidian 库配置一起推
+
+用户决定 `.obsidian/` 也进仓库。`work_notes.SYNC_PATHS = ("note", ".obsidian")`，每次提交带上库配置；
+仓库里加了 `.gitignore` 挡掉 `.obsidian/workspace.json` / `workspace-mobile.json` / `cache`（窗口布局每点一下
+都变，不该每次总结都带一笔提交）。首次提交 `chore: Obsidian 库配置与 .gitignore` 已推上（app.json /
+appearance.json / core-plugins.json）。测试 `test_sync_adds_…` 改成断言 `git add -A -- 'note' '.obsidian'`。
