@@ -106,6 +106,24 @@ def test_the_prompt_quotes_the_original_and_asks_for_json_only():
     prompt = wn.build_prompt(note, NOW)
     assert note.original in prompt and "2026-10-15 19:40" in prompt
     assert "JSON" in prompt and "remind_at" in prompt and "只读" in prompt
+    assert '"title"' in prompt, "用户 2026-10-16：总结回来后标题要换成内容的概括，所以要向 Claude 要一个标题"
+
+
+def test_the_answer_may_carry_a_title_that_replaces_the_placeholder_one():
+    """「Slack 消息」「Steven Lin [6:57 PM]」这类标题区分度不够：总结回来后用 Claude 给的标题；文件名不变。"""
+    out = _claude_json({"summary": "s", "title": "  网关仍连 prod：删 prod token 后复查  ", "remind_at": None})
+    result = wn.parse_summary(out, NOW)
+    assert result.ok and result.title == "网关仍连 prod：删 prod token 后复查"
+    assert wn.parse_summary(_claude_json({"summary": "s", "title": "x" * 99}), NOW).title == "x" * wn.MAX_TITLE_CHARS
+    assert wn.parse_summary(_claude_json({"summary": "s"}), NOW).title == ""
+
+    note = wn.new_note(f"{SLACK}", NOW)
+    assert note.title == "Slack 消息"
+    done = wn.apply_summary(note, result, NOW)
+    assert done.title == "网关仍连 prod：删 prod token 后复查" and done.name == note.name
+    assert wn.parse(wn.render(done), done.name).title == done.title, "新标题进 frontmatter 和一级标题"
+    kept = wn.apply_summary(note, wn.SummaryResult(ok=True, summary="s"), NOW)
+    assert kept.title == "Slack 消息", "Claude 没给标题就保留原来的"
 
 
 def _claude_json(payload: dict) -> str:

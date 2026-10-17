@@ -34,7 +34,8 @@ SAMPLE = wb.Briefing(
 def sample_notes() -> list[wn.Note]:
     now = dt.datetime.now()
     first = wn.new_note("https://example.slack.com/archives/C1/p1\nSteven 问限流切换前副本数的事", now)
-    first = wn.apply_summary(first, wn.SummaryResult(ok=True, summary="Steven 在等副本数与反亲和方案的答复",
+    first = wn.apply_summary(first, wn.SummaryResult(ok=True, title="限流切换前的副本数：回 Steven",
+                                                     summary="Steven 在等副本数与反亲和方案的答复",
                                                      details="- 工单 DEMO-9 状态 New，负责人是我\n- 下一步：查集群余量后回复",
                                                      remind_at=(now + dt.timedelta(hours=14)).isoformat(timespec="seconds"),
                                                      reason="明早上班先回", tags=["jira", "等回复"],
@@ -52,7 +53,7 @@ def capture(out_dir: Path) -> list[Path]:
         i18n.set_language(language)
         for theme in ("light", "dark"):
             window = WorkBriefingWindow(theme=theme)
-            window.resize(640, 720)
+            window.resize(1000, 720)   # 笔记页列表 / 详情左右排，要够宽
             panel = WorkNotesPanel(briefing_tokens(theme == "dark"))
             panel.show_notes(sample_notes())
             window.add_tab(i18n.t("notes.tab"), panel)

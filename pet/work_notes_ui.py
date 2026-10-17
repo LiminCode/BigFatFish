@@ -15,7 +15,8 @@ from typing import Callable
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QTextBrowser, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QSplitter, QTextBrowser, QVBoxLayout,
+    QWidget,
 )
 
 from . import work_notes as wn
@@ -36,11 +37,11 @@ def _when(value: str) -> str:
 
 
 def row_label(note: wn.Note, busy: bool) -> str:
-    """列表里一行：状态记号 + 标题 + 提醒时间。"""
+    """列表里一行：状态记号 + 标题；有提醒就在第二行写提醒时间（列表在左边、窄，不和标题挤一行）。"""
     mark = "✓ " if note.status == wn.STATUS_DONE else ("… " if busy else ("● " if note.remind_at else "○ "))
     tail = ""
     if note.remind_at and note.status != wn.STATUS_DONE:
-        tail = " · " + t("notes.row.remind", when=_when(note.remind_at))
+        tail = "\n   " + t("notes.row.remind", when=_when(note.remind_at))
     return f"{mark}{note.title}{tail}"
 
 
@@ -116,6 +117,8 @@ class WorkNotesPanel(QWidget):
         self.list = QListWidget(self)
         self.list.setObjectName("notesList")
         self.list.setAccessibleName(t("notes.tab"))
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.currentItemChanged.connect(lambda *_: self._show_current())
         self.detail = QTextBrowser(self)
         self.detail.setObjectName("notesDetail")
@@ -154,13 +157,23 @@ class WorkNotesPanel(QWidget):
         for button in (self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn, self.delete_btn,
                        self.folder_btn):
             buttons.addWidget(button)
+        # 列表在左、详情在右（用户 2026-10-16：上下分开每块都太矮）；分隔条可拖，默认 1 : 2
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setObjectName("notesSplitter")
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self.list)
+        self.splitter.addWidget(self.detail)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([280, 560])
+        self.list.setMinimumWidth(200)
+        self.detail.setMinimumWidth(320)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(8)
         layout.addLayout(top)
         layout.addWidget(self.hint_label)
-        layout.addWidget(self.list, 2)
-        layout.addWidget(self.detail, 3)
+        layout.addWidget(self.splitter, 1)
         layout.addLayout(buttons)
         self._show_current()
 

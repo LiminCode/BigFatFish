@@ -366,12 +366,12 @@ _PROMPT = """你是我的工作笔记助手。现在是 {now}（本地时间）�
 
 要做的事：
 1. 补背景：原文里有 Slack 永久链接就用 Slack 工具读那条消息和它所在的线程（最近 20 条以内）；有 Jira 工单号或 /browse/ 链接就用 Atlassian 工具读工单（标题、状态、负责人、截止、最近几条评论）；Confluence 链接同理读页面标题和开头。读不到就写明原因，不要编。什么链接都没有就只根据原文。
-2. 写摘要（用{language}写）：`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
+2. 写摘要（用{language}写）：`title` 是这条笔记的标题，不超过 20 个字，概括这件事本身（例如「网关仍连 prod：删 token 后复查」），不要用「Slack 消息」「某人的消息」这种看不出内容的泛称；`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
 3. 定提醒：`remind_at` 是下次提醒我的本地时间（ISO 8601，精确到分钟，如 2026-10-16T09:00）；有截止、会议、等别人回复之类的明确节点就据此定，没有就定在我下次该回头看的时候（上班时间 9:00～18:00 内）；完全不需要提醒就写 null。`reason` 用一句话说明为什么是这个时候。
 4. 标签：`tags` 给 1～4 个，小写英文或中文，不带 #，例如 jira、slack、评审、等回复。
 
 输出格式（严格遵守，不要加别的开场白、不要用代码围栏）——只输出一个 JSON 对象：
-{{"summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" 或 null, "reason": "...", "tags": ["..."], "error": null}}
+{{"title": "...", "summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" 或 null, "reason": "...", "tags": ["..."], "error": null}}
 某一步做不了就把原因写进 "error"，其余字段照常填。
 
 <note>
@@ -383,6 +383,7 @@ _PROMPT = """你是我的工作笔记助手。现在是 {now}（本地时间）�
 @dataclass
 class SummaryResult:
     ok: bool = False
+    title: str = ""                # Claude 概括出的标题；空 = 保留原标题
     summary: str = ""
     details: str = ""
     remind_at: str = ""
@@ -457,7 +458,8 @@ def parse_summary(stdout: str, now: dt.datetime) -> SummaryResult:
     if not summary:
         return SummaryResult(error="Claude Code 没有写出摘要", denied=denied, turns=turns)
     model, tokens_in, tokens_out, cost = usage_of(record)
-    return SummaryResult(ok=True, summary=summary, details=str(data.get("details") or "").strip(),
+    title = " ".join(str(data.get("title") or "").split())[:MAX_TITLE_CHARS]
+    return SummaryResult(ok=True, title=title, summary=summary, details=str(data.get("details") or "").strip(),
                          remind_at=_clean_remind_at(data.get("remind_at"), now),
                          reason=" ".join(str(data.get("reason") or "").split())[:160],
                          tags=_clean_tags(data.get("tags")), denied=denied, turns=turns,
@@ -483,14 +485,19 @@ def summarize(note: Note, now: dt.datetime, model: str, *, run: wb.WslRunner | N
 
 
 def apply_summary(note: Note, result: SummaryResult, now: dt.datetime) -> Note:
-    """把总结写进笔记（原文不动）；失败原样返回。"""
+    """把总结写进笔记（原文不动）；失败原样返回。
+
+    标题换成 Claude 概括的那个（用户 2026-10-16：「Slack 消息」这种标题区分度不够）；
+    文件名（``name``）不跟着变，Obsidian 里的链接和已推送的路径都不动。
+    """
     if not result.ok:
         return note
     tags = list(note.tags)
     for tag in result.tags:
         if tag not in tags:
             tags.append(tag)
-    return note.replace(summary=result.summary, details=result.details, remind_at=result.remind_at,
+    return note.replace(title=result.title or note.title,
+                        summary=result.summary, details=result.details, remind_at=result.remind_at,
                         reason=result.reason, tags=tags, summarized_at=_iso(now),
                         model=result.model, tokens_in=result.tokens_in, tokens_out=result.tokens_out,
                         cost_usd=result.cost_usd, seconds=result.seconds)

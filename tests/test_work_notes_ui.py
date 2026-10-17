@@ -200,7 +200,7 @@ def test_the_repo_must_exist_for_git_but_not_for_writing(tmp_path):
 # ---------------------------------------------------------------- 标签页
 def test_row_and_detail_text():
     note = wn.new_note(f"{SLACK}\n看一下", NOW).replace(remind_at="2026-10-16T09:00:00", summary="摘要", details="- a")
-    assert row_label(note, False) == "● 看一下 · 提醒 10-16 09:00"
+    assert row_label(note, False) == "● 看一下\n   提醒 10-16 09:00", "提醒另起一行：列表现在在左边、窄"
     assert row_label(note, True).startswith("… ")
     assert row_label(wn.finish(note), False).startswith("✓ ") and "提醒" not in row_label(wn.finish(note), False)
     text = detail_markdown(note, False)
@@ -214,6 +214,11 @@ def test_the_panel_lists_notes_and_submits_new_text(tmp_path, repo):
     controller = WorkNotesController(_Host(), service, colors=_COLORS)
     panel = controller.panel()
     assert panel.hint_label.isVisible() or panel.list.count() == 0
+    # 用户 2026-10-16：列表和详情上下分开太挤，改成左右（可拖的分隔条）
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QSplitter
+    assert isinstance(panel.splitter, QSplitter) and panel.splitter.orientation() == Qt.Orientation.Horizontal
+    assert panel.splitter.widget(0) is panel.list and panel.splitter.widget(1) is panel.detail
     panel.input.setPlainText(f"{SLACK}\n看一下")
     panel.add_btn.click()
     assert panel.input.toPlainText() == "" and panel.list.count() == 1
@@ -387,7 +392,7 @@ def test_the_panel_speaks_english_when_the_ui_language_is_english(tmp_path, repo
         assert "No notes yet" in panel.hint_label.text()
         panel.input.setPlainText("look at this")
         panel.add_btn.click()
-        assert panel.list.item(0).text() == "● look at this · remind 10-16 09:00"
+        assert panel.list.item(0).text() == "● look at this\n   remind 10-16 09:00"
         assert "**Original**" in detail_markdown(service.notes()[0], False)
         assert host.bubbles[-1].startswith("Saved")
         later = service.snooze(service.notes()[0].name, 60)

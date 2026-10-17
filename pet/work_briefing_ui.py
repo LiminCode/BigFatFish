@@ -74,6 +74,7 @@ QPlainTextEdit#notesInput {{
     padding: 6px 8px; font-size: 13px;
 }}
 QPlainTextEdit#notesInput:focus {{ border: 2px solid {accent}; }}
+QSplitter#notesSplitter::handle {{ background: transparent; width: 8px; }}
 QListWidget#notesList::item {{ padding: 8px 6px; border-radius: 0; }}
 QListWidget#notesList::item:selected {{ background: {selected}; color: {selected_text}; }}
 QListWidget#notesList::item:hover:!selected {{ background: {tile_hover}; }}
