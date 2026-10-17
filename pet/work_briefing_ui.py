@@ -156,6 +156,7 @@ class WorkBriefingWindow(QWidget):
         buttons.addWidget(self.status_label, 1)
         buttons.addWidget(self.regenerate_btn)
         buttons.addWidget(self.close_btn)
+        self.buttons_layout = buttons
         # 简报那一页；别的功能（工作笔记）用 add_tab 挂成第二页。pivot 页头一直显示（哪怕只有一页）
         self.briefing_page = QWidget(self)
         page = QVBoxLayout(self.briefing_page)
@@ -176,6 +177,14 @@ class WorkBriefingWindow(QWidget):
         self.apply_theme(self._theme)
 
     # ---------------------------------------------------------- 页
+    def add_action_button(self, label: str, hint: str = "") -> TiltButton:
+        """简报页底部、「重新生成」左边再加一个按钮（个人助理的「在 Obsidian 打开」）。"""
+        button = TiltButton(label, self)
+        if hint:
+            button.setAccessibleDescription(hint)
+        self.buttons_layout.insertWidget(self.buttons_layout.indexOf(self.regenerate_btn), button)
+        return button
+
     def add_tab(self, label: str, widget: QWidget) -> None:
         self.tabs.addTab(widget, label)
         apply = getattr(widget, "apply_theme", None)
@@ -225,18 +234,23 @@ class WorkBriefingWindow(QWidget):
         self.theme_changed.emit(theme)
 
     # ---------------------------------------------------------- 内容
-    def show_briefing(self, briefing: wb.Briefing | None, *, busy: bool = False, error: str = "") -> None:
-        """摆上最近一份；``busy`` 时按钮变灰，``error`` 是最近一次失败的原因。"""
+    def show_briefing(self, briefing: wb.Briefing | None, *, busy: bool = False, error: str = "",
+                      meta: str | None = None, busy_text: str = "") -> None:
+        """摆上最近一份；``busy`` 时按钮变灰，``error`` 是最近一次失败的原因。
+
+        ``meta`` 覆盖顶部那行元信息（个人助理写模型 / token / 读过的文件），``busy_text`` 覆盖忙碌文案
+        （写明正在让哪个模型读）；不传就是建窗口时给的那两句。"""
+        busy_text = busy_text or self._busy_text
         if briefing is None:
             self.meta_label.setText("")
-            self.body.setPlainText(self._busy_text if busy else self._empty_text)
+            self.body.setPlainText(busy_text if busy else self._empty_text)
         else:
-            self.meta_label.setText(_meta_line(briefing))
+            self.meta_label.setText(meta if meta is not None else _meta_line(briefing))
             self.body.setMarkdown(f"**{briefing.summary}**\n\n{briefing.markdown}")
             self._decorate()
         self.regenerate_btn.setEnabled(not busy)
         if busy:
-            self.status_label.setText(self._busy_text)
+            self.status_label.setText(busy_text)
         else:
             self.status_label.setText(t("briefing.status.failed", error=error) if error else "")
 

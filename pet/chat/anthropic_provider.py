@@ -37,6 +37,7 @@ from __future__ import annotations
 import base64
 import threading
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -358,6 +359,76 @@ def describe_image(jpeg_bytes: bytes, user_text: str, system_prompt: str, config
     if not text:
         raise ProviderError("Claude 没说话（空回复）")
     return text
+
+
+@dataclass
+class Completion:
+    """``complete`` 的结果：正文 + 这次到底用了什么（模型名、token、几轮本地工具）。"""
+
+    text: str = ""
+    model: str = ""
+    input_tokens: int = 0        # 含缓存读写
+    output_tokens: int = 0
+    rounds: int = 0              # 本地工具跑了几轮
+    stop_reason: str = ""
+
+
+def _usage_tokens(usage) -> tuple[int, int]:
+    def _int(name: str) -> int:
+        try:
+            return int(getattr(usage, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return (_int("input_tokens") + _int("cache_read_input_tokens") + _int("cache_creation_input_tokens"),
+            _int("output_tokens"))
+
+
+def complete(prompt: str, system: str, config: ProviderConfig, *, model: str = "", effort: str = "",
+             client_tools=None, max_tokens: int = _MIN_MAX_TOKENS, max_rounds: int = _MAX_TOOL_ROUNDS,
+             timeout: float | None = None, client=None) -> Completion:
+    """无头的一问一答（带本地工具循环，不带连接器）：提示词进，正文 + 用量出。失败抛 ProviderError。
+
+    给个人简报这类后台任务用：和 ``stream`` 同一套请求参数（effort、max_tokens 下限、提示缓存），
+    但不流式、不可取消，并把 ``stream`` 丢掉的 ``usage`` / ``model`` 收回来给界面看。
+    """
+    sdk = _sdk()
+    model = str(model or config.model or "").strip() or DEFAULT_MODEL
+    effort = effort if effort in EFFORT_LEVELS else str(getattr(config, "effort", DEFAULT_EFFORT) or DEFAULT_EFFORT)
+    note = str(getattr(client_tools, "system_note", "") or "").strip()
+    if note:
+        system = f"{system}\n\n{note}" if system else note
+    if client is None:
+        client = _client(config.api_key, config.base_url, timeout or max(float(config.timeout), 300.0), config.verify_ssl)
+    convo: list[dict] = [{"role": "user", "content": prompt}]
+    result = Completion(model=model)
+    try:
+        while True:
+            with _open_stream(client, model, system, convo, max_tokens, effort, None, client_tools) as stream:
+                final = stream.get_final_message()
+            _check_final(final)
+            tokens_in, tokens_out = _usage_tokens(getattr(final, "usage", None))
+            result.input_tokens += tokens_in
+            result.output_tokens += tokens_out
+            result.model = str(getattr(final, "model", "") or result.model)
+            result.stop_reason = str(getattr(final, "stop_reason", "") or "")
+            if result.stop_reason == "tool_use" and client_tools is not None:
+                result.rounds += 1
+                if result.rounds > max_rounds:
+                    raise ProviderError("Claude 一直在调用工具没有说完（超过轮数上限），已停止")
+                results = _run_client_tools(client_tools, final.content)
+                convo = [*convo, {"role": "assistant", "content": final.content}, {"role": "user", "content": results}]
+                continue
+            break
+    except ProviderError:
+        raise
+    except Exception as exc:
+        raise _translate_error(sdk, exc, model) from exc
+    result.text = "".join(getattr(block, "text", "") for block in final.content
+                          if getattr(block, "type", None) == "text").strip()
+    if not result.text:
+        raise ProviderError("Claude 没说话（空回复）")
+    return result
 
 
 def _test_anthropic(config, timeout: float) -> tuple[bool, str]:

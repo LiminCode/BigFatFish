@@ -1919,6 +1919,7 @@ class AppShell:
                 logging.exception("overlay: 拖文件解读接线失败")
             self._start_work_briefing()
             self._start_slack_watch()
+            self._start_personal()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -2497,6 +2498,8 @@ class AppShell:
             self.island.history_toggled.connect(self._on_island_history_toggled)
             # 胶囊最右边的「工作简报」按钮（有没有这个按钮由 _push_island_briefing_state 定）
             self.island.briefing_requested.connect(self._open_work_briefing_from_island)
+            # 「个人助理」小人形（有没有由 _push_island_personal_state 定）
+            self.island.personal_requested.connect(self._open_personal_from_island)
             # 「通知」铃铛与卡片里的通知框（有没有由 _sync_notification_center 定）
             self.island.notifications_requested.connect(self._on_island_notifications_opened)
             self.island.notification_activated.connect(self._on_island_notification_activated)
@@ -2537,6 +2540,7 @@ class AppShell:
             monitor.refresh()  # 本方法也是配置应用路径：服务商 / Key 变了就重查
         self._push_island_session_counts()
         self._push_island_briefing_state()
+        self._push_island_personal_state()
         self._sync_notification_center()
         # 批5.2a：灵动岛按**聚合**可见态同步（任一窗可见 = 可见），替代只看主窗。
         self.island.set_pet_visible(self._aggregate_pet_visible())
@@ -3058,6 +3062,37 @@ class AppShell:
 
     def _open_work_briefing_from_island(self) -> None:
         controller = getattr(self, "_work_briefing", None)
+        if controller is not None:
+            controller.open_window()
+
+    # ------------------------------------------------------------------ 个人助理
+    def _start_personal(self) -> None:
+        """个人助理（可选服务）：肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报，灵感推到 GitHub。不需要 WSL；
+        没装聊天模块（没有 Anthropic SDK）时不接。"""
+        if self._overlay_shell is None or getattr(self, "_personal", None) is not None:
+            return
+        try:
+            from .personal_service import PersonalService
+            from .personal_ui import PersonalController
+
+            service = PersonalService(self.config, parent=self.app)
+            self._personal = PersonalController(self._overlay_shell, service)
+            self._overlay_shell.personal = self._personal
+            self._personal.state_changed.connect(self._push_island_personal_state)
+            service.start()
+            self._push_island_personal_state()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("个人助理接线失败")
+
+    def _push_island_personal_state(self, *_args) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        controller = getattr(self, "_personal", None)
+        island.set_personal_state(controller.island_state if controller is not None else "hidden")
+
+    def _open_personal_from_island(self) -> None:
+        controller = getattr(self, "_personal", None)
         if controller is not None:
             controller.open_window()
 

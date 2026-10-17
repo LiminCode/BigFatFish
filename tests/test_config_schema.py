@@ -149,6 +149,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "notifications",
         "slack_watch",
         "work_notes",
+        "personal",
         "festival_custom_quotes_cn",
         "festival_custom_quotes_west",
         "festival_reminder_cn",

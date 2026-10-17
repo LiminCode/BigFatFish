@@ -109,6 +109,11 @@ _BRIEF_ICON_H = 15
 _BRIEF_GAP = 10
 _BRIEF_UNREAD_COLOR = QColor("#3b8fe8")
 _BRIEF_TOOLTIPS = {"idle": "island.briefing.idle", "unread": "island.briefing.unread"}   # i18n 键
+# 「个人助理」按钮：简报图标右边的一个小人形（见 set_personal_state）；有没看过的个人简报时换成紫色并带圆点
+_PERSON_ICON_W = 13
+_PERSON_ICON_H = 15
+_PERSON_UNREAD_COLOR = QColor("#9b6ef3")
+_PERSON_TOOLTIPS = {"idle": "island.personal.idle", "unread": "island.personal.unread"}
 # 「通知」按钮：简报图标右边的一个小铃铛（见 set_notification_count）；有新的时换成琥珀色并带角标
 _BELL_ICON_W = 14
 _BELL_ICON_H = 15
@@ -258,6 +263,7 @@ class DynamicIsland(QWidget):
     history_action = Signal(str, object)
     history_toggled = Signal(bool)
     briefing_requested = Signal()  # 点了胶囊最右边的「工作简报」按钮
+    personal_requested = Signal()  # 点了「个人助理」按钮（简报图标右边的小人形）
     # 「通知」：点了胶囊上的铃铛（卡片已展开并把通知框打开）/ 点了一条 / 右键菜单选了一项 / 折叠或展开了
     notifications_requested = Signal()
     notification_activated = Signal(object)
@@ -291,6 +297,7 @@ class DynamicIsland(QWidget):
         self._api_state = "unknown"
         self._api_detail = ""
         self._briefing_state = "hidden"   # hidden 不画 / idle / unread 有一份没看过的
+        self._personal_state = "hidden"   # 同上，「个人助理」
         self._notification_count: int | None = None   # None 不画铃铛；0 安静；>0 有这么多条新的
         # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
         self._usage_text = t("island.usage.placeholder")
@@ -498,6 +505,18 @@ class DynamicIsland(QWidget):
         key = _BRIEF_TOOLTIPS.get(self._briefing_state)
         return t(key) if key else ""
 
+    def set_personal_state(self, state: str) -> None:
+        """「个人助理」按钮：``hidden`` / ``idle`` / ``unread``（有一份没看过的个人简报：紫色加圆点）。排在简报图标右边。"""
+        state = state if state in _PERSON_TOOLTIPS else "hidden"
+        if state != self._personal_state:
+            self._personal_state = state
+            self._sync_card_labels()
+            self._refresh()
+
+    def personal_tooltip(self) -> str:
+        key = _PERSON_TOOLTIPS.get(self._personal_state)
+        return t(key) if key else ""
+
     def set_notification_count(self, count: int | None) -> None:
         """「通知」铃铛：``None`` 不显示（没接通知服务 / 关着）；``0`` 安静；``>0`` 有这么多条新的
         （换成琥珀色并带角标）。画在简报图标右边（简报不显示时顶上它的位置）。"""
@@ -537,13 +556,24 @@ class DynamicIsland(QWidget):
             return None
         return self._toolbar_left()
 
+    def _personal_icon_left(self) -> float | None:
+        """「个人助理」图标的左边界；不显示返回 None。排在简报图标右边。"""
+        if self._personal_state == "hidden":
+            return None
+        x = self._toolbar_left()
+        if self._briefing_state != "hidden":
+            x += _BRIEF_ICON_W + _BRIEF_GAP
+        return x
+
     def _bell_icon_left(self) -> float | None:
-        """通知铃铛的左边界；不显示返回 None。排在简报图标右边。"""
+        """通知铃铛的左边界；不显示返回 None。排在简报、个人助理图标右边。"""
         if self._notification_count is None:
             return None
         x = self._toolbar_left()
         if self._briefing_state != "hidden":
             x += _BRIEF_ICON_W + _BRIEF_GAP
+        if self._personal_state != "hidden":
+            x += _PERSON_ICON_W + _BRIEF_GAP
         return x
 
     @staticmethod
@@ -557,6 +587,9 @@ class DynamicIsland(QWidget):
     def briefing_button_rect(self) -> QRectF | None:
         """按钮的可点区域（比图标大一圈，整条胶囊高度）；不显示返回 None。"""
         return self._button_rect(self._briefing_icon_left(), _BRIEF_ICON_W, float(self.width()))
+
+    def personal_button_rect(self) -> QRectF | None:
+        return self._button_rect(self._personal_icon_left(), _PERSON_ICON_W, float(self.width()))
 
     def notification_button_rect(self) -> QRectF | None:
         return self._button_rect(self._bell_icon_left(), _BELL_ICON_W, float(self.width()))
@@ -572,11 +605,17 @@ class DynamicIsland(QWidget):
     def _notification_hit(self, pos) -> bool:
         return self._button_hit(self.notification_button_rect(), pos)
 
+    def _personal_hit(self, pos) -> bool:
+        return self._button_hit(self.personal_button_rect(), pos)
+
     def event(self, event) -> bool:  # noqa: N802
-        # 悬停在简报 / 通知按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
+        # 悬停在简报 / 个人助理 / 通知按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
         if event.type() == QEvent.Type.ToolTip:
             if self._briefing_hit(event.pos()):
                 QToolTip.showText(event.globalPos(), self.briefing_tooltip(), self)
+                return True
+            if self._personal_hit(event.pos()):
+                QToolTip.showText(event.globalPos(), self.personal_tooltip(), self)
                 return True
             if self._notification_hit(event.pos()):
                 QToolTip.showText(event.globalPos(), self.notification_tooltip(), self)
@@ -1199,6 +1238,8 @@ class DynamicIsland(QWidget):
             width += _LINK_ICON_W
         if self._briefing_state != "hidden":
             width += _BRIEF_GAP + _BRIEF_ICON_W
+        if self._personal_state != "hidden":
+            width += _BRIEF_GAP + _PERSON_ICON_W
         if self._notification_count is not None:
             width += _BRIEF_GAP + _BELL_ICON_W
         return max(120, width + _CAPSULE_INSET * 2)
@@ -1433,6 +1474,25 @@ class DynamicIsland(QWidget):
             painter.setBrush(_BRIEF_UNREAD_COLOR)
             painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
 
+    def _paint_personal_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+        """「个人助理」图标：一个小人（圆头 + 肩弧）；有没看过的个人简报时换紫色，右上角一个圆点。"""
+        w, h, stroke = float(_PERSON_ICON_W), float(_PERSON_ICON_H), 1.5
+        unread = self._personal_state == "unread"
+        pen = QPen(_PERSON_UNREAD_COLOR if unread else color, stroke)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QPointF(x + w / 2, y + 4.0), 3.0, 3.0)
+        shoulders = QPainterPath()
+        shoulders.moveTo(x + 1.0, y + h - 1.0)
+        shoulders.arcTo(QRectF(x + 1.0, y + h * 0.52, w - 2.0, (h - 1.0 - h * 0.52) * 2), 180, -180)
+        painter.drawPath(shoulders)
+        if unread:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(_PERSON_UNREAD_COLOR)
+            painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
+
     def _paint_bell_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
         """「通知」图标：一只铃铛（钟体 + 底边 + 小铃舌）；有新的时换琥珀色，右上角一个实心角标。"""
         w, h, stroke = float(_BELL_ICON_W), float(_BELL_ICON_H), 1.5
@@ -1595,6 +1655,7 @@ class DynamicIsland(QWidget):
             info_color.name() if info else "",
             (self._api_state, tuple(self._session_counts), secondary_color.name()) if status else (),
             (self._briefing_state, secondary_color.name()),
+            self._personal_state,
             self._notification_count,
             self.font().toString(), dpr, self.width(),
         )
@@ -1672,6 +1733,9 @@ class DynamicIsland(QWidget):
         if briefing_x is not None:
             self._paint_briefing_icon(painter, briefing_x, (_CAPSULE_HEIGHT - _BRIEF_ICON_H) / 2,
                                       secondary_color)
+        personal_x = self._personal_icon_left()
+        if personal_x is not None:
+            self._paint_personal_icon(painter, personal_x, (_CAPSULE_HEIGHT - _PERSON_ICON_H) / 2, secondary_color)
         bell_x = self._bell_icon_left()
         if bell_x is not None:
             self._paint_bell_icon(painter, bell_x, (_CAPSULE_HEIGHT - _BELL_ICON_H) / 2, secondary_color)
@@ -1830,6 +1894,8 @@ class DynamicIsland(QWidget):
                 self._dock_back_timer.start()
             elif self._briefing_hit(event.position()):
                 self.briefing_requested.emit()
+            elif self._personal_hit(event.position()):
+                self.personal_requested.emit()
             elif self._notification_hit(event.position()):
                 self._on_bell_clicked()
             elif self._click_action() == "toggle_pet":

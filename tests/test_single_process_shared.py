@@ -128,6 +128,9 @@ class _FakeIsland:
     def set_briefing_state(self, state):
         pass
 
+    def set_personal_state(self, state):
+        pass
+
     def set_notification_count(self, count):
         pass
 
