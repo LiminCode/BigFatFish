@@ -168,7 +168,7 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
-from . import settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_notes
+from . import settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_notes
 from .i18n import t
 from .settings_dialogue_text import DIALOGUE_LABELS, DIALOGUE_PARAMS, dialogue_label, dialogue_param
 
@@ -1679,11 +1679,13 @@ class ModernSettingsDialog(QDialog):
                             "api_url",
                             "model",
                             "api_key",
-                            "system_prompt",
-                            "about_user",
                             "connection_test",
                         ),
                     ),
+                    # 人设与「关于我」：全局一份、不随服务商切换，所以不放在「模型与连接」里；
+                    # 紧跟一节默认收起的说明（设定在哪、怎么起作用、影响什么）。
+                    (t("settings.ai.persona_section"), claim("system_prompt", "about_user")),
+                    (t("settings.ai.persona_help"), claim("persona_help"), True),
                     (t("settings.dlg.system_notifications"), claim("system_notifications_enabled")),
                     (
                         t("settings.dlg.vision"),
@@ -1762,6 +1764,12 @@ class ModernSettingsDialog(QDialog):
                 insert_at,
                 SettingsSection(t("settings.dlg.voice_style_templates"), ungated_dialogue_rows, automation),
             )
+            insert_at += 1
+            # 「这些台词怎么起作用」：固定台词模板 ≠ 对话人设；说明各自管哪些气泡、存在哪、留空时回退到什么
+            self.bubble_style_help_section = settings_help.help_section(
+                automation, "bubble_style_help", t("settings.dlg.bubble_style_help"),
+                t("settings.dlg.bubble_style_help_hint"), t("settings.dlg.bubble_style_help_body"))
+            automation_layout.insertWidget(insert_at, self.bubble_style_help_section)
             insert_at += 1
         automation_layout.insertWidget(insert_at, phrases_box)
         # 顶层顺序：Agent 联动 → VS Code 工作区 → 文案风格 → 自定义台词。

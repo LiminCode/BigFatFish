@@ -31,6 +31,7 @@ from ..settings_widgets import (
     SettingRow,
     SettingsCard,
 )
+from ..settings_help import help_row
 from .themes import CHAT_UI_STYLE_LABELS, CHAT_UI_VIEW_ASPECT, theme_names
 from .utils import _safe_emit
 from ..i18n import t
@@ -213,13 +214,20 @@ class _AiSettingsPage(QWidget):
             SettingRow("api_url", t("settings.ai.api_address"), t("settings.ai.address_openai_chat_completions_compatib"), self.url),
             SettingRow("model", t("settings.ai.model"), t("settings.ai.model_identifier_sent_each_request"), self.model),
             SettingRow("api_key", "API Key", t("settings.ai.credentials_are_stored_system_keychain"), self.key),
-            SettingRow("system_prompt", "System Prompt", t("settings.ai.defines_fish_identity_tone_behavior"), self.prompt, stacked=True),
+            SettingRow("connection_test", t("settings.ai.connection_test"), self.test_result.text(), self.test_button),
+        ], self))
+        # 人设与「关于我」是全局的一份，不随服务商切换；和「文案风格与模板」（固定台词，不经模型）是两套互不相干
+        # 的系统——行提示里写明各自影响哪些功能，折叠的说明行讲全貌。设置窗口会按行 id 重新分节。
+        root.addWidget(SettingsSection(t("settings.ai.persona_section"), [
+            SettingRow("system_prompt", t("settings.ai.persona_prompt"), t("settings.ai.defines_fish_identity_tone_behavior"),
+                       self.prompt, stacked=True),
             SettingRow(
                 "about_user", t("settings.ai.about_me"),
                 t("settings.ai.tell_fish_who_you_are"),
                 self.about_user, stacked=True,
             ),
-            SettingRow("connection_test", t("settings.ai.connection_test"), self.test_result.text(), self.test_button),
+            help_row(self, "persona_help", t("settings.ai.persona_help_hint"), t("settings.ai.persona_help_body"),
+                     t("settings.ai.persona_help")),
         ], self))
         root.addWidget(SettingsSection(t("settings.ai.system_notifications"), [
             SettingRow(

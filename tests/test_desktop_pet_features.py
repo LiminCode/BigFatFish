@@ -1501,10 +1501,10 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     expression_row = dialog.findChild(settings_mod.SettingRow, "settingRow_dialogue_mode")
     assert expression_row is not None
     assert expression_row.findChild(settings_mod.QLabel, "settingLabel").text() == "表达风格"
-    # 产品 hint 文案（modern_settings_dialog.py）以「自言自语、候选内容和主动气泡」起句，
-    # 并显式说明同时覆盖 Agent 状态/审批/提问/错误等联动气泡。
-    assert "自言自语" in expression_row.findChild(settings_mod.QLabel, "settingHint").text()
-    assert "Agent 状态" in expression_row.findChild(settings_mod.QLabel, "settingHint").text()
+    # 产品 hint 文案（2026-10-18 改成说真话）：它只管 Agent 联动气泡与余额结果，不经模型；
+    # 自言自语、对话口吻、主动识屏都不归它管，提示里要点明并指路（见 test_settings_persona_hints）。
+    hint = expression_row.findChild(settings_mod.QLabel, "settingHint").text()
+    assert "Agent 联动气泡" in hint and "审批" in hint and "不经过模型" in hint and "自言自语" in hint
     # 表达风格（dialogue_*）已按 spec（agent-dialogue-per-agent）全量迁入 automation 域
     # 「文案风格与模板」组；互动域不再持有 dialogue 行（见 test_express_style_rows_move_to_agent_domain）。
     assert page_index(expression_row) == sidebar_index("自动化与联动")
