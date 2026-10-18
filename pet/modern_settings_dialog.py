@@ -599,7 +599,7 @@ class ModernSettingsDialog(QDialog):
                         "dialogue_mode",
                         t("settings.dlg.voice_style"),
                         t("settings.dlg.how_fish_talks_self_talk"),
-                        self.dialogue_mode_select,
+                        ResponsiveActionRow(self.dialogue_mode_select, [self.dialogue_adopt_btn]),
                     ),
                     SettingRow(
                         "dialogue_scope",
@@ -1334,6 +1334,9 @@ class ModernSettingsDialog(QDialog):
         """把当前编辑区的文本快照写回 scope buffer（切换/保存前调用）。"""
         settings_pet_controls._dialogue_flush_scope(self, scope)
 
+    def _adopt_builtin_phrases(self, confirm=None) -> bool:
+        return settings_pet_controls._adopt_builtin_phrases(self, confirm)
+
     def _on_dialogue_scope_changed(self, index: int) -> None:
         """切换 global/某 Agent 专属文案编辑层：flush 当前层后载入目标层内容。"""
         settings_pet_controls._on_dialogue_scope_changed(self, index)
@@ -1745,6 +1748,7 @@ class ModernSettingsDialog(QDialog):
             phrases_box.add_group(t("settings.dlg.event_bubble_text"), phrase_rows)
         phrases_box.set_expanded(False)
         self.dialogue_phrases_box = phrases_box
+        settings_pet_controls._apply_dialogue_mode_view(self)   # 内置模式 → 折叠框改名并只读显示那套台词
         automation_layout = automation.layout()
         # 「Agent 联动」＝两级结构：折叠框下按用途分子组（提示音效）。
         # 用现成的 CollapsibleGroup.add_group，不需要新造控件。

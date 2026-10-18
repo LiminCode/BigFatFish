@@ -40,7 +40,7 @@ from .config import (
 )
 from .context_menus.icons import vector_widget_icon
 from .fun_image_popup import oijingjing_image_path, resolve_fun_asset
-from .persona_phrases import PUBLIC_DIALOGUE_EVENTS, phrase_keys
+from .persona_phrases import PUBLIC_DIALOGUE_EVENTS, builtin_phrases, phrase_keys
 from .persona_template import build_persona_template
 from .settings_widgets import (
     AUDIO_NAME_FILTER,
@@ -492,6 +492,14 @@ def build_pet_controls(host) -> None:
         # 恢复上次编辑层：把该层缓冲载入编辑框（行可见性等对话框建完行后再收敛）
         _load_dialogue_scope_into_editors(host, host._dialogue_scope)
     host.dialogue_scope_select.currentIndexChanged.connect(host._on_dialogue_scope_changed)
+    # 内置模式不是黑箱（用户 2026-10-18）：选「默认 / 鲸鱼娘」时下方逐事件编辑框只读地显示那套台词；
+    # 「改成我的台词」把它整套复制进自定义台词再切到自定义模式，之后随便改。预览期间不动自定义缓冲。
+    host._dialogue_preview = False
+    host.dialogue_adopt_btn = TiltButton(t("settings.pet.adopt_builtin"), host)
+    host.dialogue_adopt_btn.setObjectName("dialogueAdoptButton")
+    host.dialogue_adopt_btn.setAccessibleDescription(t("settings.pet.adopt_builtin_hint"))
+    host.dialogue_adopt_btn.clicked.connect(lambda: _adopt_builtin_phrases(host))
+    host.dialogue_mode_select.currentIndexChanged.connect(lambda _index: _apply_dialogue_mode_view(host))
 
     host.dialogue_template_import_edit = QPlainTextEdit(host)
     host.dialogue_template_import_edit.setObjectName("dialogueTemplateImportEdit")
@@ -689,6 +697,8 @@ def _dialogue_flush_scope(host, scope: str | None = None) -> None:
     """
     if not hasattr(host, "dialogue_scope_select") or not hasattr(host, "dialogue_phrase_edits"):
         return
+    if getattr(host, "_dialogue_preview", False):
+        return  # 编辑框里是内置模式的只读预览，不是用户的自定义台词，不能写回缓冲
     scope = host._dialogue_scope if scope is None else scope
     host._dialogue_scope_buffer[str(scope)] = {
         key: edit.toPlainText() for key, edit in host.dialogue_phrase_edits.items()
@@ -722,6 +732,71 @@ def _apply_dialogue_scope_rows(host) -> None:
             row.setVisible(False)
 
 
+def _builtin_lines_text(mode: str) -> dict[str, str]:
+    """某内置模式每个事件的台词，一行一条（给只读预览与「改成我的」用）。"""
+    return {key: "\n".join(lines) for key, lines in builtin_phrases(mode).items()}
+
+
+def _apply_dialogue_mode_view(host) -> None:
+    """表达风格变了：内置模式 → 编辑框只读地显示那套台词；自定义 → 恢复用户的台词、可编辑。"""
+    if not hasattr(host, "dialogue_phrase_edits") or not hasattr(host, "dialogue_mode_select"):
+        return
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    preview = mode != "custom"
+    box = getattr(host, "dialogue_phrases_box", None)
+    if preview:
+        if not host._dialogue_preview:
+            _dialogue_flush_scope(host)          # 先把用户在自定义模式下打的字收进缓冲
+            host._dialogue_preview = True
+        lines = _builtin_lines_text(mode)
+        for key, edit in host.dialogue_phrase_edits.items():
+            edit.setPlainText(lines.get(key, ""))
+            edit.setReadOnly(True)
+        host.dialogue_scope_select.setEnabled(False)
+        host.dialogue_adopt_btn.setVisible(True)
+        host.dialogue_adopt_btn.setText(t("settings.pet.adopt_builtin_named", mode=host.dialogue_mode_select.currentText()))
+        if box is not None:
+            box.toggle.setText(t("settings.dlg.builtin_lines_readonly", mode=host.dialogue_mode_select.currentText()))
+    else:
+        if host._dialogue_preview:
+            host._dialogue_preview = False
+            _load_dialogue_scope_into_editors(host, str(getattr(host, "_dialogue_scope", "") or ""))
+        for edit in host.dialogue_phrase_edits.values():
+            edit.setReadOnly(False)
+        host.dialogue_scope_select.setEnabled(True)
+        host.dialogue_adopt_btn.setVisible(False)
+        if box is not None:
+            box.toggle.setText(t("settings.dlg.custom_lines_per_event"))
+    if box is not None:
+        box._sync_accessible_name()
+
+
+def _confirm_adopt(host, mode_name: str) -> bool:
+    answer = QMessageBox.question(host, t("settings.pet.adopt_confirm_title"),
+                                  t("settings.pet.adopt_confirm_text", mode=mode_name))
+    return answer == QMessageBox.StandardButton.Yes
+
+
+def _adopt_builtin_phrases(host, confirm=None) -> bool:
+    """把当前内置模式的台词整套复制进自定义台词（global 层），切到自定义模式，解锁编辑。"""
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    if mode == "custom":
+        return False
+    mode_name = host.dialogue_mode_select.currentText()
+    existing = host._dialogue_scope_buffer.get("") or {}
+    if any(str(text or "").strip() for text in existing.values()):
+        if not (confirm or _confirm_adopt)(host, mode_name):
+            return False
+    host._dialogue_scope_buffer[""] = _builtin_lines_text(mode)
+    host._dialogue_scope = ""
+    host.dialogue_scope_select.setCurrentData("")
+    host.dialogue_mode_select.setCurrentData("custom")      # 触发 _apply_dialogue_mode_view：载入缓冲、可编辑
+    box = getattr(host, "dialogue_phrases_box", None)
+    if box is not None:
+        box.set_expanded(True)
+    return True
+
+
 def _on_dialogue_scope_changed(host, index: int) -> None:
     """切换 global/某 Agent 专属文案编辑层：flush 当前层后载入目标层内容。"""
     if not hasattr(host, "dialogue_scope_select"):
@@ -748,19 +823,21 @@ def _dialogue_phrase_values(host) -> dict[str, list[str]]:
 
 
 def _current_dialogue_template(host) -> dict:
-    # 导出 = 纯字段参考模板：phrases 一律留空（不携带当前已配置的台词），
-    # 供 AI 依角色卡从零撰写；当前台词如需备份请直接复制编辑框内容。
-    # agents：为「全部 Agent（含自定义）」各生成一层事件脚手架（值空 = 沿用
-    # global/内置），让 AI 能逐个 Agent 单独配台词。
+    # 导出 = 字段参考模板 + **当前显示的台词**（内置模式就是那套内置台词，自定义就是用户的 global 层）：
+    # 既能当备份，也能直接交给 AI 依角色卡改写（用户 2026-10-18：内置模式不能是黑箱）。
+    # agents：为「全部 Agent（含自定义）」各生成一层事件脚手架（值空 = 沿用 global/内置）。
     agent_keys = [
         str(host.dialogue_scope_select.itemData(index) or "")
         for index in range(host.dialogue_scope_select.count())
     ]
     agent_keys = [key for key in agent_keys if key]
-    return build_persona_template({
-        "dialogue_mode": host.dialogue_mode_select.currentData() or "legacy",
-        "dialogue_phrases": {},
-    }, agent_keys=agent_keys or None)
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    if getattr(host, "_dialogue_preview", False):
+        phrases: dict = {key: list(lines) for key, lines in builtin_phrases(mode).items()}
+    else:
+        _dialogue_flush_scope(host)
+        phrases = _dialogue_scope_values(host, "")
+    return build_persona_template({"dialogue_mode": mode, "dialogue_phrases": phrases}, agent_keys=agent_keys or None)
 
 
 def _export_dialogue_template(host) -> None:
@@ -800,6 +877,8 @@ def _import_dialogue_template_json(host) -> None:
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         QMessageBox.warning(host, t("settings.pet.import_failed"), t("settings.pet.invalid_json_template_exc", exc=exc))
         return
+    # 先切到自定义模式：内置模式下编辑框是只读预览，写进去的会在切换时被缓冲覆盖
+    host.dialogue_mode_select.setCurrentData("custom")
     for key, edit in host.dialogue_phrase_edits.items():
         value = phrases.get(key, "")
         if isinstance(value, list):
@@ -828,7 +907,6 @@ def _import_dialogue_template_json(host) -> None:
                 text = "\n".join(str(item) for item in value if isinstance(item, str) and item.strip())
                 if text:
                     edit.setPlainText(text)
-    host.dialogue_mode_select.setCurrentData("custom")
     # agents delta（整体导入）：写入 scope buffer，供切换专属层编辑
     _dialogue_flush_scope(host)
     raw_agents = document.get("agents")

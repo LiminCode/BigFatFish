@@ -133,6 +133,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-DIALOGUE-PREVIEW-2026-10-18.md`](PR-REPORT-DIALOGUE-PREVIEW-2026-10-18.md) | 内置表达风格不再是黑箱：选「默认 / 鲸鱼娘」时逐事件编辑框只读地显示那套台词、折叠框改名；「改成我的台词」把整套复制进自定义台词并切到自定义模式（已有内容先确认）；预览期间保存 / 切层 / 导出不写回缓冲；导出模板带当前显示的台词。运行时路由与内置 JSON 不动。 | 改设置页台词编辑区、导入 / 导出模板、或想让某个只读预设变成可编辑之前必读。 |
 | [`PR-REPORT-PERSONA-SETTINGS-HINTS-2026-10-18.md`](PR-REPORT-PERSONA-SETTINGS-HINTS-2026-10-18.md) | 肥鱼「性格」设定的全盘点（对话人设 vs 气泡台词模板 vs 其他固定文字 vs 不走人设的 AI 任务：各存在哪、怎么起作用、影响什么、经不经模型）；设置页据此改：人设 / 关于我自成「人设与回复」一节并加说明节，「表达风格」等 8 条提示改成说真话（它不管自言自语 / 主动识屏、留空回退到代码兜底），台词模板也加说明节；通用 `settings_help.help_row / help_section`。 | 改人设拼法、台词预设路由、或任何涉及「肥鱼怎么说话」的设置文案之前必读。 |
 | [`PR-REPORT-PERSONAL-ASSISTANT-2026-10-17.md`](PR-REPORT-PERSONAL-ASSISTANT-2026-10-17.md) | 个人助理：灵动岛人形图标 → 自己的窗口；个人简报由肥鱼自己的 Claude（个人 key、Anthropic 直连、`anthropic_provider.complete` 无头工具循环）只读地读本地 AI-Base 克隆，顶部写明模型 / 思考强度 / token / 秒 / 工具轮 / 读过的文件；灵感记录追加到 `User/灵感 Inspiration.md` 后用 Windows git + 钥匙串 Token 推送（被拒退到 GCM 一次）；在 Obsidian 打开用 `path=`。设置里模型与强度可单独选。实测一次简报 85～90 秒、输入 20～26 万 token。 | 改个人助理任何一环、想让肥鱼的个人 key 做别的无头任务（复用 `complete`）、或在 Windows 侧跑 git 之前必读。 |
 | [`PR-REPORT-WORK-NOTES-LAYOUT-2026-10-16.md`](PR-REPORT-WORK-NOTES-LAYOUT-2026-10-16.md) | 工作笔记页：列表 / 详情从上下改成左右（可拖 `QSplitter`，列表行两行、关横向滚动条）；总结提示词多要一个 `title`，`apply_summary` 用它换掉「Slack 消息」这类泛称标题，文件名不变。2 张截图在 `docs/screenshots/work-notes-layout-2026-10-16/`。 | 改笔记页布局、列表行文案、或总结回答的字段之前必读。 |
