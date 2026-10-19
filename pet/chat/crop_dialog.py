@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from ..i18n import t
 
 # 选区纵横比缺省值 = 经典聊天窗 430/780（legacy_widgets.py:262）；调用方按当前编辑
 # 风格传 view_aspect（见 themes.CHAT_UI_VIEW_ASPECT），窗口之后改尺寸时按 cover
@@ -121,11 +122,11 @@ class CropCanvas(QWidget):
         p.setPen(QPen(QColor(255, 255, 255, 235), 2))
         p.drawRect(box)
         p.setPen(QPen(QColor(255, 255, 255, 90), 1))
-        for t in (1 / 3, 2 / 3):
-            p.drawLine(QPointF(box.x() + box.width() * t, box.y()),
-                       QPointF(box.x() + box.width() * t, box.y() + box.height()))
-            p.drawLine(QPointF(box.x(), box.y() + box.height() * t),
-                       QPointF(box.x() + box.width(), box.y() + box.height() * t))
+        for frac in (1 / 3, 2 / 3):
+            p.drawLine(QPointF(box.x() + box.width() * frac, box.y()),
+                       QPointF(box.x() + box.width() * frac, box.y() + box.height()))
+            p.drawLine(QPointF(box.x(), box.y() + box.height() * frac),
+                       QPointF(box.x() + box.width(), box.y() + box.height() * frac))
         p.end()
 
 
@@ -143,7 +144,7 @@ class CropDialog(QDialog):
     def __init__(self, pixmap: QPixmap, initial_box, parent=None, style_name: str = '',
                  view_aspect: float = VIEW_ASPECT):
         super().__init__(parent)
-        self.setWindowTitle(f'裁切聊天背景（{style_name}）' if style_name else '裁切聊天背景')
+        self.setWindowTitle(t("chat.crop.crop_chat_background_style_name", style_name=style_name) if style_name else t("chat.crop.crop_chat_background"))
         if initial_box is None:
             ar = pixmap.width() / pixmap.height()
             # 默认选区：宽度先取 0.9 上限，再交给 clamp_box 按 view_aspect 收边；
@@ -159,12 +160,12 @@ class CropDialog(QDialog):
             initial_box = clamp_box(initial_box[0], initial_box[1], initial_box[2], ar, view_aspect)
         self.canvas = CropCanvas(pixmap, initial_box, self, view_aspect)
 
-        hint = QLabel('拖拽移动选区，滚轮缩放；保存后重新打开聊天窗生效')
+        hint = QLabel(t("chat.crop.drag_move_selection_scroll_zoom"))
         hint.setStyleSheet('color:#8a8175; font-size:11px;')
         hint.setWordWrap(True)
-        reset = QPushButton('重置为主题默认')
-        cancel = QPushButton('取消')
-        save = QPushButton('保存选区')
+        reset = QPushButton(t("chat.crop.reset_theme_default"))
+        cancel = QPushButton(t("chat.crop.cancel"))
+        save = QPushButton(t("chat.crop.save_selection"))
         save.setDefault(True)
         cancel.clicked.connect(self.reject)
         save.clicked.connect(self.accept)

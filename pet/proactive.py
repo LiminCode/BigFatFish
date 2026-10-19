@@ -25,6 +25,7 @@ from .proactive_limiter import (
     effective_proactive_config,
 )
 from .proactive_memory import ProactiveMemory
+from .i18n import t
 
 __all__ = [
     "DEFAULT_PROACTIVE_CONFIG",
@@ -527,7 +528,7 @@ class ProactiveScreenWatcher:
             if callable(hold):
                 hold(30.0)
             if eff.get("pre_cue", True) and hasattr(self.win, "show_bubble"):
-                self.win.show_bubble("让我看看……", duration_ms=2500)
+                self.win.show_bubble(t("proactive.ui.let_me_see"), duration_ms=2500)
 
             # 纯内存 JPEG bytes（严禁写临时文件）；worker 线程已完成编码，
             # 直接调用（测试）传入 PIL Image 时在此兼容编码

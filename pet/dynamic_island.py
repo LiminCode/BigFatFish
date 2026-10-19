@@ -827,7 +827,7 @@ class DynamicIsland(QWidget):
         for label, text, max_lines in (
                 (self._card_balance_label, self._balance_text, _CARD_HEADLINE_LINES),
                 (self._card_tier_label, self._balance_tier_text, _CARD_DETAIL_LINES),
-                (self._card_message_label, self._last_message or "（暂无最近消息）", _CARD_MESSAGE_LINES)):
+                (self._card_message_label, self._last_message or t("island.ui.no_recent_messages"), _CARD_MESSAGE_LINES)):
             label.ensurePolished()      # 字号来自样式表：排版前要先落到 font() 上
             lines = wrap_elided(text, label.font(), text_width, max_lines)
             label.setText("\n".join(lines))

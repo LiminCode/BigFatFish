@@ -144,7 +144,7 @@ def _download(url: str, headers: dict[str, str], timeout: float = 60.0) -> bytes
                 return b"".join(chunks)
             total += len(chunk)
             if total > _MAX_DOWNLOAD_BYTES:
-                raise KnowledgeBaseError("仓库压缩包超过 200 MB，不适合当知识库")
+                raise KnowledgeBaseError(t("chat.kb.repository_archive_over_200_mb"))
             chunks.append(chunk)
 
 
@@ -166,7 +166,7 @@ def _extract(archive: bytes, dest: Path) -> tuple[int, int]:
     try:
         bundle = zipfile.ZipFile(io.BytesIO(archive))
     except zipfile.BadZipFile as exc:
-        raise KnowledgeBaseError("下载到的不是有效的 zip 包") from exc
+        raise KnowledgeBaseError(t("chat.kb.download_not_valid_zip_archive")) from exc
     with bundle:
         for info in bundle.infolist():
             if info.is_dir() or info.file_size > _MAX_FILE_BYTES:
@@ -189,11 +189,11 @@ def _extract(archive: bytes, dest: Path) -> tuple[int, int]:
 
 def _http_error_text(exc: urllib.error.HTTPError, repo: str, has_token: bool) -> str:
     if exc.code == 404:
-        hint = "检查仓库名" if has_token else "私有仓库需要先在「连接器」里填 GitHub Token"
-        return f"找不到仓库 {repo}（{hint}）"
+        hint = t("chat.kb.check_repository_name") if has_token else t("chat.kb.private_repository_needs_github_token")
+        return t("chat.kb.repository_repo_not_found_hint", repo=repo, hint=hint)
     if exc.code in (401, 403):
-        return f"GitHub 拒绝访问（HTTP {exc.code}）：Token 无效、过期或没有这个仓库的读权限"
-    return f"GitHub 返回 HTTP {exc.code}"
+        return t("chat.kb.github_denied_access_http_code", code=exc.code)
+    return t("chat.kb.github_returned_http_code", code=exc.code)
 
 
 def sync(config_dir, repo: str, token: str = "", *, fetch: Callable[[str, dict], bytes] | None = None,
@@ -202,7 +202,7 @@ def sync(config_dir, repo: str, token: str = "", *, fetch: Callable[[str, dict],
     已有的副本原样保留。"""
     repo = parse_repo(repo)
     if not repo:
-        raise KnowledgeBaseError("仓库写成 owner/repo 或 GitHub 网址")
+        raise KnowledgeBaseError(t("chat.kb.write_repository_as_owner_repo"))
     now = time.time() if now is None else now
     token = str(token or "").strip()
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "BigFatFish-knowledge-base"}
@@ -217,12 +217,12 @@ def sync(config_dir, repo: str, token: str = "", *, fetch: Callable[[str, dict],
         except urllib.error.HTTPError as exc:
             raise KnowledgeBaseError(_http_error_text(exc, repo, bool(token))) from exc
         except (urllib.error.URLError, OSError) as exc:
-            raise KnowledgeBaseError(f"网络错误：{getattr(exc, 'reason', exc)}") from exc
+            raise KnowledgeBaseError(t("chat.kb.network_error_v", v=getattr(exc, 'reason', exc))) from exc
         shutil.rmtree(incoming, ignore_errors=True)
         incoming.mkdir(parents=True, exist_ok=True)
         files, size = _extract(archive, incoming)
         if not files:
-            raise KnowledgeBaseError("仓库里没有可读的文本文件（.md / .txt 等）")
+            raise KnowledgeBaseError(t("chat.kb.repository_has_no_readable_text"))
         current, retired = root / "current", root / f"retired-{os.getpid()}"
         shutil.rmtree(retired, ignore_errors=True)
         if current.exists():
@@ -236,7 +236,7 @@ def sync(config_dir, repo: str, token: str = "", *, fetch: Callable[[str, dict],
         raise
     except OSError as exc:
         shutil.rmtree(incoming, ignore_errors=True)
-        previous.attempted_at, previous.attempted_repo, previous.error = now, repo, f"写入本地副本失败：{exc}"
+        previous.attempted_at, previous.attempted_repo, previous.error = now, repo, t("chat.kb.could_not_write_local_copy", exc=exc)
         _save_state(config_dir, previous)
         raise KnowledgeBaseError(previous.error) from exc
     state = SyncState(repo=repo, synced_at=now, files=files, bytes=size, attempted_at=now, attempted_repo=repo)

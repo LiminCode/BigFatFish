@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QTimer
 
 from .catalog import DEFAULT_CHARACTER
 from .config import _bool_or_default, _float_or_default
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -115,19 +116,19 @@ def extract_text(paths: list[Path], max_chars: int = _MAX_TEXT_CHARS) -> tuple[s
             skipped.append(path.name)
             continue
         if truncated:
-            text += "\n…（已截断，超出单次解读预算）"
+            text += t("file_interpret.ui.truncated_over_budget_one_reading")
             remaining = 0
         else:
             remaining -= len(text)
-        parts.append(f"【文件：{path.name}】\n```\n{text}\n```")
+        parts.append(t("file_interpret.ui.file_name_text", name=path.name, text=text))
     return "\n\n".join(parts), skipped
 
 
 def build_interpret_user_text(content: str, names: list[str], skipped: list[str] | None = None) -> str:
     """组装发给模型的 user 消息：文件清单 + 内容 + 解读指令。"""
-    lines = [f"本次拖入的文件：{'、'.join(names) or '（无）'}"]
+    lines = [t("file_interpret.ui.files_dropped_time_v", v='、'.join(names) or t("file_interpret.ui.none"))]
     if skipped:
-        lines.append(f"以下文件超出预算，本次未读取：{'、'.join(skipped)}")
+        lines.append(t("file_interpret.ui.these_files_were_over_budget", v='、'.join(skipped)))
     lines.append("")
     lines.append(content)
     lines.append("")
@@ -171,11 +172,11 @@ class FileInterpretController(QObject):
         if not _interpret_enabled(self._win.cfg):
             return
         if self._state == "running":
-            self._bubble("正在解读上一个文件，先等等它～")
+            self._bubble(t("file_interpret.ui.still_reading_last_file_give"))
             return
         eligible = collect_interpretable(paths)
         if not eligible:
-            self._bubble("这些文件我读不了：目前只认文本类文件哦")
+            self._bubble(t("file_interpret.ui.i_can_t_read_these"))
             return
         self._pending = eligible
         self._state = "awaiting"
@@ -183,10 +184,10 @@ class FileInterpretController(QObject):
         if len(eligible) > 3:
             names += "…"
         self._win.show_alert(
-            f"要解读刚吃掉的 {names} 吗？",
-            subtitle="内容将发送给当前配置的 AI 模型进行解读；文件本身不会被修改或上传",
+            t("file_interpret.ui.read_names_i_just_ate", names=names),
+            subtitle=t("file_interpret.ui.contents_go_configured_ai_model"),
             sticky=True,
-            buttons=[("解读", self._on_confirm), ("不用了", self._on_decline)],
+            buttons=[(t("file_interpret.ui.read"), self._on_confirm), (t("file_interpret.ui.no_thanks"), self._on_decline)],
             alert_id=CONFIRM_ALERT_ID,
             priority=1,
             alert_type="file_interpret",
@@ -211,7 +212,7 @@ class FileInterpretController(QObject):
         except ModuleNotFoundError:
             logger.warning("file_interpret：pet.chat 缺失（no-chat 变体），解读不可用")
             self._state = "idle"
-            self._bubble("这个版本没有 AI 对话模块，解读不可用")
+            self._bubble(t("file_interpret.ui.build_has_no_ai_chat"))
             return
 
         settings = self._win.cfg.chat_settings()
@@ -219,7 +220,7 @@ class FileInterpretController(QObject):
         provider.api_key = self._win.cfg.resolve_api_key(provider)
         if not str(provider.api_key or "").strip():
             self._state = "idle"
-            self._bubble("还没配置 AI 模型的 API Key，先到设置里配好吧")
+            self._bubble(t("file_interpret.ui.no_api_key_ai_model"))
             return
 
         if self._service is None:
@@ -245,7 +246,7 @@ class FileInterpretController(QObject):
         system_prompt = self._prompt_builder.effective_system_prompt(settings, character_id)
         session = self._store.create(character_id, settings.active_provider, system_prompt)
         session.custom_title = (
-            f"文件解读：{paths[0].name}" if len(paths) == 1 else f"文件解读：{len(paths)} 个文件"
+            t("file_interpret.ui.file_reading_name", name=paths[0].name) if len(paths) == 1 else t("file_interpret.ui.file_reading_v_files", v=len(paths))
         )
         self._store.save(session)
 
@@ -267,9 +268,9 @@ class FileInterpretController(QObject):
         self._state = "running"
         self._chars = 0
         self._started_at = time.monotonic()
-        self._title = paths[0].name if len(paths) == 1 else f"{len(paths)} 个文件"
+        self._title = paths[0].name if len(paths) == 1 else t("file_interpret.ui.v_files", v=len(paths))
         self._heartbeat.start(int(_progress_interval_seconds(self._win.cfg) * 1000))
-        self._bubble(f"开始解读《{self._title}》～读完了告诉你")
+        self._bubble(t("file_interpret.ui.reading_title_i_ll_tell", title=self._title))
 
     # ---------------------------------------------------------- 请求回调
     def _on_started(self, request_id: str) -> None:
@@ -297,7 +298,7 @@ class FileInterpretController(QObject):
             self._session = synced
         self._state = "idle"
         duration = int(max(6000, min(20000, 4000 + len(reply) * 150)))
-        self._win.show_bubble(f"解读完成：{reply}", duration_ms=duration)
+        self._win.show_bubble(t("file_interpret.ui.done_reading_reply", reply=reply), duration_ms=duration)
 
     def _on_error(self, request_id: str, message: str) -> None:
         if request_id != self._request_id:
@@ -305,7 +306,7 @@ class FileInterpretController(QObject):
         self._request_id = None
         self._heartbeat.stop()
         self._state = "idle"
-        self._win.show_bubble(f"解读失败了：{message}", duration_ms=6000)
+        self._win.show_bubble(t("file_interpret.ui.reading_failed_message", message=message), duration_ms=6000)
 
     def _on_stopped(self, request_id: str) -> None:
         if request_id != self._request_id:
@@ -313,13 +314,13 @@ class FileInterpretController(QObject):
         self._request_id = None
         self._heartbeat.stop()
         self._state = "idle"
-        self._bubble("解读已停止")
+        self._bubble(t("file_interpret.ui.reading_stopped"))
 
     # ---------------------------------------------------------- 心跳
     def _on_heartbeat(self) -> None:
         elapsed = max(0, int(time.monotonic() - self._started_at))
         self._bubble(
-            f"正在解读《{self._title}》…（已读 {self._chars} 字 / {elapsed} 秒）",
+            t("file_interpret.ui.reading_title_chars_characters_read", title=self._title, chars=self._chars, elapsed=elapsed),
             _PROGRESS_BUBBLE_MS,
         )
 

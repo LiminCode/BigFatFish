@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Callable
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -46,11 +47,11 @@ def format_cost(delta: float, *, concurrent: bool = False) -> str:
     消耗，按用户要求标注出来而不是隐瞒。
     """
     if delta < _MIN_MEASURABLE:
-        text = "本轮消费不足 ¥0.01"
+        text = t("agent_cost.ui.round_cost_under_0_01")
     else:
-        text = f"本轮消费 ¥{delta:.2f}"
+        text = t("agent_cost.ui.round_cost_delta_2f", delta=delta)
     if concurrent:
-        text += "（含其他会话）"
+        text += t("agent_cost.ui.other_sessions_included")
     return text
 
 

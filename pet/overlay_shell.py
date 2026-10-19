@@ -2297,15 +2297,15 @@ class OverlayShell(QObject):
         """
         self._look_sprite = self.sprite if sprite is None else sprite
         if self._look_busy:
-            self._look_bubble("上一张还没看完呢…")
+            self._look_bubble(t("overlay.ui.still_looking_at_last_one"))
             return
         now = time.monotonic()
         if now - self._last_look_ts < 4.0:
-            self._look_bubble("喘口气嘛，刚看过啦…")
+            self._look_bubble(t("overlay.ui.let_me_catch_my_breath"))
             return
         self._last_look_ts = now
         self._look_busy = True
-        self._look_bubble("让我看看…", 6000)
+        self._look_bubble(t("overlay.ui.let_me_see"), 6000)
         # 主线程解析快照，后台 worker 只做网络/识图（同 window.py 的线程纪律）
         settings = self._config.chat_settings()
         provider = copy.copy(settings.active_config)
@@ -2341,7 +2341,7 @@ class OverlayShell(QObject):
                 shot, app_info, system_prompt, provider, pet_name=pet_name)
             if shiboken6.isValid(self) is False:
                 return  # 壳已销毁：不再触碰信号
-            user_text = f"[看看屏幕] 前台窗口：{app_info}" if app_info else "[看看屏幕]"
+            user_text = t("overlay.ui.look_at_screen_foreground_window", app_info=app_info) if app_info else t("overlay.ui.look_at_screen")
             self.look_done.emit(reply, user_text, False)
         except Exception as exc:
             logging.exception("看看屏幕失败")
@@ -2364,7 +2364,7 @@ class OverlayShell(QObject):
     def _on_look_done(self, text: str, user_text: str, is_error: bool) -> None:
         self._look_busy = False
         if is_error:
-            self._look_bubble(f"看不清啊…{text[:60]}", 5000)
+            self._look_bubble(t("overlay.ui.i_can_t_quite_make", v=text[:60]), 5000)
             return
         self._look_bubble(text, max(4000, min(12000, len(text) * 150)))
         sync = self.on_look_synced
@@ -4650,20 +4650,17 @@ class OverlayShell(QObject):
         """投喂气泡（file_eater._show_feedback 同文案格式）。"""
         from .file_eater import format_bytes
         if files and folders:
-            batch = f"{files} 个文件、{folders} 个文件夹"
+            batch = t("overlay.ui.files_files_folders_folders", files=files, folders=folders)
         elif files:
-            batch = f"{files} 个文件"
+            batch = t("overlay.ui.files_files", files=files)
         elif folders:
-            batch = f"{folders} 个文件夹"
+            batch = t("overlay.ui.folders_folders", folders=folders)
         else:
-            batch = "空气"
+            batch = t("overlay.ui.thin_air")
         text = (
-            f"啊呜～吃掉 {batch}（{format_bytes(total_bytes)}），"
-            f"累计吃掉 {stats.get('file_count', 0)} 个文件、"
-            f"{stats.get('folder_count', 0)} 个文件夹，"
-            f"共 {format_bytes(stats.get('total_bytes', 0))}！"
+            t("overlay.ui.om_nom_ate_batch_v", batch=batch, v=format_bytes(total_bytes), v2=stats.get('file_count', 0), v3=stats.get('folder_count', 0), v4=format_bytes(stats.get('total_bytes', 0)))
         )
-        self._bubble_follower.say(text, subtitle="放心，只是做个样子，文件没有删除或移动哦")
+        self._bubble_follower.say(text, subtitle=t("overlay.ui.don_t_worry_just_show"))
 
     def switch_character(self, character_id: str, sprite=None) -> None:
         """切换角色（4.1c）：换 per-pet 库 + 行为状态重置 + 配置持久化。

@@ -58,7 +58,10 @@ def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
 
     bubble = QuickChatBubble(_config(tmp_path))
     try:
-        suffix = quick_chat_mod._REPLY_PREVIEW_SUFFIX
+        from pet.i18n import t
+
+        suffix = t(quick_chat_mod._REPLY_PREVIEW_SUFFIX_KEY)   # 2026-10-19 起跟界面语言（中文默认仍是「…（全文见聊天窗）」）
+        assert suffix == "…（全文见聊天窗）"
         limit = quick_chat_mod._REPLY_PREVIEW_LIMIT
         long_reply = "长" * 400
 

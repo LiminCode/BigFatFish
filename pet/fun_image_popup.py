@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from . import shuffle_bag
 from .animated_image import open_movie
+from .i18n import t
 
 
 def oijingjing_image_path() -> Path:
@@ -143,7 +144,7 @@ class OjingjingWindow(QWidget):
         else:
             source = QPixmap(str(image_path))
             if source.isNull():
-                raise ValueError(f"无法读取彩蛋图片: {image_path}")
+                raise ValueError(t("fun_image.ui.could_not_read_easter_egg", image_path=image_path))
             image.setPixmap(
                 source.scaled(
                     side,
@@ -158,11 +159,11 @@ class OjingjingWindow(QWidget):
 
         controls = QHBoxLayout()
         controls.addStretch(1)
-        close_button = QPushButton("关闭", card)
+        close_button = QPushButton(t("fun_image.ui.close"), card)
         close_button.setObjectName("closeButton")
         close_button.clicked.connect(self.close)
         controls.addWidget(close_button)
-        close_all_button = QPushButton("全部关闭", card)
+        close_all_button = QPushButton(t("fun_image.ui.close_all"), card)
         close_all_button.setObjectName("closeAllButton")
         close_all_button.clicked.connect(close_all)
         controls.addWidget(close_all_button)
@@ -229,7 +230,7 @@ class OjingjingWindowManager:
         config = dict(config or {})
         paths = popup_image_paths(config.get("image_dir"))
         if not paths:
-            raise FileNotFoundError(f"没有可读取的彩蛋图片: {oijingjing_image_path().parent}")
+            raise FileNotFoundError(t("fun_image.ui.no_readable_easter_egg_image", parent=oijingjing_image_path().parent))
         if show:
             self.restore_all()
         # 洗牌式：目录里的图全部出过一轮才重复（见 shuffle_bag）

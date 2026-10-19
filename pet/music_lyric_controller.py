@@ -32,6 +32,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from . import music_lyric, now_playing
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -816,8 +817,7 @@ class MusicLyricController(QObject):
             return
         try:
             alert(
-                "这个播放器不上报播放进度，歌词按开始时间估算。"
-                "快进或从中途开始播放后，用右键菜单「音乐 → 歌词对齐」校正。",
+                t("lyrics.ui.player_doesn_t_report_playback"),
                 sticky=False,
                 duration_ms=12000,
                 alert_id="music-lyric-estimated",

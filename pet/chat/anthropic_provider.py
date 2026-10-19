@@ -44,6 +44,7 @@ from urllib.parse import urlparse
 from . import providers as _openai_compat
 from .models import ProviderConfig
 from .providers import ProviderError
+from ..i18n import t
 
 DEFAULT_MODEL = "claude-sonnet-5"
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
@@ -83,7 +84,7 @@ def _sdk():
     try:
         import anthropic
     except ImportError as exc:
-        raise ProviderError("没有安装 anthropic SDK，Claude 通道不可用（pip install anthropic）") from exc
+        raise ProviderError(t("chat.claude.anthropic_sdk_not_installed_so")) from exc
     return anthropic
 
 
@@ -105,7 +106,7 @@ def _client(api_key: str, base_url: str, timeout: float, verify_ssl: bool, *, ma
     try:
         return sdk.Anthropic(**kwargs)
     except sdk.AnthropicError as exc:   # 没有任何可用凭据时构造即失败
-        raise ProviderError(f"Claude 通道没有可用的 API Key：{exc}") from exc
+        raise ProviderError(t("chat.claude.no_usable_api_key_claude", exc=exc)) from exc
 
 
 # ---------------------------------------------------------------- 消息形状转换
@@ -231,32 +232,32 @@ def _check_final(final) -> None:
         return
     details = getattr(final, "stop_details", None)
     explanation = str(getattr(details, "explanation", "") or "").strip()
-    raise ProviderError("Claude 拒绝了这次请求" + (f"：{explanation}" if explanation else ""))
+    raise ProviderError(t("chat.claude.claude_declined_request") + (f"：{explanation}" if explanation else ""))
 
 
 def _translate_error(sdk, exc: Exception, model: str) -> ProviderError:
     """SDK 的类型化异常 → 肥鱼统一的 ProviderError（由具体到宽泛逐级匹配）。"""
     if isinstance(exc, sdk.AuthenticationError):
-        return ProviderError("认证失败：API Key 无效或已失效", 401)
+        return ProviderError(t("chat.claude.authentication_failed_api_key_invalid"), 401)
     if isinstance(exc, sdk.PermissionDeniedError):
-        return ProviderError("这个 API Key 没有权限访问该模型或功能", 403)
+        return ProviderError(t("chat.claude.api_key_has_no_access"), 403)
     if isinstance(exc, sdk.NotFoundError):
-        return ProviderError(f"模型或端点不存在：{model}（Claude 模型名形如 {DEFAULT_MODEL}）", 404)
+        return ProviderError(t("chat.claude.model_endpoint_not_found_model", model=model, DEFAULT_MODEL=DEFAULT_MODEL), 404)
     if isinstance(exc, sdk.RateLimitError):
-        return ProviderError("请求过于频繁或额度不足，稍后再试", 429)
+        return ProviderError(t("chat.claude.too_many_requests_quota_exhausted"), 429)
     if isinstance(exc, sdk.APIStatusError):
         status = getattr(exc, "status_code", None)
         message = str(getattr(exc, "message", "") or exc)
         if "mcp_servers" in message:      # 连接器的服务器连不上 / Token 被拒：整条请求 400
-            return ProviderError(f"连接器出错，请检查 Token 或先关掉连接器（设置 → AI 对话 → 连接器）：{message}",
+            return ProviderError(t("chat.claude.connector_failed_check_its_token", message=message),
                                  status)
         return ProviderError(message, status)
     if isinstance(exc, sdk.APIConnectionError):
-        return ProviderError(f"网络连接失败：{exc}")
+        return ProviderError(t("chat.claude.network_connection_failed_exc", exc=exc))
     if "authentication method" in str(exc):
         # 没有任何凭据时 SDK 抛的是 TypeError（不是它自己的异常基类），且要到发请求时才抛
-        return ProviderError("没有配置 API Key（设置 → AI 对话），环境里也没有 Anthropic 凭据")
-    return ProviderError(f"Claude 请求失败：{exc}")
+        return ProviderError(t("chat.claude.no_api_key_configured_settings"))
+    return ProviderError(t("chat.claude.claude_request_failed_exc", exc=exc))
 
 
 def _run_client_tools(client_tools, content) -> list[dict]:
@@ -272,7 +273,7 @@ def _run_client_tools(client_tools, content) -> list[dict]:
         try:
             result["content"] = str(client_tools.run(block.name, block.input))
         except Exception as exc:  # noqa: BLE001 - 任何失败都要回给模型，不能让工作线程死掉
-            result["content"], result["is_error"] = f"工具执行失败：{exc}", True
+            result["content"], result["is_error"] = t("chat.claude.tool_failed_exc", exc=exc), True
         results.append(result)
     return results
 
@@ -285,7 +286,7 @@ class AnthropicProvider:
         sdk = _sdk()
         system, convo = to_anthropic_messages(messages)
         if not convo:
-            raise ProviderError("没有可发送的消息")
+            raise ProviderError(t("chat.claude.no_message_send"))
         model = str(config.model or "").strip() or DEFAULT_MODEL
         client = _client(config.api_key, config.base_url, config.timeout, config.verify_ssl)
         mcp_servers = list(getattr(config, "mcp_servers", None) or [])
@@ -322,7 +323,7 @@ class AnthropicProvider:
                              {"role": "user", "content": results}]
                 else:
                     return
-            raise ProviderError("Claude 这一回合一直没有说完（工具调用过多），已停止")
+            raise ProviderError(t("chat.claude.claude_never_finished_turn_too"))
         except ProviderError:
             raise
         except Exception as exc:
@@ -357,7 +358,7 @@ def describe_image(jpeg_bytes: bytes, user_text: str, system_prompt: str, config
     _check_final(final)
     text = "".join(block.text for block in final.content if block.type == "text").strip()
     if not text:
-        raise ProviderError("Claude 没说话（空回复）")
+        raise ProviderError(t("chat.claude.claude_said_nothing_empty_reply"))
     return text
 
 
@@ -415,7 +416,7 @@ def complete(prompt: str, system: str, config: ProviderConfig, *, model: str = "
             if result.stop_reason == "tool_use" and client_tools is not None:
                 result.rounds += 1
                 if result.rounds > max_rounds:
-                    raise ProviderError("Claude 一直在调用工具没有说完（超过轮数上限），已停止")
+                    raise ProviderError(t("chat.claude.claude_kept_calling_tools_without"))
                 results = _run_client_tools(client_tools, final.content)
                 convo = [*convo, {"role": "assistant", "content": final.content}, {"role": "user", "content": results}]
                 continue
@@ -427,7 +428,7 @@ def complete(prompt: str, system: str, config: ProviderConfig, *, model: str = "
     result.text = "".join(getattr(block, "text", "") for block in final.content
                           if getattr(block, "type", None) == "text").strip()
     if not result.text:
-        raise ProviderError("Claude 没说话（空回复）")
+        raise ProviderError(t("chat.claude.claude_said_nothing_empty_reply"))
     return result
 
 
@@ -443,7 +444,7 @@ def _test_anthropic(config, timeout: float) -> tuple[bool, str]:
             raise _translate_error(sdk, exc, model) from exc
     except ProviderError as exc:
         return False, str(exc)
-    return True, f"连接成功（Claude · {model}）"
+    return True, t("chat.claude.connected_claude_model", model=model)
 
 
 # ---------------------------------------------------------------- 按配置选通道

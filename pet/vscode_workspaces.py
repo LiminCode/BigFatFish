@@ -29,6 +29,7 @@ from typing import Callable
 
 from . import claude_session_jump as jump
 from .claude_session_info import SessionDetail
+from .i18n import t
 
 CONFIG_KEY = "vscode_workspaces"
 DEFAULT_LIMIT = 12
@@ -339,7 +340,7 @@ def disambiguate(entries: list[WorkspaceEntry]) -> list[WorkspaceEntry]:
             out.append(entry)
             continue
         if entry.multi_root:
-            suffix = "工作区"
+            suffix = t("vscode.ui.workspace")
         else:
             suffix = posixpath.basename(posixpath.dirname(jump._norm(entry.target))) or entry.target
         out.append(replace(entry, label=f"{entry.label} · {suffix}"))
@@ -357,10 +358,10 @@ def activate(entry: WorkspaceEntry, *, windows: Callable[[], list[jump.Window]] 
                                    multi_root=entry.multi_root)
         found = jump.vscode_candidates(windows(), entry.target, wsl=entry.wsl, owner=owner)
         if len(found) == 1 and focus(found[0].hwnd):
-            return True, f"已切到 {entry.label}"
+            return True, t("vscode.ui.switched_label", label=entry.label)
     detail = SessionDetail(agent="claude_wsl" if entry.wsl else "claude", cwd=entry.target, distro=entry.distro)
     if entry.wsl and not entry.distro:
-        return False, f"不知道 {entry.label} 在哪个 WSL 发行版里"
+        return False, t("vscode.ui.not_sure_which_wsl_distro", label=entry.label)
     if not launch(detail, entry.target):
-        return False, "找不到 code 命令，打不开 VS Code"
-    return True, f"已{'切到' if entry.open else '打开'} {entry.label}"
+        return False, t("vscode.ui.code_command_was_not_found")
+    return True, t("vscode.ui.v_label", v=t("vscode.ui.switched") if entry.open else t("vscode.ui.opened"), label=entry.label)

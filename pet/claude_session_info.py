@@ -38,8 +38,9 @@ PROMPT_MAX = 300
 
 ENTRY_VSCODE = "claude-vscode"
 ENTRY_CLI = "cli"
-#: 入口 → 给人看的说法（不认识的原样显示）
-ENTRY_TEXT = {ENTRY_VSCODE: "VS Code 插件", ENTRY_CLI: "终端", "sdk-cli": "SDK / 脚本"}
+#: 入口 → 给人看的说法的文案键（不认识的原样显示；显示时 t()，跟界面语言）
+ENTRY_TEXT = {ENTRY_VSCODE: "session_info.ui.entry_vscode", ENTRY_CLI: "session_info.ui.entry_cli",
+              "sdk-cli": "session_info.ui.entry_sdk"}
 
 #: Windows FILETIME（1601 起、100ns）→ Unix 秒
 _FILETIME_EPOCH_S = 11644473600
@@ -76,7 +77,9 @@ class SessionDetail:
 
     @property
     def entry_text(self) -> str:
-        where = ENTRY_TEXT.get(self.entrypoint, self.entrypoint)
+        from .i18n import t
+
+        where = t(ENTRY_TEXT[self.entrypoint]) if self.entrypoint in ENTRY_TEXT else self.entrypoint
         if self.is_wsl:
             return f"{where} · WSL" if where else "WSL"
         return where

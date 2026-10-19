@@ -49,6 +49,7 @@ from typing import Callable
 from urllib.parse import unquote, urlsplit
 
 from .claude_session_info import ENTRY_VSCODE, SessionDetail
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -647,9 +648,9 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
          sleep: Callable[[float], None] = time.sleep) -> JumpResult:
     """跳到这个会话；返回给用户看的一句话结果。阻塞几百毫秒，放后台线程里调。"""
     if sys.platform != "win32" and windows is list_windows:
-        return JumpResult(False, "跳转目前只支持 Windows")
+        return JumpResult(False, t("session_jump.ui.jumping_session_only_works_windows"))
     if detail.alive is False:
-        return JumpResult(False, "这个会话的进程已经不在了，可以用恢复命令重新打开")
+        return JumpResult(False, t("session_jump.ui.session_process_gone_reopen_resume"))
     all_windows = windows()
     try:
         known = list(workspaces())
@@ -696,19 +697,19 @@ def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known) -> JumpR
             target = named[0]    # 没有别的线索：取最近用过的那个
     if target is not None:
         if not focus(target.hwnd):
-            return JumpResult(False, "没能把 VS Code 窗口调到前台")
+            return JumpResult(False, t("session_jump.ui.could_not_bring_vs_code"))
     elif not owners and known and detail.alive:
         # VS Code 的记录读得到，却没有哪个窗口包含这个目录：活着的会话一定在某个窗口里，
         # 只是认不出——这时去跑 code 命令只会新开一个窗口。
-        return JumpResult(False, "没认出这个对话在哪个 VS Code 窗口里")
+        return JumpResult(False, t("session_jump.ui.could_not_tell_which_vs"))
     elif not vscode(detail, owner.target if owner is not None else ""):
-        return JumpResult(False, "没找到打开着这个项目的 VS Code 窗口")
+        return JumpResult(False, t("session_jump.ui.no_vs_code_window_has"))
     else:
         sleep(1.2)       # 让 code 命令把窗口聚焦好
     sleep(_URI_DELAY_S)
     if not uri(session_uri(detail.session_id)):
-        return JumpResult(True, "已切到 VS Code，但没能打开那个对话")
-    return JumpResult(True, "已跳到 VS Code 里的这个对话")
+        return JumpResult(True, t("session_jump.ui.switched_vs_code_but_could"))
+    return JumpResult(True, t("session_jump.ui.jumped_conversation_vs_code"))
 
 
 def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None) -> JumpResult:
@@ -719,12 +720,12 @@ def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None) -> Ju
                                    (detail.title, detail.name))
                   if detail.pid else None)
     if target is None:
-        return JumpResult(False, "没找到这个会话所在的终端窗口")
+        return JumpResult(False, t("session_jump.ui.could_not_find_terminal_window"))
     if not focus(target.hwnd):
-        return JumpResult(False, "没能把终端窗口调到前台")
+        return JumpResult(False, t("session_jump.ui.could_not_bring_terminal_window"))
     if target.process not in VSCODE_PROCESSES:
-        return JumpResult(True, "已切到终端窗口（具体标签页要自己选）")
+        return JumpResult(True, t("session_jump.ui.switched_terminal_window_pick_tab"))
     if find_vscode_window([target], detail.cwd, wsl=detail.is_wsl, owner=owner) is None:
         # 终端的工作目录不是任何窗口的工作区：只能挑一个最近用过的 VS Code 窗口
-        return JumpResult(True, "已切到 VS Code（认不出是哪个窗口的终端，可能不是这一个）")
-    return JumpResult(True, "已切到 VS Code 的终端（具体标签页要自己选）")
+        return JumpResult(True, t("session_jump.ui.switched_vs_code_could_not"))
+    return JumpResult(True, t("session_jump.ui.switched_vs_code_terminal_pick"))

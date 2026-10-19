@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject
 from PySide6.QtCore import QUrl
+from .i18n import t
 
 STATS_FILE_NAME = "file_eaten_stats.json"
 STATS_HISTORY_LIMIT = 50
@@ -227,17 +228,14 @@ class FileEaterDropHandler(QObject):
         if not callable(show):
             return
         if files and folders:
-            batch = f"{files} 个文件、{folders} 个文件夹"
+            batch = t("feeding.ui.files_files_folders_folders", files=files, folders=folders)
         elif files:
-            batch = f"{files} 个文件"
+            batch = t("feeding.ui.files_files", files=files)
         elif folders:
-            batch = f"{folders} 个文件夹"
+            batch = t("feeding.ui.folders_folders", folders=folders)
         else:
-            batch = "空气"
+            batch = t("feeding.ui.thin_air")
         text = (
-            f"啊呜～吃掉 {batch}（{format_bytes(total_bytes)}），"
-            f"累计吃掉 {stats.get('file_count', 0)} 个文件、"
-            f"{stats.get('folder_count', 0)} 个文件夹，"
-            f"共 {format_bytes(stats.get('total_bytes', 0))}！"
+            t("feeding.ui.om_nom_ate_batch_v", batch=batch, v=format_bytes(total_bytes), v2=stats.get('file_count', 0), v3=stats.get('folder_count', 0), v4=format_bytes(stats.get('total_bytes', 0)))
         )
-        show(text, subtitle="放心，只是做个样子，文件没有删除或移动哦")
+        show(text, subtitle=t("feeding.ui.don_t_worry_just_show"))

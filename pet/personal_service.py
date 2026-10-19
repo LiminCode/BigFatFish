@@ -180,7 +180,7 @@ class PersonalService(QObject):
                     pull_note = "" if ok else out
                 briefing = generate(now, settings, provider, pull_note=pull_note)
             except Exception as exc:  # noqa: BLE001 - 任何失败都算「这次没生成」，线程不许带病退出
-                briefing = pb.PersonalBriefing(error=f"生成时出错：{type(exc).__name__}")
+                briefing = pb.PersonalBriefing(error=t("personal.service.error_while_generating_name", name__=type(exc).__name__))
             try:
                 self._done.emit(generation, briefing, manual)
             except RuntimeError:
@@ -239,7 +239,7 @@ class PersonalService(QObject):
                 try:
                     ok, out = sync(repo_dir, now, token=token())
                 except Exception as exc:  # noqa: BLE001
-                    ok, out = False, f"提交时出错：{type(exc).__name__}"
+                    ok, out = False, t("personal.service.error_while_committing_name", name__=type(exc).__name__)
             try:
                 self._sync_done.emit(generation, ok, out)
             except RuntimeError:

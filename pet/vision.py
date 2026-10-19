@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from .i18n import t
 
 # 注意：不在此处顶层 import PIL —— Image/ImageGrab 只在截屏路径
 # （capture_window_rect / capture_screen_bytes）用到，而本模块随 pet.window
@@ -334,10 +335,10 @@ def _safe_detail(raw: str) -> str:
     try:
         data = json.loads(raw)
         if isinstance(data, dict) and isinstance(data.get('error'), dict):
-            return str(data['error'].get('message', 'Provider 请求失败'))
+            return str(data['error'].get('message', t("vision.ui.provider_request_failed")))
     except Exception:
         pass
-    return ' '.join(raw.split())[:300] or 'Provider 请求失败'
+    return ' '.join(raw.split())[:300] or t("vision.ui.provider_request_failed")
 
 
 def _vision_api_key(p) -> str:
@@ -354,7 +355,7 @@ def _vision_api_key(p) -> str:
         from .chat.models import SecretStore
         vkey = SecretStore().get(p.vision_api_key_ref)
     if not vkey:
-        raise VisionError('独立视觉服务未配置 API Key')
+        raise VisionError(t("vision.ui.separate_vision_service_has_no"))
     return vkey
 
 
@@ -405,7 +406,7 @@ def _post_vision_request(
     from .chat import anthropic_provider
     if anthropic_provider.uses_anthropic(p, base_url):
         if consume_budget is not None and not consume_budget():
-            raise VisionError('每日请求上限已到，今天先陪你到这儿了')
+            raise VisionError(t("vision.ui.daily_request_limit_reached_all"))
         try:
             return anthropic_provider.describe_image(
                 jpeg_bytes, user_text, system_prompt, p,
@@ -451,7 +452,7 @@ def _post_vision_request(
         # 一次触发多次重试各自占用额度；预算耗尽则立即停止，不再发起请求。
         if consume_budget is not None:
             if not consume_budget():
-                raise VisionError('每日请求上限已到，今天先陪你到这儿了')
+                raise VisionError(t("vision.ui.daily_request_limit_reached_all"))
         try:
             with urllib.request.urlopen(req, timeout=max(float(p.timeout), 60.0),
                                         context=_make_ssl_context(p.verify_ssl)) as resp:
@@ -478,13 +479,13 @@ def _post_vision_request(
             time.sleep(1.0)
     if data is None:
         if isinstance(last_error, urllib.error.HTTPError):
-            raise VisionError('模型当前访问量大（免费档高峰限流），稍后再点一次试试') from last_error
+            raise VisionError(t("vision.ui.model_busy_right_now_free")) from last_error
         reason = getattr(last_error, 'reason', last_error)
-        raise VisionError(f'网络连接失败：{reason}')
+        raise VisionError(t("vision.ui.network_connection_failed_reason", reason=reason))
 
     choices = data.get('choices') if isinstance(data, dict) else None
     if not choices:
-        raise VisionError('视觉模型没说话（无 choices）')
+        raise VisionError(t("vision.ui.vision_model_said_nothing_no"))
     msg = choices[0].get('message') or {}
     content = msg.get('content')
     if isinstance(content, list):  # 部分实现把 content 拆成 parts
@@ -497,8 +498,8 @@ def _post_vision_request(
         finish = str(choices[0].get('finish_reason', ''))
         reasoning = msg.get('reasoning_content')
         if finish == 'length' and reasoning:
-            raise VisionError('她想太多把话噎住了（思考超 token），再点一次试试')
-        raise VisionError('视觉模型没说话（空回复）')
+            raise VisionError(t("vision.ui.she_thought_so_hard_she"))
+        raise VisionError(t("vision.ui.vision_model_said_nothing_empty"))
     return text
 
 

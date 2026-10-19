@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from ..i18n import t
 
 
 def _safe_emit(obj, signal_name: str, *args) -> None:
@@ -53,6 +54,6 @@ def _short_title(session, *, localize_time: bool = True) -> str:
         created = datetime.fromisoformat(session.created_at)
         if localize_time:
             created = created.astimezone()
-        return "新会话 · " + created.strftime("%H:%M")
+        return t("chat.session.new_session") + created.strftime("%H:%M")
     except (TypeError, ValueError):
-        return "新会话"
+        return t("chat.session.new_session_2")

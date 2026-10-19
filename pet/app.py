@@ -572,7 +572,7 @@ class PetInstance:
             lib = self._create_library(character_id)
         except Exception as exc:
             logging.exception('切换角色失败: %s', character_id)
-            _show_startup_error('切换角色失败', str(exc))
+            _show_startup_error(t("app.ui.could_not_switch_character"), str(exc))
             return
 
         logging.info('切换角色: %s -> %s', current, character_id)
@@ -931,13 +931,12 @@ class PetInstance:
             _mac_set_dock_icon_visible(bool(self.config.get("show_dock_icon", True)))
         # 台词可能刚被改动：把还没有本地音频的句子交给后台补齐（开关默认关闭，
         # 关着时这里是 no-op；点了「编辑点击动画绑定」后直接 Esc 关设置也能一起收）
-        self.shell.precache_self_talk_voice("设置保存后")
+        self.shell.precache_self_talk_voice(t("app.ui.after_saving_settings"))
 
 
     def _dock_hidden_recovery_message(self) -> str:
         return (
-            "已隐藏 Dock 图标，肥鱼仍会常驻。需要恢复时：点菜单栏托盘图标 → "
-            "「肥鱼设置」→ 重新勾选「显示 Dock 图标」；找不到肥鱼也从托盘菜单「显示 / 隐藏」恢复。"
+            t("app.ui.dock_icon_hidden_fish_keeps")
         )
 
     def _hint_dock_hidden_recovery(self) -> None:
@@ -950,7 +949,7 @@ class PetInstance:
         tray = getattr(self.shell, "tray", None)
         if tray is not None and callable(getattr(tray, "showMessage", None)):
             tray.showMessage(
-                "肥鱼设置",
+                t("app.ui.fish_settings"),
                 self._dock_hidden_recovery_message(),
                 QSystemTrayIcon.MessageIcon.Information,
                 7000,
@@ -1034,12 +1033,12 @@ class PetInstance:
         self.config.save()
         target = win or self.win
         if target is not None and not ok:
-            target.show_bubble("开机自启写入失败，请检查系统登录项或安全软件设置。", duration_ms=6000)
+            target.show_bubble(t("app.ui.could_not_write_start_at"), duration_ms=6000)
         return ok
 
     def _check_autostart_wanted(self) -> None:
         if self.config.get("autostart_wanted", False) and not autostart_mod.is_enabled() and self.win is not None:
-            self.win.show_bubble("检测到开机自启已被系统或安全软件关闭，可在设置中重新启用。", duration_ms=7000)
+            self.win.show_bubble(t("app.ui.start_at_login_was_turned"), duration_ms=7000)
 
     def _notify_pet_hidden(self) -> None:
         """用户主动隐藏肥鱼后弹托盘提示，指明恢复入口。
@@ -1052,14 +1051,14 @@ class PetInstance:
         if self.shell.tray is None:
             return
         if self is not self.shell.instance:
-            message = "点击托盘菜单中该窗口的「显示 / 隐藏」即可恢复。"
+            message = t("app.ui.click_show_hide_window_tray")
         else:
             if sys.platform == "darwin" and not bool(self.config.get("show_dock_icon", True)):
-                message = "点击托盘菜单「显示 / 隐藏」即可恢复。"
+                message = t("app.ui.click_show_hide_tray_menu")
             else:
-                message = "点击托盘图标或 Dock 图标即可恢复。"
+                message = t("app.ui.click_tray_icon_dock_icon")
         self.shell.tray.showMessage(
-            "肥鱼已隐藏",
+            t("app.ui.fish_hidden"),
             message,
             QSystemTrayIcon.MessageIcon.Information,
             4000,
@@ -1596,16 +1595,16 @@ class AppShell:
         owner = getattr(self, "_settings_owner_instance_id", None)
         requested = _instance_config_identity(instance)
         if owner is not None and owner == requested:
-            message = "肥鱼设置已经打开（独立设置窗口不会重复打开）：请切换到已打开的窗口。"
+            message = t("app.ui.fish_settings_already_open_separate")
         elif owner is not None:
-            message = "已有一只肥鱼的设置窗口开着：请先关闭它，再打开这只的设置。"
+            message = t("app.ui.another_fish_settings_window_open")
         else:
-            message = "肥鱼设置已经打开：请先关闭已打开的设置窗口再试。"
+            message = t("app.ui.fish_settings_already_open_close")
         logging.info("设置页已在运行，提示用户：%s", message)
         notify = getattr(self, "system_notify", None)
         if callable(notify):
             try:
-                notify("肥鱼设置", message)
+                notify(t("app.ui.fish_settings"), message)
             except Exception:
                 logging.exception("设置页占用提示失败")
 
@@ -3421,7 +3420,7 @@ class AppShell:
         except Exception as exc:
             self._spawned_pet_count = max(0, self._spawned_pet_count - 1)
             logging.exception('进程内生成小肥鱼失败')
-            _show_startup_error('生小肥鱼失败', str(exc))
+            _show_startup_error(t("app.ui.could_not_spawn_little_fish"), str(exc))
 
     def clear_spawned_pets(self) -> None:
         """右键菜单快捷入口：一键静默退出所有小肥鱼（设置与数据保留）。
@@ -3740,7 +3739,7 @@ class AppShell:
         # N-2：Dock 菜单只装一次，动作必须动态解析当前主窗实例——
         # 主窗经「退出这只」退掉并提升新主窗后，绑旧实例会把死窗复活。
         menu.addAction("显示肥鱼", show_pet)
-        menu.addAction("肥鱼设置", lambda: self.instance is not None and self.instance.open_modern_settings())
+        menu.addAction(t("app.ui.fish_settings"), lambda: self.instance is not None and self.instance.open_modern_settings())
         if self.enable_chat:
             menu.addAction("AI 对话", lambda: self.instance is not None and self.instance.open_chat())
         menu.addSeparator()
@@ -3910,7 +3909,7 @@ class AppShell:
             menu.addAction('AI 对话', self.instance.open_chat)
             menu.addAction('快速对话（气泡）', self.instance.open_quick_chat)
             menu.addAction('AI 设置', self.instance.open_chat_settings)
-        menu.addAction('肥鱼设置', self.instance.open_modern_settings)
+        menu.addAction(t("app.ui.fish_settings"), self.instance.open_modern_settings)
 
         m_char = track_menu(menu.addMenu('切换角色'))
         current = str(self.config.get('character', catalog.DEFAULT_CHARACTER))

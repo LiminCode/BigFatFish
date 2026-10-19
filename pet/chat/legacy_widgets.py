@@ -35,6 +35,7 @@ from .session_store import SessionStore
 from .utils import _short_title
 from ..context_menus.icons import vector_widget_icon
 from . import themes as chat_themes
+from ..i18n import t
 
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -119,7 +120,7 @@ class MessageBubble(QFrame):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
 
-        self.avatar = QLabel("你" if role == "user" else _initial(self.display_name or character_id))
+        self.avatar = QLabel(t("chat.classic.you") if role == "user" else _initial(self.display_name or character_id))
         self.avatar.setObjectName("bubble-avatar")
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.avatar.setFixedSize(34, 34)
@@ -129,7 +130,7 @@ class MessageBubble(QFrame):
         panel = QVBoxLayout()
         panel.setContentsMargins(0, 0, 0, 0)
         panel.setSpacing(5)
-        self.meta = QLabel("你" if role == "user" else (self.display_name or "肥鱼"))
+        self.meta = QLabel(t("chat.classic.you") if role == "user" else (self.display_name or t("chat.classic.fish")))
         self.meta.setObjectName("bubble-meta")
         panel.addWidget(self.meta)
 
@@ -146,7 +147,7 @@ class MessageBubble(QFrame):
         self.status_label.hide()
         panel.addWidget(self.status_label)
 
-        self.retry_button = QPushButton("重试")
+        self.retry_button = QPushButton(t("chat.classic.retry"))
         self.retry_button.setObjectName("retry-button")
         self.retry_button.clicked.connect(self.retry_requested)
         self.retry_button.hide()
@@ -163,15 +164,15 @@ class MessageBubble(QFrame):
         self.state = state
         self.setProperty("state", state)
         if state == "streaming":
-            self.status_label.setText("正在生成…")
+            self.status_label.setText(t("chat.classic.generating"))
             self.status_label.show()
             self.retry_button.hide()
         elif state == "error":
-            self.status_label.setText("本次回复未保存")
+            self.status_label.setText(t("chat.classic.reply_was_not_saved"))
             self.status_label.show()
             self.retry_button.show()
         elif state == "stopped":
-            self.status_label.setText("已停止生成")
+            self.status_label.setText(t("chat.classic.generation_stopped"))
             self.status_label.show()
             self.retry_button.hide()
         else:
@@ -196,7 +197,7 @@ class ChatComposer(QFrame):
 
         self.input = QPlainTextEdit()
         self.input.setObjectName("chat-input")
-        self.input.setPlaceholderText("和肥鱼说点什么…  Enter 发送，Shift+Enter 换行")
+        self.input.setPlaceholderText(t("chat.classic.say_something_fish_enter_send"))
         self.input.setMinimumHeight(82)
         self.input.setMaximumHeight(150)
         self.input.installEventFilter(self)
@@ -204,11 +205,11 @@ class ChatComposer(QFrame):
 
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
-        self.hint = QLabel("内容会保存到当前角色的本地会话")
+        self.hint = QLabel(t("chat.classic.messages_are_saved_character_local"))
         self.hint.setObjectName("composer-hint")
         footer.addWidget(self.hint)
         footer.addStretch(1)
-        self.send = QPushButton("发送")
+        self.send = QPushButton(t("chat.classic.send"))
         self.send.setObjectName("send-button")
         self.send.setMinimumWidth(92)
         self.send.clicked.connect(self.send_requested)
@@ -239,7 +240,7 @@ class ChatComposer(QFrame):
 
     def set_busy(self, busy: bool) -> None:
         self._busy = bool(busy)
-        self.send.setText("停止" if self._busy else "发送")
+        self.send.setText(t("chat.classic.stop") if self._busy else t("chat.classic.send"))
         self.send.setProperty("busy", self._busy)
         self._update_enabled()
         self.send.style().unpolish(self.send)
@@ -254,7 +255,7 @@ class ChatWindow(QDialog):
         self._system_notifier = notifier
         self._auth_callback = auth_callback
         self.setObjectName("chat-window")
-        self.setWindowTitle("AI 对话")
+        self.setWindowTitle(t("chat.classic.ai_chat"))
         # 窗口级图标主题：浅色表面用深灰轮廓图标（rename 按钮等），
         # 避免深色系统 palette 白前景造成白底白图
         self.setProperty("menuStyle", "modern")
@@ -416,9 +417,9 @@ class ChatWindow(QDialog):
         title_layout.addWidget(self.avatar_label)
         title_text = QVBoxLayout()
         title_text.setSpacing(1)
-        self.title_label = QLabel(f"{self.character_name} · AI 对话")
+        self.title_label = QLabel(t("chat.classic.character_name_ai_chat", character_name=self.character_name))
         self.title_label.setObjectName("title-label")
-        self.subtitle_label = QLabel("陪伴式对话空间")
+        self.subtitle_label = QLabel(t("chat.classic.place_talk_things_over"))
         self.subtitle_label.setObjectName("subtitle-label")
         title_text.addWidget(self.title_label)
         title_text.addWidget(self.subtitle_label)
@@ -427,21 +428,21 @@ class ChatWindow(QDialog):
         self.pin_button = QToolButton()
         self.pin_button.setObjectName("window-pin-button")
         self.pin_button.setIcon(vector_widget_icon(self.pin_button, "pin", 16))
-        self.pin_button.setToolTip("窗口置顶")
-        self.pin_button.setAccessibleName("切换聊天窗口置顶")
+        self.pin_button.setToolTip(t("chat.classic.always_top"))
+        self.pin_button.setAccessibleName(t("chat.classic.toggle_keeping_chat_window_top"))
         self.pin_button.setCheckable(True)
         self.pin_button.setChecked(bool(self.config.get("chat_always_on_top", False)))
         title_layout.addWidget(self.pin_button)
         self.minimize_button = QToolButton()
         self.minimize_button.setObjectName("window-minimize-button")
         self.minimize_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMinButton))
-        self.minimize_button.setToolTip("最小化")
-        self.minimize_button.setAccessibleName("最小化聊天窗口")
+        self.minimize_button.setToolTip(t("chat.classic.minimize"))
+        self.minimize_button.setAccessibleName(t("chat.classic.minimize_chat_window"))
         self.close_button = QToolButton()
         self.close_button.setObjectName("window-close-button")
         self.close_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
-        self.close_button.setToolTip("关闭")
-        self.close_button.setAccessibleName("关闭聊天窗口")
+        self.close_button.setToolTip(t("chat.classic.close"))
+        self.close_button.setAccessibleName(t("chat.classic.close_chat_window"))
         title_layout.addWidget(self.minimize_button)
         title_layout.addWidget(self.close_button)
         root.addWidget(self.title_bar)
@@ -458,7 +459,7 @@ class ChatWindow(QDialog):
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("status-dot")
         context_top.addWidget(self.status_dot)
-        self.status = QLabel("就绪")
+        self.status = QLabel(t("chat.classic.ready"))
         self.status.setObjectName("status-label")
         context_top.addWidget(self.status)
         self.provider_label = QLabel(self.settings.active_config.name)
@@ -467,18 +468,18 @@ class ChatWindow(QDialog):
         context_top.addStretch(1)
         self.follow_button = QToolButton()
         self.follow_button.setObjectName("follow-pet-button")
-        self.follow_button.setText("\u8ddf\u968f\u684c\u5ba0")
+        self.follow_button.setText(t("chat.classic.follow_pet"))
         self.follow_button.setCheckable(True)
         self.follow_button.setChecked(self.follow_pet)
-        self.follow_button.setToolTip("\u804a\u5929\u7a97\u53e3\u8ddf\u968f\u684c\u5ba0\u79fb\u52a8")
-        self.follow_button.setAccessibleName("\u804a\u5929\u7a97\u8ddf\u968f\u684c\u5ba0")
+        self.follow_button.setToolTip(t("chat.classic.chat_window_moves_pet"))
+        self.follow_button.setAccessibleName(t("chat.classic.chat_follows_pet"))
         context_top.addWidget(self.follow_button)
         context_layout.addLayout(context_top)
 
         context_bottom = QHBoxLayout()
         context_bottom.setContentsMargins(0, 0, 0, 0)
         context_bottom.setSpacing(6)
-        self.session_caption = QLabel("会话")
+        self.session_caption = QLabel(t("chat.classic.sessions"))
         self.session_caption.setObjectName("context-caption")
         context_bottom.addWidget(self.session_caption)
         self.session_combo = QComboBox()
@@ -495,23 +496,23 @@ class ChatWindow(QDialog):
         self.new_session_button = QToolButton(self.phone_shell)
         self.new_session_button.setObjectName("new-session-button")
         self.new_session_button.setIcon(vector_widget_icon(self.new_session_button, "add", 15))
-        self.new_session_button.setToolTip("新建会话")
-        self.new_session_button.setAccessibleName("新建会话")
+        self.new_session_button.setToolTip(t("chat.classic.new_session"))
+        self.new_session_button.setAccessibleName(t("chat.classic.new_session"))
         self.rename_session_button = QToolButton(self.phone_shell)
         self.rename_session_button.setObjectName("rename-session-button")
         self.rename_session_button.setIcon(vector_widget_icon(self.rename_session_button, "rename", 15))
-        self.rename_session_button.setToolTip("重命名当前会话")
-        self.rename_session_button.setAccessibleName("重命名当前会话")
+        self.rename_session_button.setToolTip(t("chat.classic.rename_current_session"))
+        self.rename_session_button.setAccessibleName(t("chat.classic.rename_current_session"))
         self.delete_session_button = QToolButton(self.phone_shell)
         self.delete_session_button.setObjectName("delete-session-button")
         self.delete_session_button.setIcon(vector_widget_icon(self.delete_session_button, "remove", 15))
-        self.delete_session_button.setToolTip("删除当前会话")
-        self.delete_session_button.setAccessibleName("删除当前会话")
+        self.delete_session_button.setToolTip(t("chat.classic.delete_current_session"))
+        self.delete_session_button.setAccessibleName(t("chat.classic.delete_current_session"))
         self.clear_button = QToolButton(self.phone_shell)
         self.clear_button.setObjectName("clear-session-button")
         self.clear_button.setIcon(vector_widget_icon(self.clear_button, "clear", 15))
-        self.clear_button.setToolTip("清空当前会话")
-        self.clear_button.setAccessibleName("清空当前会话")
+        self.clear_button.setToolTip(t("chat.classic.clear_current_session"))
+        self.clear_button.setAccessibleName(t("chat.classic.clear_current_session"))
         context_bottom.addWidget(self.new_session_button)
         context_bottom.addWidget(self.rename_session_button)
         context_bottom.addWidget(self.delete_session_button)
@@ -529,7 +530,7 @@ class ChatWindow(QDialog):
         empty_layout = QVBoxLayout(self.empty_page)
         empty_layout.setContentsMargins(28, 80, 28, 80)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_state = QLabel("先从一句问候开始吧\n我会在这里陪你聊天、记录和思考")
+        self.empty_state = QLabel(t("chat.classic.start_hello_i_m_here"))
         self.empty_state.setObjectName("empty-state")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_state.setWordWrap(True)
@@ -685,7 +686,7 @@ class ChatWindow(QDialog):
         self.character_name = alias or str(self._character_manifest.get("name") or chat.get("name") or self.character_id)
         self.accent_color = _safe_color(chat.get("theme_color"))
         self._base_accent = self.accent_color
-        self.title_label.setText(f"{self.character_name} · AI 对话")
+        self.title_label.setText(t("chat.classic.character_name_ai_chat", character_name=self.character_name))
         self.avatar_label.setText(_initial(self.character_name))
         self._apply_avatar_style(self.avatar_label, self.accent_color)
 
@@ -784,7 +785,7 @@ class ChatWindow(QDialog):
             self.session = sessions[0]
         self.session_combo.setCurrentIndex(selected)
         self.session_combo.blockSignals(False)
-        self.session_combo.setToolTip(f"当前会话：{self.session.session_id[:8]}")
+        self.session_combo.setToolTip(t("chat.classic.current_session_v", v=self.session.session_id[:8]))
 
     def _on_session_changed(self, index: int) -> None:
         if index < 0:
@@ -804,7 +805,7 @@ class ChatWindow(QDialog):
     def rename_current_session(self) -> None:
         """重命名当前会话（与新版窗口一致的交互：输入框预填当前标题）。"""
         title, accepted = QInputDialog.getText(
-            self, "重命名会话", "会话名称", text=_short_title(self.session),
+            self, t("chat.classic.rename_session"), t("chat.classic.session_name"), text=_short_title(self.session),
         )
         if not accepted:
             return
@@ -994,17 +995,17 @@ class ChatWindow(QDialog):
         return any(
             token in lowered
             for token in ("401", "403", "unauthorized", "authentication", "api key",
-                          "认证失败", "未授权", "授权")
+                          "认证失败", "未授权", "授权")   # 错误文案里的关键词（中英都认），不是给人看的文案
         )
 
-    def notify_authorization_required(self, message: str = "有一条需要授权或确认的请求，点击查看。") -> None:
+    def notify_authorization_required(self, message: str = "") -> None:
         """供“需要授权/审批”类事件调用：切走窗口时弹系统通知并跳回聊天页。"""
-        self._show_system_notice("需要授权", message)
+        self._show_system_notice(t("chat.classic.authorization_needed"), message or t("chat.classic.authorization_request_waiting"))
 
     def _started(self, request_id: str) -> None:
         if request_id != self._active_request_id:
             return
-        self.status.setText("思考中…")
+        self.status.setText(t("chat.classic.thinking"))
         self.status_dot.setProperty("state", "busy")
         self.composer.set_busy(True)
         if self._bubble:
@@ -1020,7 +1021,7 @@ class ChatWindow(QDialog):
         if self._bubble:
             self._bubble.set_content(self._text)
             self._bubble.set_state("streaming")
-        self.status.setText("生成中…")
+        self.status.setText(t("chat.classic.generating_2"))
         self.pet_link.streaming(self._text)
         if follow_output:
             self._bottom()
@@ -1041,7 +1042,7 @@ class ChatWindow(QDialog):
         self._refresh_sessions()
         self._reset()
         self.pet_link.success()
-        self._show_system_notice("对话完成", "AI 已回复完成，点击查看。")
+        self._show_system_notice(t("chat.classic.reply_finished"), t("chat.classic.ai_has_finished_replying_click"))
         if follow_output:
             self._bottom()
 
@@ -1049,18 +1050,18 @@ class ChatWindow(QDialog):
         if request_id != self._active_request_id:
             return
         if self._bubble:
-            self._bubble.set_content("请求失败：" + str(text))
+            self._bubble.set_content(t("chat.classic.request_failed") + str(text))
             self._bubble.set_state("error")
         self._reset()
         self.pet_link.error(text)
         if self._looks_like_authorization_error(text):
             self._show_system_notice(
-                "需要授权",
-                "模型服务返回认证失败，点击打开 AI 设置检查 API Key。",
+                t("chat.classic.authorization_needed"),
+                t("chat.classic.model_service_rejected_credentials_click"),
                 on_click=self._focus_auth_settings,
             )
         else:
-            self._show_system_notice("生成失败", f"对话生成失败：{str(text)[:100]}")
+            self._show_system_notice(t("chat.classic.generation_failed"), t("chat.classic.reply_failed_v", v=str(text)[:100]))
         self._bottom()
 
     def _stopped(self, request_id: str) -> None:
@@ -1076,7 +1077,7 @@ class ChatWindow(QDialog):
 
     def _reset(self) -> None:
         self._active_request_id = None
-        self.status.setText("就绪")
+        self.status.setText(t("chat.classic.ready"))
         self.status_dot.setProperty("state", "ready")
         self.composer.set_busy(False)
         self._refresh_status_style()

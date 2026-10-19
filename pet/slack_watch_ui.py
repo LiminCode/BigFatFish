@@ -19,7 +19,7 @@ ALERT_ID = "slack-watch"
 
 def _as_briefing(result: sw.WatchResult) -> wb.Briefing:
     """窗口认 ``Briefing``：把检查结果装进去（概要 + 条目列表）。"""
-    headline = result.summary or ("Slack 上有 %d 条需要你看的" % len(result.items) if result.items else "没有需要你看的")
+    headline = result.summary or (t("slack.ui.d_slack_messages_need_your") % len(result.items) if result.items else t("slack.ui.nothing_needs_your_attention"))
     return wb.Briefing(ok=True, summary=headline, markdown=result.markdown, generated_at=result.checked_at,
                        seconds=result.seconds, turns=result.turns, denied=list(result.denied))
 
