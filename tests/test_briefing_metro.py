@@ -110,7 +110,7 @@ def test_links_and_chips_take_the_theme_colours():
 def test_the_controller_follows_and_saves_the_appearance_theme(tmp_path):
     config = Config(base=tmp_path)
     config.set("context_menu_appearance", {**config.get("context_menu_appearance"), "theme": "dark"})
-    service = WorkBriefingService(config, generate=lambda when, model: wb.Briefing(), spawn=lambda run: run())
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.Briefing(), spawn=lambda run: run())
     controller = ui.WorkBriefingController(_Host(), service)
     controller.open_window()
     try:
@@ -141,7 +141,7 @@ def test_the_briefing_window_and_bubbles_speak_english(tmp_path):
     config = Config(base=tmp_path)
     config.set("ui_language", "en")
     host = _Host()
-    service = WorkBriefingService(config, generate=lambda when, model: wb.Briefing(error="boom"),
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.Briefing(error="boom"),
                                   spawn=lambda run: run())
     controller = ui.WorkBriefingController(host, service)
     controller.open_window()

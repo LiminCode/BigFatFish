@@ -35,7 +35,7 @@ app = QApplication.instance() or QApplication([])
 MONDAY_10 = dt.datetime(2026, 10, 12, 10, 0)        # 星期一
 TUESDAY_10 = dt.datetime(2026, 10, 13, 10, 0)
 SATURDAY_10 = dt.datetime(2026, 10, 17, 10, 0)
-ON = {"enabled": True, "time": "09:00", "weekdays_only": True, "model": "sonnet"}
+ON = {"enabled": True, "time": "09:00", "weekdays_only": True, "model": "sonnet", "sources": dict(wb.DEFAULT_SOURCES)}
 
 REPORT = "概要：先回两条私信，下午有例会。\n\n## Jira\n- DEMO-1：示例工单（进行中）\n\n## PR\n无\n"
 
@@ -54,7 +54,8 @@ def _prs(*titles) -> str:
 
 def test_it_is_off_until_someone_turns_it_on(tmp_path):
     assert Config(tmp_path).get(wb.CONFIG_KEY) == {
-        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet"}
+        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "sources": dict(wb.DEFAULT_SOURCES)}
+    assert wb.DEFAULT_SOURCES["email"] is False, "邮件默认关"
 
 
 def test_the_setting_survives_a_restart_and_bad_values_are_cleaned(tmp_path):
@@ -273,7 +274,7 @@ def _service(tmp_path, settings=ON, now=MONDAY_10, result=None):
     config.set(wb.CONFIG_KEY, dict(settings))
     made = []
 
-    def generate(when, model):
+    def generate(when, model, **_kw):
         made.append((when, model))
         return result or wb.parse_output(_claude_json())
 
@@ -315,7 +316,7 @@ def test_a_failure_is_recorded_so_the_next_check_waits(tmp_path):
 def test_only_one_generation_at_a_time(tmp_path):
     config = Config(tmp_path)
     pending = []
-    service = WorkBriefingService(config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=pending.append, now=lambda: MONDAY_10)
     assert service.generate_now() is True and service.busy
     assert service.generate_now() is False
@@ -383,7 +384,7 @@ def test_a_failure_is_said_out_loud_not_swallowed(tmp_path):
 def test_asking_for_one_now_says_it_has_started_and_does_not_start_twice(tmp_path):
     config = Config(tmp_path)
     pending = []
-    service = WorkBriefingService(config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=pending.append, now=lambda: MONDAY_10)
     host = FakeHost()
     controller = WorkBriefingController(host, service)
@@ -433,7 +434,7 @@ def _find(menu: QMenu, text: str):
 @pytest.fixture
 def briefing_shell(shell, monkeypatch):  # noqa: F811
     monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")
-    service = WorkBriefingService(shell._config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(shell._config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=lambda run: run(), now=lambda: MONDAY_10)
     shell.work_briefing = WorkBriefingController(shell, service)
     return shell

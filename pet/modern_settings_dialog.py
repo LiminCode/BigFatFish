@@ -168,7 +168,10 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
-from . import settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_notes
+from . import (
+    settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_briefing,
+    settings_work_notes,
+)
 from .i18n import t
 from .settings_dialogue_text import DIALOGUE_LABELS, DIALOGUE_PARAMS, dialogue_label, dialogue_param
 
@@ -1783,12 +1786,15 @@ class ModernSettingsDialog(QDialog):
         automation_layout.insertWidget(1, SettingsSection(t("settings.dlg.vs_code_workspaces"), settings_vscode.workspace_rows(self), automation))
         automation_layout.insertWidget(2, SettingsSection(t("settings.dlg.notification_center"), settings_notifications.notification_rows(self), automation))
         automation_layout.insertWidget(3, SettingsSection(t("settings.dlg.slack_watch"), settings_slack_watch.slack_watch_rows(self), automation))
-        automation_layout.insertWidget(4, SettingsSection(settings_work_notes.section_title(),
+        automation_layout.insertWidget(4, SettingsSection(settings_work_briefing.section_title(),
+                                                          settings_work_briefing.work_briefing_rows(self), automation))
+        automation_layout.insertWidget(5, settings_work_briefing.flow_section(self))
+        automation_layout.insertWidget(6, SettingsSection(settings_work_notes.section_title(),
                                                           settings_work_notes.work_notes_rows(self), automation))
-        automation_layout.insertWidget(5, settings_work_notes.flow_section(self))
-        automation_layout.insertWidget(6, SettingsSection(settings_personal.section_title(),
+        automation_layout.insertWidget(7, settings_work_notes.flow_section(self))
+        automation_layout.insertWidget(8, SettingsSection(settings_personal.section_title(),
                                                           settings_personal.personal_rows(self), automation))
-        automation_layout.insertWidget(7, settings_personal.flow_section(self))
+        automation_layout.insertWidget(9, settings_personal.flow_section(self))
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
@@ -2158,6 +2164,7 @@ class ModernSettingsDialog(QDialog):
         settings_vscode.save_workspace_settings(self)
         settings_notifications.save_notification_settings(self)
         settings_slack_watch.save_slack_watch_settings(self)
+        settings_work_briefing.save_work_briefing_settings(self)
         settings_work_notes.save_work_notes_settings(self)
         settings_personal.save_personal_settings(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):

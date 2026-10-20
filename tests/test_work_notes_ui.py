@@ -397,7 +397,9 @@ def test_the_panel_speaks_english_when_the_ui_language_is_english(tmp_path, repo
         assert host.bubbles[-1].startswith("Saved")
         later = service.snooze(service.notes()[0].name, 60)
         assert later.reason == "Snoozed: remind again in 60 min"
-        assert "用English写" in wn.build_prompt(later, NOW)
+        prompt = wn.build_prompt(later, NOW)
+        assert prompt.startswith("You are my work-notes assistant") and "write in English" in prompt, \
+            "2026-10-19 起英文界面用整套英文提示词，不只是「用 English 写」一句"
         window = WorkBriefingWindow()
         assert window.tabs.tabText(0) == "Briefing"
         window.close()
