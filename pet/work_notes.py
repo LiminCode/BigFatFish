@@ -594,9 +594,18 @@ def _run_git(command: str, run: wb.WslRunner | None) -> tuple[bool, str]:
     run = run or claude_hooks.run_wsl
     code, out = run(["-e", "bash", "-lc", command + " 2>&1"], timeout=GIT_TIMEOUT_S)
     if code == 127 and not out:
-        return False, "没有找到 WSL：笔记要经 WSL 里的 git 提交"
+        return False, t("notes.sync.no_wsl")
     tail = " ".join(str(out or "").split())[-300:]
     return (code == 0), tail
+
+
+def describe_sync_failure(out: str) -> str:
+    """git 没推上去时给人看的一句：公司的 git 钩子（Sphinx 理解检查）要在终端里答问卷，无界面跑不过去，
+    单独说清；其余原样给输出尾巴。本地提交都在，下次推送会一起带上。"""
+    tail = " ".join(str(out or "").split())
+    if "Sphinx" in tail:
+        return t("notes.sync.blocked_by_hook")
+    return t("notes.sync.push_failed", error=tail[-160:] or t("notes.sync.no_output"))
 
 
 def sync(settings: dict, message: str, *, run: wb.WslRunner | None = None) -> tuple[bool, str]:

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication
 
 from . import slack_watch as sw
 from . import work_notes as wn
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class WorkNotesService(QObject):
         try:
             wn.save(self.notes_dir(), note)
         except OSError as exc:
-            self._last_error = f"写不进笔记目录：{exc.strerror or exc}"
+            self._last_error = t("notes.sync.write_failed", error=exc.strerror or exc)
             log.warning("工作笔记：写文件失败", exc_info=True)
             self.changed.emit()
             return None
@@ -144,7 +145,7 @@ class WorkNotesService(QObject):
         try:
             wn.save(self.notes_dir(), updated)
         except OSError as exc:
-            self._last_error = f"写不进笔记目录：{exc.strerror or exc}"
+            self._last_error = t("notes.sync.write_failed", error=exc.strerror or exc)
             self.changed.emit()
             return None
         self.changed.emit()
@@ -192,7 +193,7 @@ class WorkNotesService(QObject):
             try:
                 result = summarize(note, now, model)
             except Exception as exc:  # noqa: BLE001
-                result = wn.SummaryResult(error=f"总结时出错：{type(exc).__name__}")
+                result = wn.SummaryResult(error=t("notes.sync.summary_crashed", name=type(exc).__name__))
             try:
                 self._summary_done.emit(generation, name, (result, attempt))
             except RuntimeError:
@@ -223,7 +224,7 @@ class WorkNotesService(QObject):
             try:
                 wn.save(self.notes_dir(), wn.apply_summary(note, result, self._now()))
             except OSError as exc:
-                result = wn.SummaryResult(error=f"写不进笔记目录：{exc.strerror or exc}")
+                result = wn.SummaryResult(error=t("notes.sync.write_failed", error=exc.strerror or exc))
         self._last_error = "" if result.ok else result.error
         log.info("工作笔记：总结%s，用时 %.0f 秒，%d 轮%s", "完成" if result.ok else "失败", result.seconds,
                  result.turns, f"，被拒的工具 {len(result.denied)} 个" if result.denied else "")
@@ -241,7 +242,7 @@ class WorkNotesService(QObject):
                 try:
                     ok, out = sync(settings, message)
                 except Exception as exc:  # noqa: BLE001
-                    ok, out = False, f"提交时出错：{type(exc).__name__}"
+                    ok, out = False, t("notes.sync.commit_crashed", name=type(exc).__name__)
             try:
                 self._sync_done.emit(generation, ok, out)
             except RuntimeError:
@@ -252,6 +253,10 @@ class WorkNotesService(QObject):
         except Exception:  # noqa: BLE001
             log.exception("工作笔记：启动 git 线程失败")
 
+    def push_now(self) -> None:
+        """再推一次（比如在终端里过了公司 git 钩子的检查之后）：本地已提交的都带上。"""
+        self._start_sync("note: push")
+
     def pull_now(self) -> None:
         """启动时拉一次远端（别的机器 / 公司 AI 可能写过）。"""
         generation, pull, settings, lock = self._generation, self._pull, self.settings(), self._git_lock
@@ -261,7 +266,7 @@ class WorkNotesService(QObject):
                 try:
                     ok, out = pull(settings)
                 except Exception as exc:  # noqa: BLE001
-                    ok, out = False, f"拉取时出错：{type(exc).__name__}"
+                    ok, out = False, t("notes.sync.pull_crashed", name=type(exc).__name__)
             try:
                 self._sync_done.emit(generation, ok, out)
             except RuntimeError:
@@ -275,7 +280,7 @@ class WorkNotesService(QObject):
     def _on_sync_done(self, generation: int, ok: bool, out: str) -> None:
         if generation != self._generation:
             return
-        self._last_error = "" if ok else f"git 没推上去：{out[-160:]}"
+        self._last_error = "" if ok else wn.describe_sync_failure(out)
         if not ok:
             log.warning("工作笔记：git 失败：%s", out[-200:])
         self.changed.emit()

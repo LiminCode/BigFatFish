@@ -90,6 +90,7 @@ class WorkNotesPanel(QWidget):
     snooze_requested = Signal(str, int)
     obsidian_requested = Signal(str)
     folder_requested = Signal()
+    push_requested = Signal()
     delete_requested = Signal(str)
 
     def __init__(self, colors: dict, parent: QWidget | None = None) -> None:
@@ -141,6 +142,11 @@ class WorkNotesPanel(QWidget):
         self.done_btn.clicked.connect(lambda: self._emit_current(self.done_requested))
         self.folder_btn = TiltButton(t("notes.button.folder"), self)
         self.folder_btn.clicked.connect(self.folder_requested)
+        # 「再推一次」：本地已提交但没推上去（比如被公司的 git 钩子拦住）时，过了钩子再点一下
+        self.push_btn = TiltButton(t("notes.button.push"), self)
+        self.push_btn.setAccessibleDescription(t("notes.button.push_hint"))
+        self.push_btn.setToolTip(t("notes.button.push_hint"))
+        self.push_btn.clicked.connect(self.push_requested)
         self.delete_btn = TiltButton(t("notes.button.delete"), self)
         self.delete_btn.clicked.connect(lambda: self._emit_current(self.delete_requested))
         self.status_label = QLabel("", self)
@@ -155,7 +161,7 @@ class WorkNotesPanel(QWidget):
         buttons.setSpacing(8)
         buttons.addWidget(self.status_label, 1)
         for button in (self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn, self.delete_btn,
-                       self.folder_btn):
+                       self.push_btn, self.folder_btn):
             buttons.addWidget(button)
         # 列表在左、详情在右（用户 2026-10-16：上下分开每块都太矮）；分隔条可拖，默认 1 : 2
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -199,6 +205,8 @@ class WorkNotesPanel(QWidget):
         if not repo_ready:
             status = t("notes.status.no_repo", path=repo_dir) + (f" · {error}" if error else "")
         self.status_label.setText(status)
+        self.status_label.setToolTip(status)   # 底部那一行放不下长原因时，悬停能看全
+        self.push_btn.setVisible(bool(error) and repo_ready)
 
     def apply_theme(self, colors: dict) -> None:
         """简报窗口换了白天 / 黑夜：只需换正文里链接的颜色，其余由窗口的样式表接管。"""
@@ -294,6 +302,7 @@ class WorkNotesController(QObject):
             panel.snooze_requested.connect(self.service.snooze)
             panel.obsidian_requested.connect(self.open_in_obsidian)
             panel.folder_requested.connect(self.service.open_folder)
+            panel.push_requested.connect(self.service.push_now)
             panel.delete_requested.connect(self.delete)
             self._panel = panel
             self._refresh()

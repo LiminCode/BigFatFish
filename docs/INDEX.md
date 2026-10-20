@@ -133,6 +133,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-NOTES-PUSH-STATUS-2026-10-19.md`](PR-REPORT-NOTES-PUSH-STATUS-2026-10-19.md) | 工作笔记推不上去的真相：WSL 里公司的 git 钩子（Sphinx 理解检查）要在终端答问卷，无界面推送被拒、本地攒提交；`describe_sync_failure` 认出钩子给专门说明，状态行带 tooltip，笔记页加「再推一次」；笔记服务的状态文案走 `t()`。 | 看到「git 没推上去」或改笔记的 git 推送之前必读。 |
 | [`PR-REPORT-BRIEFING-LANGUAGE-SOURCES-2026-10-19.md`](PR-REPORT-BRIEFING-LANGUAGE-SOURCES-2026-10-19.md) | 工作简报 / 工作笔记按界面语言整套切换提示词（英文版 `Summary:` + 英文小节；解析两种概要前缀）；简报来源可配置 `work_briefing.sources`（jira / pr / slack / calendar / email / suggestions，邮件默认关）——开关同时决定提示词、输出小节、放行的只读工具、要不要跑 gh；新设置节「工作简报」+「这个功能怎么运作」（什么时候 / 发给 Claude 什么 / 它能用什么 / 结果放哪 / 不会做什么）。实测英文简报 88.8 s、0 个中文字符。 | 改简报 / 笔记的提示词、来源、放行工具，或加新来源之前必读。 |
 | [`PR-REPORT-PERSONA-PRESETS-ENGLISH-2026-10-19.md`](PR-REPORT-PERSONA-PRESETS-ENGLISH-2026-10-19.md) | 内置表达风格的英文版：`persona_presets/<mode>.en.json` 两份（30 事件 × 3 条，占位符对齐）；`builtin_phrases(mode, language=None)` 按界面语言按键覆盖、缺键回退中文；Agent 气泡、设置页预览、「改成我的台词」三处跟语言；事件词表仍由中文文件定义。 | 改内置台词、再加一种语言、或改 `builtin_phrases` 的回退之前必读。 |
 | [`PR-REPORT-REST-ENGLISH-2026-10-19.md`](PR-REPORT-REST-ENGLISH-2026-10-19.md) | 其余界面英文化（第三轮）：聊天窗（新版 / 旧版 / 旧版聊天内设置 / 裁切）、快速对话、拖文件解读、喂食 / 看屏幕气泡、待办、会话跳转、两条模型通道与知识库同步的错误文案：333 个键；有意不翻的是给模型的提示词、内置台词与角色台词、兜底托盘、动画名；被当判断依据的「认证失败」关键词不能翻。附整个 `pet/` 的中文字面量盘点。 | 新增任何聊天窗 / 气泡 / 错误文案之前必读；想让 Agent 联动气泡也说英文（内置预设是中文内容）之前必读「后续」。 |
