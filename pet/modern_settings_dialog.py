@@ -168,6 +168,7 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
+from . import settings_island_icon
 from . import (
     settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_briefing,
     settings_work_notes,
@@ -325,24 +326,8 @@ class ModernSettingsDialog(QDialog):
         ):
             self.island_accent_select.addItem(label, value)
         self.island_accent_select.setCurrentData(str(island_cfg.get("accent") or "blue"))
-        self.island_icon_select = ModernSelect(self, width=160)
-        # 标签用中文而不是 emoji 字符：下拉框自己也会渲染 emoji，一样要付
-        # DirectWrite 彩色字体栈的一次性税额（约 33MB），data 才是存的图标值
-        self.island_icon_select.addItem(t("settings.dlg.fish_avatar_recommended"), "auto")
-        for label, emoji in (
-            (t("settings.dlg.whale"), "🐳"),
-            (t("settings.dlg.little_fish"), "🐟"),
-            (t("settings.dlg.octopus"), "🐙"),
-            (t("settings.dlg.seal"), "🦭"),
-            (t("settings.dlg.penguin"), "🐧"),
-            (t("settings.dlg.kitten"), "🐱"),
-            (t("settings.dlg.puppy"), "🐶"),
-            (t("settings.dlg.star"), "🌟"),
-            (t("settings.dlg.lightning"), "⚡"),
-            (t("settings.dlg.heart"), "❤️"),
-        ):
-            self.island_icon_select.addItem(label, emoji)
-        self.island_icon_select.setCurrentData(str(island_cfg.get("icon") or "auto"))
+        # 图标：点方块直接选一张自己的图（2026-10-20 起取代原来的头像 / emoji 下拉框）
+        island_icon_row = settings_island_icon.island_icon_row(self, island_cfg)
         self.island_click_action_select = ModernSelect(self, width=160)
         for label, value in (
             (t("settings.dlg.expand_quick_card"), "expand"),
@@ -434,7 +419,7 @@ class ModernSettingsDialog(QDialog):
                     ),
                     SettingRow("dynamic_island_opacity", t("settings.dlg.background_opacity"), t("settings.dlg.lower_more_transparent_0_4"), self.island_opacity_spin),
                     SettingRow("dynamic_island_accent", t("settings.dlg.accent_color"), t("settings.dlg.accent_shared_by_icon_ring"), self.island_accent_select),
-                    SettingRow("dynamic_island_icon_value", t("settings.dlg.icon"), t("settings.dlg.shows_fish_avatar_by_default"), self.island_icon_select),
+                    island_icon_row,
                     SettingRow(
                         "dynamic_island_click_action",
                         t("settings.dlg.click_action"),
@@ -2025,7 +2010,7 @@ class ModernSettingsDialog(QDialog):
                 "style": str(self.island_style_select.currentData() or "dark"),
                 "opacity": float(self.island_opacity_spin.value()),
                 "accent": str(self.island_accent_select.currentData() or "blue"),
-                "icon": str(self.island_icon_select.currentData() or "auto"),
+                "icon": settings_island_icon.save_island_icon(self),
                 "click_action": str(self.island_click_action_select.currentData() or "expand"),
                 "hidden_chat": self.island_hidden_chat_check.isChecked(),
                 "event_effects": self.island_event_effects_check.isChecked(),
