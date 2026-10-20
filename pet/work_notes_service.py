@@ -33,6 +33,10 @@ def _spawn_thread(target: Callable[[], None]) -> None:
     threading.Thread(target=target, daemon=True, name="pet-work-notes").start()
 
 
+#: 同一个仓库里 note/ 与 slack/ 两个服务的 git 操作串成一条（两把锁会撞 .git/index.lock）
+_GIT_LOCK = threading.Lock()
+
+
 def _open_target(target: str) -> bool:
     try:
         os.startfile(target)  # noqa: S606  （obsidian:// 协议或资源管理器打开文件夹）
@@ -56,12 +60,15 @@ class WorkNotesService(QObject):
     CHECK_INTERVAL_MS = 60_000
     IDLE_LIMIT_S = 10 * 60
 
-    def __init__(self, config, *, summarize: Callable | None = None, sync: Callable | None = None,
+    def __init__(self, config, *, folder: str = wn.NOTES_DIR, label: str = "note", pull_on_start: bool = True,
+                 summarize: Callable | None = None, sync: Callable | None = None,
                  pull: Callable | None = None, spawn: Callable | None = None,
                  now: Callable[[], dt.datetime] | None = None, active: Callable[[float], bool] | None = None,
                  opener: Callable[[str], bool] | None = None, parent: QObject | None = None) -> None:
+        """``folder``：仓库里的子目录（``note`` = 工作笔记，``slack`` = Slack 关注存档）；``label`` 是提交说明的前缀。"""
         super().__init__(parent)
         self._config = config
+        self._folder, self._label, self._pull_on_start = folder, label, pull_on_start
         self._summarize = summarize or wn.summarize
         self._sync = sync or wn.sync
         self._pull = pull or wn.pull
@@ -71,7 +78,7 @@ class WorkNotesService(QObject):
         self._open = opener or _open_target
         self._generation = 0
         self._busy: set[str] = set()
-        self._git_lock = threading.Lock()
+        self._git_lock = _GIT_LOCK
         self._last_error = ""
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.check_reminders)
@@ -86,7 +93,11 @@ class WorkNotesService(QObject):
         return wn.normalize(self._config.get(wn.CONFIG_KEY))
 
     def notes_dir(self) -> Path:
-        return wn.notes_dir(self.settings())
+        return wn.notes_dir(self.settings(), self._folder)
+
+    @property
+    def folder(self) -> str:
+        return self._folder
 
     def repo_ready(self) -> bool:
         """仓库副本在不在（``repo_dir/.git``）；不在的话笔记照样能记，只是推不上去。"""
@@ -120,9 +131,39 @@ class WorkNotesService(QObject):
             return None
         self.changed.emit()
         # 先把原文推上去（总结可能失败，原文不能因此留在本地）；总结完再推一次
-        self._start_sync("note: 记一条")
+        self._start_sync(f"{self._label}: 记一条")
         self._start_summary(note)
         return note
+
+    def add_slack_items(self, items: list[dict]) -> list[wn.Note]:
+        """Slack 关注查到的新条目各存一条（不让 Claude 再读一遍），一起推一次；同一条链接 / 同一键已经存过的跳过。
+        返回这次新存的那些。"""
+        existing = self.notes()
+        seen_links = {link for note in existing for link in note.links}
+        seen_keys = {f"{note.original.splitlines()[0]}" for note in existing if note.original}
+        folder, now, made = self.notes_dir(), self._now(), []
+        for item in items:
+            if not isinstance(item, dict) or not str(item.get("title") or "").strip():
+                continue
+            note = wn.note_from_slack_item(item, now)
+            head = note.original.splitlines()[0] if note.original else ""
+            if (note.links and note.links[0] in seen_links) or (not note.links and head in seen_keys):
+                continue
+            note = note.replace(name=wn.unique_name(folder, note.name))
+            try:
+                wn.save(folder, note)
+            except OSError as exc:
+                self._last_error = t("notes.sync.write_failed", error=exc.strerror or exc)
+                log.warning("Slack 关注：写存档文件失败", exc_info=True)
+                break
+            seen_links.update(note.links)
+            seen_keys.add(head)
+            made.append(note)
+        if made or self._last_error:
+            self.changed.emit()
+        if made:
+            self._start_sync(f"{self._label}: {len(made)} 条")
+        return made
 
     def resummarize(self, name: str) -> bool:
         note = self.note(name)
@@ -132,10 +173,10 @@ class WorkNotesService(QObject):
         return True
 
     def mark_done(self, name: str) -> wn.Note | None:
-        return self._update(name, wn.finish, "note: 完成")
+        return self._update(name, wn.finish, f"{self._label}: 完成")
 
     def snooze(self, name: str, minutes: int) -> wn.Note | None:
-        return self._update(name, lambda note: wn.snooze(note, minutes, self._now()), "note: 稍后再提醒")
+        return self._update(name, lambda note: wn.snooze(note, minutes, self._now()), f"{self._label}: 稍后再提醒")
 
     def _update(self, name: str, change: Callable[[wn.Note], wn.Note], message: str) -> wn.Note | None:
         note = self.note(name)
@@ -165,13 +206,20 @@ class WorkNotesService(QObject):
             return None
         self._busy.discard(name)
         self.changed.emit()
-        self._start_sync("note: 删除")
+        self._start_sync(f"{self._label}: 删除")
         return note
+
+    def open_link(self, name: str) -> bool:
+        """在浏览器 / Slack 里打开这条的第一个链接；没有链接返回 False。"""
+        note = self.note(name)
+        if note is None or not note.links:
+            return False
+        return bool(self._open(note.links[0]))
 
     def open_in_obsidian(self, name: str) -> bool:
         """在 Obsidian 里打开这条；仓库没登记成库就退回打开文件夹，返回 False 让调用方提示一句。"""
         note = self.note(name)
-        uri = wn.obsidian_uri(self.settings()["repo_dir"], note) if note is not None else ""
+        uri = wn.obsidian_uri(self.settings()["repo_dir"], note, folder=self._folder) if note is not None else ""
         self._open(uri or str(self.notes_dir()))
         return bool(uri)
 
@@ -231,7 +279,7 @@ class WorkNotesService(QObject):
         self.changed.emit()
         self.summarized.emit(name, result.ok, result.error)
         if result.ok:
-            self._start_sync("note: 总结")
+            self._start_sync(f"{self._label}: 总结")
 
     # ---------------------------------------------------------- 后台：git
     def _start_sync(self, message: str) -> None:
@@ -255,7 +303,7 @@ class WorkNotesService(QObject):
 
     def push_now(self) -> None:
         """再推一次（比如在终端里过了公司 git 钩子的检查之后）：本地已提交的都带上。"""
-        self._start_sync("note: push")
+        self._start_sync(f"{self._label}: push")
 
     def pull_now(self) -> None:
         """启动时拉一次远端（别的机器 / 公司 AI 可能写过）。"""
@@ -309,7 +357,7 @@ class WorkNotesService(QObject):
         return due
 
     def start(self) -> None:
-        if self.repo_ready():
+        if self._pull_on_start and self.repo_ready():
             QTimer.singleShot(self.STARTUP_DELAY_MS, self.pull_now)
         self._timer.start(self.CHECK_INTERVAL_MS)
 

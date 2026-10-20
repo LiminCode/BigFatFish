@@ -39,8 +39,10 @@ from .i18n import t
 
 CONFIG_KEY = "work_notes"
 NOTES_DIR = "note"
-#: 每次提交带上的路径：笔记目录 + Obsidian 的库配置（用户 2026-10-15 要求一起推；workspace.json 由仓库的 .gitignore 挡掉）
-SYNC_PATHS = (NOTES_DIR, ".obsidian")
+#: Slack 关注每条「需要你看的」落成的 Markdown 放这里（用户 2026-10-20：防止错过），和笔记同一种格式、同一个仓库
+SLACK_DIR = "slack"
+#: 每次提交带上的路径：笔记目录 + Slack 目录 + Obsidian 的库配置（用户 2026-10-15 要求一起推；workspace.json 由仓库的 .gitignore 挡掉）
+SYNC_PATHS = (NOTES_DIR, SLACK_DIR, ".obsidian")
 STATE_FILE = "work-notes.json"
 DEFAULT_MODEL = wb.DEFAULT_MODEL
 CLAUDE_TIMEOUT_S = 600.0
@@ -50,6 +52,7 @@ MAX_TITLE_CHARS = 60
 MAX_TAG_CHARS = 24
 MAX_TAGS = 6
 BASE_TAG = "work/note"
+SLACK_TAG = "work/slack"
 STATUS_OPEN, STATUS_DONE = "open", "done"
 #: 「稍后」的几档（文案键, 分钟；-1 = 明早 9 点）
 SNOOZE_CHOICES = (("notes.snooze.hour", 60), ("notes.snooze.three_hours", 180), ("notes.snooze.tomorrow", -1))
@@ -80,8 +83,8 @@ def normalize(value) -> dict:
             "model": wb.normalize_model(data.get("model"))}
 
 
-def notes_dir(settings: dict) -> Path:
-    return Path(settings["repo_dir"]) / NOTES_DIR
+def notes_dir(settings: dict, folder: str = NOTES_DIR) -> Path:
+    return Path(settings["repo_dir"]) / folder
 
 
 # ---------------------------------------------------------------- 一条笔记
@@ -187,6 +190,30 @@ def new_note(text: str, now: dt.datetime) -> Note:
     tags = [BASE_TAG] + ([kind] if kind not in ("text", "link") else [])
     return Note(name=f"{now:%Y-%m-%d-%H%M}-{slugify(title)}", created=_iso(now), title=title,
                 original=text, kind=kind, links=links, tags=tags)
+
+
+def note_from_slack_item(item: dict, now: dt.datetime) -> Note:
+    """Slack 关注查到的一条（``slack_watch._clean_item`` 的字典）→ 一条笔记：标题就是它的一句话，原文记下
+    来源、标题、链接；急的打 ``urgent`` 标签；不定提醒（总提醒已经冒过一次，之后由用户「稍后」决定）。"""
+    title = " ".join(str(item.get("title") or "").split())[:MAX_TITLE_CHARS] or "Slack"
+    link = str(item.get("link") or "").strip()
+    sender = " ".join(str(item.get("from") or "").split())
+    lines = [f"{sender} · {item.get('title') or ''}".strip(" ·")]
+    if link:
+        lines.append(link)
+    tags = [SLACK_TAG] + (["urgent"] if item.get("urgency") == "high" else [])
+    return Note(name=f"{now:%Y-%m-%d-%H%M}-{slugify(title)}", created=_iso(now), title=title,
+                original=chr(10).join(lines), kind="slack", links=[link] if link else [], tags=tags)
+
+
+def unique_name(folder: Path | str, name: str) -> str:
+    """同一分钟、同一标题的第二条：加 ``-2``、``-3``…，不覆盖已有文件。"""
+    folder = Path(folder)
+    candidate, n = name, 1
+    while (folder / f"{candidate}.md").exists():
+        n += 1
+        candidate = f"{name}-{n}"
+    return candidate
 
 
 # ---------------------------------------------------------------- Markdown 往返
@@ -634,7 +661,7 @@ def _norm(path: str) -> str:
     return os.path.normpath(str(path or "")).replace("\\", "/").rstrip("/").lower()
 
 
-def obsidian_uri(repo_dir: str, note: Note, vaults: dict | None = None) -> str:
+def obsidian_uri(repo_dir: str, note: Note, vaults: dict | None = None, folder: str = NOTES_DIR) -> str:
     """在 Obsidian 里打开这条笔记的地址；仓库目录没登记成库就返回空。"""
     vaults = obsidian_vaults() if vaults is None else vaults
     wanted = _norm(repo_dir)
@@ -642,7 +669,7 @@ def obsidian_uri(repo_dir: str, note: Note, vaults: dict | None = None) -> str:
         vault_path = str(vault.get("path") or "") if isinstance(vault, dict) else ""
         if vault_path and _norm(vault_path) == wanted:
             name = os.path.basename(os.path.normpath(vault_path))
-            return f"obsidian://open?vault={quote(name, safe='')}&file={quote(NOTES_DIR + '/' + note.name, safe='')}"
+            return f"obsidian://open?vault={quote(name, safe='')}&file={quote(folder + '/' + note.name, safe='')}"
     return ""
 
 

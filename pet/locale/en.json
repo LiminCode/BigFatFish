@@ -35,6 +35,8 @@
   "history.menu.copy_resume": "Copy resume command",
   "history.menu.remove": "Remove from list",
   "history.menu.clear": "Clear list",
+  "history.menu.pin": "Pin to top",
+  "history.menu.unpin": "Unpin",
   "history.result.resumed": "Resumed in terminal: {label}",
   "history.result.opened_vscode": "Opened in VS Code: {path}",
   "history.result.copied_resume": "Resume command copied (run it in that folder)",
@@ -163,7 +165,7 @@
   "notes.settings.custom_choice": "Custom…",
   "notes.settings.flow": "How it works",
   "notes.settings.flow_hint": "Expand to see the whole flow, so the details are not forgotten over time.",
-  "notes.settings.flow_tooltip": "<b>How work notes flow</b><br>1. Paste a Slack / Jira link or a few words on the “Notes” page of the briefing window, Ctrl+Enter.<br>2. The fish writes the original verbatim to note/date-title.md (Obsidian format) and pushes it to AI-Base-Memory.<br>3. In the background, Claude Code in WSL (work account) follows the links <b>read-only</b>, writes a summary, picks the next reminder time and tags; the fish writes it back and pushes again. One automatic retry on failure.<br>4. When the time comes and you are at the computer, a sticky bubble appears: View / Later / Done.<br>5. “Open in Obsidian” jumps to the note (register the repo folder as a vault first).<br>Each note records which model it used, how many tokens and what it cost.<br><b>What is sent to Claude</b>: one prompt (in the interface language): the current time, the note verbatim (inside a note tag, marked as material, not instructions), the four jobs (background, title / summary / points, reminder, tags) and the JSON output format. Only the read-only Slack / Atlassian tools are allowed, no built-in tools.",
+  "notes.settings.flow_tooltip": "<b>How work notes flow</b><br>1. Paste a Slack / Jira link or a few words on the “Notes” page of the briefing window, Ctrl+Enter.<br>2. The fish writes the original verbatim to note/date-title.md (Obsidian format) and pushes it to AI-Base-Memory.<br>3. In the background, Claude Code in WSL (work account) follows the links <b>read-only</b>, writes a summary, picks the next reminder time and tags; the fish writes it back and pushes again. One automatic retry on failure.<br>4. When the time comes and you are at the computer, a sticky bubble appears: View / Later / Done.<br>5. “Open in Obsidian” jumps to the note (register the repo folder as a vault first).<br>6. Every item Slack Watch finds is also stored as one note under the same repo's slack/ folder, with Open / Snooze / Done on the “Slack Watch” page.<br>Each note records which model it used, how many tokens and what it cost.<br><b>What is sent to Claude</b>: one prompt (in the interface language): the current time, the note verbatim (inside a note tag, marked as material, not instructions), the four jobs (background, title / summary / points, reminder, tags) and the JSON output format. Only the read-only Slack / Atlassian tools are allowed, no built-in tools.",
   "notes.button.delete": "Delete",
   "notes.confirm.delete_title": "Delete this note?",
   "notes.confirm.delete_text": "“{title}” will be removed from the repo and pushed; it disappears from Obsidian too.",
@@ -1633,5 +1635,11 @@
   "notes.sync.blocked_by_hook": "Not pushed: the company git hook (Sphinx understanding check) wants a questionnaire answered in a terminal, which the fish can't do headlessly. The note is committed locally and safe; run git push once in a WSL terminal, finish the questionnaire, then click “Push again”.",
   "notes.button.push": "Push again",
   "notes.button.push_hint": "Push the locally committed notes again (for example after passing the git hook in a terminal)",
-  "notes.status.pushing": "Committing and pushing…"
+  "notes.status.pushing": "Committing and pushing…",
+  "slack.notes.hint.empty": "No Slack Watch records yet. Every message Slack Watch finds for you is stored here (and written to the repo's slack/ folder), newest first; Open = open that message, Snooze = remind again later, Done = archive.",
+  "slack.notes.button.view": "Open",
+  "slack.notes.button.view_hint": "Open this message in the browser / Slack",
+  "slack.notes.alert.subtitle": "Slack Watch · {title}",
+  "slack.notes.flow": "Every item that needs you is stored as one Markdown file in the repo's slack/ folder and listed, newest first, on the “Slack Watch” page of the briefing window (Open / Snooze / Done); when a snooze is due and you are at the computer, the fish pops up again. Requires Work Notes to be on.",
+  "slack.notes.flow_title": "Archive and the “Slack Watch” page"
 }

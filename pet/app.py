@@ -2929,7 +2929,7 @@ class AppShell:
         now, live = time.time(), self._live_session_keys()
         island.set_session_history([
             {"key": entry.key, "label": entry.label, "where": entry.where, "host": entry.host, "path": entry.cwd,
-             "ago": ago_text(now - entry.last_seen), "live": entry.key in live}
+             "ago": ago_text(now - entry.last_seen), "live": entry.key in live, "pinned": entry.pinned}
             for entry in history.entries()], is_open=history.ui_open,
             max_rows=(self.config.get("agent_link") or {}).get("session_history_rows", 10))
 
@@ -2976,6 +2976,9 @@ class AppShell:
             return
         if action == "remove":
             history.remove(entry.key)
+            return
+        if action in ("pin", "unpin"):
+            history.set_pinned(entry.key, action == "pin")   # 列表自己的事：排序由数据层定，界面随 changed 刷新
             return
         self._say_island_history(self._history_actions().run(action, entry))
 
@@ -3032,6 +3035,37 @@ class AppShell:
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("工作笔记接线失败")
 
+    def _start_slack_notes(self):
+        """「Slack 关注」页（用户 2026-10-20）：Slack 关注查到的每条存成 AI-Base-Memory 的 slack/ 下一条 Markdown，
+        在简报窗口里按最新最前列出，查看 / 稍后 / 完成；稍后到点由同一套提醒气泡再提醒。要工作笔记开着
+        （同一个仓库、同一条 git 通道），简报窗口也得有。返回控制器；没接返回 None。"""
+        briefing = getattr(self, "_work_briefing", None)
+        if self._overlay_shell is None or briefing is None:
+            return None
+        existing = getattr(self, "_slack_notes", None)
+        if existing is not None:
+            return existing
+        try:
+            from . import work_notes as wn
+            from .i18n import t
+            from .work_notes_service import WorkNotesService
+            from .work_notes_ui import WorkNotesController
+
+            service = WorkNotesService(self.config, folder=wn.SLACK_DIR, label="slack", pull_on_start=False,
+                                       parent=self.app)
+            if not service.settings()["enabled"]:
+                return None
+            controller = WorkNotesController(self._overlay_shell, service, slack=True,
+                                             open_window=lambda: briefing.open_window(tab=t("slack.app")))
+            briefing.tab_providers.append(lambda: [(t("slack.app"), controller.panel())])
+            self._slack_notes = controller
+            self._overlay_shell.slack_notes = controller
+            service.start()
+            return controller
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("Slack 关注页接线失败")
+            return None
+
     def _start_slack_watch(self) -> None:
         """Slack 关注（可选服务）：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。"""
         if self._overlay_shell is None or getattr(self, "_slack_watch", None) is not None:
@@ -3045,7 +3079,8 @@ class AppShell:
             from .slack_watch_ui import SlackWatchController
 
             service = SlackWatchService(self.config, parent=self.app)
-            self._slack_watch = SlackWatchController(self._overlay_shell, service)
+            notes = self._start_slack_notes()
+            self._slack_watch = SlackWatchController(self._overlay_shell, service, notes=notes)
             self._overlay_shell.slack_watch = self._slack_watch
             service.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动

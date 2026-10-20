@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QLineEdit
 
 from . import claude_hooks
 from . import slack_watch as sw
+from .settings_help import help_row
 from .settings_widgets import BrowserSpinBox, ModernSelect, SettingRow, ToggleSwitch
 from .i18n import t
 
@@ -75,6 +76,7 @@ def slack_watch_rows(dialog) -> list[SettingRow]:
         SettingRow("slack_watch_idle", t("settings.slack.away_after"), t(_IDLE_HINT), idle),
         SettingRow("slack_watch_model", t("settings.slack.model"), t(_MODEL_HINT), select),
         SettingRow("slack_watch_model_custom", t("settings.slack.custom_model_name"), "", edit, stacked=True),
+        help_row(dialog, "slack_watch_archive", t("slack.notes.flow_title"), t("slack.notes.flow")),
     ]
 
 

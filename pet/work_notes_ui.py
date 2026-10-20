@@ -24,6 +24,7 @@ from .i18n import t
 from .settings_widgets import TiltButton
 
 ALERT_PREFIX = "work-note:"
+SLACK_ALERT_PREFIX = "slack-note:"
 #: 输入框与「记下」按钮一样高
 INPUT_HEIGHT = 72
 # 样式由简报窗口的 Metro 样式表统一给（按 objectName 选中这里的控件）；面板自己只管颜色相关的调色板。
@@ -92,11 +93,14 @@ class WorkNotesPanel(QWidget):
     folder_requested = Signal()
     push_requested = Signal()
     delete_requested = Signal(str)
+    view_requested = Signal(str)
 
-    def __init__(self, colors: dict, parent: QWidget | None = None) -> None:
+    def __init__(self, colors: dict, parent: QWidget | None = None, *, slack: bool = False) -> None:
+        """``slack=True``：「Slack 关注」页——条目由 Slack 关注自动存进来，没有输入框，多一个「查看」（开那条链接）。"""
         super().__init__(parent)
         self.setObjectName("workNotes")
         self._colors = colors
+        self._slack = slack
         self._notes: dict[str, wn.Note] = {}
         self._busy: set[str] = set()
 
@@ -111,7 +115,7 @@ class WorkNotesPanel(QWidget):
         self.add_btn.setAccessibleDescription(t("notes.button.add_hint"))
         self.add_btn.clicked.connect(self._submit)
         QShortcut(QKeySequence("Ctrl+Return"), self.input, activated=self._submit)
-        self.hint_label = QLabel(t("notes.hint.empty"), self)
+        self.hint_label = QLabel(t("slack.notes.hint.empty" if slack else "notes.hint.empty"), self)
         self.hint_label.setObjectName("notesHint")
         self.hint_label.setWordWrap(True)
 
@@ -129,6 +133,10 @@ class WorkNotesPanel(QWidget):
         self.detail.setPalette(palette)
         self.detail.setAccessibleName(t("notes.detail.original"))
 
+        self.view_btn = TiltButton(t("slack.notes.button.view"), self)
+        self.view_btn.setToolTip(t("slack.notes.button.view_hint"))
+        self.view_btn.setAccessibleDescription(t("slack.notes.button.view_hint"))
+        self.view_btn.clicked.connect(lambda: self._emit_current(self.view_requested))
         self.obsidian_btn = TiltButton(t("notes.button.obsidian"), self)
         self.obsidian_btn.clicked.connect(lambda: self._emit_current(self.obsidian_requested))
         self.resummarize_btn = TiltButton(t("notes.button.resummarize"), self)
@@ -160,9 +168,12 @@ class WorkNotesPanel(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         buttons.addWidget(self.status_label, 1)
-        for button in (self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn, self.delete_btn,
-                       self.push_btn, self.folder_btn):
+        for button in (self.view_btn, self.obsidian_btn, self.resummarize_btn, self.snooze_btn, self.done_btn,
+                       self.delete_btn, self.push_btn, self.folder_btn):
             buttons.addWidget(button)
+        self.view_btn.setVisible(slack)
+        self.input.setVisible(not slack)
+        self.add_btn.setVisible(not slack)
         # 列表在左、详情在右（用户 2026-10-16：上下分开每块都太矮）；分隔条可拖，默认 1 : 2
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.setObjectName("notesSplitter")
@@ -252,6 +263,7 @@ class WorkNotesPanel(QWidget):
         busy = name in self._busy
         has = note is not None
         open_note = has and note.status != wn.STATUS_DONE
+        self.view_btn.setEnabled(has)
         self.obsidian_btn.setEnabled(has)
         self.delete_btn.setEnabled(has)
         self.snooze_btn.setEnabled(open_note)
@@ -277,10 +289,13 @@ class WorkNotesController(QObject):
 
     def __init__(self, host, service, *, open_window: Callable[[], None] | None = None,
                  colors: dict | None = None, confirm: Callable[[str, str], bool] | None = None,
-                 parent: QObject | None = None) -> None:
+                 slack: bool = False, parent: QObject | None = None) -> None:
+        """``slack=True``：这是「Slack 关注」页的控制器——提醒的「查看」直接开那条 Slack 链接，提醒 id 另起前缀。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
+        self._slack = slack
+        self._alert_prefix = SLACK_ALERT_PREFIX if slack else ALERT_PREFIX
         self._open_window = open_window or (lambda: None)
         self._colors = colors
         self._confirm = confirm or _ask
@@ -295,8 +310,9 @@ class WorkNotesController(QObject):
                 from .work_briefing_ui import briefing_tokens, resolve_dark, theme_preference
 
                 self._colors = briefing_tokens(resolve_dark(theme_preference(self.service._config)))
-            panel = WorkNotesPanel(self._colors)
+            panel = WorkNotesPanel(self._colors, slack=self._slack)
             panel.add_requested.connect(self.add)
+            panel.view_requested.connect(self.view)
             panel.resummarize_requested.connect(self.service.resummarize)
             panel.done_requested.connect(self.service.mark_done)
             panel.snooze_requested.connect(self.service.snooze)
@@ -320,6 +336,11 @@ class WorkNotesController(QObject):
             self._host.show_bubble(t("notes.bubble.not_saved", reason=self.service.last_error() or t("notes.bubble.empty")), 5000)
             return
         self._host.show_bubble(t("notes.bubble.saved"), 3200)
+
+    def view(self, name: str) -> None:
+        """查看一条 Slack 关注：有链接就开那条消息；没有就开到列表里那条。"""
+        if not self.service.open_link(name):
+            self.open_notes(name)
 
     def open_in_obsidian(self, name: str) -> None:
         if not self.service.open_in_obsidian(name):
@@ -351,18 +372,22 @@ class WorkNotesController(QObject):
             self._host.show_bubble(t("notes.bubble.summary_failed", reason=error), 7000)
 
     def _on_reminder(self, note: wn.Note) -> None:
-        alert_id = ALERT_PREFIX + note.name
+        alert_id = self._alert_prefix + note.name
+        subtitle = t("slack.notes.alert.subtitle" if self._slack else "notes.alert.subtitle", title=note.title)
         self._host.show_alert(
-            note.summary or note.title, subtitle=t("notes.alert.subtitle", title=note.title), sticky=True,
+            note.summary or note.title, subtitle=subtitle, sticky=True,
             buttons=[(t("notes.alert.view"), lambda: self._view(alert_id, note.name)),
                      (t("notes.alert.snooze"), lambda: self._snooze(alert_id, note.name)),
                      (t("notes.alert.done"), lambda: self._done(alert_id, note.name))],
-            alert_id=alert_id, priority=1, alert_type="work_note",
+            alert_id=alert_id, priority=1, alert_type="slack_watch" if self._slack else "work_note",
         )
 
     def _view(self, alert_id: str, name: str) -> None:
         self._host.resolve_alert(alert_id)
-        self.open_notes(name)
+        if self._slack:
+            self.view(name)
+        else:
+            self.open_notes(name)
 
     def _snooze(self, alert_id: str, name: str) -> None:
         self._host.resolve_alert(alert_id)
