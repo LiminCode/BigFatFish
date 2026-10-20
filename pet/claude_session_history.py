@@ -9,7 +9,8 @@
 
 - ``SessionHistory``：一个会话一行（同一个会话再打开 = 就地更新），按最后活动时间
   留最近 N 天、最多 M 条；落盘到肥鱼配置目录的一个 JSON 文件。**只存路径、标题、
-  入口这类信息，不存对话内容。**
+  入口这类信息，不存对话内容。** 置顶（``set_pinned``，2026-10-20）的行一直排在最前、
+  不过期、不被条数上限挤掉，直到取消置顶。
 - 回填（``scan_local`` / ``scan_wsl``）：肥鱼没开着时打开过的对话，从 Claude Code 自己
   的 transcript 里补出来。那是它的**内部格式**（字段随版本变），所以读不到就跳过，
   绝不因此出错。目录取会话**开头**那一条的 ``cwd``——那才是这份记录归属的目录
@@ -108,6 +109,7 @@ class HistoryEntry:
     git_branch: str = ""
     distro: str = ""
     last_seen: float = 0.0
+    pinned: bool = False             # 用户置顶：一直排最前，直到取消
 
     @property
     def key(self) -> tuple[str, str]:
@@ -219,6 +221,14 @@ class SessionHistory:
     def remove(self, key: tuple[str, str]) -> bool:
         return self._entries.pop(tuple(key), None) is not None
 
+    def set_pinned(self, key: tuple[str, str], pinned: bool) -> bool:
+        """置顶 / 取消置顶。返回有没有变化（没这一行、或本来就是这个状态 = False）。"""
+        entry = self._entries.get(tuple(key))
+        if entry is None or entry.pinned == bool(pinned):
+            return False
+        entry.pinned = bool(pinned)
+        return True
+
     def clear(self) -> bool:
         had = bool(self._entries)
         self._entries.clear()
@@ -226,12 +236,15 @@ class SessionHistory:
 
     # ---------------------------------------------------------------- 读取
     def _prune(self) -> list[HistoryEntry]:
-        """丢掉过期的，返回可以列出来的（知道目录的），新的在前、不超过上限。"""
+        """丢掉过期的，返回可以列出来的（知道目录的）：置顶的在前，其余新的在前，不超过上限。
+
+        置顶的不过期；排在最前所以也不会被上限挤掉（上限挤的是队尾那些没置顶的）。
+        """
         cutoff = self._clock() - self.max_age_days * _DAY_S
-        for key in [key for key, entry in self._entries.items() if entry.last_seen < cutoff]:
+        for key in [key for key, entry in self._entries.items() if entry.last_seen < cutoff and not entry.pinned]:
             del self._entries[key]
         listed = sorted((e for e in self._entries.values() if e.cwd),
-                        key=lambda e: e.last_seen, reverse=True)
+                        key=lambda e: (not e.pinned, -e.last_seen))
         for entry in listed[self.max_entries:]:
             del self._entries[entry.key]
         return listed[:self.max_entries]
@@ -259,8 +272,11 @@ class SessionHistory:
                 seen = float(row.get("last_seen") or 0.0)
             except (TypeError, ValueError):
                 continue
-            self.record(str(row.get("agent") or ""), str(row.get("session_id") or ""), seen=seen,
+            agent, session_id = str(row.get("agent") or ""), str(row.get("session_id") or "")
+            self.record(agent, session_id, seen=seen,
                         **{name: row.get(name) for name in _FIELDS if isinstance(row.get(name), str)})
+            if row.get("pinned") is True:
+                self.set_pinned((agent, session_id), True)
 
     def save(self) -> bool:
         if self._path is None:

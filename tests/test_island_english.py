@@ -110,8 +110,8 @@ def test_the_history_panel_follows_the_language(english):
     assert panel.header_text == "Recent chats (1) · Collapse"
     assert panel.row_widgets()[0].ago.text() == "Live"
     labels = [a.text() for a in panel.row_menu(("claude", "a")).actions() if not a.isSeparator()]
-    assert labels == ["Resume in terminal", "Open in VS Code", "Open folder", "Copy path", "Copy resume command",
-                      "Remove from list", "Clear list"]
+    assert labels == ["Pin to top", "Resume in terminal", "Open in VS Code", "Open folder", "Copy path",
+                      "Copy resume command", "Remove from list", "Clear list"]
     panel.deleteLater()
 
 

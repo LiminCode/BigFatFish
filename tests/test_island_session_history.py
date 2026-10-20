@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -233,6 +234,25 @@ def test_menu_actions_are_routed(app_shell):
 
     app_shell.island.history_action.emit("clear", ("claude", SID_B))
     assert app_shell.island._history_panel._rows == []
+
+
+def test_pinning_from_the_menu_keeps_that_chat_on_top(app_shell):
+    """右键「置顶」：那一行一直排最前，行数据带 ``pinned``；「取消置顶」后按时间归位。"""
+    _live(app_shell, cwd="C:\\work\\api")
+    app_shell.service.store._clock = lambda: time.time() + 120
+    _live(app_shell, SID_B, cwd="C:\\work\\web")
+    rows = app_shell.island._history_panel._rows
+    assert [r["key"] for r in rows] == [("claude", SID_B), ("claude", SID_A)]
+    assert all(r["pinned"] is False for r in rows)
+
+    app_shell.island.history_action.emit("pin", ("claude", SID_A))
+    rows = app_shell.island._history_panel._rows
+    assert [(r["key"], r["pinned"]) for r in rows] == [(("claude", SID_A), True), (("claude", SID_B), False)]
+    assert app_shell.recorder.ran == [], "置顶是列表自己的事，不走恢复 / 打开那些动作"
+
+    app_shell.island.history_action.emit("unpin", ("claude", SID_A))
+    rows = app_shell.island._history_panel._rows
+    assert [(r["key"], r["pinned"]) for r in rows] == [(("claude", SID_B), False), (("claude", SID_A), False)]
 
 
 def test_a_row_that_vanished_meanwhile_is_ignored(app_shell):

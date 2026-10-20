@@ -183,6 +183,13 @@ class SessionHistoryService(QObject):
         if self._store.clear():
             self._touched()
 
+    def set_pinned(self, key, pinned: bool) -> bool:
+        """置顶 / 取消置顶一行；有变化就刷新界面并安排落盘。"""
+        if not self._store.set_pinned(tuple(key), bool(pinned)):
+            return False
+        self._touched()
+        return True
+
     def set_ui_open(self, is_open: bool) -> None:
         if self._store.ui_open != bool(is_open):
             self._store.ui_open = bool(is_open)

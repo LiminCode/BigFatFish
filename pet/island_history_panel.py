@@ -10,7 +10,8 @@ WSL 终端 / 脚本），进行中的行左缘一道主题色竖条。没有圆�
 底色深浅和留白分层。卡片底色随岛的配色：浅字（深底）用浅色薄膜，深字用深色薄膜。
 
 一行 = 标题 + 多久以前，下面一行小字「从哪开的 · 路径」。点一行 = 默认动作，右键出
-菜单。行数多了在框里滚动，卡片不跟着无限长高。
+菜单。行数多了在框里滚动，卡片不跟着无限长高。置顶的行（``pinned``，2026-10-20）
+标题右边多一枚主题色图钉，右键菜单第一项是「置顶 / 取消置顶」；排序由数据层决定。
 
 文字都按可用宽度省略好再交给 QLabel（标题省略末尾，路径省略中间——盘符和最后一段
 目录名两头都要看得见），所以不会像卡片详情行那样从右边溢出。
@@ -18,8 +19,8 @@ WSL 终端 / 脚本），进行中的行左缘一道主题色竖条。没有圆�
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from .i18n import t
@@ -32,6 +33,7 @@ _HEADER_HEIGHT = 28
 _ROW_PAD_X = 8
 _ICON_PX = 16
 _ICON_SLOT = 22          # 图标占的宽度（没有图标也留着，文字对齐）
+_PIN_PX = 12             # 置顶图钉（只有置顶的行才占位）
 _LIVE_BAR_PX = 3
 _SCROLLBAR_PX = 6
 _TITLE_PX, _SMALL_PX = 12, 10
@@ -40,8 +42,10 @@ _ICON_WARM_DELAY_MS = 2500
 LIVE_TEXT_KEY = "history.live"
 #: 从哪开的 → 图标名（``context_menus.icons``）
 HOST_ICONS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
-#: 右键菜单：(动作名, 文案)；None = 分隔线
-_MENU = (("terminal", "history.menu.terminal"), ("vscode", "history.menu.vscode"), ("folder", "history.menu.folder"),
+#: 右键菜单：(动作名, 文案)；None = 分隔线。第一项按行的置顶状态在 ``_PIN_ITEMS`` 里二选一
+_PIN_ITEMS = {False: ("pin", "history.menu.pin"), True: ("unpin", "history.menu.unpin")}
+_MENU = (None, ("terminal", "history.menu.terminal"), ("vscode", "history.menu.vscode"),
+         ("folder", "history.menu.folder"),
          None, ("copy_path", "history.menu.copy_path"), ("copy_resume", "history.menu.copy_resume"), None,
          ("remove", "history.menu.remove"), ("clear", "history.menu.clear"))
 
@@ -51,6 +55,38 @@ def _font(base: QFont, pixels: int, *, bold: bool = False) -> QFont:
     font.setPixelSize(pixels)
     font.setBold(bold)
     return font
+
+
+_PIN_CACHE: dict[tuple[str, int, float], QPixmap] = {}
+
+
+def pin_pixmap(widget, color: str, size: int = _PIN_PX) -> QPixmap:
+    """图钉记号（与右键菜单里 ``context_menus.icons`` 的 ``pin`` 同一个形状），按给定颜色画。
+
+    不走 ``vector_widget_icon``：那套颜色跟控件调色板走，而岛的文字色是自己定的。
+    按（颜色, 尺寸, DPR）缓存：每次刷新列表都要给置顶的行重设图钉。
+    """
+    dpr = float(widget.devicePixelRatioF() or 1.0)
+    cached = _PIN_CACHE.get((color, size, dpr))
+    if cached is not None:
+        return cached
+    pixmap = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.scale(size / 16.0, size / 16.0)
+    painter.setPen(QPen(QColor(color), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                        Qt.PenJoinStyle.RoundJoin))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(4.5, 2.0, 7.0, 5.0), 1.0, 1.0)
+    painter.drawLine(QPointF(5.5, 7.0), QPointF(3.5, 10.0))
+    painter.drawLine(QPointF(10.5, 7.0), QPointF(12.5, 10.0))
+    painter.drawLine(QPointF(3.5, 10.0), QPointF(12.5, 10.0))
+    painter.drawLine(QPointF(8.0, 10.0), QPointF(8.0, 14.0))
+    painter.end()
+    _PIN_CACHE[(color, size, dpr)] = pixmap
+    return pixmap
 
 
 def tile_colors(primary: str) -> tuple[str, str]:
@@ -89,8 +125,12 @@ class _HistoryRow(QFrame):
         self.icon.setFixedSize(_ICON_SLOT, ROW_HEIGHT - _ROW_GAP - 6)
         self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title, self.ago, self.path = QLabel(self.tile), QLabel(self.tile), QLabel(self.tile)
+        self.pin = QLabel(self.tile)                          # 置顶图钉：没置顶就藏起来、不占位
+        self.pin.setFixedSize(_PIN_PX, _PIN_PX)
+        self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pin.hide()
         self.ago.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        for label in (self.icon, self.title, self.ago, self.path):
+        for label in (self.icon, self.title, self.pin, self.ago, self.path):
             label.setTextFormat(Qt.TextFormat.PlainText)     # 标题 / 路径是外来内容：不当富文本
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.title.setFont(_font(self.font(), _TITLE_PX, bold=True))
@@ -98,8 +138,9 @@ class _HistoryRow(QFrame):
         self.path.setFont(_font(self.font(), _SMALL_PX))
         grid.addWidget(self.icon, 0, 0, 2, 1)
         grid.addWidget(self.title, 0, 1)
-        grid.addWidget(self.ago, 0, 2)
-        grid.addWidget(self.path, 1, 1, 1, 2)
+        grid.addWidget(self.pin, 0, 2)
+        grid.addWidget(self.ago, 0, 3)
+        grid.addWidget(self.path, 1, 1, 1, 3)
         grid.setColumnStretch(1, 1)
 
     def set_data(self, row: dict, width: int, *, accent: str, secondary: str) -> None:
@@ -111,8 +152,14 @@ class _HistoryRow(QFrame):
         self.ago.setText(ago)
         self.ago.setFixedWidth(ago_width)
         self.ago.setStyleSheet(f"color: {accent if live else secondary};")
+        pinned = bool(row.get("pinned"))
+        if pinned:
+            self.pin.setPixmap(pin_pixmap(self, accent))
+            self.pin.setToolTip(t("history.menu.unpin"))
+        self.pin.setVisible(pinned)
+        pin_width = _PIN_PX + 6 if pinned else 0
         self.title.setText(QFontMetrics(self.title.font()).elidedText(
-            str(row.get("label") or ""), Qt.TextElideMode.ElideRight, max(20, inner - ago_width - 8)))
+            str(row.get("label") or ""), Qt.TextElideMode.ElideRight, max(20, inner - ago_width - pin_width - 8)))
         where, path = str(row.get("where") or ""), str(row.get("path") or "")
         self.path.setText(QFontMetrics(self.path.font()).elidedText(
             f"{where} · {path}" if where else path, Qt.TextElideMode.ElideMiddle, inner))
@@ -325,9 +372,12 @@ class SessionHistoryPanel(QWidget):
         self._update_header()
 
     # ---------------------------------------------------------------- 右键菜单
+    def _is_pinned(self, key) -> bool:
+        return any(bool(row.get("pinned")) for row in self._rows if row.get("key") == key)
+
     def row_menu(self, key) -> QMenu:
         menu = QMenu(self)
-        for item in _MENU:
+        for item in (_PIN_ITEMS[self._is_pinned(key)], *_MENU):
             if item is None:
                 menu.addSeparator()
                 continue

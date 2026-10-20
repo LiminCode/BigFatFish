@@ -172,6 +172,68 @@ def test_remove_and_clear():
     assert history.clear() is True and history.entries() == []
 
 
+# ---------------------------------------------------------------- 置顶（2026-10-20）
+
+def test_pinned_rows_stay_on_top_until_unpinned():
+    """置顶 = 一直排在最前，不管后来谁更活跃；取消置顶才按时间归位。"""
+    history = _history()
+    history.record("claude", SID_A, cwd="C:\\a")
+    history.clock.now += 60
+    history.record("claude", SID_B, cwd="C:\\b")
+    assert [e.cwd for e in history.entries()] == ["C:\\b", "C:\\a"]
+
+    assert history.set_pinned(("claude", SID_A), True) is True
+    assert history.set_pinned(("claude", SID_A), True) is False, "没变化：不值得落盘"
+    assert history.set_pinned(("claude", "nope"), True) is False
+    assert [(e.cwd, e.pinned) for e in history.entries()] == [("C:\\a", True), ("C:\\b", False)]
+
+    history.clock.now += 60
+    history.record("claude", SID_B, cwd="C:\\b", title="更活跃")
+    history.clock.now += 60
+    history.record("claude", SID_C, cwd="C:\\c")
+    assert [e.cwd for e in history.entries()] == ["C:\\a", "C:\\c", "C:\\b"]
+
+    history.clock.now += 60
+    history.set_pinned(("claude", SID_B), True)
+    assert [e.cwd for e in history.entries()] == ["C:\\b", "C:\\a", "C:\\c"], "两条都置顶：置顶的之间仍按时间（b 更新）"
+
+    assert history.set_pinned(("claude", SID_A), False) is True
+    assert [e.cwd for e in history.entries()] == ["C:\\b", "C:\\c", "C:\\a"]
+
+
+def test_reopening_a_pinned_session_keeps_it_pinned():
+    history = _history()
+    history.record("claude", SID_A, cwd="C:\\a")
+    history.set_pinned(("claude", SID_A), True)
+    history.clock.now += 3600
+    history.record("claude", SID_A, cwd="C:\\a", title="又开了")
+    assert history.entries()[0].pinned is True and history.entries()[0].title == "又开了"
+
+
+def test_pinned_rows_neither_expire_nor_fall_off_the_cap():
+    history = _history(max_entries=2)
+    history.record("claude", SID_A, cwd="C:\\old")
+    history.set_pinned(("claude", SID_A), True)
+    history.clock.now += 10 * DAY
+    history.record("claude", SID_B, cwd="C:\\b")
+    history.clock.now += 60
+    history.record("claude", SID_C, cwd="C:\\c")
+    assert [e.cwd for e in history.entries()] == ["C:\\old", "C:\\c"], "置顶的不过期、不被上限挤掉；上限挤的是没置顶的"
+    history.set_pinned(("claude", SID_A), False)
+    assert [e.cwd for e in history.entries()] == ["C:\\c"], "取消置顶：早就过期了，立刻按规则走"
+
+
+def test_pin_state_round_trips_through_disk(tmp_path):
+    history = _history(tmp_path)
+    history.record("claude", SID_A, cwd="C:\\a")
+    history.record("claude", SID_B, cwd="C:\\b")
+    history.set_pinned(("claude", SID_A), True)
+    assert history.save()
+    again = _history(tmp_path)
+    again.load()
+    assert [(e.cwd, e.pinned) for e in again.entries()] == [("C:\\a", True), ("C:\\b", False)]
+
+
 # ---------------------------------------------------------------- 落盘
 
 def test_round_trip_through_disk(tmp_path):
@@ -196,7 +258,8 @@ def test_file_holds_paths_and_titles_only(tmp_path):
     history.save()
     data = json.loads((tmp_path / "history.json").read_text(encoding="utf-8"))
     assert set(data["entries"][0]) == {
-        "agent", "session_id", "cwd", "title", "project", "entrypoint", "git_branch", "distro", "last_seen"}
+        "agent", "session_id", "cwd", "title", "project", "entrypoint", "git_branch", "distro", "last_seen",
+        "pinned"}
 
 
 @pytest.mark.parametrize("content", ["", "not json", "[]", '{"entries": "x"}', '{"entries": [1, {"agent": 5}]}'])

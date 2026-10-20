@@ -120,13 +120,40 @@ def test_row_menu_offers_every_way_back(panel):
     panel.set_rows(_rows(1))
     menu = panel.row_menu(("claude", "sid-0"))
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert labels == ["在终端里恢复", "在 VS Code 里打开", "打开文件夹", "复制路径", "复制恢复命令",
+    assert labels == ["置顶", "在终端里恢复", "在 VS Code 里打开", "打开文件夹", "复制路径", "复制恢复命令",
                       "从列表移除", "清空列表"]
     for action in [a for a in menu.actions() if not a.isSeparator()]:
         action.trigger()
     assert [name for name, _key in panel.events] == [
-        "terminal", "vscode", "folder", "copy_path", "copy_resume", "remove", "clear"]
+        "pin", "terminal", "vscode", "folder", "copy_path", "copy_resume", "remove", "clear"]
     assert all(key == ("claude", "sid-0") for _name, key in panel.events)
+
+
+def test_a_pinned_row_offers_unpin_instead(panel):
+    """置顶了的行：菜单第一项变成「取消置顶」，发 ``unpin``。"""
+    panel.set_rows(_rows(2, pinned=True))
+    menu = panel.row_menu(("claude", "sid-1"))
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert labels[0] == "取消置顶" and "置顶" not in labels[1:]
+    [a for a in menu.actions() if not a.isSeparator()][0].trigger()
+    assert panel.events == [("unpin", ("claude", "sid-1"))]
+    assert panel.row_menu(("claude", "unknown")).actions()[0].text() == "置顶", "不认识的行按没置顶算"
+
+
+def test_a_pinned_row_wears_a_pin_marker(panel):
+    panel.set_rows([{**_rows(1)[0], "pinned": True}, {**_rows(2)[1], "pinned": False}])
+    panel.set_open(True)
+    app.processEvents()
+    pinned, plain = panel.row_widgets()
+    assert pinned.pin.pixmap() is not None and not pinned.pin.pixmap().isNull(), "置顶的行有个图钉"
+    assert not pinned.pin.isHidden()
+    assert plain.pin.isHidden(), "没置顶的行不占那个位置"
+    assert QFontMetrics(pinned.title.font()).horizontalAdvance(pinned.title.text()) <= pinned.title.width() + 1
+
+    panel.set_rows([{**_rows(1)[0], "pinned": False}, {**_rows(2)[1], "pinned": True}])
+    app.processEvents()
+    first, second = panel.row_widgets()
+    assert first.pin.isHidden() and not second.pin.isHidden(), "复用行控件时图钉跟着数据走"
 
 
 def test_right_click_asks_for_the_menu_not_the_default_action(panel):
