@@ -101,7 +101,7 @@
   Live 才在最上面；真实历史文件 `%APPDATA%\big-fat-fish\claude-session-history.json` 改前 30 条、
   没有 `pinned` 键。
 - **带新代码重启桌宠**（2026-10-20 11:07）：结束 `BigFish.exe -m pet`（pid 45604，10:58 起的），
-  `Start-Process cmd.exe /c C:\Users\limin\Github\BigFatFish\run.bat`；`pet-overlay-gate.log` 新增
+  `Start-Process cmd.exe /c C:\Users\<me>\Github\BigFatFish\run.bat`；`pet-overlay-gate.log` 新增
   `11:07:41 acquired pid=26836`。新进程日志 `pet-26836.log` 19 行，无 Traceback / ERROR（唯一一条 INFO
   是本地 TTS 不可用，与本改动无关）。
 - **历史文件按新格式回写**：重启 14 秒后（11:07:55）历史文件被新代码重写，30 条全部带 `pinned: false`，
@@ -119,7 +119,7 @@
 | 红→绿 | 先写 10 个新用例，改实现前 10 红（`set_pinned` 不存在、菜单少一项、行没有 `pin`）；改后全绿 | ✔ |
 | 聚焦 + 相关 | `pytest -q tests/test_claude_session_history.py tests/test_session_history_service.py tests/test_island_history_panel.py tests/test_island_english.py tests/test_island_session_history.py tests/test_island_notifications.py tests/test_i18n.py tests/test_language_reload.py tests/test_host_icons.py` | 161 passed in 2.36 s |
 | 受影响时序族 | 本改动不碰线程 / 真实事件循环时序（服务层只是多一个同步方法），没有时序族要复跑 | 豁免，理由如左 |
-| 全量 | 在隔离 worktree `C:\Users\limin\wt-pin`（HEAD + 只含本项工作的补丁，`.venv` 解释器，`APPDATA` 指临时目录，`-X faulthandler`） | 见下 |
+| 全量 | 在隔离 worktree `C:\Users\<me>\wt-pin`（HEAD + 只含本项工作的补丁，`.venv` 解释器，`APPDATA` 指临时目录，`-X faulthandler`） | 见下 |
 | 架构红线 | `tests/test_architecture.py` 在全量里 | 见下 |
 
 全量结果：`4 failed, 5494 passed, 11 skipped in 616.85s (0:10:16)`，exit=1。4 个失败全是本机既有的环境性基线失败（`test_image_directory_picker_opens_right_drawer_with_three_column_masonry` 路径超 260；`test_festival_id_guard_survives_optimize`、`test_real_second_process_refused_on_overlay_topology` 子进程输出按 cp1252 解码；`test_capture_window_rect_coordinates_and_clamping` 多显示器负原点），与本改动无关；没有原生崩溃。`tests/test_architecture.py` 与 `tests/test_pr_report_discipline.py` 都在其中，通过。
@@ -184,7 +184,7 @@
 
 ### 全量（第二轮）
 
-隔离 worktree `C:/Users/limin/wt-menu`（HEAD `62efabb5` + 本轮补丁，`.venv` 解释器，临时 `APPDATA`，`-X faulthandler`）：`4 failed, 5511 passed, 11 skipped in 547.45s (0:09:07)`。4 个失败与第一轮完全相同，都是本机既有的环境性基线失败（路径超 260 / 子进程 cp1252 解码 ×2 / 多显示器负原点），没有原生崩溃。
+隔离 worktree `C:/Users/<me>/wt-menu`（HEAD `62efabb5` + 本轮补丁，`.venv` 解释器，临时 `APPDATA`，`-X faulthandler`）：`4 failed, 5511 passed, 11 skipped in 547.45s (0:09:07)`。4 个失败与第一轮完全相同，都是本机既有的环境性基线失败（路径超 260 / 子进程 cp1252 解码 ×2 / 多显示器负原点），没有原生崩溃。
 
 ## 附录：基准脚本
 
