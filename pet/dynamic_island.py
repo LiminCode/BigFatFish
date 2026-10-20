@@ -429,6 +429,11 @@ class DynamicIsland(QWidget):
         """
         if not self.isVisible():
             return False
+        if QApplication.activePopupWidget() is not None:
+            # 本进程有 Popup 开着（岛上列表的右键菜单）：它本来就在岛上面（Qt 给 Popup 加
+            # WS_EX_TOPMOST），这时重申只会把岛插回菜单之上、把菜单挡住（2026-10-20 用户截图 +
+            # 实机探针：弹菜单让应用变前台、焦点落到 Popup，两条路各重申一次）。
+            return False
         if _native_reassert_topmost(self):
             return True
         # 非 Windows（macOS / Linux **未验证**）：Qt 层 raise_() 兜底
@@ -443,6 +448,11 @@ class DynamicIsland(QWidget):
         属于"外部应用抢到前台"，不重申（见 ``_on_application_state_changed``）。
         """
         if window is None:
+            return
+        if window.type() == Qt.WindowType.Popup:
+            # 本进程弹出的菜单（岛上「最近的对话」/「通知」的右键菜单）：它本来就在岛上面
+            # （Qt 给 Popup 加 WS_EX_TOPMOST），这时重申只会把岛插回菜单之上、把菜单挡住
+            # （2026-10-20 用户截图 + 实机探针）。它不是「别的 topmost 窗盖住了岛」。
             return
         self.reassert_topmost()
 
@@ -798,6 +808,7 @@ class DynamicIsland(QWidget):
             return
         _bg, primary, secondary = self._style_palette()
         primary_hex = primary.name() if isinstance(primary, QColor) else "#e5eaf5"
+        menu_appearance = dict(self.config.get("context_menu_appearance") or {})   # 字号 / 密度跟右键菜单
         secondary_hex = secondary.name() if isinstance(secondary, QColor) else "#a0aabe"
         accent_hex = self._accent_color().name()
         self._card_balance_label.setStyleSheet(
@@ -817,10 +828,10 @@ class DynamicIsland(QWidget):
             btn.setStyleSheet(button_style)
         # 标题行 / 详情行：放不下就折行（卡片随之长高，见 _card_height），绝不让文字
         # 从卡片右边溢出；折到上限还放不下才省略，全文挂在悬停提示上
-        self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
+        self._history_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex, menu_appearance=menu_appearance,
                                      width=self._card_width() - 2 * _CARD_MARGIN_X)
         self._history_panel.retranslate()      # 语言可能刚换过；没换时只是重填一遍文字
-        self._notice_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex,
+        self._notice_panel.set_look(primary=primary_hex, secondary=secondary_hex, accent=accent_hex, menu_appearance=menu_appearance,
                                     width=self._card_width() - 2 * _CARD_MARGIN_X)
         self._notice_panel.retranslate()
         text_width = self._card_width() - 2 * _CARD_MARGIN_X - 2

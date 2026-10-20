@@ -89,6 +89,20 @@ def pin_pixmap(widget, color: str, size: int = _PIN_PX) -> QPixmap:
     return pixmap
 
 
+def style_island_menu(menu: QMenu, primary: str, appearance: dict | None = None) -> None:
+    """岛上弹出的菜单套肥鱼右键菜单那套 modern 样式：不透明底，岛是深底就深色、浅底就浅色。
+
+    不这么做的话菜单会继承卡片 ``background: transparent`` 的样式表——透明底白字浮在岛上
+    看不清（2026-10-20 用户截图）。``appearance`` 是右键菜单的外观设置（字号 / 密度 / 圆角），
+    明暗与透明度在这里定死。
+    """
+    from .context_menus.menu_styles.modern import apply_modern_menu_style
+
+    dark = QColor(primary).lightness() >= 128          # 浅字 = 深底的岛
+    apply_modern_menu_style(menu, {**(appearance or {}), "theme": "dark" if dark else "light",
+                                   "translucent": False})
+
+
 def tile_colors(primary: str) -> tuple[str, str]:
     """(卡片底色, 悬停底色)：按主文字色的明暗判断岛是深底还是浅底。"""
     if QColor(primary).lightness() >= 128:
@@ -208,6 +222,7 @@ class SessionHistoryPanel(QWidget):
         self._max_visible = MAX_VISIBLE_ROWS
         self._width = 300
         self._colors = {"primary": "#e5eaf5", "secondary": "#a0aabe", "accent": "#40b8ff"}
+        self._menu_appearance: dict = {}
         self._menu: QMenu | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         layout = QVBoxLayout(self)
@@ -253,8 +268,11 @@ class SessionHistoryPanel(QWidget):
             pass
 
     # ---------------------------------------------------------------- 外观
-    def set_look(self, *, primary: str, secondary: str, accent: str, width: int) -> None:
-        """跟着岛的配色与卡片宽度走。"""
+    def set_look(self, *, primary: str, secondary: str, accent: str, width: int,
+                 menu_appearance: dict | None = None) -> None:
+        """跟着岛的配色与卡片宽度走；``menu_appearance`` 是右键菜单的外观设置（给行的菜单用）。"""
+        if menu_appearance is not None:
+            self._menu_appearance = dict(menu_appearance)
         colors = {"primary": primary, "secondary": secondary, "accent": accent}
         if colors == self._colors and int(width) == self._width:
             return
@@ -384,6 +402,7 @@ class SessionHistoryPanel(QWidget):
             name, text_key = item
             menu.addAction(t(text_key)).triggered.connect(
                 lambda _checked=False, name=name: self.action_requested.emit(name, key))
+        style_island_menu(menu, self._colors["primary"], self._menu_appearance)
         return menu
 
     def popup_row_menu(self, key, pos: QPoint) -> None:

@@ -137,6 +137,55 @@
   只是置顶信息会在旧代码下一次 `save` 时丢掉。
 - 回滚：`git revert` 本提交即可。
 
+## 第二轮（同日）：右键菜单被岛挡住 / 透明底看不清
+
+用户试置顶时截图反馈：菜单在岛左侧弹出时是「透明底白字」浮在岛上看不清；在右侧弹出时是黑底白字，
+但**在岛下面**，被岛挡住一截。
+
+### 根因（Windows 实机探针，`scratchpad/probe_menu.py`）
+
+| 现象 | 探针结果 | 原因 |
+|---|---|---|
+| 菜单在岛下面 | 弹出前后 `focusWindowChanged` 报了一个 `WindowType.Popup`；岛的 `_native_reassert_topmost` 被调 **2 次**；`GetWindow(GW_HWNDPREV)` 往上数，岛的 HWND 在菜单之上；菜单自己已是 `WS_EX_TOPMOST` | 岛的置顶保活把「本进程窗口获得焦点」和「应用变前台」都当成「别的 topmost 窗盖住了我」去重申；弹菜单恰好两条都触发，岛被插回菜单之上 |
+| 透明底白字 | 面板是 `_card_box` 的子控件，`_card_box.setStyleSheet("background: transparent;")` 这种无选择器的样式表会继承给 `QMenu(self)` | 菜单没有自己的样式，底色跟着卡片透明；字色跟系统深色主题是白的 |
+
+### 修法
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/dynamic_island.py` | +13 / −2 | `reassert_topmost`：`QApplication.activePopupWidget()` 不为 None（本进程有 Popup 开着）就返回 False——一道门挡住焦点 / 前台 / 30 秒心跳 / 点岛四条触发路径；`_on_own_window_focused` 另外对 `window.type() == Popup` 直接返回。`_sync_card_labels` 把 `context_menu_appearance` 传给两个面板。 |
+| `pet/island_history_panel.py` | +21 / −2 | `style_island_menu(menu, primary, appearance)`：套 `apply_modern_menu_style`，`theme` 按岛的明暗（主文字色浅 = 深底岛 → 深色菜单）、`translucent=False`；`set_look` 多一个 `menu_appearance`；`row_menu` 末尾套样式。 |
+| `pet/island_notification_panel.py` | +7 / −2 | 通知面板同一套（同样的 `QMenu(self)` 写法，同样的问题）。 |
+| `tests/test_island_topmost.py` | +41 / −0 | 复现：弹出历史行菜单期间，焦点 / 前台 / 心跳 / 直接调用一律不重申；菜单收起后真正的 topmost 窗照旧重申。 |
+| `tests/test_island_history_panel.py` | +18 / −0 | 菜单是 modern 样式、不透明底、随岛明暗切换、字号跟外观设置。 |
+| `tests/test_island_notifications.py` | +8 / −0 | 通知菜单同一套。 |
+
+红→绿：3 个新用例改实现前红（`modernDark` 属性不存在、弹菜单期间重申了 1 次），改后
+`tests/test_island_topmost.py + test_island_history_panel.py + test_island_notifications.py + test_island_session_history.py` 78 过。
+
+### 实机运行记录（第二轮）
+
+- 探针修前：`reassert calls during popup: 2`，`island hwnd above menu: True`。
+  只改焦点那条路后：`1`（弹菜单让应用变前台，`_on_application_state_changed` 又重申一次）、仍 `True`。
+  加 `activePopupWidget` 门后：**`0`，`False`**。浅 / 深两种岛样式各跑一次，结果相同。
+- 真实屏幕截图（`QScreen.grabWindow`，岛 + 菜单区域）：
+  `docs/screenshots/island-menu-2026-10-20/menu_light.png`（浅岛：白底深字菜单压在岛上面）、
+  `menu_dark.png`（深岛：深底浅字）。第一次抓浅岛时 600 ms 太早菜单还没画出来，改 1500 ms 后正常——
+  抓图时机问题，不是产品问题。
+- 桌宠重启两次（11:27 pid 14304 只带焦点那一条修法；11:28 pid 43636 带最终修法），
+  `pet-43636.log` 无 Traceback（`ERROR` 唯一一次命中是 `<urlopen error timed out>` 那条 INFO）。
+  岛上的真实右键仍请用户确认一眼。
+
+### 性能（第二轮）
+
+- `reassert_topmost` 多一次 `QApplication.activePopupWidget()`（读一个静态指针），每次心跳 / 焦点事件 +<1 µs。
+- 菜单样式：`apply_modern_menu_style` 是肥鱼右键菜单每次弹出都在走的同一函数（建 2 个覆盖层 + 一份样式表），
+  现在每次右键一行多跑一次；没有新线程 / 磁盘 / 网络。
+
+### 全量（第二轮）
+
+（跑完后补）
+
 ## 附录：基准脚本
 
 ```python

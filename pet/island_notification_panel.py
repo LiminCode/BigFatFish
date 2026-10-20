@@ -17,7 +17,7 @@ from PySide6.QtGui import QCursor, QFontMetrics, QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QMenu, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from .i18n import t
-from .island_history_panel import _font, tile_colors
+from .island_history_panel import _font, style_island_menu, tile_colors
 
 ROW_HEIGHT = 58          # 56 的卡片 + 2 的缝
 _ROW_GAP = 2
@@ -152,6 +152,7 @@ class NotificationPanel(QWidget):
         self._max_visible = MAX_VISIBLE_ROWS
         self._width = 300
         self._colors = {"primary": "#e5eaf5", "secondary": "#a0aabe", "accent": "#40b8ff"}
+        self._menu_appearance: dict = {}
         self._logo_bytes: dict[str, bytes] = {}
         self._logo_pixmaps: dict[tuple[str, float], QPixmap] = {}
         self._menu: QMenu | None = None
@@ -189,7 +190,10 @@ class NotificationPanel(QWidget):
         self._restyle()
 
     # ---------------------------------------------------------------- 外观
-    def set_look(self, *, primary: str, secondary: str, accent: str, width: int) -> None:
+    def set_look(self, *, primary: str, secondary: str, accent: str, width: int,
+                 menu_appearance: dict | None = None) -> None:
+        if menu_appearance is not None:
+            self._menu_appearance = dict(menu_appearance)
         colors = {"primary": primary, "secondary": secondary, "accent": accent}
         if colors == self._colors and int(width) == self._width:
             return
@@ -333,6 +337,7 @@ class NotificationPanel(QWidget):
             name, text_key = item
             menu.addAction(t(text_key)).triggered.connect(
                 lambda _checked=False, name=name: self.action_requested.emit(name, key))
+        style_island_menu(menu, self._colors["primary"], self._menu_appearance)
         return menu
 
     def popup_row_menu(self, key, pos: QPoint) -> None:

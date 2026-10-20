@@ -156,6 +156,24 @@ def test_a_pinned_row_wears_a_pin_marker(panel):
     assert first.pin.isHidden() and not second.pin.isHidden(), "复用行控件时图钉跟着数据走"
 
 
+def test_row_menu_is_opaque_and_follows_the_island_shade(panel):
+    """用户截图（2026-10-20）：菜单继承了卡片 ``background: transparent`` 的样式，白字浮在岛上看不清。
+
+    菜单改走肥鱼右键菜单那套 modern 样式：不透明底；岛是浅底（深字）就浅色菜单，深底就深色菜单；
+    字号 / 密度跟右键菜单的外观设置。
+    """
+    menu = panel.row_menu(("claude", "sid-0"))        # fixture：深字 = 浅底的岛
+    assert menu.property("menuStyle") == "modern" and menu.property("modernDark") is False
+    menu_block = menu.styleSheet().split("QMenu::item", 1)[0]
+    assert "background-color: #ffffff" in menu_block and "rgba(" not in menu_block, "不透明底"
+
+    panel.set_look(primary="#e5eaf5", secondary="#a0aabe", accent="#40b8ff", width=WIDTH,
+                   menu_appearance={"ui_font_size": 15})
+    menu = panel.row_menu(("claude", "sid-0"))
+    assert menu.property("modernDark") is True
+    assert "background-color: #252525" in menu.styleSheet() and "font-size: 15px" in menu.styleSheet()
+
+
 def test_right_click_asks_for_the_menu_not_the_default_action(panel):
     panel.set_rows(_rows(1))
     panel.set_open(True)

@@ -204,6 +204,14 @@ def test_english_header_and_menu(panel):
         "Jump to this message", "Dismiss", "Clear all"]
 
 
+def test_notice_menu_uses_the_same_opaque_island_menu_style(panel):
+    """与「最近的对话」同一套：fixture 的 primary 是浅字 = 深底的岛 → 深色不透明菜单。"""
+    menu = panel.row_menu(1)
+    assert menu.property("menuStyle") == "modern" and menu.property("modernDark") is True
+    assert "background-color: #252525" in menu.styleSheet()
+    menu.deleteLater()
+
+
 def test_body_lines_wraps_cjk_without_spaces_and_elides_the_tail():
     font = QFont()
     font.setPixelSize(10)

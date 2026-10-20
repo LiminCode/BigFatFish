@@ -102,6 +102,47 @@ def test_island_returns_to_front_when_own_topmost_window_takes_focus(
         island.deleteLater()
 
 
+def test_own_popup_menu_does_not_pull_the_island_above_it(tmp_path, monkeypatch):
+    """复现（2026-10-20 用户截图）：岛上「最近的对话」的右键菜单弹出来却被岛挡住。
+
+    菜单是本进程的 Popup 窗，弹出时 ``focusWindowChanged`` 报的是它 → 岛当成「别的 topmost
+    窗盖住了我」去重申置顶 → 岛的 HWND 插到菜单上面（Windows 实机探针：重申 2 次、
+    岛在菜单之上；菜单本身已是 WS_EX_TOPMOST）。Popup 的焦点变化不能触发重申。
+    """
+    app = _qapp()
+    island = _island(tmp_path)
+    island.show()
+    _settle(app)
+    island.set_session_history([{"key": ("claude", "a"), "label": "web", "where": "终端", "host": "terminal",
+                                 "path": "C:\\w", "ago": "昨天", "live": False}], is_open=True)
+    island.expand_card()
+    island._finish_animations()
+    _settle(app)
+    calls = _spy_native_reassert(monkeypatch)
+    island._history_panel.popup_row_menu(("claude", "a"), QPoint(500, 400))
+    menu = island._history_panel._menu
+    _settle(app)
+    try:
+        handle = menu.windowHandle()
+        assert handle is not None and handle.type() == Qt.WindowType.Popup
+        assert calls == [], "菜单弹出（焦点落到 Popup）不该让岛重申置顶"
+        island._on_own_window_focused(handle)
+        island._on_application_state_changed(Qt.ApplicationState.ApplicationActive)   # 弹菜单让应用变前台
+        island._refresh()                                                             # 30 秒心跳
+        assert island.reassert_topmost() is False
+        assert calls == [], "菜单开着期间：焦点 / 前台 / 心跳 / 直接调用，一律不重申"
+        menu.close()
+        _settle(app)
+        cover = _topmost_cover()
+        island._on_own_window_focused(cover.windowHandle())
+        assert calls == [island], "菜单收起后，真正的 topmost 窗（聊天窗 / 设置窗）照旧重申"
+        cover.hide()
+    finally:
+        menu.close()
+        island.hide()
+        island.deleteLater()
+
+
 def test_island_returns_to_front_when_app_becomes_active(tmp_path, monkeypatch):
     """本体窗口激活（应用回到前台）同样要把岛顶回去。"""
     app = _qapp()
