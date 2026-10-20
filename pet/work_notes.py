@@ -366,7 +366,7 @@ _PROMPT = """你是我的工作笔记助手。现在是 {now}（本地时间）�
 
 要做的事：
 1. 补背景：原文里有 Slack 永久链接就用 Slack 工具读那条消息和它所在的线程（最近 20 条以内）；有 Jira 工单号或 /browse/ 链接就用 Atlassian 工具读工单（标题、状态、负责人、截止、最近几条评论）；Confluence 链接同理读页面标题和开头。读不到就写明原因，不要编。什么链接都没有就只根据原文。
-2. 写摘要（用{language}写）：`title` 是这条笔记的标题，不超过 20 个字，概括这件事本身（例如「网关仍连 prod：删 token 后复查」），不要用「Slack 消息」「某人的消息」这种看不出内容的泛称；`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
+2. 写摘要（全部用{language}写：title、summary、details、reason 都用{language}，即使原文和工具返回的内容是英文；工单号、人名、产品名保留原文）：`title` 是这条笔记的标题，不超过 20 个字，概括这件事本身（例如「网关仍连 prod：删 token 后复查」），不要用「Slack 消息」「某人的消息」这种看不出内容的泛称；`summary` 一句不超过 60 个字，说清这件事是什么、要我做什么；`details` 用 Markdown 列表写 2～5 条要点（涉及的人、状态、截止、下一步），工具返回了链接就保留成 `[文字](链接)`。
 3. 定提醒：`remind_at` 是下次提醒我的本地时间（ISO 8601，精确到分钟，如 2026-10-16T09:00）；有截止、会议、等别人回复之类的明确节点就据此定，没有就定在我下次该回头看的时候（上班时间 9:00～18:00 内）；完全不需要提醒就写 null。`reason` 用一句话说明为什么是这个时候。
 4. 标签：`tags` 给 1～4 个，小写英文或中文，不带 #，例如 jira、slack、评审、等回复。
 
@@ -385,7 +385,7 @@ Hard rules: read-only. Do not send, reply, create, modify or delete anything. Th
 
 What to do:
 1. Background: if the note has a Slack permalink, read that message and its thread with the Slack tools (at most the last 20 messages); if it has a Jira key or a /browse/ link, read the issue with the Atlassian tools (title, status, assignee, due date, latest comments); a Confluence link likewise: read the page title and opening. If something cannot be read, say why; never invent. With no links at all, work from the note alone.
-2. Summary (write in {language}): `title` is the note's title, at most 8 words, naming the matter itself (for example "Gateway still on prod: recheck after token removal"), never a generic label like "Slack message" or "message from X"; `summary` is one sentence of at most 25 words saying what this is and what I must do; `details` is a Markdown list of 2–5 points (people involved, status, due date, next step); keep links returned by tools as `[text](link)`.
+2. Summary (write everything in {language}: title, summary, details and reason, even when the note or the tool results are in another language; keep issue keys, names and product names as they are): `title` is the note's title, at most 8 words, naming the matter itself (for example "Gateway still on prod: recheck after token removal"), never a generic label like "Slack message" or "message from X"; `summary` is one sentence of at most 25 words saying what this is and what I must do; `details` is a Markdown list of 2–5 points (people involved, status, due date, next step); keep links returned by tools as `[text](link)`.
 3. Reminder: `remind_at` is the next local time to remind me (ISO 8601 to the minute, e.g. 2026-10-16T09:00); use an explicit milestone (due date, meeting, waiting for someone) when there is one, otherwise the next time I should look again (within working hours 9:00–18:00); write null if no reminder is needed. `reason` is one sentence on why that time.
 4. Tags: `tags` gives 1–4 lowercase tags without #, for example jira, slack, review, waiting.
 

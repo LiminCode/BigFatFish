@@ -1091,8 +1091,10 @@ class Config:
         previous_providers = previous_chat.get("providers") if isinstance(previous_chat, dict) else None
         merged_chat = _merge_chat_data(merged)
         self.data["chat"] = merged_chat
-        # 外部（设置窗口）改了语言：重载这一步就切，岛随后的刷新读到的已是新语言
-        self.data["ui_language"] = i18n.set_language(self.data.get("ui_language"))
+        # 外部（设置窗口）改了语言：重载这一步就切，岛随后的刷新读到的已是新语言。
+        # 必须取磁盘上的新值（raw）：下面的白名单合并还没跑，self.data 里仍是旧语言——
+        # 2026-10-20 用户切回中文后简报 / 笔记仍出英文，就是这里把旧值又设了一遍。
+        self.data["ui_language"] = i18n.set_language(raw.get("ui_language", self.data.get("ui_language")))
         if isinstance(previous_providers, dict):
             raw_providers = merged.get("providers")
             raw_providers = raw_providers if isinstance(raw_providers, dict) else {}

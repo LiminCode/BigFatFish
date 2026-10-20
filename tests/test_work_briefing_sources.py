@@ -35,7 +35,7 @@ def _claude_json(result: str) -> str:
 def test_the_english_prompt_asks_for_an_english_briefing_with_english_headings():
     i18n.set_language("en")
     prompt = wb.build_prompt(MONDAY_10, "- acme/widgets#10 Fix login")
-    assert prompt.startswith("You are my work-briefing assistant") and "written in English" in prompt
+    assert prompt.startswith("You are my work-briefing assistant") and "written entirely in English" in prompt
     assert "Monday 2026-10-12 10:00" in prompt and "last 72 hours" in prompt and "read-only" in prompt
     assert "`## Jira`, `## PR`, `## Slack`, `## Calendar`, `## Do first` (at most 3 items)" in prompt
     assert "`Summary:`" in prompt and "acme/widgets#10 Fix login" in prompt
@@ -67,7 +67,7 @@ def test_the_notes_prompt_switches_whole_template_with_the_language():
     assert wn.build_prompt(note, dt.datetime(2026, 10, 15, 19, 40)).startswith("你是我的工作笔记助手")
     i18n.set_language("en")
     prompt = wn.build_prompt(note, dt.datetime(2026, 10, 15, 19, 40))
-    assert prompt.startswith("You are my work-notes assistant") and "write in English" in prompt
+    assert prompt.startswith("You are my work-notes assistant") and "write everything in English" in prompt
     assert '"title": "...", "summary": "...", "details"' in prompt and "<note>\nhttps://acme.slack.com" in prompt
     assert "Claude Code returned no result" in wn.parse_summary("", dt.datetime(2026, 10, 15, 19, 40)).error
 
