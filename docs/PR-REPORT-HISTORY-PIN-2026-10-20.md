@@ -184,7 +184,7 @@
 
 ### 全量（第二轮）
 
-（跑完后补）
+隔离 worktree `C:/Users/limin/wt-menu`（HEAD `62efabb5` + 本轮补丁，`.venv` 解释器，临时 `APPDATA`，`-X faulthandler`）：`4 failed, 5511 passed, 11 skipped in 547.45s (0:09:07)`。4 个失败与第一轮完全相同，都是本机既有的环境性基线失败（路径超 260 / 子进程 cp1252 解码 ×2 / 多显示器负原点），没有原生崩溃。
 
 ## 附录：基准脚本
 
