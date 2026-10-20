@@ -5,9 +5,13 @@
 
 - 点那个图标方块 = 直接打开系统选文件对话框（从「图片」文件夹开始，只列图片）；
 - 选中的图片缩到最长边 128 像素、存成 PNG，**复制进肥鱼自己的配置目录**——原文件以后移走 / 删掉都不影响；
-- 「用鱼本体头像」回到默认；保存时把不再用的旧副本清掉；
+- 「恢复默认」回到鱼本体头像；不再用的旧副本随手清掉；
 - 选的不是能读的图片：不改，提示一句；取消：不改；
 - 旧配置里的 emoji 不动它就原样保存（岛照旧会画）。
+
+第二轮（同日，用户说「试了不好使」）：选图 / 恢复默认**立刻生效**（直接写进配置，岛马上换），
+不用再点「保存」；原来的「用鱼本体头像」按钮容易被读成「把这张图用作鱼的头像」，改叫「恢复默认」；
+加「打开文件夹」，打开存图标副本的目录。
 """
 from __future__ import annotations
 
@@ -85,9 +89,11 @@ def test_the_icon_row_is_a_clickable_tile_not_a_dropdown(tmp_path, monkeypatch):
         assert isinstance(picker, sii.IslandIconPicker) and row.isAncestorOf(picker)
         assert not row.findChildren(ModernSelect), "不再是下拉框"
         assert picker.value() == "auto"
-        assert picker.state_label.text() == "鱼本体头像"
-        assert not picker.reset_button.isEnabled(), "已经是默认：「用鱼本体头像」不可点"
+        assert picker.state_label.text() == "鱼本体头像（默认）"
+        assert picker.reset_button.text() == "恢复默认"
+        assert not picker.reset_button.isEnabled(), "已经是默认：「恢复默认」不可点"
         assert picker.tile.toolTip() == "点一下选一张图片"
+        assert picker.folder_button.text() == "打开文件夹"
     finally:
         _close(dialog)
 
@@ -113,9 +119,12 @@ def test_clicking_the_tile_opens_the_file_chooser_and_stores_a_copy(tmp_path, mo
         assert copy.width() > copy.height(), "保持宽高比"
         assert picker.state_label.text() == "我的图片" and picker.reset_button.isEnabled()
         assert not picker.tile.icon().isNull(), "方块里显示选中的图"
+        assert picker.message_label.text() == "已换上，灵动岛马上就会显示。"
 
+        assert Config(Path(config.dir).parent).get("dynamic_island")["icon"] == value, \
+            "选完立刻写进磁盘上的配置：不点「保存」岛也会换"
         _save_island(dialog)
-        assert config.get("dynamic_island")["icon"] == value
+        assert config.get("dynamic_island")["icon"] == value, "之后照常保存也还是这张"
     finally:
         _close(dialog)
 
@@ -127,8 +136,7 @@ def test_the_island_still_shows_the_icon_after_the_original_is_deleted(tmp_path,
     _pick(monkeypatch, str(source))
     config, dialog = _dialog(tmp_path, monkeypatch)
     try:
-        dialog.island_icon_picker.tile.click()
-        _save_island(dialog)
+        dialog.island_icon_picker.tile.click()          # 不点保存：立刻生效
     finally:
         _close(dialog)
     source.unlink()
@@ -162,13 +170,14 @@ def test_a_file_that_is_not_an_image_is_refused_with_a_reason(tmp_path, monkeypa
         picker = dialog.island_icon_picker
         picker.tile.click()
         assert picker.value() == "auto"
-        assert picker.error_label.text() == "这个文件不是肥鱼读得了的图片，图标没换。"
-        assert not picker.error_label.isHidden()
+        assert picker.message_label.text() == "这个文件不是肥鱼读得了的图片，图标没换。"
+        assert not picker.message_label.isHidden()
+        assert Config(Path(config.dir).parent).get("dynamic_island")["icon"] == "auto"
     finally:
         _close(dialog)
 
 
-def test_reset_goes_back_to_the_fish_avatar_and_saving_cleans_old_copies(tmp_path, monkeypatch):
+def test_reset_goes_back_to_the_fish_avatar_and_old_copies_are_cleaned(tmp_path, monkeypatch):
     first, second = _image(tmp_path / "a.png", 50, 50, "#112233"), _image(tmp_path / "b.png", 50, 50, "#445566")
     config, dialog = _dialog(tmp_path, monkeypatch)
     try:
@@ -178,16 +187,49 @@ def test_reset_goes_back_to_the_fish_avatar_and_saving_cleans_old_copies(tmp_pat
         _pick(monkeypatch, str(second))
         picker.tile.click()
         folder = Path(config.dir) / sii.ICON_DIR
-        assert len(list(folder.glob("*.png"))) == 2
-        _save_island(dialog)
-        assert [p.name for p in folder.glob("*.png")] == [Path(picker.value()[4:]).name], "只留正在用的那张"
+        assert [p.name for p in folder.glob("*.png")] == [Path(picker.value()[4:]).name], "换了一张：旧的随手清掉"
 
         picker.reset_button.click()
-        assert picker.value() == "auto" and picker.state_label.text() == "鱼本体头像"
+        assert picker.value() == "auto" and picker.state_label.text() == "鱼本体头像（默认）"
         assert not picker.reset_button.isEnabled()
+        assert picker.message_label.text() == "已恢复默认的鱼本体头像。"
+        assert Config(Path(config.dir).parent).get("dynamic_island")["icon"] == "auto", "恢复默认也立刻生效"
+        assert list(folder.glob("*.png")) == [], "回到默认：副本也清掉"
         _save_island(dialog)
         assert config.get("dynamic_island")["icon"] == "auto"
-        assert list(folder.glob("*.png")) == [], "回到默认：副本也清掉"
+    finally:
+        _close(dialog)
+
+
+def test_the_open_folder_button_shows_where_the_icons_are_kept(tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(sii, "_open_folder", lambda path: opened.append(Path(path)) or True)
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        picker = dialog.island_icon_picker
+        picker.folder_button.click()
+        folder = Path(config.dir) / sii.ICON_DIR
+        assert opened == [folder] and folder.is_dir(), "还没选过图也能打开（先建好目录）"
+        assert picker.folder_button.toolTip() == "打开存放灵动岛图标的文件夹"
+    finally:
+        _close(dialog)
+
+
+def test_applying_keeps_other_island_settings_written_meanwhile(tmp_path, monkeypatch):
+    """肥鱼在设置开着时也会写配置（拖岛记位置）：立刻生效只改 icon 一项，不把别的冲掉。"""
+    source = _image(tmp_path / "p.png", 40, 40)
+    _pick(monkeypatch, str(source))
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        fish = Config(Path(config.dir).parent)
+        island = dict(fish.get("dynamic_island"))
+        island["x"], island["y"] = 2187, 310
+        fish.set("dynamic_island", island)
+        assert fish.save()
+
+        dialog.island_icon_picker.tile.click()
+        on_disk = Config(Path(config.dir).parent).get("dynamic_island")
+        assert on_disk["icon"].startswith("img:") and (on_disk["x"], on_disk["y"]) == (2187, 310)
     finally:
         _close(dialog)
 
@@ -226,11 +268,12 @@ def test_english(tmp_path, monkeypatch):
     config, dialog = _dialog(tmp_path, monkeypatch, language="en")
     try:
         picker = dialog.island_icon_picker
-        assert picker.state_label.text() == "Fish avatar"
-        assert picker.reset_button.text() == "Use fish avatar"
+        assert picker.state_label.text() == "Fish avatar (default)"
+        assert picker.reset_button.text() == "Back to default"
+        assert picker.folder_button.text() == "Open folder"
         assert picker.tile.toolTip() == "Click to choose an image"
         picker.tile.click()
         assert asked[0]["title"] == "Choose an island icon"
-        assert picker.error_label.text() == "That file isn't an image the fish can read, so the icon didn't change."
+        assert picker.message_label.text() == "That file isn't an image the fish can read, so the icon didn't change."
     finally:
         _close(dialog)
