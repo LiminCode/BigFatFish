@@ -652,9 +652,9 @@
   "settings.slack.e_g_claude_sonnet_5": "例如 claude-sonnet-5-5",
   "settings.slack.custom": "自定义…",
   "settings.slack.min": " 分钟",
-  "settings.voice.one_per_line_same_rules": "每行一条，规则同上（每天整套换新，当天内每次报时按序取不同条目）；留空则自动回退内置英文台词库，与中文库各自独立轮换。非中文音色报时时使用这里的内容。",
+  "settings.voice.one_per_line_same_rules": "每行一条，追加在上面内置英文库的后面一起轮换，规则同上；留空就只用内置库，与中文库各自独立轮换。非中文音色报时时使用这里的内容。",
   "settings.voice.custom_lines_lyrics_english": "自定义台词/歌词（英文）",
-  "settings.voice.one_per_line_if_filled": "每行一条，与内置中文库的关系：填了就整体替换内置库参与轮换（每天整套换新，当天内每次报时按序取不同条目）；留空则自动回退内置中文台词库。中文音色报时时使用这里的内容。",
+  "settings.voice.one_per_line_if_filled": "每行一条，追加在上面内置中文库的后面一起轮换（每天整套换新，当天内每次报时按序取不同条目），和内置重复的不重复加；留空就只用内置库。中文音色报时时使用这里的内容。",
   "settings.voice.custom_lines_lyrics_chinese": "自定义台词/歌词（中文）",
   "settings.voice.lines_lyrics": "台词/歌词",
   "settings.voice.speak_one_time_announcement_line_2": "按当前配置立即播报一句“报时文本 + 台词/歌词”，无需等待报时点。",
@@ -1640,5 +1640,11 @@
   "slack.notes.button.view_hint": "在浏览器 / Slack 里打开这条消息",
   "slack.notes.alert.subtitle": "Slack 关注 · {title}",
   "slack.notes.flow": "每条「需要你看的」会存成仓库 slack/ 目录下的一条 Markdown，在简报窗口的「Slack 关注」页里按最新最前列出（查看 / 稍后 / 完成）；稍后到点、你在电脑前，肥鱼再冒一次气泡。要工作笔记开着才存。",
-  "slack.notes.flow_title": "存档与「Slack 关注」页"
+  "slack.notes.flow_title": "存档与「Slack 关注」页",
+  "settings.voice.builtin_lines_lyrics_chinese": "内置台词/歌词（中文）",
+  "settings.voice.builtin_lines_lyrics_english": "内置台词/歌词（英文）",
+  "settings.voice.builtin_lines_hint_zh": "报时后面那句话就从这里轮换（每天整套换新，当天内每次报时按序取不同条目）。一行一条，可以删、改、加；中文音色报时时用这份。「恢复内置」还原成肥鱼自带的那套。",
+  "settings.voice.builtin_lines_hint_en": "规则同上；非中文音色报时时用这份。「恢复内置」还原成肥鱼自带的那套。",
+  "settings.voice.restore_builtin": "恢复内置",
+  "settings.voice.restore_builtin_hint": "把这份库还原成肥鱼自带的内置台词（下次保存生效）"
 }

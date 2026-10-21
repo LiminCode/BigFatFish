@@ -67,6 +67,8 @@ def test_default_chime_config_has_all_flat_keys():
         "voice_chime_show_quote",
         "voice_chime_custom_quotes_zh",
         "voice_chime_custom_quotes_en",
+        "voice_chime_builtin_quotes_zh",
+        "voice_chime_builtin_quotes_en",
     }
     assert cfg["voice_chime_schedule"] in SCHEDULE_KEYS
     assert cfg["voice_chime_enabled"] is False  # 默认关闭：主动打扰型功能，用户显式开启
@@ -487,11 +489,11 @@ def test_clean_custom_quotes_splits_trims_and_dedupes():
 
 
 def test_pick_quote_cycles_within_day_when_pool_is_short():
-    """库短于当天报时次数时顺序用尽回环，且不跳出当天排列。"""
+    """库短于当天报时次数时顺序用尽回环，且不跳出当天排列（把内置库改成只剩三句）。"""
     cfg = {
         "voice": "zh-CN-XiaoxiaoNeural",
         "schedule": "hourly",
-        "custom_quotes_zh": ("第一条", "第二条", "第三条"),
+        "builtin_quotes_zh": ("第一条", "第二条", "第三条"),
     }
     pool = ("第一条", "第二条", "第三条")
     order = quote_day_order(pool, datetime(2026, 9, 15).date().toordinal())
@@ -516,21 +518,20 @@ def test_pick_quote_zh_and_en_pools_rotate_independently():
     assert pick_quote(datetime(2026, 9, 15, 0, 0), en_cfg) != pick_quote(datetime(2026, 9, 15, 1, 0), en_cfg)
 
 
-def test_pick_quote_custom_overrides_builtin_and_rotates():
-    """自定义台词非空时整体替换内置库，并走同一套「每天排列 + 日内顺序」。"""
+def test_pick_quote_custom_is_appended_to_builtin_and_rotates():
+    """自定义台词追加在内置库后面（用户 2026-10-21：追加，不是替换），整体走同一套「每天排列 + 日内顺序」。"""
     cfg = {
         "voice": "zh-CN-XiaoxiaoNeural",
         "schedule": "hourly",
         "custom_quotes_zh": ("第一条", "第二条", "第三条", "第四条", "第五条", "第六条"),
     }
-    order = quote_day_order(
-        tuple(cfg["custom_quotes_zh"]), datetime(2026, 9, 15).date().toordinal()
-    )
-    assert set(order) == set(cfg["custom_quotes_zh"])
+    pool = CHINESE_QUOTES + cfg["custom_quotes_zh"]
+    order = quote_day_order(pool, datetime(2026, 9, 15).date().toordinal())
+    assert set(order) == set(pool)
     assert pick_quote(datetime(2026, 9, 15, 0, 0), cfg) == order[0]
     assert pick_quote(datetime(2026, 9, 15, 1, 0), cfg) == order[1]
     assert pick_quote(datetime(2026, 9, 15, 0, 0), cfg) != pick_quote(datetime(2026, 9, 15, 1, 0), cfg)
-    assert pick_quote(datetime(2026, 9, 15, 0, 0), cfg) not in CHINESE_QUOTES
+    assert set(cfg["custom_quotes_zh"]) <= set(order) and set(CHINESE_QUOTES) <= set(order), "内置和自定义都在轮换里"
 
 
 def test_pick_quote_empty_custom_falls_back_to_builtin():
@@ -559,11 +560,12 @@ def test_build_chime_sentence_joins_text_and_rotated_quote():
 
 
 def test_build_chime_sentence_uses_custom_quote():
-    """自定义台词贯通到报时语句（含非整点报时文本）。"""
+    """自定义台词贯通到报时语句（内置库改成一句 + 自定义一句，两小时里两句都出现）。"""
     now = datetime(2026, 9, 15, 9, 0)
-    cfg = {"voice": "zh-CN-XiaoxiaoNeural", "custom_quotes_zh": "该休息啦"}
+    cfg = {"voice": "zh-CN-XiaoxiaoNeural", "builtin_quotes_zh": ("先这句",), "custom_quotes_zh": "该休息啦"}
     assert build_chime_sentence(now, cfg) == f"现在是上午九点整。{pick_quote(now, cfg)}"
-    assert build_chime_sentence(now, cfg).endswith("该休息啦")
+    two = {build_chime_sentence(now, cfg).split("。", 1)[1], build_chime_sentence(now.replace(hour=10), cfg).split("。", 1)[1]}
+    assert two == {"先这句", "该休息啦"}
 
 
 def test_build_chime_sentence_show_quote_off_returns_text_only():

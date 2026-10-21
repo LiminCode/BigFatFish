@@ -660,9 +660,9 @@
   "settings.slack.e_g_claude_sonnet_5": "e.g. claude-sonnet-5-5",
   "settings.slack.custom": "Custom…",
   "settings.slack.min": " min",
-  "settings.voice.one_per_line_same_rules": "One per line, same rules as above (a fresh set every day, a different entry each time through the day); leave it blank to fall back to the built-in English lines, which rotate separately from the Chinese ones. Used when a non-Chinese voice is speaking.",
+  "settings.voice.one_per_line_same_rules": "One per line, appended after the built-in English library above and rotated together, same rules as above; leave it blank to use the built-in library alone. Rotates separately from the Chinese one. Used when a non-Chinese voice is speaking.",
   "settings.voice.custom_lines_lyrics_english": "Custom lines / lyrics (English)",
-  "settings.voice.one_per_line_if_filled": "One per line. If filled in, it replaces the built-in Chinese library in the rotation (a fresh set every day, a different entry each time through the day); leave it blank to fall back to the built-in Chinese lines. Used when a Chinese voice is speaking.",
+  "settings.voice.one_per_line_if_filled": "One per line, appended after the built-in Chinese library above and rotated together (a fresh set every day, a different entry each time through the day); duplicates of built-in lines are not added twice. Leave it blank to use the built-in library alone. Used when a Chinese voice is speaking.",
   "settings.voice.custom_lines_lyrics_chinese": "Custom lines / lyrics (Chinese)",
   "settings.voice.lines_lyrics": "Lines / lyrics",
   "settings.voice.speak_one_time_announcement_line_2": "Speak one “time announcement + line / lyric” right now with the current settings, without waiting for the next slot.",
@@ -1648,5 +1648,11 @@
   "slack.notes.button.view_hint": "Open this message in the browser / Slack",
   "slack.notes.alert.subtitle": "Slack Watch · {title}",
   "slack.notes.flow": "Every item that needs you is stored as one Markdown file in the repo's slack/ folder and listed, newest first, on the “Slack Watch” page of the briefing window (Open / Snooze / Done); when a snooze is due and you are at the computer, the fish pops up again. Requires Work Notes to be on.",
-  "slack.notes.flow_title": "Archive and the “Slack Watch” page"
+  "slack.notes.flow_title": "Archive and the “Slack Watch” page",
+  "settings.voice.builtin_lines_lyrics_chinese": "Built-in lines / lyrics (Chinese)",
+  "settings.voice.builtin_lines_lyrics_english": "Built-in lines / lyrics (English)",
+  "settings.voice.builtin_lines_hint_zh": "The line spoken after the time comes from here (a fresh set every day, a different entry each time through the day). One per line; delete, edit or add as you like. Used when a Chinese voice is speaking. “Restore built-in” puts back the set the fish ships with.",
+  "settings.voice.builtin_lines_hint_en": "Same rules as above; used when a non-Chinese voice is speaking. “Restore built-in” puts back the set the fish ships with.",
+  "settings.voice.restore_builtin": "Restore built-in",
+  "settings.voice.restore_builtin_hint": "Put this library back to the lines the fish ships with (takes effect on the next save)"
 }

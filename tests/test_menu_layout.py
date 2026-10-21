@@ -982,7 +982,7 @@ def test_voice_domain_owns_only_tts_rows(tmp_path, monkeypatch):
         festival_rows = [r for r in all_rows if r.objectName().startswith("settingRow_festival")]
         # 语音报时页实测 12 行（基础设置 3 + 语音 7 + 台词/歌词 2）：锁「整组都在、
         # 一个不漏」，行本身不动，只是被域收集机制 reparent 进「语音」域。
-        assert len(chime_rows) == 12, "语音报时整组 12 行都必须在「语音」域"
+        assert len(chime_rows) == 14, "语音报时整组 14 行（含两份内置台词库）都必须在「语音」域"
         assert len(festival_rows) == 12, "节日提醒 12 行整体移入「语音」域"
         for item in chime_rows + festival_rows:
             assert voice_page.isAncestorOf(item), f"{item.objectName()} 必须在「语音」域"
