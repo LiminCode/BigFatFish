@@ -134,6 +134,7 @@
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
 | [`PR-REPORT-SLACK-NOTES-2026-10-20.md`](PR-REPORT-SLACK-NOTES-2026-10-20.md) | Slack 关注每条「需要你看的」存成 AI-Base-Memory `slack/` 下一条 Markdown（和笔记同格式、同一条 git 通道、按链接去重），简报窗口第三页「Slack 关注」最新最前：查看（开链接）/ 稍后 ▾ / 完成；稍后到点由笔记那套提醒再冒气泡「查看 / 稍后 1 小时 / 完成」；总提醒多「稍后 1 小时」。`WorkNotesService(folder=, label=)` 泛化、进程级 git 锁。 | 改 Slack 关注的存档 / 「Slack 关注」页、`WorkNotesService` 的目录参数、`SYNC_PATHS`，或想把别的东西也存进那个仓库之前必读。 |
+| [`PR-REPORT-NOTE-META-BAR-2026-10-20.md`](PR-REPORT-NOTE-META-BAR-2026-10-20.md) | 笔记详情里的基本信息（记下的时间、模型、tokens、花费、用时）从正文挪到详情底部一条不随正文滚动的信息栏：每项一个自画线条图标（时钟 / 火花 / 进出箭头 / 美元硬币 / 秒表），数字缩写、精确值在悬停里，跟白天 / 黑夜换色；「笔记」与「Slack 关注」两页都有。 | 改笔记详情的排版、用量字段的显示、或简报窗口色板之前必读。 |
 | [`PR-REPORT-ISLAND-ICON-PICKER-2026-10-20.md`](PR-REPORT-ISLAND-ICON-PICKER-2026-10-20.md) | 设置页「桌面组件 · 图标」从头像 / emoji 下拉框改成图标方块：点一下直接弹系统选文件，选中的图缩到 128 存成 PNG 复制进配置目录 `island-icons/`（原文件删了也不影响），「用鱼本体头像」回默认，保存时清旧副本；配置仍是 `img:<路径>`。 | 改灵动岛图标的设置入口、`img:` 图标的存放位置、或想恢复 emoji 选项之前必读。 |
 | [`PR-REPORT-HISTORY-PIN-2026-10-20.md`](PR-REPORT-HISTORY-PIN-2026-10-20.md) | 灵动岛「最近的对话」加置顶：右键「置顶 / 取消置顶」，置顶的行一直排最前、不过期、不被条数上限挤掉，标题右边一枚主题色图钉；`HistoryEntry.pinned` 随历史文件落盘（旧文件无此键 = 没置顶）。 | 改「最近的对话」的排序 / 清理规则、右键菜单、或历史文件格式之前必读。 |
 | [`PR-REPORT-LANGUAGE-RELOAD-2026-10-20.md`](PR-REPORT-LANGUAGE-RELOAD-2026-10-20.md) | 设置里切语言后运行中的肥鱼没真正切：`Config.reload()` 在合并磁盘值之前就 `set_language` 了旧值，直到重启都按旧语言出简报 / 笔记；改取 `raw` 的值；两套提示词的语言要求改成无条件（即使原文是英文）。 | 改 `Config.reload()`、界面语言的生效路径、或提示词的语言要求之前必读。 |
