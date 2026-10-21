@@ -1564,8 +1564,10 @@ class AppShell:
             self._mark_settings_child(True)
             if not self._settings_launch_pending():
                 # 拉起窗口之外 = 用户再次点了「肥鱼设置」（可能是另一只宠的）：
-                # 静默 return True 会让这次点击表现为"什么都没发生"。
-                self._notify_settings_already_open(instance)
+                # 先把已开着的那扇窗调到前台（用户 2026-10-21）；调不上来才像以前
+                # 那样提示——静默 return True 会让这次点击表现为"什么都没发生"。
+                if not self._focus_settings_process():
+                    self._notify_settings_already_open(instance)
             return True
         if self._settings_launch_pending():
             # 刚拉起、子进程还没来得及建锁：连点场景视为已在启动，避免双开。
@@ -1578,12 +1580,22 @@ class AppShell:
         self._mark_settings_child(True)
         return True
 
+    def _focus_settings_process(self) -> bool:
+        """把已开着的独立设置窗调到前台（按 settings.lock 的持锁 pid 找窗）；失败 False。"""
+        try:
+            from .settings_focus import focus_settings_process
+
+            return bool(focus_settings_process(self.config.dir / "settings.lock"))
+        except Exception:  # noqa: BLE001 - 调不到前台就退回提示，不能让设置入口报错
+            logging.exception("把设置窗口调到前台失败")
+            return False
+
     def _notify_settings_already_open(self, instance) -> None:
         """设置页已开着时的可见反馈（此前是静默 no-op，右击另一只宠像没反应）。
 
         独立设置进程是**单实例**：进程内多窗共用同一份 Config，所有宠的设置页
-        走的都是那一个设置进程，无法再开第二扇窗，也无法从主进程把它前置——
-        能做的只有说清现状。文案按归属分三种：同一只（"已经打开"）、另一只
+        走的都是那一个设置进程，无法再开第二扇窗。2026-10-21 起先试着把它调到
+        前台（``_focus_settings_process``），这里只在调不上来时说清现状。文案按归属分三种：同一只（"已经打开"）、另一只
         （"先关闭"）、归属未知（外部拉起的设置进程）。
 
         走 self-drawn 右下角通知而不是肥鱼气泡：设置页开着时气泡本来就被抑制

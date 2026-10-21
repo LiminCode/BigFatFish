@@ -133,6 +133,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-SETTINGS-FOCUS-2026-10-21.md`](PR-REPORT-SETTINGS-FOCUS-2026-10-21.md) | 设置窗口开着时再点「肥鱼设置」：按 `settings.lock` 的持锁 pid 找到那扇窗，用会话跳转的 `focus_window` 调到前台（真机探针：锁 pid → 「肥鱼设置」窗 → 前台）；调不上来才弹原来的「已经打开」通知。`pet/settings_focus.py`。 | 改设置进程单实例 / 锁文件 / 「已经打开」提示，或想把别的子进程窗口拿到前台之前必读。 |
 | [`PR-REPORT-VOICE-CHIME-QUOTES-2026-10-21.md`](PR-REPORT-VOICE-CHIME-QUOTES-2026-10-21.md) | 语音报时的内置台词库（中 120 / 英 96 条）在设置页「语音 → 台词 / 歌词」里看得见、改得了（预填、「恢复内置」；没改过存空串以跟上代码更新，改过整份存 `voice_chime_builtin_quotes_zh/_en`）；自定义台词改成**追加**在内置库后面一起轮换（以前是整体替换）。`quote_pool(cfg)` 是唯一取库的入口。 | 改报时台词的来源 / 轮换、`voice_chime_quotes.py`、或想把别的内置文案库做成可编辑之前必读。 |
 | [`PR-REPORT-SLACK-NOTES-2026-10-20.md`](PR-REPORT-SLACK-NOTES-2026-10-20.md) | Slack 关注每条「需要你看的」存成 AI-Base-Memory `slack/` 下一条 Markdown（和笔记同格式、同一条 git 通道、按链接去重），简报窗口第三页「Slack 关注」最新最前：查看（开链接）/ 稍后 ▾ / 完成；稍后到点由笔记那套提醒再冒气泡「查看 / 稍后 1 小时 / 完成」；总提醒多「稍后 1 小时」。`WorkNotesService(folder=, label=)` 泛化、进程级 git 锁。 | 改 Slack 关注的存档 / 「Slack 关注」页、`WorkNotesService` 的目录参数、`SYNC_PATHS`，或想把别的东西也存进那个仓库之前必读。 |
 | [`PR-REPORT-NOTE-META-BAR-2026-10-20.md`](PR-REPORT-NOTE-META-BAR-2026-10-20.md) | 笔记详情里的基本信息（记下的时间、模型、tokens、花费、用时）从正文挪到详情底部一条不随正文滚动的信息栏：每项一个自画线条图标（时钟 / 火花 / 进出箭头 / 美元硬币 / 秒表），数字缩写、精确值在悬停里，跟白天 / 黑夜换色；「笔记」与「Slack 关注」两页都有。 | 改笔记详情的排版、用量字段的显示、或简报窗口色板之前必读。 |

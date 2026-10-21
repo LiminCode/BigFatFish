@@ -266,8 +266,16 @@ def test_settings_already_open_hints_user(tmp_path, monkeypatch):
         shell._settings_launch_at = time.monotonic() - 10.0  # 走出"刚拉起"窗口
         assert lock.tryLock(0), "模拟独立设置进程已建锁（前置不成立）"
 
+        focused: list[int] = []
+        monkeypatch.setattr(shell, "_focus_settings_process", lambda: focused.append(1) or True)
         before = len(shell._toast_windows)
-        assert shell.open_settings_process(inst) is True     # 同一只：不重复拉起 + 提示
+        assert shell.open_settings_process(inst) is True     # 同一只：不重复拉起，窗口调到前台
+        assert launched == [inst] and focused == [1]
+        assert shell._toast_windows[before:] == [], "调到前台了就不再弹「已经打开」（用户 2026-10-21）"
+
+        monkeypatch.setattr(shell, "_focus_settings_process", lambda: False)
+        before = len(shell._toast_windows)
+        assert shell.open_settings_process(inst) is True     # 调不上来：退回提示
         assert launched == [inst]
         same = shell._toast_windows[before:]
         assert same and "已经打开" in same[0]._message
