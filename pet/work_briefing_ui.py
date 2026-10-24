@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QTabWidget, QTextBrowser, QVB
 
 from . import work_briefing as wb
 from .i18n import t
+from .note_meta_bar import BRIEFING_KEYS, NoteMetaBar, usage_values
 from .settings_theme_qss import METRO_TOKENS
 from .settings_widgets import TiltButton, _system_dark
 
@@ -101,7 +102,7 @@ def _meta_line(briefing: wb.Briefing) -> str:
         when = f"{dt.datetime.fromisoformat(briefing.generated_at):%m-%d %H:%M}"
     except ValueError:
         when = "?"
-    return t("briefing.meta", when=when, seconds=f"{briefing.seconds:.0f}")
+    return t("briefing.meta", when=when)   # 用时在下面那条图标栏里
 
 
 class WorkBriefingWindow(QWidget):
@@ -134,6 +135,8 @@ class WorkBriefingWindow(QWidget):
         self.meta_label = QLabel("", self)
         self.meta_label.setObjectName("briefingMeta")
         self.meta_label.setWordWrap(True)
+        # 「生成于」下面那条：模型、effort、用时、tokens、花费（2026-10-24，和笔记的信息栏同一个部件）
+        self.usage_bar = NoteMetaBar(self._colors, self, keys=BRIEFING_KEYS, framed=False)
         self.body = QTextBrowser(self)
         self.body.setObjectName("briefingBody")
         self.body.setOpenExternalLinks(True)   # 工单 / PR / 消息的链接交给系统浏览器
@@ -163,6 +166,7 @@ class WorkBriefingWindow(QWidget):
         page.setContentsMargins(0, 8, 0, 0)
         page.setSpacing(8)
         page.addWidget(self.meta_label)
+        page.addWidget(self.usage_bar)
         page.addWidget(self.body, 1)
         page.addLayout(buttons)
         self.tabs = QTabWidget(self)
@@ -222,6 +226,7 @@ class WorkBriefingWindow(QWidget):
         link_palette.setColor(QPalette.ColorRole.Link, QColor(self._colors["link"]))
         self.body.setPalette(link_palette)
         self.theme_btn.setText("☀" if dark else "☾")
+        self.usage_bar.apply_colors(self._colors)
         self._decorate()
         for index in range(self.tabs.count()):
             apply = getattr(self.tabs.widget(index), "apply_theme", None)
@@ -243,9 +248,16 @@ class WorkBriefingWindow(QWidget):
         busy_text = busy_text or self._busy_text
         if briefing is None:
             self.meta_label.setText("")
+            self.usage_bar.hide()
             self.body.setPlainText(busy_text if busy else self._empty_text)
         else:
             self.meta_label.setText(meta if meta is not None else _meta_line(briefing))
+            if meta is None:
+                self.usage_bar.show_values(usage_values(
+                    getattr(briefing, "model", ""), getattr(briefing, "effort", ""), getattr(briefing, "tokens_in", 0),
+                    getattr(briefing, "tokens_out", 0), getattr(briefing, "cost_usd", 0.0), briefing.seconds))
+            else:
+                self.usage_bar.hide()   # 个人助理自己的元信息行里已经写了模型 / tokens
             self.body.setMarkdown(f"**{briefing.summary}**\n\n{briefing.markdown}")
             self._decorate()
         self.regenerate_btn.setEnabled(not busy)

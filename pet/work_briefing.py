@@ -35,6 +35,9 @@ from .i18n import t
 CONFIG_KEY = "work_briefing"
 DEFAULT_TIME = "09:00"
 DEFAULT_MODEL = "sonnet"
+#: 显式传给 ``claude -p`` 的 effort：结果 JSON 里不报 effort，不传就只能猜那个账号的默认值。
+#: 取 high 是因为那个账号设置里的 effortLevel 就是 high（2026-10-24 实测），行为不变。
+EFFORT = "high"
 #: 菜单里能选的生成时间（配置里手写别的时刻也认）。
 TIME_CHOICES = ("08:00", "08:30", "09:00", "09:30", "10:00")
 STATE_FILE = "work-briefing.json"
@@ -266,7 +269,7 @@ def claude_command(model: str, sources: dict | None = None) -> str:
     """在发行版的登录 shell 里跑的那一行；提示词从标准输入进去。"""
     allowed = " ".join(_sq(name) for name in allowed_tools(sources))
     denied = " ".join(_sq(name) for name in denied_tools(sources))
-    return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {_sq(normalize_model(model))}"
+    return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {_sq(normalize_model(model))} --effort {EFFORT}"
             f" --output-format json --no-session-persistence --max-turns {MAX_TURNS}"
             f" --tools '' --allowedTools {allowed} --disallowedTools {denied}")
 
@@ -413,6 +416,11 @@ class Briefing:
     seconds: float = 0.0
     turns: int = 0
     denied: list[str] = field(default_factory=list)   # 模型想用但没放行的工具
+    model: str = ""              # 结果里 modelUsage 的模型名（多个用 + 连）
+    effort: str = ""             # 这次传给 claude -p 的 effort
+    tokens_in: int = 0           # 输入 + 缓存读 + 缓存写
+    tokens_out: int = 0
+    cost_usd: float = 0.0        # total_cost_usd（Claude Code 报的）
 
 
 def _result_record(stdout: str) -> dict | None:
@@ -448,8 +456,12 @@ def parse_output(stdout: str) -> Briefing:
         summary, markdown = head[len(prefix):].strip().strip("*").strip(), rest.strip()
     else:
         summary, markdown = "", text
+    from .work_notes import usage_of   # work_notes 反过来引用本模块，这里晚一点再引
+
+    model, tokens_in, tokens_out, cost = usage_of(record)
     return Briefing(ok=True, summary=summary[:120] or t("briefing.fallback_summary"), markdown=markdown or text,
-                    turns=int(record.get("num_turns") or 0), denied=denied)
+                    turns=int(record.get("num_turns") or 0), denied=denied,
+                    model=model, tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost)
 
 
 def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: WslRunner | None = None,
@@ -475,6 +487,7 @@ def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: 
         briefing.markdown = linkify(briefing.markdown, pull_request_links(pr_out))
     briefing.generated_at = now.isoformat(timespec="seconds")
     briefing.seconds = round(clock() - started, 1)
+    briefing.effort = EFFORT
     return briefing
 
 

@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """笔记详情底部的「基本信息」栏：记下的时间、模型、tokens、花费、用时（2026-10-20 用户要求）。
 
+工作简报顶部那条「这次用了什么」（模型、effort、用时、tokens、花费，2026-10-24）也是它：
+``NoteMetaBar(keys=BRIEFING_KEYS, framed=False)`` + ``show_values``。
+
 以前这些是正文第二行的一串纯文字，和摘要抢地方。现在是详情下面一条不随正文滚动的细栏：
 每项一个小图标 + 简短数字（时钟、火花、向下 / 向上箭头、美元硬币、秒表），用次要文字色，
 精确值放悬停提示。图标自己画（不用 emoji：首次画 emoji 会加载彩色字体栈，约 +33 MB），
@@ -21,6 +24,8 @@ from .i18n import t
 ICON_PX = 14
 #: 显示顺序
 KEYS = ("saved", "model", "tokens_in", "tokens_out", "cost", "time")
+#: 工作简报那条的显示顺序
+BRIEFING_KEYS = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
 
 
 def short_count(value: int) -> str:
@@ -87,6 +92,10 @@ def meta_icon(name: str, color: str, size: int = ICON_PX, dpr: float = 1.0) -> Q
         else:
             line(QPointF(8, 2), QPointF(5, 5))
             line(QPointF(8, 2), QPointF(11, 5))
+    elif name == "effort":                    # 仪表盘
+        painter.drawArc(QRectF(2, 3.5, 12, 12), 0, 180 * 16)
+        line(QPointF(2, 9.5), QPointF(14, 9.5))
+        line(QPointF(8, 9.5), QPointF(11, 5.6))
     elif name == "cost":                      # 美元硬币
         painter.drawEllipse(QPointF(8, 8), 6.4, 6.4)
         font = QFont()
@@ -123,24 +132,29 @@ class _Chip(QWidget):
 
 
 class NoteMetaBar(QFrame):
-    """详情底部那一条。``show_note(None)`` = 藏起来。"""
+    """详情底部那一条。``show_note(None)`` = 藏起来。
 
-    def __init__(self, colors: dict, parent=None) -> None:
+    ``keys`` 是有哪几项、什么顺序；``framed=False`` 时不画底色和上边线、不留内边距（简报顶部那条
+    紧跟在「生成于」那行下面，不是一块单独的面板）。"""
+
+    def __init__(self, colors: dict, parent=None, *, keys: tuple[str, ...] = KEYS, framed: bool = True) -> None:
         super().__init__(parent)
         self.setObjectName("notesMeta")
         self._colors = dict(colors)
-        self._chips = {key: _Chip(key, self) for key in KEYS}
+        self._keys = tuple(keys)
+        self._framed = framed
+        self._chips = {key: _Chip(key, self) for key in self._keys}
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 7, 14, 8)
+        layout.setContentsMargins(*((14, 7, 14, 8) if framed else (0, 0, 0, 0)))
         layout.setSpacing(16)
-        for key in KEYS:
+        for key in self._keys:
             layout.addWidget(self._chips[key])
         layout.addStretch(1)
         self._restyle()
         self.hide()
 
     def chips(self) -> list[_Chip]:
-        return [self._chips[key] for key in KEYS]
+        return [self._chips[key] for key in self._keys]
 
     def apply_colors(self, colors: dict) -> None:
         self._colors = dict(colors)
@@ -149,9 +163,11 @@ class NoteMetaBar(QFrame):
     def _restyle(self) -> None:
         c = self._colors
         muted = c.get("muted", "#777777")
+        frame = (f"background: {c.get('tile', 'transparent')}; border: 0;"
+                 f" border-top: 1px solid {c.get('divider', c.get('border', '#dddddd'))};"
+                 if self._framed else "background: transparent; border: 0;")
         self.setStyleSheet(
-            f"QFrame#notesMeta {{ background: {c.get('tile', 'transparent')};"
-            f" border: 0; border-top: 1px solid {c.get('divider', c.get('border', '#dddddd'))}; }}"
+            f"QFrame#notesMeta {{ {frame} }}"
             f"QLabel#notesMetaText {{ color: {muted}; font-size: 12px; background: transparent; }}")
         dpr = float(self.devicePixelRatioF() or 1.0)
         for chip in self._chips.values():
@@ -169,13 +185,36 @@ class NoteMetaBar(QFrame):
                 "tokens_in": (short_count(note.tokens_in), t("notes.meta.tokens_in_tip", n=f"{note.tokens_in:,}")),
                 "tokens_out": (short_count(note.tokens_out), t("notes.meta.tokens_out_tip", n=f"{note.tokens_out:,}")),
                 "cost": (short_cost(note.cost_usd), t("notes.meta.cost_tip", cost=f"{note.cost_usd:.4f}")),
-                "time": (t("notes.meta.seconds", n=f"{note.seconds:.0f}"),
-                         t("notes.meta.time_tip", n=f"{note.seconds:.1f}".rstrip("0").rstrip("."))),
+                "time": time_value(note.seconds),
             })
+        self.show_values(values)
+
+    def show_values(self, values: dict[str, tuple[str, str]]) -> None:
+        """每项（文字, 悬停提示）；没给或文字为空的项藏起来。"""
         for key, chip in self._chips.items():
             text, tip = values.get(key, ("", ""))
             chip.text.setText(text)
             chip.setToolTip(tip)
             chip.setVisible(bool(text))
-        self.setAccessibleName(" · ".join(values[key][1] for key in KEYS if key in values))
+        self.setAccessibleName(" · ".join(values[key][1] for key in self._keys if values.get(key, ("",))[0]))
         self.show()
+
+
+def time_value(seconds: float) -> tuple[str, str]:
+    return (t("notes.meta.seconds", n=f"{seconds:.0f}"),
+            t("notes.meta.time_tip", n=f"{seconds:.1f}".rstrip("0").rstrip(".")))
+
+
+def usage_values(model: str, effort: str, tokens_in: int, tokens_out: int, cost_usd: float,
+                 seconds: float) -> dict[str, tuple[str, str]]:
+    """一次 ``claude -p`` 的用量 → ``show_values`` 的参数；没有模型名（旧记录）就只有用时。"""
+    values = {"time": time_value(seconds)}
+    if model:
+        values.update({
+            "model": (model, t("notes.meta.model_tip", model=model)),
+            "effort": (effort, t("notes.meta.effort_tip", effort=effort)) if effort else ("", ""),
+            "tokens_in": (short_count(tokens_in), t("notes.meta.tokens_in_tip", n=f"{tokens_in:,}")),
+            "tokens_out": (short_count(tokens_out), t("notes.meta.tokens_out_tip", n=f"{tokens_out:,}")),
+            "cost": (short_cost(cost_usd), t("notes.meta.cost_tip", cost=f"{cost_usd:.4f}")),
+        })
+    return values

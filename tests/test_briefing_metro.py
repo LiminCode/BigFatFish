@@ -101,7 +101,7 @@ def test_links_and_chips_take_the_theme_colours():
                                          generated_at="2026-10-15T09:00:00", seconds=42))
         html = window.body.toHtml()
         assert ui.briefing_tokens(True)["link"] in html and ui.briefing_tokens(True)["chip"] in html
-        assert "生成于 10-15 09:00 · 用时 42 秒" in window.meta_label.text()
+        assert "生成于 10-15 09:00 · 由 WSL" in window.meta_label.text()   # 用时挪到下面的图标栏（2026-10-24）
     finally:
         window.close()
 
