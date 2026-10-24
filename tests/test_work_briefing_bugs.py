@@ -61,6 +61,16 @@ def test_without_jira_there_is_nothing_about_bugs():
     assert wb.BUG_MARK not in prompt and "Bug" not in prompt and "bug" not in prompt
 
 
+def test_the_atlassian_read_gateway_is_allowed_so_bug_comments_can_be_read():
+    """2026-10-24 实机：模型读 bug 评论走的是插件的 discover / executeRead，没放行就被拒，QA 最后的回复就丢了。"""
+    allowed, denied = wb.allowed_tools(), wb.denied_tools()
+    for name in ("discover", "executeRead"):
+        assert "mcp__plugin_atlassian_atlassian__" + name in allowed
+    for name in ("executeWrite", "executeDestructive"):
+        assert "mcp__plugin_atlassian_atlassian__" + name in denied and "mcp__plugin_atlassian_atlassian__" + name not in allowed
+    assert not any(name.endswith("__executeRead") for name in wb.allowed_tools({**wb.DEFAULT_SOURCES, "jira": False}))
+
+
 # ---------------------------------------------------------------- 窗口
 
 BUG_REPORT = (

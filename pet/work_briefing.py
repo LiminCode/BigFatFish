@@ -72,7 +72,9 @@ _READ_TOOLS_BY_SOURCE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "jira": (_ATLASSIAN_PREFIXES,
              ("atlassianUserInfo", "getAccessibleAtlassianResources", "searchJiraIssuesUsingJql", "getJiraIssue",
               # Confluence 的读取（2026-10-15 工作笔记里读会议纪要页面被拒后补上；工具名以插件版实测为准）
-              "getConfluenceContent", "searchConfluence", "search", "getGraphObject")),
+              "getConfluenceContent", "searchConfluence", "search", "getGraphObject",
+              # 插件的通用只读入口（2026-10-24 读 bug 评论被拒后补上）；同组的 executeWrite / executeDestructive 在拒绝名单里
+              "discover", "executeRead")),
     "calendar": (_CALENDAR_PREFIXES, ("list_events", "list_calendars")),
     # 邮件（2026-10-19 起可选，默认关）：只给搜索与读取，标签 / 草稿 / 发送一律不给
     "email": (_GMAIL_PREFIXES, ("search_threads", "get_thread", "get_message")),
