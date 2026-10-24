@@ -24,7 +24,8 @@ from pet.work_notes_ui import WorkNotesPanel  # noqa: E402
 SAMPLE = wb.Briefing(
     ok=True, summary="先回两条私信，下午三点有例会。", generated_at=dt.datetime.now().isoformat(timespec="seconds"),
     seconds=48, turns=12,
-    markdown=("## Jira\n- [DEMO-12](https://example.atlassian.net/browse/DEMO-12) 登录页偶发白屏 · `进行中` · 高 · **有更新**\n"
+    markdown=(f"## Jira\n- {wb.BUG_MARK} [DEMO-12](https://example.atlassian.net/browse/DEMO-12) 登录页偶发白屏 · `进行中` · 高 · **有更新**\n"
+              "  - QA 报的场景：Amy，2.3.0 测试环境；Safari 里连点两次「登录」，页面白屏，预期跳到首页。她 10-14 回复说清缓存后仍能复现。\n"
               "- [DEMO-9](https://example.atlassian.net/browse/DEMO-9) 网关限流方案 · `待评审`\n\n"
               "## PR\n- [team/api#88](https://github.com/team/api/pull/88) 把 /connect 切到 Kong · 更新于 10-15\n\n"
               "## Slack\n- **等我回复**：Steven 问限流切换前副本数的事 [打开](https://example.slack.com/archives/C1/p1)\n\n"

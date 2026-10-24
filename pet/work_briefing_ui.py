@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QTabWidget, QTextBrowser, QVBoxLayout, QWidget
 
 from . import work_briefing as wb
@@ -29,10 +29,10 @@ from .settings_widgets import TiltButton, _system_dark
 ALERT_ID = "work-briefing"
 THEMES = ("system", "light", "dark")
 
-#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签
+#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签、bug 行的底色
 _EXTRA_TOKENS = {
-    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f"},
-    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea"},
+    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f", "bug": "#fbe3e4"},
+    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea", "bug": "#4a2328"},
 }
 
 
@@ -255,13 +255,23 @@ class WorkBriefingWindow(QWidget):
             self.status_label.setText(t("briefing.status.failed", error=error) if error else "")
 
     def _decorate(self) -> None:
-        """排好版之后再上色：链接用主题的链接色，行内代码（工单状态）画成小标签。
+        """排好版之后再上色：链接用主题的链接色，行内代码（工单状态）画成小标签，bug 行（以
+        ``BUG_MARK`` 开头的列表项）连同它下面缩进的场景行画上底色。
 
         ``setMarkdown`` 之后做而不是靠样式表——Qt 的文档样式表只在导入 HTML 时生效。"""
         document = self.body.document()
-        chips, links = [], []
+        chips, links, bugs = [], [], []
+        bug_indent = None   # 正在 bug 行之下时：bug 那一项的列表缩进级别
         block = document.begin()
         while block.isValid():
+            items = block.textList()
+            indent = items.format().indent() if items is not None else 0
+            if items is not None and block.text().lstrip().startswith(wb.BUG_MARK):
+                bug_indent = indent
+            elif bug_indent is not None and not (items is not None and indent > bug_indent):
+                bug_indent = None
+            if bug_indent is not None:
+                bugs.append(block)
             it = block.begin()
             while not it.atEnd():
                 fragment = it.fragment()
@@ -281,6 +291,11 @@ class WorkBriefingWindow(QWidget):
         link.setForeground(QColor(self._colors["link"]))
         link.setFontUnderline(False)
         cursor = QTextCursor(document)
+        tint = QTextBlockFormat()
+        tint.setBackground(QColor(self._colors["bug"]))
+        for bug in bugs:
+            cursor.setPosition(bug.position())
+            cursor.mergeBlockFormat(tint)
         for fmt, spans in ((chip, chips), (link, links)):
             for position, length in spans:
                 cursor.setPosition(position)
