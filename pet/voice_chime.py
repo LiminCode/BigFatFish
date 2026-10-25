@@ -158,9 +158,16 @@ def default_chime_config() -> dict:
         "voice_chime_volume": DEFAULT_VOLUME,
         "voice_chime_show_bubble": DEFAULT_SHOW_BUBBLE,
         "voice_chime_show_quote": DEFAULT_SHOW_QUOTE,
-        "voice_chime_custom_quotes_zh": "",  # 自定义中文台词/歌词（一行一条，留空用内置库）
-        "voice_chime_custom_quotes_en": "",  # 自定义英文台词/歌词（一行一条，留空用内置库）
+        "voice_chime_custom_quotes_zh": "",  # 自定义中文台词/歌词（一行一条，追加在内置库后面）
+        "voice_chime_custom_quotes_en": "",  # 自定义英文台词/歌词（一行一条，追加在内置库后面）
+        "voice_chime_builtin_quotes_zh": "",  # 用户改过的内置中文库（一行一条；留空 = 代码里的 CHINESE_QUOTES 原样）
+        "voice_chime_builtin_quotes_en": "",  # 用户改过的内置英文库（留空 = ENGLISH_QUOTES 原样）
     }
+
+
+def builtin_quotes_text(language: str) -> str:
+    """代码里内置库的全文（一行一条），设置页用它预填编辑框、判断「没改过」。"""
+    return chr(10).join(ENGLISH_QUOTES if language == "en" else CHINESE_QUOTES)
 
 
 def clean_flag(value, default: bool = True) -> bool:
@@ -269,6 +276,8 @@ def normalize_chime_config(config) -> dict:
         "show_quote": clean_flag(config.get("voice_chime_show_quote", DEFAULT_SHOW_QUOTE), DEFAULT_SHOW_QUOTE),
         "custom_quotes_zh": clean_custom_quotes(config.get("voice_chime_custom_quotes_zh", "")),
         "custom_quotes_en": clean_custom_quotes(config.get("voice_chime_custom_quotes_en", "")),
+        "builtin_quotes_zh": clean_custom_quotes(config.get("voice_chime_builtin_quotes_zh", "")),
+        "builtin_quotes_en": clean_custom_quotes(config.get("voice_chime_builtin_quotes_en", "")),
     }
 
 
@@ -406,19 +415,30 @@ def chime_index_in_day(now: datetime, cfg: dict) -> int:
     return now.hour  # hourly（含未知模式兜底，与 clean_schedule 的回落一致）
 
 
+def quote_pool(cfg: dict) -> tuple[str, ...]:
+    """这次报时生效的库：内置库（用户在设置页改过就用改过的）+ 自定义追加，去重保序。
+
+    音色以 zh 开头用中文那套，否则用英文那套。自定义是**追加**而不是替换（用户 2026-10-21；
+    节日提醒的 ``festival.quote_pool`` 同样如此）：内置库是逐条选过的，用户加几句自己的不该
+    被迫丢掉它们；想删内置里的某句，直接在设置页的内置库编辑框里删。
+    """
+    chinese = str(cfg.get("voice", DEFAULT_VOICE)).lower().startswith("zh")
+    suffix = "zh" if chinese else "en"
+    builtin = clean_custom_quotes(cfg.get("builtin_quotes_" + suffix)) or (CHINESE_QUOTES if chinese else ENGLISH_QUOTES)
+    custom = clean_custom_quotes(cfg.get("custom_quotes_" + suffix))
+    return tuple(builtin) + tuple(line for line in custom if line not in builtin)
+
+
 def pick_quote(now: datetime, cfg: dict) -> str:
     """按「每天一套新排列 + 日内顺序取用」选取一句台词/歌词。
 
     选取规则：
-    1. 音色以 zh 开头用中文库，否则用英文库；对应语言自定义条目非空时整体
-       替换内置库（留空回退内置库）；
+    1. 库由 :func:`quote_pool` 给：内置（或用户改过的内置）+ 自定义追加；
     2. 当日排列由 :func:`quote_day_order` 按日期算出 —— 同一天固定、跨天换新；
     3. 取当日第 :func:`chime_index_in_day` 次报时对应的条目（顺序取用、
        用尽回环），库比当天报时次数长时一天之内不会重句。
     """
-    chinese = str(cfg.get("voice", DEFAULT_VOICE)).lower().startswith("zh")
-    custom = clean_custom_quotes(cfg.get("custom_quotes_zh" if chinese else "custom_quotes_en"))
-    pool = custom or (CHINESE_QUOTES if chinese else ENGLISH_QUOTES)
+    pool = quote_pool(cfg)
     if not pool:
         return ""
     order = quote_day_order(pool, now.date().toordinal())

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent
+from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QApplication
 
 from pet.config import Config
@@ -46,6 +47,13 @@ def test_quick_chat_long_reply_uses_pagination(tmp_path: Path):
         app.processEvents()
 
 
+def _plain(bubble) -> str:
+    """快捷气泡的回复按 Markdown 渲染（RichText）：把富文本信封还原成纯文本再比对。"""
+    doc = QTextDocument()
+    doc.setHtml(bubble.output.text())
+    return doc.toPlainText().rstrip("\n")
+
+
 def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
     """AI 回答超上限（300 字）：气泡内截断 + 「…（全文见聊天窗）」，并露出直达按钮。
 
@@ -70,7 +78,7 @@ def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
 
         assert bubble._reply_full == long_reply
         assert bubble._reply_text == "长" * limit + suffix
-        assert bubble.output.text() == bubble._reply_text
+        assert _plain(bubble) == bubble._reply_text   # 回复按 Markdown 渲染：富文本信封 → 纯文本比对
         assert bubble.session.messages[-1].content == long_reply, "会话历史必须保留全文"
         # 截断预览：只留「去聊天窗」直达按钮，分页箭头/页码无意义
         assert bubble.page_widget.isVisibleTo(bubble)
@@ -86,12 +94,12 @@ def test_quick_chat_bubble_truncates_long_ai_reply(tmp_path: Path):
         assert bubble._reply_truncated is False
         bubble._delta("req-stream", "长" * 100)
         assert bubble._reply_truncated is True
-        assert bubble.output.text().endswith(suffix)
+        assert _plain(bubble).endswith(suffix)
 
         # 短回答：不截断、不显示分页/跳转行
         bubble._active_request_id = "req-short"
         bubble._finished("req-short", "短回答")
-        assert bubble.output.text() == "短回答"
+        assert _plain(bubble) == "短回答"
         assert bubble._reply_truncated is False
         assert not bubble.page_widget.isVisibleTo(bubble)
     finally:

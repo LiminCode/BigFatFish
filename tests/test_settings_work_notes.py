@@ -56,7 +56,7 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
     config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, repo_dir=r"D:\notes\AI-Base-Memory", model="haiku")
     try:
         for row_id in ("work_notes_flow", "work_notes_enabled", "work_notes_repo_dir", "work_notes_model"):
-            assert _row_page(dialog, row_id) == "自动化与联动", row_id
+            assert _row_page(dialog, row_id) == "简报与笔记", row_id
         assert dialog.work_notes_enabled_check.isChecked() and dialog.work_notes_enabled_check.isEnabled()
         assert dialog.work_notes_repo_edit.text() == r"D:\notes\AI-Base-Memory"
         assert dialog.work_notes_model_select.currentData() == "haiku"
@@ -81,7 +81,7 @@ def test_the_flow_lives_in_a_collapsed_section_with_formatted_text(tmp_path, mon
         text = label.text()
         for step in ("<b>", "1.", "2.", "3.", "4.", "5.", "只读", "Obsidian", "AI-Base-Memory", "token"):
             assert step in text, step
-        assert _row_page(dialog, "work_notes_flow") == "自动化与联动"
+        assert _row_page(dialog, "work_notes_flow") == "简报与笔记"
     finally:
         _close(dialog)
 
@@ -96,7 +96,8 @@ def test_changes_are_saved_back_through_normalize(tmp_path, monkeypatch):
         assert not dialog.work_notes_model_edit.isHidden(), "选了自定义：输入框出现"
         dialog.work_notes_model_edit.setText("claude-sonnet-5-5")
         swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY) == {"enabled": False, "repo_dir": "E:\\mem", "model": "claude-sonnet-5-5"}
+        assert config.get(wn.CONFIG_KEY) == {"enabled": False, "repo_dir": "E:\\mem", "model": "claude-sonnet-5-5",
+                                             "effort": "high", "prompt_zh": "", "prompt_en": ""}
         dialog.work_notes_model_edit.setText("bad model!")
         swn.save_work_notes_settings(dialog)
         assert config.get(wn.CONFIG_KEY)["model"] == "sonnet", "怪名字退回默认"
@@ -131,3 +132,29 @@ def test_the_section_speaks_english(tmp_path, monkeypatch):
         assert dialog.work_notes_model_select.itemText(dialog.work_notes_model_select.findData(swn.CUSTOM)) == "Custom…"
     finally:
         _close(dialog)
+
+
+# ---------------------------------------------------------------- effort / 提示词（2026-10-24）
+
+def test_effort_and_prompt_rows_show_the_builtin_and_save_only_changes(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, effort="medium")
+    try:
+        assert _row_page(dialog, "work_notes_effort") == "简报与笔记"
+        assert _row_page(dialog, "work_notes_prompt") == "简报与笔记"
+        assert dialog.work_notes_effort_select.currentData() == "medium"
+        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
+        assert not dialog.work_notes_prompt_restore.isEnabled()
+        swn.save_work_notes_settings(dialog)
+        assert config.get(wn.CONFIG_KEY)["prompt_zh"] == "" and config.get(wn.CONFIG_KEY)["effort"] == "medium"
+
+        dialog.work_notes_prompt_edit.setPlainText("我的笔记模板 {original}")
+        dialog.work_notes_effort_select.setCurrentIndex(dialog.work_notes_effort_select.findData("low"))
+        swn.save_work_notes_settings(dialog)
+        saved = config.get(wn.CONFIG_KEY)
+        assert saved["prompt_zh"] == "我的笔记模板 {original}" and saved["prompt_en"] == "" and saved["effort"] == "low"
+        dialog.work_notes_prompt_restore.click()
+        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()

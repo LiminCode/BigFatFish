@@ -76,9 +76,10 @@ def test_tooltip_carries_both_the_api_verdict_and_the_usage_detail(tmp_path):
     try:
         island.set_api_status("ok", "连接成功（Claude · claude-sonnet-5）")
         island.set_usage_info("今日 1.0K", "用量明细")
-        assert island.toolTip().splitlines() == ["连接成功（Claude · claude-sonnet-5）", "用量明细"]
+        hint = "点数字看近 7 天仪表盘"
+        assert island.toolTip().splitlines() == ["连接成功（Claude · claude-sonnet-5）", "用量明细", hint]
         island.set_api_status("bad", "认证失败")
-        assert island.toolTip().splitlines() == ["认证失败", "用量明细"]
+        assert island.toolTip().splitlines() == ["认证失败", "用量明细", hint]
     finally:
         island.deleteLater()
 

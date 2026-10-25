@@ -97,6 +97,7 @@ SETTINGS_DOMAIN_NAV = (
     ("菜单", "application"),
     ("桌面组件", "island"),
     ("AI 与对话", "chat"),
+    ("简报与笔记", "briefing"),   # 2026-10-24：定时让 AI 读、AI 协助记的功能（简报 / Slack 关注 / 笔记 / 个人助理）
     ("自动化与联动", "automation"),
     ("语音", "sound"),
     ("文件识别", "file"),
@@ -111,6 +112,7 @@ SETTINGS_DOMAIN_KEYS = {
     "菜单": "settings.domain.menu",
     "桌面组件": "settings.domain.desktop",
     "AI 与对话": "settings.domain.ai",
+    "简报与笔记": "settings.domain.briefing",
     "自动化与联动": "settings.domain.automation",
     "语音": "settings.domain.voice",
     "文件识别": "settings.domain.file",
@@ -197,23 +199,27 @@ TILT_PRESS_DEG = 8.0
 _TILT_PLANE_DISTANCE = 900.0      # 透视投影里视点到平面的距离（像素）：越小越夸张
 
 
-def tilt_transform(rect: QRect, pos: QPoint | None, *, pressed: bool = False) -> QTransform:
+def tilt_transform(rect: QRect, pos: QPoint | None, *, pressed: bool = False,
+                   degrees: tuple[float, float] | None = None, distance: float | None = None) -> QTransform:
     """Windows Phone 式的磁贴倾斜：以中心为轴，朝光标那一侧压下去（带一点透视）。
 
     ``pos`` 为 None 或矩形为空时返回恒等变换。角度与光标到中心的相对距离成正比，光标在
-    正中时只有按下的缩放、不偏。
+    正中时只有按下的缩放、不偏。``degrees``（悬停, 按下）与透视 ``distance`` 缺省是设置页
+    大磁贴的手感；小磁贴（灵动岛上 28px 的图标块）要更大的角度、更近的视点才看得出来。
     """
+    hover_deg, press_deg = degrees or (TILT_HOVER_DEG, TILT_PRESS_DEG)
+    plane = distance or _TILT_PLANE_DISTANCE
     transform = QTransform()
     if pos is None or rect.width() <= 0 or rect.height() <= 0:
         return transform
     cx, cy = rect.x() + rect.width() / 2.0, rect.y() + rect.height() / 2.0
     nx = max(-1.0, min(1.0, (pos.x() - cx) / (rect.width() / 2.0)))
     ny = max(-1.0, min(1.0, (pos.y() - cy) / (rect.height() / 2.0)))
-    degrees = TILT_PRESS_DEG if pressed else TILT_HOVER_DEG
+    angle = press_deg if pressed else hover_deg
     transform.translate(cx, cy)
     # 符号按「光标那一侧往屏幕里压」定（两根轴在 Qt 里的正方向相反，实测定的；测试守着）
-    transform.rotate(-ny * degrees, Qt.Axis.XAxis, _TILT_PLANE_DISTANCE)
-    transform.rotate(-nx * degrees, Qt.Axis.YAxis, _TILT_PLANE_DISTANCE)
+    transform.rotate(-ny * angle, Qt.Axis.XAxis, plane)
+    transform.rotate(-nx * angle, Qt.Axis.YAxis, plane)
     if pressed:
         transform.scale(0.985, 0.985)
     transform.translate(-cx, -cy)
@@ -1367,6 +1373,7 @@ class SettingsSection(QWidget):
         super().__init__(parent)
         self.advanced = advanced
         self.rows = list(rows)
+        self.title = title   # 节标题（测试与页面组织按它认；显示在普通标签或折叠头上）
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)

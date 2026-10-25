@@ -38,9 +38,10 @@ def _claude_json(payload=None, **over) -> str:
 # ---------------------------------------------------------------- 配置与节奏
 
 def test_it_is_off_by_default_and_values_are_cleaned():
-    assert sw.normalize(None) == {"enabled": False, "interval_minutes": 15, "idle_minutes": 10, "model": "sonnet"}
+    assert sw.normalize(None) == {"enabled": False, "interval_minutes": 15, "idle_minutes": 10, "model": "sonnet",
+                                  "effort": "high", "prompt": ""}
     out = sw.normalize({"enabled": True, "interval_minutes": 1, "idle_minutes": "abc", "model": "x; rm -rf"})
-    assert out == {"enabled": True, "interval_minutes": 5, "idle_minutes": 10, "model": "sonnet"}
+    assert out == {"enabled": True, "interval_minutes": 5, "idle_minutes": 10, "model": "sonnet", "effort": "high", "prompt": ""}
     assert sw.normalize({"enabled": "yes"})["enabled"] is False, "字符串布尔不算开"
 
 
@@ -175,7 +176,7 @@ def _service(tmp_path, *, settings=ON, result=None, active=True, now=T0):
     config.set(sw.CONFIG_KEY, settings)
     made = []
 
-    def generate(when, since, model):
+    def generate(when, since, model, **_kw):   # 服务会多传 effort / template
         made.append((when, since, model))
         return result if result is not None else sw.parse_output(_claude_json())
 

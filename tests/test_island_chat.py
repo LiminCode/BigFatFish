@@ -173,7 +173,7 @@ def test_island_chat_show_reply_display_only(tmp_path):
         before = list(bubble.session.messages)
         bubble.show_reply("你好呀")
         assert bubble._reply_full == "你好呀"
-        assert bubble.output.text() == "你好呀"
+        assert "你好呀" in bubble.output.text()   # 回复按 Markdown 渲染（RichText），text() 是 HTML
         assert bubble._active_request_id is None
         assert list(bubble.session.messages) == before  # 不动会话历史
         assert not bubble.service.busy

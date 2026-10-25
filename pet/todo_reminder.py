@@ -99,20 +99,38 @@ def clean_todo_items(value) -> list[dict]:
 
 
 def _fire_datetimes(item: dict, lead_minutes: int, now: datetime):
-    """返回 (lead_dt|None, due_dt|None)。daily 以 now 当天组合；once 用条目
-    日期（缺失/非法时返回 (None, None)，视为不可触发）。"""
+    """返回 (lead_dt|None, due_dt|None)。
+
+    daily 取"与 now 相关的那一次 occurrence"：当天那次还没过就用当天；当天已过
+    且次日那次的**提前档**已经到点（每日 00:02 + 提前 5 分钟，23:57 看的就是次日
+    的提前档）则取次日。缺这一步时跨午夜的提前提醒会被当成"当天已过"的出窗档
+    静默盖戳，用户要等过了午夜才收到贴着正点的提醒（迟到的提前量）。
+
+    取次日只在到期档到来前发生（now < 次日 due），所以不会当天与次日双发：
+    提前档的盖戳键按**触发时刻**的日期，23:57 与 00:00 算出来是同一个键。
+
+    once 用条目自己的日期（缺失/非法时返回 (None, None)，视为不可触发），
+    过期即出窗静默盖戳——语义不受上面这步影响。
+    """
     time_text = _normalize_hhmm(item.get("time"))
     if not time_text:
         return None, None
+    hour, minute = (int(part) for part in time_text.split(":"))
     if item.get("kind") == "daily":
-        day = now.date()
+        due = datetime(now.year, now.month, now.day, hour, minute)
+        if due <= now:
+            next_due = due + timedelta(days=1)
+            next_trigger = (
+                next_due - timedelta(minutes=lead_minutes) if lead_minutes > 0 else next_due
+            )
+            if now >= next_trigger:
+                due = next_due
     else:
         day_text = _normalize_iso_date(item.get("date"))
         if not day_text:
             return None, None
         day = date.fromisoformat(day_text)
-    hour, minute = (int(part) for part in time_text.split(":"))
-    due = datetime(day.year, day.month, day.day, hour, minute)
+        due = datetime(day.year, day.month, day.day, hour, minute)
     lead = due - timedelta(minutes=lead_minutes) if lead_minutes > 0 else None
     return lead, due
 
@@ -179,10 +197,14 @@ def summarize_next(items, now: datetime) -> str:
         hour, minute = (int(part) for part in time_text.split(":"))
         if item.get("kind") == "daily":
             day = now.date()
-            today_slot = f"{day.isoformat()}T{time_text}#due"
-            if item.get("fired_due_slot") == today_slot:
-                day += timedelta(days=1)
             due = datetime(day.year, day.month, day.day, hour, minute)
+            if due <= now:
+                # 当天那次已到点（含已触发/已出窗盖戳）：下一条是**次日**那次。
+                # 只判 fired_due_slot 会在"今天那次的 due 刚过、戳还没落盘"以及
+                # 跨午夜（23:57 看每日 00:02，今天那次凌晨就过了）时漏掉次日那次，
+                # 「下一条」整段空着——与 _fire_datetimes 同一族的天选择。
+                day += timedelta(days=1)
+                due = datetime(day.year, day.month, day.day, hour, minute)
         else:
             _, due = _fire_datetimes(item, 0, now)
         if due is None or due <= now:
@@ -312,11 +334,23 @@ class TodoReminderService:
         """当前条目（面板打开时以服务内副本为准，保存路径仍走 store）。"""
         return list(self._items)
 
-    def set_items(self, items: list[dict], *, save: bool = True) -> None:
-        """面板保存入口：整体替换条目并立即落盘。"""
-        self._items = clean_todo_items(items)
-        if save:
-            self._store.save(self._items)
+    def set_items(self, items: list[dict], *, save: bool = True) -> bool:
+        """面板保存入口：整体替换条目并立即落盘。返回是否成功落盘。
+
+        **落盘成功才提交内存态**（失败返回 False，内存保持原样）：``_items`` 是
+        提醒调度的真值源，留一份"没落盘却被当成已保存"的副本会出两层问题——提醒
+        会为下次重读就消失的条目按时冒泡，且面板仍停在新建态（编辑器不关），用户
+        再点一次保存就往内存里追加第二条。调用方（面板）据返回值保住草稿并提示。
+        """
+        cleaned = clean_todo_items(items)
+        if save and not self._store.save(cleaned):
+            return False
+        self._items = cleaned
+        return True
+
+    def store_path(self):
+        """条目文件路径（保存失败提示要告诉用户改哪里）。"""
+        return self._store.path
 
     def _on_tick(self, now: datetime | None = None) -> None:
         if not self._prefs.get("enabled"):

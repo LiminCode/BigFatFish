@@ -5,12 +5,14 @@
     voice_chime_enabled / voice_chime_schedule / voice_chime_custom_times /
     voice_chime_voice / voice_chime_rate / voice_chime_pitch / voice_chime_volume /
     voice_chime_show_bubble / voice_chime_show_quote /
-    voice_chime_custom_quotes_zh / voice_chime_custom_quotes_en
+    voice_chime_custom_quotes_zh / voice_chime_custom_quotes_en /
+    voice_chime_builtin_quotes_zh / voice_chime_builtin_quotes_en
 
-台词/歌词按本地时间每 8 小时整体换一批（0-8 / 8-16 / 16-24 各对应库中一批，
-跨周期切到新批次），同一周期内每次报时在批次内按顺序轮换取不同条目；自定义
-台词非空时替换内置库参与同样的分批轮换，留空回退内置库。气泡报时文字以阿拉伯
-数字展示（如“现在下午 15:45”），语音口播仍为中文数字。
+台词/歌词每天整套换新、当天内每次报时按序取不同条目。内置库（中 / 英各一份）在页上
+看得见、改得了：编辑框预填代码里的内置库，保存时和内置原文一样就存空串（留空 = 代码
+里的原样，以后版本加新句子还能跟上），改过就整份存进 ``voice_chime_builtin_quotes_*``；
+「恢复内置」一键还原。自定义台词**追加**在内置库后面一起轮换（用户 2026-10-21），留空
+就只用内置库。气泡报时文字以阿拉伯数字展示（如“现在下午 15:45”），语音口播仍为中文数字。
 
 自含 QWidget 页，
 提供 apply_to_config，
@@ -24,6 +26,7 @@ import re
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -48,6 +51,7 @@ from .voice_chime import (
     SCHEDULE_KEYS,
     SCHEDULE_LABELS,
     VOICE_OPTIONS,
+    builtin_quotes_text,
     clean_pitch,
     clean_rate,
     clean_schedule,
@@ -127,7 +131,11 @@ class VoiceChimeSettingsPage(QWidget):
         self.quote_check = ToggleSwitch(self)
         self.quote_check.setChecked(bool(self.config.get("voice_chime_show_quote", DEFAULT_SHOW_QUOTE)))
 
-        # ---- 自定义台词/歌词（一行一条；留空回退内置库）----
+        # ---- 内置台词/歌词（中 / 英各一份，看得见、改得了；「恢复内置」还原）----
+        self.builtin_zh_edit, self.restore_zh_btn, self.builtin_zh_box = self._builtin_editor("zh")
+        self.builtin_en_edit, self.restore_en_btn, self.builtin_en_box = self._builtin_editor("en")
+
+        # ---- 自定义台词/歌词（一行一条；追加在内置库后面）----
         self.custom_zh_edit = QPlainTextEdit(self)
         self.custom_zh_edit.setMinimumSize(280, 84)
         self.custom_zh_edit.setMaximumHeight(180)
@@ -191,10 +199,24 @@ class VoiceChimeSettingsPage(QWidget):
                 t("settings.voice.lines_lyrics"),
                 [
                     SettingRow(
+                        "voice_chime_builtin_quotes_zh",
+                        t("settings.voice.builtin_lines_lyrics_chinese"),
+                        t("settings.voice.builtin_lines_hint_zh"),
+                        self.builtin_zh_box,
+                        stacked=True,
+                    ),
+                    SettingRow(
                         "voice_chime_custom_quotes_zh",
                         t("settings.voice.custom_lines_lyrics_chinese"),
                         t("settings.voice.one_per_line_if_filled"),
                         self.custom_zh_edit,
+                        stacked=True,
+                    ),
+                    SettingRow(
+                        "voice_chime_builtin_quotes_en",
+                        t("settings.voice.builtin_lines_lyrics_english"),
+                        t("settings.voice.builtin_lines_hint_en"),
+                        self.builtin_en_box,
                         stacked=True,
                     ),
                     SettingRow(
@@ -211,6 +233,40 @@ class VoiceChimeSettingsPage(QWidget):
 
         self._refresh_custom_enabled()
 
+    # ------------------------------------------------------------ 内置库编辑框
+    def _builtin_editor(self, language: str) -> tuple[QPlainTextEdit, QPushButton, QWidget]:
+        """一个预填内置库的多行框 + 「恢复内置」按钮（没改过时置灰）。配置里存了改过的就显示改过的。"""
+        default = builtin_quotes_text(language)
+        stored = str(self.config.get(f"voice_chime_builtin_quotes_{language}", "") or "").strip()
+        edit = QPlainTextEdit(self)
+        edit.setMinimumSize(280, 120)
+        edit.setMaximumHeight(220)
+        edit.setPlainText(stored or default)
+        edit.setAccessibleName(t("settings.voice.builtin_lines_lyrics_chinese" if language == "zh"
+                                 else "settings.voice.builtin_lines_lyrics_english"))
+        restore = QPushButton(t("settings.voice.restore_builtin"), self)
+        restore.setToolTip(t("settings.voice.restore_builtin_hint"))
+        restore.setAccessibleDescription(t("settings.voice.restore_builtin_hint"))
+        restore.clicked.connect(lambda: edit.setPlainText(default))
+        edit.textChanged.connect(lambda: restore.setEnabled(edit.toPlainText().strip() != default))
+        restore.setEnabled(edit.toPlainText().strip() != default)
+        box = QWidget(self)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(edit)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(restore)
+        layout.addLayout(buttons)
+        return edit, restore, box
+
+    @staticmethod
+    def _builtin_value(edit: QPlainTextEdit, language: str) -> str:
+        """保存值：和代码里的内置库一字不差就存空串（= 原样，跟着以后的版本更新），改过才整份存。"""
+        text = edit.toPlainText().strip()
+        return "" if text == builtin_quotes_text(language) else text
+
     # ------------------------------------------------------------ 交互
     def _on_preview_clicked(self) -> None:
         # 先落盘当前控件值，再发试听信号（服务端按最新配置合成播放）
@@ -223,7 +279,7 @@ class VoiceChimeSettingsPage(QWidget):
 
     # ------------------------------------------------------------ 配置读写
     def apply_to_config(self) -> None:
-        """把控件值合并写回 config（仅写语音报时 11 键）。"""
+        """把控件值合并写回 config（仅写语音报时 13 键）。"""
         if self.config is None:
             return
         self.config.set("voice_chime_enabled", self.enabled_check.isChecked())
@@ -237,3 +293,5 @@ class VoiceChimeSettingsPage(QWidget):
         self.config.set("voice_chime_show_quote", self.quote_check.isChecked())
         self.config.set("voice_chime_custom_quotes_zh", self.custom_zh_edit.toPlainText().strip())
         self.config.set("voice_chime_custom_quotes_en", self.custom_en_edit.toPlainText().strip())
+        self.config.set("voice_chime_builtin_quotes_zh", self._builtin_value(self.builtin_zh_edit, "zh"))
+        self.config.set("voice_chime_builtin_quotes_en", self._builtin_value(self.builtin_en_edit, "en"))

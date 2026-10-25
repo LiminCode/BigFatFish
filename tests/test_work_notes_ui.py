@@ -39,7 +39,7 @@ class _Fakes:
         self.ok, self.remind_at, self.git_ok = ok, remind_at, git_ok
         self.fail_first = fail_first   # 前几次总结故意失败（模型偶尔不按约定输出）
 
-    def summarize(self, note, now, model):
+    def summarize(self, note, now, model, **_kw):   # 服务会多传 effort / template
         self.summaries.append(note.name)
         if self.fail_first > 0:
             self.fail_first -= 1
@@ -130,7 +130,7 @@ def test_a_flaky_first_answer_is_retried_once_and_then_saved(tmp_path, repo):
 
 def test_a_missing_wsl_is_not_retried(tmp_path, repo):
     fakes = _Fakes()
-    fakes.summarize = lambda note, now, model: (fakes.summaries.append(note.name),
+    fakes.summarize = lambda note, now, model, **_kw: (fakes.summaries.append(note.name),
                                                wn.SummaryResult(error="没有找到 WSL：…"))[1]
     service = _service(tmp_path, repo, fakes)
     note = service.add("x")
@@ -218,7 +218,9 @@ def test_the_panel_lists_notes_and_submits_new_text(tmp_path, repo):
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QSplitter
     assert isinstance(panel.splitter, QSplitter) and panel.splitter.orientation() == Qt.Orientation.Horizontal
-    assert panel.splitter.widget(0) is panel.list and panel.splitter.widget(1) is panel.detail
+    assert panel.splitter.widget(0) is panel.list and panel.splitter.widget(1) is panel.detail_pane
+    assert panel.detail_pane.isAncestorOf(panel.detail) and panel.detail_pane.isAncestorOf(panel.meta_bar), \
+        "右边 = 详情 + 底部信息栏（2026-10-20）"
     panel.input.setPlainText(f"{SLACK}\n看一下")
     panel.add_btn.click()
     assert panel.input.toPlainText() == "" and panel.list.count() == 1

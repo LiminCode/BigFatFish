@@ -41,7 +41,7 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
     config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, interval_minutes=30, idle_minutes=5, model="haiku")
     try:
         for row_id in ("slack_watch_enabled", "slack_watch_interval", "slack_watch_idle", "slack_watch_model"):
-            assert _row_page(dialog, row_id) == "自动化与联动", row_id
+            assert _row_page(dialog, row_id) == "简报与笔记", row_id
         assert dialog.slack_watch_enabled_check.isChecked() and dialog.slack_watch_enabled_check.isEnabled()
         assert dialog.slack_watch_interval_spin.value() == 30 and dialog.slack_watch_idle_spin.value() == 5
         assert dialog.slack_watch_model_select.currentData() == "haiku"
@@ -65,7 +65,7 @@ def test_changes_are_saved_back_through_normalize(tmp_path, monkeypatch):
         dialog.slack_watch_model_edit.setText(" claude-sonnet-5-5 ")
         ssw.save_slack_watch_settings(dialog)
         assert config.get(sw.CONFIG_KEY) == {"enabled": True, "interval_minutes": 45, "idle_minutes": 20,
-                                             "model": "claude-sonnet-5-5"}
+                                             "model": "claude-sonnet-5-5", "effort": "high", "prompt": ""}
         dialog.slack_watch_model_edit.setText("rm -rf /")
         ssw.save_slack_watch_settings(dialog)
         assert config.get(sw.CONFIG_KEY)["model"] == "sonnet", "怪名字退回默认，不进 shell"
@@ -94,6 +94,30 @@ def test_without_wsl_the_switch_is_greyed_out_and_saving_keeps_it_off(tmp_path, 
         assert not check.isEnabled() and not check.isChecked()
         ssw.save_slack_watch_settings(dialog)
         assert config.get(sw.CONFIG_KEY)["enabled"] is False
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+# ---------------------------------------------------------------- effort / 提示词（2026-10-24）
+
+def test_effort_and_prompt_rows_show_the_builtin_and_save_only_changes(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, effort="low")
+    try:
+        assert _row_page(dialog, "slack_watch_effort") == "简报与笔记"
+        assert _row_page(dialog, "slack_watch_prompt") == "简报与笔记"
+        assert dialog.slack_watch_effort_select.currentData() == "low"
+        assert dialog.slack_watch_prompt_edit.toPlainText() == sw.default_prompt_template()
+        assert not dialog.slack_watch_prompt_restore.isEnabled()
+        ssw.save_slack_watch_settings(dialog)
+        assert config.get(sw.CONFIG_KEY)["prompt"] == "" and config.get(sw.CONFIG_KEY)["effort"] == "low"
+
+        dialog.slack_watch_prompt_edit.setPlainText("我的 Slack 模板 {since}")
+        ssw.save_slack_watch_settings(dialog)
+        assert config.get(sw.CONFIG_KEY)["prompt"] == "我的 Slack 模板 {since}"
+        dialog.slack_watch_prompt_restore.click()
+        assert dialog.slack_watch_prompt_edit.toPlainText() == sw.default_prompt_template()
     finally:
         dialog.close()
         dialog.deleteLater()

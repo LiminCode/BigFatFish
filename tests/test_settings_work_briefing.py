@@ -58,7 +58,7 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
     try:
         for row_id in ("work_briefing_flow", "work_briefing_enabled", "work_briefing_weekdays", "work_briefing_time",
                        "work_briefing_model", *(f"work_briefing_source_{s}" for s in wb.SOURCES)):
-            assert _page_of(dialog, row_id) == "自动化与联动", row_id
+            assert _page_of(dialog, row_id) == "简报与笔记", row_id
         assert dialog.work_briefing_enabled_check.isChecked() and not dialog.work_briefing_weekdays_check.isChecked()
         assert dialog.work_briefing_time_select.currentData() == "08:30"
         assert dialog.work_briefing_model_select.currentData() == "haiku"
@@ -85,6 +85,7 @@ def test_saving_writes_sources_and_the_rest(tmp_path, monkeypatch):
         swb.save_work_briefing_settings(dialog)
         saved = config.get(wb.CONFIG_KEY)
         assert saved == {"enabled": True, "time": "10:00", "weekdays_only": False, "model": "claude-opus-5-5",
+                         "effort": "high", "prompt_zh": "", "prompt_en": "", "priority_rules": "",
                          "sources": {**wb.DEFAULT_SOURCES, "email": True, "calendar": False}}
         assert any("Gmail" in name for name in wb.allowed_tools(saved["sources"])), "开了邮件 → 简报能用邮件工具"
     finally:
@@ -107,5 +108,106 @@ def test_the_section_speaks_english(tmp_path, monkeypatch):
         body = dialog.findChild(SettingRow, "settingRow_work_briefing_flow").hint_label.text()
         assert "What is sent to Claude" in body and "read-only" in body and "Never" in body
         assert dialog.work_briefing_model_select.itemText(dialog.work_briefing_model_select.findData(swb.CUSTOM)) == "Custom…"
+    finally:
+        _close(dialog)
+
+
+# ---------------------------------------------------------------- effort / 提示词 / 优先级偏好（2026-10-24）
+
+def test_effort_prompt_and_priority_rows_exist_and_show_the_builtin_prompt(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, effort="medium",
+                             sources={**wb.DEFAULT_SOURCES, "email": True})
+    try:
+        for row_id in ("work_briefing_effort", "work_briefing_prompt", "work_briefing_priority_rules"):
+            assert _page_of(dialog, row_id) == "简报与笔记", row_id
+        assert dialog.work_briefing_effort_select.currentData() == "medium"
+        # 没改过：编辑框里是按当前来源开关拼出的内置模板（含邮件那一段），「恢复内置」置灰
+        shown = dialog.work_briefing_prompt_edit.toPlainText()
+        assert shown == wb.default_prompt_template("zh", {**wb.DEFAULT_SOURCES, "email": True})
+        assert "邮件" in shown and "{now}" in shown and "{prs}" in shown
+        assert not dialog.work_briefing_prompt_restore.isEnabled()
+        assert dialog.work_briefing_priority_rules_edit.toPlainText() == ""
+        hint = dialog.findChild(SettingRow, "settingRow_work_briefing_prompt").hint_label.text()
+        assert "{now}" in hint and "来源开关" in hint
+    finally:
+        _close(dialog)
+
+
+def test_saving_stores_the_prompt_only_when_it_differs_from_the_builtin(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        dialog.work_briefing_effort_select.setCurrentIndex(dialog.work_briefing_effort_select.findData("xhigh"))
+        dialog.work_briefing_priority_rules_edit.setPlainText("  QA 报的 bug 一律 ★★★  ")
+        swb.save_work_briefing_settings(dialog)
+        saved = config.get(wb.CONFIG_KEY)
+        assert saved["effort"] == "xhigh" and saved["priority_rules"] == "QA 报的 bug 一律 ★★★"
+        assert saved["prompt_zh"] == "" and saved["prompt_en"] == "", "和内置一字不差 → 存空串，跟着以后的版本更新"
+
+        dialog.work_briefing_prompt_edit.setPlainText("我的模板 {now} {prs}")
+        assert dialog.work_briefing_prompt_restore.isEnabled()
+        swb.save_work_briefing_settings(dialog)
+        assert config.get(wb.CONFIG_KEY)["prompt_zh"] == "我的模板 {now} {prs}"
+        assert config.get(wb.CONFIG_KEY)["prompt_en"] == "", "只存当前界面语言那一份"
+
+        dialog.work_briefing_prompt_restore.click()
+        assert dialog.work_briefing_prompt_edit.toPlainText() == wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
+        assert not dialog.work_briefing_prompt_restore.isEnabled()
+        swb.save_work_briefing_settings(dialog)
+        assert config.get(wb.CONFIG_KEY)["prompt_zh"] == ""
+    finally:
+        _close(dialog)
+
+
+def test_an_edited_prompt_is_shown_on_reopen_and_the_english_page_edits_the_english_one(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, prompt_zh="改过的中文模板 {now}")
+    try:
+        assert dialog.work_briefing_prompt_edit.toPlainText() == "改过的中文模板 {now}"
+        assert dialog.work_briefing_prompt_restore.isEnabled()
+    finally:
+        _close(dialog)
+    config, dialog = _dialog(tmp_path, monkeypatch, language="en", prompt_zh="改过的中文模板 {now}")
+    try:
+        assert dialog.work_briefing_prompt_edit.toPlainText() == wb.default_prompt_template("en", wb.DEFAULT_SOURCES)
+        assert dialog.findChild(SettingRow, "settingRow_work_briefing_effort").label.text() == "Effort"
+        dialog.work_briefing_prompt_edit.setPlainText("my template {now}")
+        swb.save_work_briefing_settings(dialog)
+        saved = config.get(wb.CONFIG_KEY)
+        assert saved["prompt_en"] == "my template {now}" and saved["prompt_zh"] == "改过的中文模板 {now}"
+    finally:
+        _close(dialog)
+
+
+# ---------------------------------------------------------------- 「简报与笔记」一级域（2026-10-24）
+
+def _section_titles(page) -> list[str]:
+    from pet.settings_widgets import SettingsSection
+
+    return [s.title for s in page.findChildren(SettingsSection) if s.title]
+
+
+def test_the_ai_assisted_sections_have_their_own_page_in_order(tmp_path, monkeypatch):
+    """用户 2026-10-24：简报这些「定时让 AI 读、AI 协助记」的功能放到第一层，别埋在自动化与联动里。"""
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
+        # 紧挨在「自动化与联动」前面（本夹具 include_ai=False，没有「AI 与对话」页）
+        assert labels.index("简报与笔记") == labels.index("自动化与联动") - 1
+        titles = _section_titles(dialog.pages.widget(labels.index("简报与笔记")))
+        assert titles[:1] == ["这一页是什么"]
+        wanted = ("工作简报", "Slack 关注", "工作笔记", "个人助理")
+        assert [x for x in titles if x in wanted] == list(wanted)
+        automation = _section_titles(dialog.pages.widget(labels.index("自动化与联动")))
+        assert not any(x in wanted for x in automation), "搬走之后旧页不该再有"
+        assert dialog.select_page("简报与笔记") and dialog.sidebar.currentItem().text() == "简报与笔记"
+    finally:
+        _close(dialog)
+
+
+def test_the_page_speaks_english(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, language="en")
+    try:
+        labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
+        assert "Briefings & notes" in labels
+        assert dialog.select_page("简报与笔记") and dialog.sidebar.currentItem().text() == "Briefings & notes"
     finally:
         _close(dialog)

@@ -670,7 +670,7 @@ def _clean_dynamic_island_data(value) -> dict:
     card_source = str(result.get("card_source") or "auto").strip()
     result["card_source"] = card_source if card_source in {"auto", "balance", "claude"} else "auto"
     style = str(result.get("style") or "dark").strip()
-    result["style"] = style if style in {"dark", "light", "glass"} else "dark"
+    result["style"] = style if style in {"dark", "light", "glass", "metro"} else "dark"
     try:
         result["opacity"] = max(0.4, min(1.0, float(result.get("opacity", 1.0))))
     except (TypeError, ValueError):
@@ -956,6 +956,8 @@ class Config:
             "voice_chime_show_quote": True,  # 台词/歌词开关
             "voice_chime_custom_quotes_zh": "",  # 自定义中文台词/歌词（一行一条，留空回退内置库）
             "voice_chime_custom_quotes_en": "",  # 自定义英文台词/歌词（一行一条，留空回退内置库）
+            "voice_chime_builtin_quotes_zh": "",  # 用户改过的内置中文台词库（一行一条；留空 = 代码里的原样）
+            "voice_chime_builtin_quotes_en": "",  # 用户改过的内置英文台词库（留空 = 代码里的原样）
             # 节日提醒（农历/24 节气/西方节日；命中当日用气泡告知并附氛围匹配文案）。
             # 总开关默认关闭：属"主动打扰"型功能，升级后不应突然冒出来，由用户显式开启。
             "festival_reminder_enabled": False,  # 节日提醒总开关
@@ -1218,6 +1220,8 @@ class Config:
             "voice_chime_show_quote",
             "voice_chime_custom_quotes_zh",
             "voice_chime_custom_quotes_en",
+            "voice_chime_builtin_quotes_zh",
+            "voice_chime_builtin_quotes_en",
             "festival_reminder_enabled",
             "festival_reminder_cn",
             "festival_reminder_solar_terms",

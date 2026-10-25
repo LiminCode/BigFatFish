@@ -3968,7 +3968,13 @@ class AgentLinkManager(QObject):
 
     def _fire_done(self, agent_key: str) -> None:
         """800ms 稳定确认到期：期间回忙则不算完成；配置/冷却在弹出前再查。"""
-        self._done_pending.pop(agent_key, None)
+        # 定时器自己到期：取消路径（_cancel_done_check）已 stop + deleteLater，
+        # 这条路径同样必须回收——否则每轮留一个已停表 QObject 在 manager 子对象表里
+        # （长跑进程按回合数线性增长）。
+        timer = self._done_pending.pop(agent_key, None)
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
         # 隐藏中：不切动画不出声，气泡改道灵动岛反馈面（岛反馈面可用时；
         # pause_agent_link_for_hide 让监视器隐藏期保持运行，本兜底必须感知，
         # 否则 done 气泡在隐藏期被静默吞掉）。

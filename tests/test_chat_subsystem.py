@@ -75,8 +75,9 @@ def test_prompt_priority_and_limits(tmp_path: Path):
     ]
     builder = PromptBuilder(tmp_path / "assets" / "characters")
     messages = builder.build_messages(settings, "cat", history, "question", role_prompt="override")
-    assert messages[0] == {"role": "system", "content": "override"}
-    assert messages[-1] == {"role": "user", "content": "question"}
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"].startswith("override\n\n【时间信息】")   # 时间感知：system 末尾附说明
+    assert messages[-1]["role"] == "user" and messages[-1]["content"].endswith("] question")   # 本轮消息带时间标记
     assert len(messages) <= 4
 
 
@@ -194,13 +195,13 @@ def test_message_bubble_exposes_avatar_body_and_state():
 
     bubble = MessageBubble("assistant", "hello", character_id="shenshen")
     assert bubble.objectName() == "message-bubble"
-    assert bubble.body.text() == "hello"
+    assert bubble.content == "hello"   # 渲染后的 body 是 HTML（Markdown），原文看 content
     assert bubble.avatar.text() == "S"
     assert bubble.state == "normal"
     bubble.set_state("streaming")
     assert bubble.property("state") == "streaming"
     bubble.set_content("updated")
-    assert bubble.body.text() == "updated"
+    assert bubble.content == "updated"
 
 
 def test_session_sidebar_uses_readable_deepseek_style_list(tmp_path: Path):
@@ -1247,13 +1248,13 @@ def test_streaming_reply_uses_typewriter_and_finishes_after_buffer_drains(tmp_pa
     window._active_request_id = "request"
     text = "这是一段用于确认逐字输出效果的流式回复。"
     window._delta("request", text)
-    assert window._bubble.body.text() != text
+    assert window._bubble.content != text
     window._finished("request", text)
     deadline = time.time() + 5
-    while window._bubble.body.text() != text and time.time() < deadline:
+    while window._bubble.content != text and time.time() < deadline:
         app.processEvents()
         time.sleep(0.01)
-    assert window._bubble.body.text() == text
+    assert window._bubble.content == text
     assert window.session.messages[-1].content == text
     window.close()
     app.processEvents()

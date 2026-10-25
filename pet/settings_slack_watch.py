@@ -12,7 +12,9 @@ from PySide6.QtWidgets import QLineEdit
 from . import claude_hooks
 from . import slack_watch as sw
 from .settings_help import help_row
+from .settings_prompt_editor import PromptEditor
 from .settings_widgets import BrowserSpinBox, ModernSelect, SettingRow, ToggleSwitch
+from .settings_work_briefing import effort_select
 from .i18n import t
 
 #: 模型下拉里的几个常用名；配置里写了别的也认（当作自定义）
@@ -69,6 +71,14 @@ def slack_watch_rows(dialog) -> list[SettingRow]:
     select.currentIndexChanged.connect(lambda _index: edit.setVisible(select.currentData() == CUSTOM))
     dialog.slack_watch_model_select = select
     dialog.slack_watch_model_edit = edit
+    effort = effort_select(dialog, settings["effort"])
+    dialog.slack_watch_effort_select = effort
+    # 发给 Claude 的提示词（明文、可改；只有一份），2026-10-24
+    prompt = PromptEditor(dialog, default=sw.default_prompt_template(), stored=settings["prompt"],
+                          accessible_name=t("settings.slack.prompt"))
+    dialog.slack_watch_prompt_editor = prompt
+    dialog.slack_watch_prompt_edit = prompt.edit
+    dialog.slack_watch_prompt_restore = prompt.restore
 
     return [
         SettingRow("slack_watch_enabled", t("settings.slack.check_automatically_while_i_m"), t(_ENABLED_HINT if usable else _NO_WSL_HINT), check),
@@ -76,6 +86,8 @@ def slack_watch_rows(dialog) -> list[SettingRow]:
         SettingRow("slack_watch_idle", t("settings.slack.away_after"), t(_IDLE_HINT), idle),
         SettingRow("slack_watch_model", t("settings.slack.model"), t(_MODEL_HINT), select),
         SettingRow("slack_watch_model_custom", t("settings.slack.custom_model_name"), "", edit, stacked=True),
+        SettingRow("slack_watch_effort", t("settings.slack.effort"), t("settings.slack.effort_hint"), effort),
+        SettingRow("slack_watch_prompt", t("settings.slack.prompt"), t("settings.slack.prompt_hint"), prompt, stacked=True),
         help_row(dialog, "slack_watch_archive", t("slack.notes.flow_title"), t("slack.notes.flow")),
     ]
 
@@ -99,4 +111,6 @@ def save_slack_watch_settings(dialog) -> None:
         "interval_minutes": dialog.slack_watch_interval_spin.value(),
         "idle_minutes": dialog.slack_watch_idle_spin.value(),
         "model": chosen_model(dialog),
+        "effort": dialog.slack_watch_effort_select.currentData(),
+        "prompt": dialog.slack_watch_prompt_editor.value(),
     }))

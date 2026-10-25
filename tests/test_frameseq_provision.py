@@ -12,7 +12,7 @@
 - **两段式管线（W1/W2）**：阶段一（无损抓帧）→ 阶段二（逐帧白底反解 + Q70 重编码，
   原地覆盖）→ 发布。调用序列、阶段二的输入就是阶段一的像素、产物逐帧都是**有损**
   容器（RIFF chunk 不是 ``VP8L``）、alpha 逐位不变；阶段二整段失败 ⇒ 丢弃半成品
-  （绝不发布「meta 写着 Q70+反解、帧却是无损」的假凭证）；单帧坏掉 ⇒ 跳过该帧、
+  （绝不发布「meta 写着 Q70+反解、帧却是无损」的假凭证）；单帧坏掉 ⇒ 整段作废、
   帧数契约不变、整段照发；取消/会话结束落在阶段二 ⇒ 逐帧停手 + 丢弃半成品；
 - 发布收口：同路径旧目标先挪 ``<世代名>.replacing/`` 再发布，rename 抛错则
   回滚（旧目标一个字节不丢）+ 半成品路径被普通文件占住时清掉照转——发布/回滚/
@@ -1561,6 +1561,42 @@ def test_library_falls_back_when_source_changed(tmp_path, monkeypatch):
         lib.shutdown()
 
 
+def test_library_rejects_v3_generation_and_adopts_v5(tmp_path, monkeypatch):
+    """改档回归：磁盘上的 **v3** 世代不再被采纳，按当前档重出的同一路径才被采纳。
+
+    ``white-v5`` 相对 v3 只多一步 alpha 底板清理（把 ``a == 1`` 的整块背景清成 0），
+    对库来说这就是一次改档：世代目录名随**源身份**（不变），档位在 meta 里 —— 所以
+    "同一路径上换成新档产物"正是升级时的真实形态（供给按当前档重转同一目录）。
+    """
+    videos, frameseq = _make_pack(tmp_path, {"idle": ["x.webm"]})
+    webm = videos / "idle" / "x.webm"
+    v3_encoder = "libwebp lossy q70 (bgra straight, unblend-white-v3)"
+    assert v3_encoder in fp.LEGACY_ENCODER_DESCS
+    gen = fp.clip_out_dir(webm, videos, frameseq)
+    _write_frames(gen, FRAME_COUNT)
+    (gen / "meta.json").write_text(json.dumps({
+        "fps": 24.0, "source": webm.name, "frames": FRAME_COUNT,
+        "encoder": v3_encoder, "unblend": "white-v3",
+        "source_sha256": fp.source_sha256(webm)}), encoding="utf-8")
+    _light_clips(monkeypatch)
+
+    lib = MovieLibrary(asset_dir=videos, prewarm_enabled=False)
+    try:
+        assert lib._frameseq_dirs == {}                   # v3 世代不采纳
+        assert isinstance(lib.movie("x"), _FakeClip)      # 回退 WebM（不冻结、不播旧档）
+        assert fp.current_generation(webm, videos, frameseq) is None
+        assert [pair[0] for pair in fp.plan_clips(videos, frameseq)] == [webm]
+
+        (gen / "meta.json").write_text(               # 同一路径按当前档重出
+            json.dumps(_meta(webm, FRAME_COUNT)), encoding="utf-8")
+        lib.rescan_frameseq()
+
+        assert lib._frameseq_dirs == {"x": gen}           # 新档世代被采纳
+        assert fp.plan_clips(videos, frameseq) == []
+    finally:
+        lib.shutdown()
+
+
 def test_library_protects_adopted_generation(tmp_path, monkeypatch):
     """库采纳的世代目录立刻登记为「在用」——清扫据此跳过（活 clip 在读）。"""
     videos, frameseq = _make_pack(tmp_path, {"idle": ["x.webm"]})
@@ -2270,23 +2306,33 @@ def _expected_tail(webm: Path, videos: Path, frameseq: Path) -> list[str]:
 def test_encoder_strings_are_frozen():
     """档位常量冻结：新串一档到底，旧档串只作历史识别（绝不写进 meta）。
 
-    ``white → white-v3`` 是一次**像素级**的改档（v2 的产物在深色角色边缘留着白边），
-    所以 v2 的串与更早两档并列进 ``LEGACY_ENCODER_DESCS``：它的产物按既有迁移机制
-    自动不采纳、后台按 v3 重供，绝不与 v3 混用。
+    ``white → white-v3 → white-v5`` 都是**像素级**的改档（v2 的产物在深色角色边缘
+    留着白边；v3 的产物铺着一整块 ``a == 1`` 的底板），所以 v2/v3 的串与更早两档
+    并列进 ``LEGACY_ENCODER_DESCS``：它们的产物按既有迁移机制自动不采纳、后台按
+    v5 重供，绝不与 v5 混用。**v4 不是档**：镂空还原（``HOLE_RESTORE_ENABLED``）
+    从未启用，档号直接落到 v5。
     """
     assert fp.LOSSY_FOLDERS == ("random", "events")
-    assert fp.ENCODER_DESC == "libwebp lossy q70 (bgra straight, unblend-white-v3)"
-    assert fp.UNBLEND_MARK == "white-v3"
-    assert fp.WEBP_QUALITY == 70
+    assert fp.ENCODER_DESC == "libwebp lossless (bgra straight, unblend-white-v6)"
+    assert fp.UNBLEND_MARK == "white-v6"
+    # v6 起运行编码层必须位精确：无损 + exact（exact 是"透明区 RGB 不被改写"的前提）
+    assert fp.WEBP_LOSSLESS is True
+    assert fp.WEBP_EXACT is True
+    assert not hasattr(fp, "WEBP_QUALITY"), "有损档位常量应已移除，避免有人再挂回去"
     assert fp.LEGACY_ENCODER_DESCS == (
         "libwebp lossless (bgra straight)",
         "libwebp lossy q80 (bgra straight)",
         "libwebp lossy q70 (bgra straight, unblend-white)",
+        "libwebp lossy q70 (bgra straight, unblend-white-v3)",
+        "libwebp lossy q70 (bgra straight, unblend-white-v5)",
     )
     assert fp.ENCODER_DESC not in fp.LEGACY_ENCODER_DESCS
-    # 反解 v3 的三个可调常量（依据见模块注释）
+    # 反解 v3 的三个可调常量（依据见模块注释）+ v5 清掉的 alpha 值
     assert (fp.UNBLEND_EXCESS_LUMA, fp.UNBLEND_PULL_MAX_ALPHA,
             fp.UNBLEND_ERODE_PX) == (30, 128, 1)
+    assert fp.FAINT_ALPHA == 1
+    # 镂空还原仍挂起（v5 里没有它；开启要另行换档）
+    assert fp.HOLE_RESTORE_ENABLED is False
 
 
 def test_scope_follows_first_level_folder(tmp_path):
@@ -2670,10 +2716,10 @@ def test_two_stage_call_order_and_lossless_stage_one(tmp_path, monkeypatch):
     argv = calls[0].argv
     assert argv[argv.index("-lossless") + 1] == "1"
     assert "-quality" not in argv
-    # 阶段二真的重编了每一帧：产物容器里一帧 VP8L（无损）都不许剩
+    # 阶段二真的重编了每一帧：产物必须**全是** VP8L（无损档，v6 起运行层位精确）
     published = sorted(out_dir.glob("f_*.webp"))
     assert len(published) == FRAME_COUNT
-    assert not any(_webp_is_lossless(path) for path in published)
+    assert all(_webp_is_lossless(path) for path in published)
 
 
 def test_stage_two_receives_stage_one_pixels_and_rectifies_them(tmp_path, monkeypatch):
@@ -2740,7 +2786,8 @@ def test_published_frames_keep_alpha_and_move_towards_character_color(
     assert fp.convert_clip(webm, out_dir, exe="fake-ffmpeg") == (True, "")
     frames = _read_frames(out_dir)
     assert len(frames) == FRAME_COUNT
-    assert not any(_webp_is_lossless(p) for p in sorted(out_dir.glob("f_*.webp")))
+    # v6：产物必须是无损容器（阶段二不再有损重编）
+    assert all(_webp_is_lossless(p) for p in sorted(out_dir.glob("f_*.webp")))
     meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["frames"] == len(list(out_dir.glob("f_*.webp"))) == FRAME_COUNT
     assert meta["unblend"] == fp.UNBLEND_MARK
@@ -2773,16 +2820,18 @@ def test_published_frames_keep_alpha_and_move_towards_character_color(
             assert near_character < near_blended, (pixel, character, blended)
 
 
-def test_stage_two_skip_keeps_frame_count_and_publishes(tmp_path, monkeypatch, caplog):
-    """单帧坏掉 ⇒ 跳过该帧并记日志，整段照常发布、帧数契约不变。
+def test_stage_two_single_bad_frame_discards_whole_clip(tmp_path, monkeypatch, caplog):
+    """单帧坏掉 ⇒ **整段作废**，绝不发布「一部分重编、一部分仍是无损帧」的混合产物。
 
-    坏帧上**绝不中断整段供给**（一帧坏掉不该让 240 帧白转）：那一帧原样留着（还是
-    阶段一写下的字节，能播就播、不能播也只坏一帧），帧数与磁盘仍然一致；``*.part``
-    既不冒充帧、也不留残留。这里用的是**真的坏帧**（0 字节），不 mock 解码失败。
+    这是像素真值契约的一部分：整个 clip 必须同属一条处理链/一个档位。一帧处理
+    失败就整段丢弃，由既有退避机制重试——不许拿「帧数对」冒充「档位对」。旧口径
+    （跳过该帧、整段照常发布）会让播放器同时读到两种像素来源，已废弃。
+    这里用的是**真的坏帧**（0 字节），不 mock 解码失败。
     """
     videos, frameseq = _make_pack(tmp_path, {"idle": ["a.webm"]})
     webm = videos / "idle" / "a.webm"
     out_dir = fp.clip_out_dir(webm, videos, frameseq)
+    tmp_dir = _tmp_dir_of(out_dir)
 
     def _corrupt_one(argv):
         (Path(argv[-1]).parent / "f_0002.webp").write_bytes(b"")   # 0 字节 = 解不开
@@ -2790,20 +2839,14 @@ def test_stage_two_skip_keeps_frame_count_and_publishes(tmp_path, monkeypatch, c
     _install_fake_ffmpeg(monkeypatch, on_convert=_corrupt_one)
 
     with caplog.at_level(logging.WARNING):
-        assert fp.convert_clip(webm, out_dir, exe="fake-ffmpeg") == (True, "")
+        ok, problem = fp.convert_clip(webm, out_dir, exe="fake-ffmpeg")
 
-    assert out_dir.is_dir()
-    assert len(list(out_dir.glob("f_*.webp"))) == FRAME_COUNT   # 帧数契约不变
-    assert list(out_dir.glob(f"*{fp.FRAME_PART_SUFFIX}")) == []
-    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    assert meta["frames"] == FRAME_COUNT
-    assert fp.current_generation(webm, videos, frameseq) == out_dir
-    # 跳过有留痕（日志能看出是哪一帧），且其余两帧确实被重编码过
-    assert any("跳过该帧" in record.getMessage() for record in caplog.records)
-    untouched = (out_dir / "f_0002.webp").read_bytes()
-    assert untouched == b""                                    # 坏帧原样留着
-    good = out_dir / "f_0001.webp"
-    assert good.read_bytes()[12:16] != b"VP8L"                 # 好帧已重编成 Q70
+    assert ok is False, "有帧处理失败时必须判失败"
+    assert problem, "必须给出可诊断的失败原因"
+    assert any("整段作废" in record.getMessage() for record in caplog.records),         "必须留下整段作废的日志留痕"
+    assert not out_dir.exists(), "半成品绝不能发布成世代目录"
+    assert not tmp_dir.exists(), "临时目录必须清干净"
+    assert fp.current_generation(webm, videos, frameseq) is None,         "作废的 clip 不得被采纳"
 
 
 def test_stage_two_structural_failure_discards_scratch_and_reports(
@@ -2887,3 +2930,34 @@ def test_upgrade_round_reprovisions_when_only_legacy_tier_generation_exists(
             fp.clip_out_dir(webm, videos, frameseq)
     finally:
         lib.shutdown()
+
+
+def test_generation_with_a_hole_at_the_start_is_not_complete(tmp_path):
+    """帧文件必须从 f_0001 连续编到 f_<frames>：只数个数会放过「缺头」的目录。
+
+    2026-10-24 实机：CLI 转换与桌宠后台供给撞在一起，桌宠把半成品目录里的前 16 帧清掉，
+    CLI 随后按「磁盘上的帧数」写了 meta.frames=225，目录看起来自洽（225 == 225），
+    但 ``_FramePaths[1]`` 推出的 ``f_0002.webp`` 根本不存在——预取永远拿不到帧，连点
+    鱼就「卡住没反应」。采纳闸门与转换收尾都要把首尾两帧的存在当硬条件。
+    """
+    videos, frameseq = _make_pack(tmp_path, {"click": ["a.webm"]})
+    webm = videos / "click" / "a.webm"
+    gen = _stamped(webm, videos, frameseq, frames=FRAME_COUNT)
+    assert fp.current_generation(webm, videos, frameseq) == gen
+
+    # 缺头：删掉前两帧、meta 改成剩余个数——个数自洽，但编号不从 1 开始
+    for i in (1, 2):
+        (gen / f"f_{i:04d}.webp").unlink()
+    meta = json.loads((gen / "meta.json").read_text(encoding="utf-8"))
+    meta["frames"] = FRAME_COUNT - 2
+    (gen / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert fp.frames_on_disk(gen) == FRAME_COUNT - 2, "个数确实自洽——这正是闸门以前放过它的原因"
+    assert fp.is_complete(gen) is False
+    assert fp.current_generation(webm, videos, frameseq) is None
+
+    # 缺尾同理：首帧在、末帧不在
+    gen2 = _stamped(webm, videos, frameseq, frames=FRAME_COUNT)
+    (gen2 / f"f_{FRAME_COUNT:04d}.webp").unlink()
+    (gen2 / "f_9999.webp").write_bytes(b"webp")       # 个数补回去
+    assert fp.frames_on_disk(gen2) == FRAME_COUNT
+    assert fp.is_complete(gen2) is False

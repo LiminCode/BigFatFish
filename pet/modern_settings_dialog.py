@@ -168,6 +168,7 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
+from . import settings_island_icon
 from . import (
     settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_briefing,
     settings_work_notes,
@@ -303,6 +304,7 @@ class ModernSettingsDialog(QDialog):
             (t("settings.dlg.black"), "dark"),
             (t("settings.dlg.white"), "light"),
             (t("settings.dlg.glass"), "glass"),
+            (t("settings.dlg.metro"), "metro"),
         ):
             self.island_style_select.addItem(label, value)
         self.island_style_select.setCurrentData(str(island_cfg.get("style") or "dark"))
@@ -325,24 +327,8 @@ class ModernSettingsDialog(QDialog):
         ):
             self.island_accent_select.addItem(label, value)
         self.island_accent_select.setCurrentData(str(island_cfg.get("accent") or "blue"))
-        self.island_icon_select = ModernSelect(self, width=160)
-        # 标签用中文而不是 emoji 字符：下拉框自己也会渲染 emoji，一样要付
-        # DirectWrite 彩色字体栈的一次性税额（约 33MB），data 才是存的图标值
-        self.island_icon_select.addItem(t("settings.dlg.fish_avatar_recommended"), "auto")
-        for label, emoji in (
-            (t("settings.dlg.whale"), "🐳"),
-            (t("settings.dlg.little_fish"), "🐟"),
-            (t("settings.dlg.octopus"), "🐙"),
-            (t("settings.dlg.seal"), "🦭"),
-            (t("settings.dlg.penguin"), "🐧"),
-            (t("settings.dlg.kitten"), "🐱"),
-            (t("settings.dlg.puppy"), "🐶"),
-            (t("settings.dlg.star"), "🌟"),
-            (t("settings.dlg.lightning"), "⚡"),
-            (t("settings.dlg.heart"), "❤️"),
-        ):
-            self.island_icon_select.addItem(label, emoji)
-        self.island_icon_select.setCurrentData(str(island_cfg.get("icon") or "auto"))
+        # 图标：点方块直接选一张自己的图（2026-10-20 起取代原来的头像 / emoji 下拉框）
+        island_icon_row = settings_island_icon.island_icon_row(self, island_cfg)
         self.island_click_action_select = ModernSelect(self, width=160)
         for label, value in (
             (t("settings.dlg.expand_quick_card"), "expand"),
@@ -434,7 +420,7 @@ class ModernSettingsDialog(QDialog):
                     ),
                     SettingRow("dynamic_island_opacity", t("settings.dlg.background_opacity"), t("settings.dlg.lower_more_transparent_0_4"), self.island_opacity_spin),
                     SettingRow("dynamic_island_accent", t("settings.dlg.accent_color"), t("settings.dlg.accent_shared_by_icon_ring"), self.island_accent_select),
-                    SettingRow("dynamic_island_icon_value", t("settings.dlg.icon"), t("settings.dlg.shows_fish_avatar_by_default"), self.island_icon_select),
+                    island_icon_row,
                     SettingRow(
                         "dynamic_island_click_action",
                         t("settings.dlg.click_action"),
@@ -1785,16 +1771,23 @@ class ModernSettingsDialog(QDialog):
         automation_layout.insertWidget(0, agent_box)
         automation_layout.insertWidget(1, SettingsSection(t("settings.dlg.vs_code_workspaces"), settings_vscode.workspace_rows(self), automation))
         automation_layout.insertWidget(2, SettingsSection(t("settings.dlg.notification_center"), settings_notifications.notification_rows(self), automation))
-        automation_layout.insertWidget(3, SettingsSection(t("settings.dlg.slack_watch"), settings_slack_watch.slack_watch_rows(self), automation))
-        automation_layout.insertWidget(4, SettingsSection(settings_work_briefing.section_title(),
-                                                          settings_work_briefing.work_briefing_rows(self), automation))
-        automation_layout.insertWidget(5, settings_work_briefing.flow_section(self))
-        automation_layout.insertWidget(6, SettingsSection(settings_work_notes.section_title(),
-                                                          settings_work_notes.work_notes_rows(self), automation))
-        automation_layout.insertWidget(7, settings_work_notes.flow_section(self))
-        automation_layout.insertWidget(8, SettingsSection(settings_personal.section_title(),
-                                                          settings_personal.personal_rows(self), automation))
-        automation_layout.insertWidget(9, settings_personal.flow_section(self))
+
+        # 「简报与笔记」域（2026-10-24 用户要求放到第一层）：定时让 WSL 里的 Claude Code 替你读、写的东西
+        # ——工作简报 / Slack 关注 / 工作笔记 / 个人助理（各带「这个功能怎么运作」）。
+        briefing = page_content([])
+        briefing_layout = briefing.layout()
+        for index, widget in enumerate((
+            settings_help.help_section(briefing, "briefing_page_help", t("settings.dlg.briefing_page_help"),
+                                       t("settings.dlg.briefing_page_help_hint"), t("settings.dlg.briefing_page_help_body")),
+            SettingsSection(settings_work_briefing.section_title(), settings_work_briefing.work_briefing_rows(self), briefing),
+            settings_work_briefing.flow_section(self),
+            SettingsSection(t("settings.dlg.slack_watch"), settings_slack_watch.slack_watch_rows(self), briefing),
+            SettingsSection(settings_work_notes.section_title(), settings_work_notes.work_notes_rows(self), briefing),
+            settings_work_notes.flow_section(self),
+            SettingsSection(settings_personal.section_title(), settings_personal.personal_rows(self), briefing),
+            settings_personal.flow_section(self),
+        )):
+            briefing_layout.insertWidget(index, widget)
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
@@ -1828,6 +1821,7 @@ class ModernSettingsDialog(QDialog):
             "菜单": menu,
             "桌面组件": desktop_components,
             "AI 与对话": ai_sections,
+            "简报与笔记": briefing,
             "自动化与联动": automation,
             "语音": voice,
             "文件识别": file_interpret,
@@ -2025,7 +2019,7 @@ class ModernSettingsDialog(QDialog):
                 "style": str(self.island_style_select.currentData() or "dark"),
                 "opacity": float(self.island_opacity_spin.value()),
                 "accent": str(self.island_accent_select.currentData() or "blue"),
-                "icon": str(self.island_icon_select.currentData() or "auto"),
+                "icon": settings_island_icon.save_island_icon(self),
                 "click_action": str(self.island_click_action_select.currentData() or "expand"),
                 "hidden_chat": self.island_hidden_chat_check.isChecked(),
                 "event_effects": self.island_event_effects_check.isChecked(),

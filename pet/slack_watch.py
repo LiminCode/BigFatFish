@@ -51,9 +51,9 @@ _PROMPT = """你是我的 Slack 值班助手。现在是 {now}（本地时间）
 要看的：提到我（@我或 @channel/@here 且与我相关）的消息、发给我的私信、我参与过的线程里的新回复、明确在等我回答或行动的消息。只挑**确实需要我回复或处理**的；机器人的告警、纯通知、已经有人处理了的都不算。最多 {max_items} 条，按紧急程度排序。
 
 输出格式（严格遵守，只输出一个 JSON 对象，不要加别的文字或代码围栏）：
-{{"summary": "一句不超过 40 个字的话，说最要紧的那件；没有需要关注的就写空字符串",
- "items": [{{"title": "一句话说这条消息在等我什么", "from": "发送人或频道", "link": "工具返回的那条消息的永久链接，拿不到就写空字符串", "urgency": "high 或 normal"}}],
- "error": "读不到时写原因，否则空字符串"}}
+{"summary": "一句不超过 40 个字的话，说最要紧的那件；没有需要关注的就写空字符串",
+ "items": [{"title": "一句话说这条消息在等我什么", "from": "发送人或频道", "link": "工具返回的那条消息的永久链接，拿不到就写空字符串", "urgency": "high 或 normal"}],
+ "error": "读不到时写原因，否则空字符串"}
 """
 
 
@@ -74,6 +74,8 @@ def normalize(value) -> dict:
         "interval_minutes": _clamp_int(raw.get("interval_minutes"), DEFAULT_INTERVAL_MIN, INTERVAL_RANGE),
         "idle_minutes": _clamp_int(raw.get("idle_minutes"), DEFAULT_IDLE_MIN, IDLE_RANGE),
         "model": wb.normalize_model(raw.get("model")),
+        "effort": wb.normalize_effort(raw.get("effort")),
+        "prompt": wb.normalize_text(raw.get("prompt")),   # 用户改过的提示词（空 = 内置），2026-10-24
     }
 
 
@@ -149,17 +151,29 @@ def allowed_tools() -> tuple[str, ...]:
     return tuple(name for name in wb.allowed_tools() if "slack" in name.lower())
 
 
-def claude_command(model: str) -> str:
+def claude_command(model: str, effort: str = wb.EFFORT) -> str:
     """和简报同一行命令，只放行 Slack 的读取类工具；提示词从标准输入进去。"""
     allowed = " ".join(wb._sq(name) for name in allowed_tools())
     denied = " ".join(wb._sq(name) for name in wb.denied_tools())
     return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {wb._sq(wb.normalize_model(model))}"
+            f" --effort {wb.normalize_effort(effort)}"
             f" --output-format json --no-session-persistence --max-turns {MAX_TURNS}"
             f" --tools '' --allowedTools {allowed} --disallowedTools {denied}")
 
 
-def build_prompt(now: dt.datetime, since: dt.datetime) -> str:
-    return _PROMPT.format(now=f"{now:%Y-%m-%d %H:%M}", since=f"{since:%Y-%m-%d %H:%M}", max_items=MAX_ITEMS)
+def default_prompt_template() -> str:
+    """内置提示词模板（设置页里给用户看、给用户改的那份）：明文，占位符 {now} {since} {max_items}。"""
+    return _PROMPT.strip()
+
+
+def render_prompt(template: str, now: dt.datetime, since: dt.datetime) -> str:
+    return wb.render_template(template, now=f"{now:%Y-%m-%d %H:%M}", since=f"{since:%Y-%m-%d %H:%M}",
+                              max_items=MAX_ITEMS)
+
+
+def build_prompt(now: dt.datetime, since: dt.datetime, *, template: str | None = None) -> str:
+    """``template``（用户改过的）给了就原样用它，否则内置。"""
+    return render_prompt(template.strip() if template and template.strip() else default_prompt_template(), now, since)
 
 
 # ---------------------------------------------------------------- 结果
@@ -248,15 +262,16 @@ def parse_output(stdout: str) -> WatchResult:
 
 
 def generate(now: dt.datetime, since: dt.datetime, model: str, *, run: wb.WslRunner | None = None,
-             clock: Callable[[], float] | None = None) -> WatchResult:
+             clock: Callable[[], float] | None = None, effort: str = wb.EFFORT,
+             template: str | None = None) -> WatchResult:
     """查一次（阻塞，几十秒）。任何失败都折成 ``ok=False`` 加原因。"""
     import time
 
     run = run or claude_hooks.run_wsl
     clock = clock or time.monotonic
     started = clock()
-    code, out = run(["-e", "bash", "-lc", claude_command(model)], input_text=build_prompt(now, since),
-                    timeout=CLAUDE_TIMEOUT_S)
+    code, out = run(["-e", "bash", "-lc", claude_command(model, effort)],
+                    input_text=build_prompt(now, since, template=template), timeout=CLAUDE_TIMEOUT_S)
     if code == 127 and not out:
         result = WatchResult(error="没有找到 WSL：Slack 关注要靠 WSL 里的 Claude Code")
     else:

@@ -162,6 +162,50 @@ def test_daily_rolls_over_next_day():
     assert stamped2[0]["fired_due_slot"] == "2026-09-05T10:00#due"
 
 
+def test_daily_lead_window_crosses_midnight():
+    """daily 00:02 + lead 5：当天 23:57 就该发提前提醒，不等到 00:00 补发。
+
+    旧行为：daily 无条件用 ``now.date()`` 组 due，23:57 算到的是**当天已过**的
+    00:02（提前档 23:57 也在昨天），两档都走"出窗静默盖戳" → 真正该提醒的次日
+    00:02 提前档要等过了午夜才补发，迟了整整 3 分钟（用户看到的提醒已经贴着正点）。
+    """
+    item = _daily("00:02")
+    fires, stamped = advance_todo_state(
+        [item], _prefs(lead=5), datetime(2026, 9, 4, 23, 57)
+    )
+    assert [f["phase"] for f in fires] == ["lead"], "23:57 必须发次日 00:02 的提前提醒"
+    # 提前档的盖戳键按触发时刻（23:57）落在当天，午夜后重算仍是同一个键
+    assert stamped[0]["fired_lead_slot"] == "2026-09-04T00:02#lead"
+    assert stamped[0]["fired_due_slot"] is None, "正点档还早，不得提前盖戳"
+
+    # 00:00 不重复发（同一个提前档只盖一次戳）
+    midnight_fires, _ = advance_todo_state(stamped, _prefs(lead=5), datetime(2026, 9, 5, 0, 0))
+    assert midnight_fires == []
+    # due 正点照常
+    due_fires, due_stamped = advance_todo_state(
+        stamped, _prefs(lead=5), datetime(2026, 9, 5, 0, 2)
+    )
+    assert [f["phase"] for f in due_fires] == ["due"]
+    assert due_stamped[0]["fired_due_slot"] == "2026-09-05T00:02#due"
+
+
+def test_daily_lead_zero_does_not_use_next_day():
+    """lead=0 的 daily 不受跨午夜取次日影响：当天正点档过期仍按原语义静默盖戳。"""
+    fires, stamped = advance_todo_state([_daily("00:02")], _prefs(lead=0), datetime(2026, 9, 4, 23, 57))
+    assert fires == []
+    assert stamped[0]["fired_due_slot"] == "2026-09-04T00:02#due"
+
+
+def test_once_cross_midnight_behavior_unchanged():
+    """once 不受跨午夜改动影响：用条目自己的日期，过期即静默盖戳。"""
+    fires, stamped = advance_todo_state(
+        [_once("2026-09-04", "00:02")], _prefs(lead=5), datetime(2026, 9, 4, 23, 57)
+    )
+    assert fires == []
+    assert stamped[0]["fired_lead_slot"] == "2026-09-03T00:02#lead"
+    assert stamped[0]["fired_due_slot"] == "2026-09-04T00:02#due"
+
+
 def test_once_archives_after_due_plus_grace():
     fires, stamped = advance_todo_state(
         [_once()], _prefs(lead=0), datetime(2026, 9, 4, 10, DEFAULT_GRACE_MINUTES + 1)
@@ -214,6 +258,22 @@ def test_summarize_next_once_and_empty():
     text = summarize_next([_once(date_text="2026-09-06")], NOW)
     assert "9月6日" in text
     assert summarize_next([], NOW) == ""
+
+
+def test_summarize_next_daily_cross_midnight_shows_tomorrow():
+    """跨午夜的每日待办：「下一条」必须指向次日那次，不能整段空着。
+
+    23:57 看每日 00:02：当天那次凌晨就过了（戳可能已落盘、也可能还没），旧实现
+    只认 fired_due_slot，两种情形下都 continue 掉，面板"下一条"空白——而这正是
+    次日那次提前提醒刚发出的时刻，用户最需要看到它。
+    """
+    assert "明天" in summarize_next([_daily(time="00:02")], datetime(2026, 9, 4, 23, 57))
+    # 当天那次的 due 戳已落盘：同样指向次日
+    stamped = _daily(time="00:02")
+    stamped["fired_due_slot"] = "2026-09-04T00:02#due"
+    assert "明天" in summarize_next([stamped], datetime(2026, 9, 4, 23, 57))
+    # 当天那次还没到点：照常显示今天（"每天"前缀）
+    assert summarize_next([_daily(time="23:00")], datetime(2026, 9, 4, 22, 0)).startswith("每天")
 
 
 # ------------------------------------------------------------ TodoStore
@@ -349,6 +409,35 @@ def test_service_tick_notifies_when_settings_open(tmp_path):
     service._on_tick(now=datetime(2026, 9, 4, 10, 6))
     assert app.win.bubbles == []
     assert len(app.notifies) == 1
+
+
+def test_service_daily_cross_midnight_lead_fires_before_midnight(tmp_path):
+    """服务级（真调度服务 + 真条目存储 + 真气泡路径）：23:57 就该冒提前提醒。
+
+    纯函数用例钉的是判定，这条钉的是它落到用户眼前的那一步：23:57 的 tick 冒泡、
+    盖戳落盘，过午夜后重启也不重复（提前档只发一次），正点档照常。
+    """
+    _qapp()
+    app = _FakeApp(tmp_path, visible=True)
+    store = TodoStore(todo_items_path(app.config.dir))
+    store.save([new_todo_item("吃药", "daily", "00:02")])
+    app.config.set("todo_reminder_lead_minutes", 5)
+    service = TodoReminderService(app)
+    service.apply_config()
+
+    service._on_tick(now=datetime(2026, 9, 4, 23, 57))
+    assert len(app.win.bubbles) == 1, "当天 23:57 必须冒提前提醒（不是等到 00:00）"
+    assert "吃药" in app.win.bubbles[0]
+    assert store.load()[0]["fired_lead_slot"] == "2026-09-04T00:02#lead", "盖戳需落盘"
+
+    # 过午夜重启：同一个提前档不得补发第二次
+    service2 = TodoReminderService(app)
+    service2.apply_config()
+    service2._on_tick(now=datetime(2026, 9, 5, 0, 0))
+    assert len(app.win.bubbles) == 1
+    # 正点照常提醒
+    service2._on_tick(now=datetime(2026, 9, 5, 0, 2))
+    assert len(app.win.bubbles) == 2
 
 
 def test_service_notify_gated_by_system_notifications(tmp_path):
@@ -519,6 +608,79 @@ def test_panel_edit_updates_item_and_clears_slots(tmp_path):
     assert items[0]["time"] == "11:00"
     assert items[0]["fired_due_slot"] is None  # 改时间后重新武装
     assert TodoStore(todo_items_path(app.config.dir)).load()[0]["time"] == "11:00"
+
+
+def _block_item_writes(config_dir: Path) -> Path:
+    """让条目落盘真实失败：把 todo_items.json 做成**目录**（原子替换必报错）。
+
+    不打桩 ``TodoStore.save``——失败必须来自真实文件系统（Windows 上
+    ``os.replace`` 撞目录是 WinError 5，POSIX 是 IsADirectoryError，两者都是
+    产品代码捕获的那类 OSError）。
+    """
+    path = todo_items_path(config_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _capture_warnings(monkeypatch) -> list[tuple[str, str]]:
+    """捕获 QMessageBox.warning（conftest 已全局置 no-op，这里要断言内容）。"""
+    from PySide6.QtWidgets import QMessageBox
+
+    calls: list[tuple[str, str]] = []
+
+    def _warning(parent, title, text, *args, **kwargs):
+        calls.append((str(title), str(text)))
+        return None
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(_warning))
+    return calls
+
+
+def test_panel_save_failure_keeps_editor_and_draft(tmp_path, monkeypatch):
+    """条目落盘失败：编辑器不关、草稿还在、明确提示未保存。
+
+    旧行为：``set_items`` 不检查 ``TodoStore.save`` 的 False，面板照常
+    ``close_editor()`` + ``reload_items()``，用户看到的是"保存成功"的样子；
+    下一次 ``apply_config()``（设置保存/重启）用磁盘覆盖内存，条目凭空消失。
+    契约对齐设置保存失败（modern_settings_dialog：不关窗 + 明确告知未落盘）。
+    """
+    calls = _capture_warnings(monkeypatch)
+    app, panel = _make_panel(tmp_path)
+    blocked = _block_item_writes(app.config.dir)
+
+    panel.begin_add()
+    panel._title_edit.setText("买奶")
+    panel._save_btn.click()
+
+    assert not panel._editor_card.isHidden(), "保存失败时编辑器必须留在原地（草稿不丢）"
+    assert panel._title_edit.text() == "买奶", "草稿不得被清掉"
+    assert calls and calls[-1][0] == "保存失败", f"必须给出可见失败提示，实际 {calls}"
+    assert str(blocked) in calls[-1][1], "提示要告诉用户条目文件在哪"
+    # 内存态与磁盘同真值：不留"看着已保存、下次重读就消失"的幽灵条目
+    assert app.todo_service.items() == []
+    app.todo_service.apply_config()
+    assert app.todo_service.items() == []
+
+
+def test_panel_save_retry_after_failure_writes_once(tmp_path, monkeypatch):
+    """障碍解除后重试：草稿一键落盘，且只落一条（失败未提交不留残留）。"""
+    calls = _capture_warnings(monkeypatch)
+    app, panel = _make_panel(tmp_path)
+    blocked = _block_item_writes(app.config.dir)
+
+    panel.begin_add()
+    panel._title_edit.setText("买奶")
+    panel._save_btn.click()
+    assert app.todo_service.items() == []
+    failed_calls = len(calls)
+
+    blocked.rmdir()  # 修好磁盘侧（换成可写文件路径）
+    panel._save_btn.click()
+
+    assert len(calls) == failed_calls, "落盘成功不该再提示失败"
+    assert panel._editor_card.isHidden(), "保存成功后编辑器照常收起"
+    assert [i["title"] for i in app.todo_service.items()] == ["买奶"]
+    assert [i["title"] for i in TodoStore(todo_items_path(app.config.dir)).load()] == ["买奶"]
 
 
 # ------------------------------------------------------------ 设置页偏好

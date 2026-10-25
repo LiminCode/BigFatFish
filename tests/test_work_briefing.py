@@ -54,7 +54,8 @@ def _prs(*titles) -> str:
 
 def test_it_is_off_until_someone_turns_it_on(tmp_path):
     assert Config(tmp_path).get(wb.CONFIG_KEY) == {
-        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "sources": dict(wb.DEFAULT_SOURCES)}
+        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "effort": "high",
+        "sources": dict(wb.DEFAULT_SOURCES), "prompt_zh": "", "prompt_en": "", "priority_rules": ""}
     assert wb.DEFAULT_SOURCES["email"] is False, "邮件默认关"
 
 
@@ -62,7 +63,7 @@ def test_the_setting_survives_a_restart_and_bad_values_are_cleaned(tmp_path):
     config = Config(tmp_path)
     config.set(wb.CONFIG_KEY, {**ON, "time": "08:30"})
     config.save()
-    assert Config(tmp_path).get(wb.CONFIG_KEY) == {**ON, "time": "08:30"}
+    assert Config(tmp_path).get(wb.CONFIG_KEY) == wb.normalize({**ON, "time": "08:30"})
 
     config.set(wb.CONFIG_KEY, {"enabled": "yes", "time": "25:99", "model": "sonnet; rm -rf ~"})
     config.save()

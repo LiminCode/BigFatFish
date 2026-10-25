@@ -32,7 +32,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from . import autostart as autostart_mod
@@ -700,7 +700,7 @@ class PetInstance:
         if self._defer_while_popup_active("legacy-chat", self.open_chat):
             return
         from .chat.legacy_widgets import ChatWindow
-        if self.legacy_chat_window is None:
+        if not self._chat_window_usable(self.legacy_chat_window):
             self.legacy_chat_window = ChatWindow(
                 self.config,
                 str(self.config.get('character', catalog.DEFAULT_CHARACTER)),
@@ -708,11 +708,13 @@ class PetInstance:
                 notifier=self.shell.system_notify,
                 auth_callback=self.open_chat_settings,
             )
+            self._own_chat_window(self.legacy_chat_window)
         else:
             self.legacy_chat_window.set_pet_window(host)
-            self.legacy_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
+            self.legacy_chat_window.sync_from_store()  # 窗口还开着时别的入口可能聊过
         self.chat_window = self.legacy_chat_window
-        self._present_dialog(self.legacy_chat_window, lambda: self.legacy_chat_window.position_near_pet(host))
+        window = self.legacy_chat_window
+        self._present_dialog(window, lambda: window.position_near_pet(host))
 
     def open_modern_chat(self) -> None:
         host = self._chat_host()
@@ -721,7 +723,7 @@ class PetInstance:
         if self._defer_while_popup_active("modern-chat", self.open_modern_chat):
             return
         from .chat.widgets import ChatWindow
-        if self.modern_chat_window is None:
+        if not self._chat_window_usable(self.modern_chat_window):
             self.modern_chat_window = ChatWindow(
                 self.config,
                 str(self.config.get('character', catalog.DEFAULT_CHARACTER)),
@@ -729,11 +731,36 @@ class PetInstance:
                 notifier=self.shell.system_notify,
                 auth_callback=self.open_chat_settings,
             )
+            self._own_chat_window(self.modern_chat_window)
         else:
             self.modern_chat_window.set_pet_window(host)
-            self.modern_chat_window.sync_from_store()  # 隐藏期间别的入口可能聊过
+            self.modern_chat_window.sync_from_store()  # 窗口还开着时别的入口可能聊过
         self.chat_window = self.modern_chat_window
-        self._present_dialog(self.modern_chat_window, lambda: self.modern_chat_window.position_near_pet(host))
+        window = self.modern_chat_window
+        self._present_dialog(window, lambda: window.position_near_pet(host))
+
+    @staticmethod
+    def _chat_window_usable(window) -> bool:
+        """缓存槽里那只聊天窗还能用吗（关闭即销毁后槽位会被清空 / 变悬挂）。
+
+        聊天窗不再是「关闭只隐藏」的常驻单例（上游 833b053d）：关窗即销毁，槽位在 ``finished``
+        里被清成 None。这里再判一次 C++ 对象存活是防御——对象可能已被父级收走而信号还没到。
+        """
+        return window is not None and shiboken6.isValid(window)
+
+    def _own_chat_window(self, window) -> None:
+        """把新造的聊天窗挂进本实例的收口链：窗口一收起就清掉缓存槽。
+
+        关窗即销毁（``pet/chat/lifecycle.py``）之后，槽位必须跟着窗口走——否则下次打开会去
+        show 一个已排队删除的对象，而 ``self.chat_window`` 这类裸引用会在死对象上抛
+        "Internal C++ object already deleted"（``sync_look_to_chat`` / 设置页刷新都读它）。
+        """
+        window.finished.connect(lambda _result=0, window=window: self._forget_chat_window(window))
+
+    def _forget_chat_window(self, window) -> None:
+        for attr in ("modern_chat_window", "legacy_chat_window", "chat_window"):
+            if getattr(self, attr, None) is window:
+                setattr(self, attr, None)
 
     def sync_chat_windows(self, session_id: str, *, focus: bool = False) -> None:
         """快速对话 / 灵动岛气泡往会话里写了东西：让完整聊天窗跟上。
@@ -781,6 +808,9 @@ class PetInstance:
         防止弹窗长期不消失时无限空转。
         """
         if attempt > 60:
+            return
+        if not shiboken6.isValid(dialog):
+            # 缓存窗口已销毁（聊天窗的「关闭即销毁」）：没必要再呈现。
             return
         if QApplication.activePopupWidget() is not None:
             QTimer.singleShot(60, lambda: self._present_dialog(dialog, before_present, attempt + 1))
@@ -1564,8 +1594,10 @@ class AppShell:
             self._mark_settings_child(True)
             if not self._settings_launch_pending():
                 # 拉起窗口之外 = 用户再次点了「肥鱼设置」（可能是另一只宠的）：
-                # 静默 return True 会让这次点击表现为"什么都没发生"。
-                self._notify_settings_already_open(instance)
+                # 先把已开着的那扇窗调到前台（用户 2026-10-21）；调不上来才像以前
+                # 那样提示——静默 return True 会让这次点击表现为"什么都没发生"。
+                if not self._focus_settings_process():
+                    self._notify_settings_already_open(instance)
             return True
         if self._settings_launch_pending():
             # 刚拉起、子进程还没来得及建锁：连点场景视为已在启动，避免双开。
@@ -1578,12 +1610,22 @@ class AppShell:
         self._mark_settings_child(True)
         return True
 
+    def _focus_settings_process(self) -> bool:
+        """把已开着的独立设置窗调到前台（按 settings.lock 的持锁 pid 找窗）；失败 False。"""
+        try:
+            from .settings_focus import focus_settings_process
+
+            return bool(focus_settings_process(self.config.dir / "settings.lock"))
+        except Exception:  # noqa: BLE001 - 调不到前台就退回提示，不能让设置入口报错
+            logging.exception("把设置窗口调到前台失败")
+            return False
+
     def _notify_settings_already_open(self, instance) -> None:
         """设置页已开着时的可见反馈（此前是静默 no-op，右击另一只宠像没反应）。
 
         独立设置进程是**单实例**：进程内多窗共用同一份 Config，所有宠的设置页
-        走的都是那一个设置进程，无法再开第二扇窗，也无法从主进程把它前置——
-        能做的只有说清现状。文案按归属分三种：同一只（"已经打开"）、另一只
+        走的都是那一个设置进程，无法再开第二扇窗。2026-10-21 起先试着把它调到
+        前台（``_focus_settings_process``），这里只在调不上来时说清现状。文案按归属分三种：同一只（"已经打开"）、另一只
         （"先关闭"）、归属未知（外部拉起的设置进程）。
 
         走 self-drawn 右下角通知而不是肥鱼气泡：设置页开着时气泡本来就被抑制
@@ -1926,6 +1968,7 @@ class AppShell:
         if self._shared is not None:
             self._shared.start()
         self._install_macos_dock_menu()
+        self._start_activity_tracker()
         self._sync_dynamic_island()
         self.instance._apply_spawn_offset()
         self._apply_balance_timer()
@@ -2207,6 +2250,12 @@ class AppShell:
         # 退出标记（R2 第五缺口）：在途自动拉起 worker 凭它中止或补偿收口——
         # 否则「退出时登记表为空 → worker 随后 spawn 登记」会留下永远无人收的进程。
         self._quitting = True
+        tracker = getattr(self, "_activity_tracker", None)
+        if tracker is not None:
+            try:
+                tracker.stop()          # 停表并把还没落盘的几分钟写下去（几 KB）
+            except Exception:  # noqa: BLE001 - 收口不许被它打断
+                logging.exception("退出时保存活动记录失败")
         # 窗级收口：逐窗保存位置、停本窗预热与 Agent、提交本窗会话
         for inst in self._instances:
             win = inst.win
@@ -2266,17 +2315,13 @@ class AppShell:
                 _ChatService.unregister_global_finished(self._on_global_chat_finished)
             except Exception:
                 logging.exception("退出时注销全局聊天订阅失败")
-        # 岛对话气泡（进程级）：提交会话并关闭——每条消息本就即时落盘，
-        # 这里只兜底保存飞行中的流式回复（口径同各窗 quick_chat 的退出保存）
+        # 岛对话气泡（进程级）：**不再**在退出时整份保存会话（上游 e3807027 H1）——
+        # 完整聊天窗与岛聊天共享同一会话对象，岛聊天的内存快照可能是旧的；退出时整份覆盖
+        # 会丢掉已在完整窗口里落盘的新消息。岛聊天的流式回复在 _finished 回调里通过
+        # append_message 即时落盘（quick_chat.py），退出时无需、也不应再覆盖保存。
+        # 代价：退出时正在流式输出的岛回复会丢失。
         bubble = getattr(self, "island_chat", None)
         if bubble is not None:
-            _island_session = getattr(bubble, "session", None)
-            _island_store = getattr(bubble, "store", None)
-            if _island_session is not None and _island_store is not None:
-                try:
-                    _island_store.save(_island_session)
-                except Exception:
-                    logging.exception("退出前保存灵动岛对话会话失败")
             try:
                 bubble.close()
             except Exception:
@@ -2499,6 +2544,8 @@ class AppShell:
             self.island.briefing_requested.connect(self._open_work_briefing_from_island)
             # 「个人助理」小人形（有没有由 _push_island_personal_state 定）
             self.island.personal_requested.connect(self._open_personal_from_island)
+            # 点信息槽里的「今日用量」数字：近 7 天仪表盘（弹在岛的上方）
+            self.island.usage_dashboard_requested.connect(self._toggle_usage_dashboard)
             # 「通知」铃铛与卡片里的通知框（有没有由 _sync_notification_center 定）
             self.island.notifications_requested.connect(self._on_island_notifications_opened)
             self.island.notification_activated.connect(self._on_island_notification_activated)
@@ -3094,6 +3141,34 @@ class AppShell:
         controller = getattr(self, "_work_briefing", None)
         island.set_briefing_state(controller.island_state if controller is not None else "hidden")
 
+    # ------------------------------------------------------------------ 近 7 天仪表盘
+    def _start_activity_tracker(self) -> None:
+        """记下哪几分钟在用电脑（仪表盘的上下班 / 专注时间）。只在 Windows 上：别的平台探测不到。"""
+        if sys.platform != "win32" or getattr(self, "_activity_tracker", None) is not None:
+            return
+        try:
+            from .activity_tracker import ActivityTracker
+
+            self._activity_tracker = ActivityTracker(self.config.dir, parent=self.app)
+            self._activity_tracker.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("活动记录接线失败")
+            self._activity_tracker = None
+
+    def _toggle_usage_dashboard(self) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        dashboard = getattr(self, "_usage_dashboard", None)
+        if dashboard is None:
+            from .usage_dashboard import UsageDashboard
+
+            tracker = lambda: getattr(getattr(self, "_activity_tracker", None), "log", None)  # noqa: E731
+            dashboard = self._usage_dashboard = UsageDashboard(self.config, activity=tracker, parent=self.app)
+        anchor = island.geometry()
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        dashboard.toggle(anchor, screen.availableGeometry() if screen is not None else anchor)
+
     def _open_work_briefing_from_island(self) -> None:
         controller = getattr(self, "_work_briefing", None)
         if controller is not None:
@@ -3683,9 +3758,10 @@ class AppShell:
     def _close_instance_subwindows(self, instance: PetInstance) -> None:
         """批5.2 P1-5：关闭本窗拥有的聊天窗/设置窗并断开引用。
 
-        ChatWindow.closeEvent 只隐藏复用（widgets.py），因此还要显式隐藏 +
-        调度 deleteLater + 清空实例引用，否则孤儿顶层窗在「退出这只」关掉本窗
-        writer 之后仍可经 store 提交、复活写盘 worker（常驻到进程结束）。
+        ChatWindow 现在**关闭即销毁**（``pet/chat/lifecycle.py``）：close() 收尾后由 ``done()``
+        排队 deleteLater，``finished`` 信号同时把实例上的缓存槽清空。这里仍显式关闭 + 清引用，
+        是为了覆盖「程序内直接退出这只」这条不走用户关窗的路径（且 writer 关闭后残留顶层窗会
+        复活写盘 worker）。
         """
         for attr in ('legacy_chat_window', 'modern_chat_window', 'quick_chat',
                      'chat_settings_dialog', 'modern_settings_dialog'):
@@ -3699,7 +3775,10 @@ class AppShell:
             try:
                 # N-4：WA_DeleteOnClose 的对话框 close() 已调度销毁，再排
                 # deleteLater 会对已删 C++ 对象抛 RuntimeError（噪音）。
-                if not dialog.testAttribute(Qt.WidgetAttribute.WA_DeleteOnClose):
+                # 聊天窗的销毁由 lifecycle 接管（_release_scheduled）：它会等在飞
+                # worker 退出再删，这里补一刀会赶在 worker 之前删掉宿主对象。
+                if (not dialog.testAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+                        and not getattr(dialog, "_release_scheduled", False)):
                     QTimer.singleShot(0, dialog.deleteLater)
             except Exception:
                 pass

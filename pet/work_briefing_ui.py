@@ -16,24 +16,29 @@ dark），右上角一个按钮可以当场切换并写回那个偏好；文字�
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QTabWidget, QTextBrowser, QVBoxLayout, QWidget
 
 from . import work_briefing as wb
 from .i18n import t
+from .note_meta_bar import BRIEFING_KEYS, NoteMetaBar, usage_values
 from .settings_theme_qss import METRO_TOKENS
 from .settings_widgets import TiltButton, _system_dark
 
 ALERT_ID = "work-briefing"
 THEMES = ("system", "light", "dark")
 
-#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签
+#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签、bug 行的底色、三级优先级的星色
 _EXTRA_TOKENS = {
-    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f"},
-    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea"},
+    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f", "bug": "#fbe3e4",
+              "p1": "#d93025", "p2": "#e8710a", "p3": "#8a8a90"},
+    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea", "bug": "#4a2328",
+             "p1": "#ff6b61", "p2": "#ffa94d", "p3": "#8c8c94"},
 }
+_STAR_RE = re.compile(r"^[★☆]+")
 
 
 def briefing_tokens(dark: bool) -> dict:
@@ -101,7 +106,7 @@ def _meta_line(briefing: wb.Briefing) -> str:
         when = f"{dt.datetime.fromisoformat(briefing.generated_at):%m-%d %H:%M}"
     except ValueError:
         when = "?"
-    return t("briefing.meta", when=when, seconds=f"{briefing.seconds:.0f}")
+    return t("briefing.meta", when=when)   # 用时在下面那条图标栏里
 
 
 class WorkBriefingWindow(QWidget):
@@ -134,6 +139,8 @@ class WorkBriefingWindow(QWidget):
         self.meta_label = QLabel("", self)
         self.meta_label.setObjectName("briefingMeta")
         self.meta_label.setWordWrap(True)
+        # 「生成于」下面那条：模型、effort、用时、tokens、花费（2026-10-24，和笔记的信息栏同一个部件）
+        self.usage_bar = NoteMetaBar(self._colors, self, keys=BRIEFING_KEYS, framed=False)
         self.body = QTextBrowser(self)
         self.body.setObjectName("briefingBody")
         self.body.setOpenExternalLinks(True)   # 工单 / PR / 消息的链接交给系统浏览器
@@ -163,6 +170,7 @@ class WorkBriefingWindow(QWidget):
         page.setContentsMargins(0, 8, 0, 0)
         page.setSpacing(8)
         page.addWidget(self.meta_label)
+        page.addWidget(self.usage_bar)
         page.addWidget(self.body, 1)
         page.addLayout(buttons)
         self.tabs = QTabWidget(self)
@@ -222,6 +230,7 @@ class WorkBriefingWindow(QWidget):
         link_palette.setColor(QPalette.ColorRole.Link, QColor(self._colors["link"]))
         self.body.setPalette(link_palette)
         self.theme_btn.setText("☀" if dark else "☾")
+        self.usage_bar.apply_colors(self._colors)
         self._decorate()
         for index in range(self.tabs.count()):
             apply = getattr(self.tabs.widget(index), "apply_theme", None)
@@ -243,9 +252,16 @@ class WorkBriefingWindow(QWidget):
         busy_text = busy_text or self._busy_text
         if briefing is None:
             self.meta_label.setText("")
+            self.usage_bar.hide()
             self.body.setPlainText(busy_text if busy else self._empty_text)
         else:
             self.meta_label.setText(meta if meta is not None else _meta_line(briefing))
+            if meta is None:
+                self.usage_bar.show_values(usage_values(
+                    getattr(briefing, "model", ""), getattr(briefing, "effort", ""), getattr(briefing, "tokens_in", 0),
+                    getattr(briefing, "tokens_out", 0), getattr(briefing, "cost_usd", 0.0), briefing.seconds))
+            else:
+                self.usage_bar.hide()   # 个人助理自己的元信息行里已经写了模型 / tokens
             self.body.setMarkdown(f"**{briefing.summary}**\n\n{briefing.markdown}")
             self._decorate()
         self.regenerate_btn.setEnabled(not busy)
@@ -255,13 +271,29 @@ class WorkBriefingWindow(QWidget):
             self.status_label.setText(t("briefing.status.failed", error=error) if error else "")
 
     def _decorate(self) -> None:
-        """排好版之后再上色：链接用主题的链接色，行内代码（工单状态）画成小标签。
+        """排好版之后再上色：链接用主题的链接色，行内代码（工单状态）画成小标签，bug 行（以
+        ``BUG_MARK`` 开头的列表项）连同它下面缩进的场景行画上底色。
 
         ``setMarkdown`` 之后做而不是靠样式表——Qt 的文档样式表只在导入 HTML 时生效。"""
         document = self.body.document()
-        chips, links = [], []
+        chips, links, bugs, stars = [], [], [], []
+        bug_indent = None   # 正在 bug 行之下时：bug 那一项的列表缩进级别
         block = document.begin()
         while block.isValid():
+            items = block.textList()
+            indent = items.format().indent() if items is not None else 0
+            text = block.text()
+            lead = len(text) - len(text.lstrip())
+            star = _STAR_RE.match(text[lead:])
+            if star is not None:   # 行首的星：按星数上色（★★★ 最醒目）
+                stars.append((block.position() + lead, star.end(), min(3, star.end())))
+            after_stars = text[lead + (star.end() if star else 0):].lstrip()
+            if items is not None and after_stars.startswith(wb.BUG_MARK):
+                bug_indent = indent
+            elif bug_indent is not None and not (items is not None and indent > bug_indent):
+                bug_indent = None
+            if bug_indent is not None:
+                bugs.append(block)
             it = block.begin()
             while not it.atEnd():
                 fragment = it.fragment()
@@ -281,11 +313,23 @@ class WorkBriefingWindow(QWidget):
         link.setForeground(QColor(self._colors["link"]))
         link.setFontUnderline(False)
         cursor = QTextCursor(document)
+        tint = QTextBlockFormat()
+        tint.setBackground(QColor(self._colors["bug"]))
+        for bug in bugs:
+            cursor.setPosition(bug.position())
+            cursor.mergeBlockFormat(tint)
         for fmt, spans in ((chip, chips), (link, links)):
             for position, length in spans:
                 cursor.setPosition(position)
                 cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
                 cursor.mergeCharFormat(fmt)
+        for position, length, level in stars:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(self._colors[f"p{4 - level}"]))
+            fmt.setFontWeight(700 if level == 3 else 400)
+            cursor.setPosition(position)
+            cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(fmt)
 
 
 def theme_preference(config) -> str:

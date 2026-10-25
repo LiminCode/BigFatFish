@@ -5,11 +5,14 @@ import json
 import logging
 import mimetypes
 import re
+import tempfile
+import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, QSize, Qt, Signal, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QImageReader, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QImageReader, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -36,6 +39,8 @@ from PySide6.QtWidgets import (
 )
 
 from .geometry import best_position_near_pet
+from .lifecycle import release_window_when_idle
+from .markdown_view import markdown_to_html
 from .models import ChatMessage
 from .pet_link import PetChatLink
 from .prompt import PromptBuilder, load_character_manifest
@@ -377,7 +382,10 @@ class MessageBubble(QFrame):
         self.setProperty("state", self.state)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding if role == "assistant" else QSizePolicy.Policy.Maximum,
-            QSizePolicy.Policy.Minimum,
+            # 纵向必须可收缩（Preferred）：Minimum 会把 sizeHint 当最小高度，而折行文本的
+            # sizeHint 是按非实际宽度估的（偏高），QScrollArea 取整条时间线最小高度撑大内容，
+            # 最新消息下方留出大片空白（上游 #191）。可收缩后布局按 heightForWidth 取真实高度。
+            QSizePolicy.Policy.Preferred,
         )
 
         root = QHBoxLayout(self)
@@ -410,7 +418,19 @@ class MessageBubble(QFrame):
         self.body.setObjectName("bubble-body")
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.body.setText(content)
+        # AI 回复按 Markdown 渲染（链接可点、可选中复制）；用户消息保持纯文本（上游 c33be7d3）
+        if role == "assistant":
+            self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+            self.body.setOpenExternalLinks(True)
+        self._raw_text = ""
+        self._markdown = False
+        self._render_cost_ms = 0.0
+        # 流式输出时 Markdown 重排的节流：长回答单次渲染+排版可达 20ms 以上（上游 6000 字实测
+        # 20.6ms），超过打字机 18ms 一拍就会卡；渲染变慢时合并到定时器里做。
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self._render_body)
+        self.set_content(content)
         self.body.setMinimumWidth(360 if role == "assistant" else 120)
         surface_layout.addWidget(self.body)
         panel.addWidget(self.surface)
@@ -422,7 +442,7 @@ class MessageBubble(QFrame):
         tools.setSpacing(2)
         self.copy_button = _chat_tool_button(self.tools, "message-copy-button", "copy", t("chat.window.copy"))
         self.copy_button.clicked.connect(
-            lambda: QApplication.clipboard().setText(self.body.text())
+            lambda: QApplication.clipboard().setText(self._raw_text)   # 复制原文，不是渲染后的 HTML
         )
         tools.addWidget(self.copy_button)
         if role == "user":
@@ -451,8 +471,31 @@ class MessageBubble(QFrame):
         if role == "user":
             root.setDirection(QHBoxLayout.Direction.RightToLeft)
 
-    def set_content(self, text: str) -> None:
-        self.body.setText(str(text))
+    @property
+    def content(self) -> str:
+        """原始文本（Markdown 源码）；复制按钮与外部读取都用它，而不是渲染后的 HTML。"""
+        return self._raw_text
+
+    def set_content(self, text: str, *, markdown: bool | None = None) -> None:
+        self._raw_text = str(text)
+        self._markdown = (self.role == "assistant") if markdown is None else bool(markdown)
+        if self._markdown and getattr(self, "state", "normal") == "streaming" and self._render_cost_ms > 8.0:
+            if not self._render_timer.isActive():
+                self._render_timer.start(int(min(250.0, max(50.0, self._render_cost_ms * 4))))
+            return
+        self._render_body()
+
+    def _render_body(self) -> None:
+        self._render_timer.stop()
+        if self._markdown and self._raw_text:
+            started = time.perf_counter()
+            self.body.setTextFormat(Qt.TextFormat.RichText)
+            self.body.setText(markdown_to_html(self._raw_text))
+            self.body.heightForWidth(max(1, self.body.width()))
+            self._render_cost_ms = (time.perf_counter() - started) * 1000.0
+        else:
+            self.body.setTextFormat(Qt.TextFormat.PlainText)
+            self.body.setText(self._raw_text)
 
     def set_state(self, state: str) -> None:
         # 打字机每 tick 都会调本方法：状态未变时全部视觉副作用都是冗余
@@ -460,6 +503,8 @@ class MessageBubble(QFrame):
         if state == getattr(self, "state", None):
             return
         self.state = state
+        if self._render_timer.isActive():  # 离开流式状态：立刻渲染最终内容，不等节流
+            self._render_body()
         self.setProperty("state", state)
         self.surface.setProperty("state", state)
         is_error = state == "error"
@@ -491,25 +536,125 @@ class MessageBubble(QFrame):
         self.update()
 
 
+#: 粘贴/拖拽进来的内存图落盘处（系统临时目录下；附件链只认路径，图必须先有路径）。
+_CLIPBOARD_IMAGE_DIR = "big-fat-fish-chat-clipboard"
+#: 剪贴板缓存的懒清扫阈值：超过一天没人引用的 paste-*.png 在下次落盘时清掉。
+_CLIPBOARD_IMAGE_MAX_AGE_S = 24 * 3600
+
+
+def _clipboard_image_dir() -> Path:
+    root = Path(tempfile.gettempdir()) / _CLIPBOARD_IMAGE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - _CLIPBOARD_IMAGE_MAX_AGE_S
+    for stale in root.glob("paste-*.png"):
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass  # 清扫是顺手的事，占用/权限问题不值得中断粘贴
+    return root
+
+
+def _mime_to_image(mime) -> QImage:
+    """mimeData.imageData() 的两种形态（QImage / QPixmap）归一成 QImage。"""
+    data = mime.imageData()
+    if isinstance(data, QImage):
+        return data
+    if isinstance(data, QPixmap):
+        return data.toImage()
+    return QImage()
+
+
+def _save_clipboard_image(image: QImage) -> Path | None:
+    """内存图 → 临时 PNG（附件链只认路径）。失败返回 None（调用方按无图处理）。"""
+    if image is None or image.isNull():
+        return None
+    try:
+        path = _clipboard_image_dir() / f"paste-{time.time_ns()}.png"
+        if image.save(str(path), "PNG"):
+            return path
+    except OSError:
+        logging.getLogger(__name__).exception("剪贴板图片落盘失败")
+    return None
+
+
+def _is_clipboard_cache_file(path: Path) -> bool:
+    """只认我们自己在剪贴板缓存目录里落盘的文件（用户文件的删除权不在我们）。"""
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return False
+    return (resolved.name.startswith("paste-") and resolved.suffix == ".png"
+            and resolved.parent == (Path(tempfile.gettempdir()) / _CLIPBOARD_IMAGE_DIR).resolve())
+
+
+def _discard_clipboard_cache(path) -> None:
+    """附件移除/发送完成后，把粘贴产生的临时文件收回（用户文件绝不动）。"""
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, TypeError):
+        return
+    if not _is_clipboard_cache_file(resolved):
+        return
+    try:
+        resolved.unlink(missing_ok=True)
+    except OSError:
+        pass  # 删除失败只是临时目录里多躺一天，懒清扫会收
+
+
 class AttachmentTextEdit(QPlainTextEdit):
+    """输入框：文本编辑 + 附件入口（上游 e969c38e）。
+
+    三条进附件的路：
+
+    - 拖拽本地文件（一直以来的）；
+    - **Ctrl+V 粘贴**：剪贴板里的图（截图工具/复制图片）优先于文本——截图工具
+      常同时塞一段占位文本，按文本粘就把图丢了；复制的本地文件同样进附件；
+    - **拖拽内存图**（浏览器里直接拖图，没有本地 URL）：与粘贴同一条落盘路。
+
+    内存图没有路径，先落成临时 PNG 再走统一的附件校验——"附件链只认路径"这一件事不变。
+    """
+
     files_dropped = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
 
+    def insertFromMimeData(self, source) -> None:  # noqa: N802 (Qt 命名)
+        if source.hasImage():
+            path = _save_clipboard_image(_mime_to_image(source))
+            if path is not None:
+                self.files_dropped.emit([str(path)])
+                return
+        if source.hasUrls():
+            paths = [url.toLocalFile() for url in source.urls() if url.isLocalFile()]
+            if paths:
+                self.files_dropped.emit(paths)
+                return
+        super().insertFromMimeData(source)
+
     def dragEnterEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasUrls() and any(url.isLocalFile() for url in event.mimeData().urls()):
+        mime = event.mimeData()
+        if mime.hasImage() or (mime.hasUrls() and any(url.isLocalFile() for url in mime.urls())):
             event.acceptProposedAction()
             return
         super().dragEnterEvent(event)
 
     def dropEvent(self, event) -> None:  # noqa: N802
-        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-        if paths:
-            self.files_dropped.emit(paths)
-            event.acceptProposedAction()
-            return
+        mime = event.mimeData()
+        if mime.hasUrls():
+            paths = [url.toLocalFile() for url in mime.urls() if url.isLocalFile()]
+            if paths:
+                self.files_dropped.emit(paths)
+                event.acceptProposedAction()
+                return
+        if mime.hasImage():
+            path = _save_clipboard_image(_mime_to_image(mime))
+            if path is not None:
+                self.files_dropped.emit([str(path)])
+                event.acceptProposedAction()
+                return
         super().dropEvent(event)
 
 
@@ -663,7 +808,8 @@ class ChatComposer(QFrame):
         self.notice.emit(message)
         if getattr(self, "hint", None) is not None:
             self.hint.setText(message)
-            QTimer.singleShot(5000, lambda: self.hint.setText(t("chat.window.messages_are_saved_character_local")))
+            # 带上下文对象：hint 销毁（聊天窗关闭即销毁）时定时器自动取消，不再回调到已删控件
+            QTimer.singleShot(5000, self.hint, lambda: self.hint.setText(t("chat.window.messages_are_saved_character_local")))
 
     def _refresh_attachments(self) -> None:
         while self.attachment_layout.count():
@@ -680,10 +826,13 @@ class ChatComposer(QFrame):
 
     def remove_attachment(self, path: Path) -> None:
         self.attachment_paths = [item for item in self.attachment_paths if item != path]
+        _discard_clipboard_cache(path)
         self._refresh_attachments()
         self._update_enabled()
 
     def clear_attachments(self) -> None:
+        for path in self.attachment_paths:
+            _discard_clipboard_cache(path)
         self.attachment_paths.clear()
         self._refresh_attachments()
         self._update_enabled()
@@ -797,7 +946,12 @@ class ChatWindow(QDialog):
         self._resize_edges: set[str] = set()
         self._resize_global_start: QPoint | None = None
         self._resize_start_geometry: QRect | None = None
+        # 关闭即销毁（见 lifecycle.release_window_when_idle，上游 833b053d）。**不挂
+        # WA_DeleteOnClose**：Qt 那一条会在 close() 里无条件 deleteLater，可能赶在在飞
+        # worker 退出之前把窗口（连同 worker 的宿主对象）删掉；销毁时机必须由 lifecycle
+        # 判定，所以这里只留生命周期标记。
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        self._release_scheduled = False
         # 无边框圆角窗：窗口自身透明（QSS #chat-window 背景同步置 transparent），
         # 只显示圆角的 phone-shell，去掉窗外一圈方形背景（浅色系统白框/深色系统黑框）
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -1883,7 +2037,13 @@ class ChatWindow(QDialog):
         if image_payloads:
             messages[-1]["content"] = [{"type": "text", "text": text}, *image_payloads]
         self._last_user_payload = messages[-1].get("content") if image_payloads else None
-        self._active_request_id = self.service.send(messages, config)
+        # request id 必须先落到本窗在途状态再 send：`started` 是在 send() 内**同步**发出的，
+        # 若沿用 `_active_request_id = send(...)` 的写法，`_started` 拿到的 id 与此刻的
+        # _active_request_id 必然不等，首行过滤恒命中 → 不进忙态、按钮不变停止、肥鱼不切思考态
+        # （上游 ed78e6e8 F6）。
+        request_id = uuid.uuid4().hex
+        self._active_request_id = request_id
+        self.service.send(messages, config, request_id=request_id)
         self._bottom()
 
     def _focus_chat(self) -> None:
@@ -2019,7 +2179,7 @@ class ChatWindow(QDialog):
         self._pending_output = ""
         self._pending_finish_text = None
         if self._bubble:
-            self._bubble.set_content(t("chat.window.request_failed") + str(text))
+            self._bubble.set_content(t("chat.window.request_failed") + str(text), markdown=False)
             self._bubble.set_state("error")
         self._reset()
         self.pet_link.error(text)
@@ -2226,10 +2386,37 @@ class ChatWindow(QDialog):
             QTimer.singleShot(0, self, self._update_bubble_widths)
         return super().eventFilter(obj, event)
 
-    def closeEvent(self, event) -> None:
-        """关闭=隐藏并复用窗口：停止生成、解除肥鱼位置监听，避免泄漏。"""
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # 窗口是复用的（关闭=隐藏）：每次从菜单/灵动岛打开都回到最新一条回复，
+        # 而不是停在上次关闭时的位置。系统自发的 show（如从最小化还原）保留阅读位置。
+        if not event.spontaneous():
+            self._bottom(always=True)
+
+    def done(self, result: int) -> None:
+        """所有收口路径（X / Esc / reject）统一「收尾 + 收起即销毁」（上游 833b053d + cee01e0e）。
+
+        Esc 走 ``reject() → done()``，**不经过 closeEvent**——收尾（落库未排空的回复、停止生成、
+        解除肥鱼位置监听）必须和销毁一样挂在这个公共出口上，只写 closeEvent 会让 Esc 留下指向
+        已销毁窗口的监听器。``WA_DeleteOnClose`` 只覆盖 ``close()``，所以销毁也排在这里。
+        """
+        # 模型已完成、打字机仍在排空时关窗：worker 已回收，service.stop() 既不取消任何东西
+        # 也不会补发 stopped 信号，而定时器一停 _pending_finish_text 就再没有落库机会——回复
+        # 丢失、重开后按钮仍卡在「停止」。故先按完成路径落库并复位（_complete_finished 内含
+        # _reset），再走原有关窗流程（上游 ed78e6e8 X3）。
+        if self._pending_finish_text is not None:
+            self._complete_finished(self._pending_finish_text)
         self._typewriter_timer.stop()
         self.service.stop()
         self.set_pet_window(None)
-        self.hide()
-        event.ignore()
+        super().done(result)
+        release_window_when_idle(self, self.service)
+
+    def closeEvent(self, event) -> None:
+        """收尾与销毁统一在 ``done()``（X 与 Esc 的公共出口），这里只转发。
+
+        ``super().closeEvent`` 在窗口可见时走 ``reject()`` → ``done()``。**不要先 hide 再调
+        super**——QDialog 的 closeEvent 只在 ``isVisible()`` 时 reject，先隐藏就既不发 finished
+        也不走销毁，槽位会留下死对象。
+        """
+        super().closeEvent(event)

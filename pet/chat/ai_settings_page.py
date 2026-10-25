@@ -302,26 +302,31 @@ class _AiSettingsPage(QWidget):
         root.addStretch(1)
 
     def appearance_rows(self) -> list[SettingRow]:
-        """Controls visually owned by the Appearance page, persisted with AI settings."""
+        """Controls visually owned by the Appearance page, persisted with AI settings.
+
+        行建在本页上（``parent=self``，上游 a8bc79e3）：下面那句 ``_update_background_visibility``
+        在返回之前就按当前背景值决定详情行显隐——无父控件的 ``setVisible(True)`` 会当场开出
+        一个顶层窗口（用户点设置时看到的无标题小窗），进卡片之前无人回收。
+        """
         rows = [
             SettingRow(
                 "chat_ui_style", t("settings.ai.chat_window"),
                 t("settings.ai.fish_widescreen_wide_modern_layout"),
-                self.chat_ui_style,
+                self.chat_ui_style, parent=self,
             ),
             SettingRow(
                 "chat_background", t("settings.ai.chat_background"),
                 t("settings.ai.both_fish_widescreen_fish_pocket"),
-                self.background_select,
+                self.background_select, parent=self,
             ),
-            SettingRow("chat_background_file", t("settings.ai.custom_background_image"), t("settings.ai.common_image_formats_use_absolute"), self.background_picker),
-            SettingRow("chat_background_opacity", t("settings.ai.image_opacity"), t("settings.ai.how_strongly_background_image_shows"), self.background_opacity),
-            SettingRow("chat_background_fill", t("settings.ai.fill_mode"), t("settings.ai.crop_fill_show_whole_stretch"), self.background_fill),
-            SettingRow("chat_bg_crops", t("settings.ai.crop_framing_2"), t("settings.ai.drag_move_scroll_zoom_selection"), self.background_crop_btn),
+            SettingRow("chat_background_file", t("settings.ai.custom_background_image"), t("settings.ai.common_image_formats_use_absolute"), self.background_picker, parent=self),
+            SettingRow("chat_background_opacity", t("settings.ai.image_opacity"), t("settings.ai.how_strongly_background_image_shows"), self.background_opacity, parent=self),
+            SettingRow("chat_background_fill", t("settings.ai.fill_mode"), t("settings.ai.crop_fill_show_whole_stretch"), self.background_fill, parent=self),
+            SettingRow("chat_bg_crops", t("settings.ai.crop_framing_2"), t("settings.ai.drag_move_scroll_zoom_selection"), self.background_crop_btn, parent=self),
             SettingRow(
                 "modern_chat_card_opacity", t("settings.ai.message_card_opacity"),
                 t("settings.ai.how_much_fish_widescreen_message"),
-                self.message_card_opacity,
+                self.message_card_opacity, parent=self,
             ),
         ]
         self._background_file_row = rows[-5]

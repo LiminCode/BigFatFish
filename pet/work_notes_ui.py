@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from . import work_notes as wn
 from .i18n import t
+from .note_meta_bar import NoteMetaBar
 from .settings_widgets import TiltButton
 
 ALERT_PREFIX = "work-note:"
@@ -47,9 +48,12 @@ def row_label(note: wn.Note, busy: bool) -> str:
 
 
 def detail_markdown(note: wn.Note, busy: bool) -> str:
-    """右下那块的全文（Markdown）：摘要在前，原文在后，原文逐字。"""
+    """右下那块的全文（Markdown）：摘要在前，原文在后，原文逐字。
+
+    记下的时间、模型、tokens、花费、用时不在这里：在详情底部的信息栏（``note_meta_bar``，2026-10-20）。
+    """
     parts = [f"### {note.title}"]
-    meta = [t("notes.detail.created", when=_when(note.created) or note.created), note.kind]
+    meta = [note.kind]
     if note.status == wn.STATUS_DONE:
         meta.append(t("notes.detail.done"))
     elif note.remind_at:
@@ -57,9 +61,6 @@ def detail_markdown(note: wn.Note, busy: bool) -> str:
     if note.tags:
         meta.append(" ".join(f"`{tag}`" for tag in note.tags))
     parts.append(" · ".join(meta))
-    if note.model:
-        parts.append(t("notes.detail.usage", model=note.model, tokens_in=f"{note.tokens_in:,}",
-                       tokens_out=f"{note.tokens_out:,}", cost=f"{note.cost_usd:.3f}", seconds=f"{note.seconds:.0f}"))
     if busy:
         parts.append(f"*{t('notes.detail.busy')}*")
     elif note.summary:
@@ -132,6 +133,15 @@ class WorkNotesPanel(QWidget):
         palette.setColor(QPalette.ColorRole.Link, QColor(colors["link"]))
         self.detail.setPalette(palette)
         self.detail.setAccessibleName(t("notes.detail.original"))
+        # 基本信息（时间 / 模型 / tokens / 花费 / 用时）在详情下面一条，不随正文滚动，不抢摘要的地方
+        self.meta_bar = NoteMetaBar(colors, self)
+        self.detail_pane = QWidget(self)
+        self.detail_pane.setObjectName("notesDetailPane")
+        pane = QVBoxLayout(self.detail_pane)
+        pane.setContentsMargins(0, 0, 0, 0)
+        pane.setSpacing(0)
+        pane.addWidget(self.detail, 1)
+        pane.addWidget(self.meta_bar)
 
         self.view_btn = TiltButton(t("slack.notes.button.view"), self)
         self.view_btn.setToolTip(t("slack.notes.button.view_hint"))
@@ -179,12 +189,12 @@ class WorkNotesPanel(QWidget):
         self.splitter.setObjectName("notesSplitter")
         self.splitter.setChildrenCollapsible(False)
         self.splitter.addWidget(self.list)
-        self.splitter.addWidget(self.detail)
+        self.splitter.addWidget(self.detail_pane)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 2)
         self.splitter.setSizes([280, 560])
         self.list.setMinimumWidth(200)
-        self.detail.setMinimumWidth(320)
+        self.detail_pane.setMinimumWidth(320)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(8)
@@ -225,6 +235,7 @@ class WorkNotesPanel(QWidget):
         palette = self.detail.palette()
         palette.setColor(QPalette.ColorRole.Link, QColor(colors["link"]))
         self.detail.setPalette(palette)
+        self.meta_bar.apply_colors(colors)
         self._show_current()
 
     def select(self, name: str) -> None:
@@ -269,6 +280,7 @@ class WorkNotesPanel(QWidget):
         self.snooze_btn.setEnabled(open_note)
         self.done_btn.setEnabled(open_note)
         self.resummarize_btn.setEnabled(has and not busy)
+        self.meta_bar.show_note(note)
         if note is None:
             self.detail.setPlainText("")
             return

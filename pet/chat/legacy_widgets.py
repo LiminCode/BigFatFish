@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal, QTimer
@@ -27,6 +28,8 @@ from PySide6.QtWidgets import (
 )
 
 from .geometry import best_position_near_pet
+from .lifecycle import release_window_when_idle
+from .markdown_view import markdown_to_html
 from .models import ChatMessage
 from .pet_link import PetChatLink
 from .prompt import PromptBuilder, load_character_manifest
@@ -139,7 +142,7 @@ class MessageBubble(QFrame):
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.body.setFont(QFont("Microsoft YaHei UI", 10))
-        self.body.setText(content)
+        self._set_body_text(content)
         panel.addWidget(self.body)
 
         self.status_label = QLabel()
@@ -157,8 +160,18 @@ class MessageBubble(QFrame):
         if role == "user":
             root.setDirection(QHBoxLayout.Direction.RightToLeft)
 
+    def _set_body_text(self, text: str) -> None:
+        """助手气泡按 Markdown 渲染（与现代窗同一 markdown_to_html 口径，上游 5b9b39a3）；
+        用户气泡保持纯文本（用户输入里的 < 符号等不当 HTML 解析）。"""
+        if self.role == "assistant" and text:
+            self.body.setTextFormat(Qt.TextFormat.RichText)
+            self.body.setText(markdown_to_html(str(text)))
+        else:
+            self.body.setTextFormat(Qt.TextFormat.PlainText)
+            self.body.setText(str(text))
+
     def set_content(self, text: str) -> None:
-        self.body.setText(str(text))
+        self._set_body_text(text)
 
     def set_state(self, state: str) -> None:
         self.state = state
@@ -264,7 +277,10 @@ class ChatWindow(QDialog):
         self.setMinimumSize(380, 620)
         self.setMaximumSize(560, 980)
         self.resize(430, 780)
+        # 关闭即销毁（与现代窗同款，见 lifecycle.release_window_when_idle）。
+        # 刻意不挂 WA_DeleteOnClose：销毁时机由 lifecycle 等 worker 退出后决定。
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        self._release_scheduled = False
         # 无边框圆角窗：窗口自身透明（QSS #chat-window 背景同步置 transparent），
         # 只显示圆角的 phone-shell，去掉窗外一圈方形背景（深色系统下是黑框）
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -961,7 +977,10 @@ class ChatWindow(QDialog):
         config.mcp_servers = self.config.resolve_mcp_servers(config)
         config.client_tools = self.config.resolve_client_tools(config)
         messages = self.prompt_builder.build_messages(self.settings, self.character_id, self.session.messages[:-1], text)
-        self._active_request_id = self.service.send(messages, config)
+        # 先落 request id 再 send：started 在 send() 内同步发出（同现代窗，上游 F6）
+        request_id = uuid.uuid4().hex
+        self._active_request_id = request_id
+        self.service.send(messages, config, request_id=request_id)
         self._bottom()
 
     def _focus_chat(self) -> None:
@@ -1102,9 +1121,16 @@ class ChatWindow(QDialog):
         super().resizeEvent(event)
         self._update_bubble_widths()
 
-    def closeEvent(self, event) -> None:
-        """关闭=隐藏并复用窗口：停止生成、解除肥鱼位置监听，避免泄漏。"""
+    def done(self, result: int) -> None:
+        """所有收口路径（X / Esc / reject）统一「收尾 + 收起即销毁」（与现代窗同款）。
+        Esc 走 ``reject() → done()`` 不经过 closeEvent——收尾（停止生成、解除肥鱼位置监听）
+        必须挂在公共出口上。"""
         self.service.stop()
         self.set_pet_window(None)
-        self.hide()
-        event.ignore()
+        super().done(result)
+        release_window_when_idle(self, self.service)
+
+    def closeEvent(self, event) -> None:
+        """收尾与销毁统一在 ``done()``，这里只转发（super 在可见时 reject → done）。
+        不先 hide：先隐藏会绕过整条收口语义（同现代窗）。"""
+        super().closeEvent(event)
