@@ -27,6 +27,7 @@ from .speech_bubble import BUBBLE_STYLE_PRESETS
 from .speech_bubble_text import truncate_bubble_text
 from .ui_fonts import apply_family
 
+from .chat.markdown_view import markdown_to_html
 from .chat.models import ChatMessage
 from .chat.prompt import PromptBuilder
 from .chat.service import ChatService
@@ -488,16 +489,27 @@ class QuickChatBubble(QFrame):
         # 分页箭头/页码对一段预览没有意义，隐藏。
         self._set_page_controls_visible(not self._reply_truncated)
         self.page_widget.setVisible(self._reply_truncated)
-        self.output.setText(text)
+        self._set_output_markdown(text)
 
     def _show_page(self, index: int) -> None:
         if not self._pages:
             return
         self._page = max(0, min(index, len(self._pages) - 1))
-        self.output.setText(self._pages[self._page])
+        self._set_output_markdown(self._pages[self._page])
         self.page_label.setText(f"{self._page + 1}/{len(self._pages)}")
         self.prev_btn.setEnabled(self._page > 0)
         self.next_btn.setEnabled(self._page < len(self._pages) - 1)
+
+    def _set_output_markdown(self, text: str) -> None:
+        """助手回复按 Markdown 渲染（与现代聊天窗同一 markdown_to_html 口径，上游 5b9b39a3）。
+
+        空文本清空即可；非空走 RichText。分页是对纯文本切的，跨页围栏代码块可能渲染不完整
+        ——气泡本来就是预览面，全文在聊天窗（分页为既有行为，不在这里改）。"""
+        if not text:
+            self.output.setText("")
+            return
+        self.output.setTextFormat(Qt.TextFormat.RichText)
+        self.output.setText(markdown_to_html(text))
 
     def _open_full_chat(self) -> None:
         # 聊天窗一激活，本气泡就会因失焦而关闭。回答还在生成时不能跟着被掐掉：

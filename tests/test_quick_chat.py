@@ -19,3 +19,23 @@ def test_regular_preset_uses_own_radius():
     """普通预设用自己的 radius（回退不得影响既有外观）。"""
     preset = BUBBLE_STYLE_PRESETS["classic_top"]
     assert _surface_radius(preset) == float(preset.get("radius", 14))
+
+
+def test_reply_renders_markdown(tmp_path):
+    """快捷气泡的助手回复按 Markdown 渲染（对齐现代聊天窗的口径，上游 5b9b39a3）——
+    上游用户反馈 v4.3.0 快捷气泡里 markdown 原文直出（**、## 符号裸露）。"""
+    from PySide6.QtWidgets import QApplication
+
+    from pet.config import Config
+    from pet.quick_chat import QuickChatBubble
+
+    app = QApplication.instance() or QApplication([])
+    bubble = QuickChatBubble(Config(base=tmp_path))
+    try:
+        bubble._set_reply_text("重点**加粗**收尾")
+        bubble._render_reply()
+        assert "font-weight:700" in bubble.output.text() and "加粗" in bubble.output.text(), \
+            f"markdown 未渲染: {bubble.output.text()[:80]}"  # Qt 写 span font-weight 而非 <strong>
+    finally:
+        bubble.close()
+        app.processEvents()

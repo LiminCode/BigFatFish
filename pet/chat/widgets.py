@@ -5,6 +5,7 @@ import json
 import logging
 import mimetypes
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from .geometry import best_position_near_pet
+from .markdown_view import markdown_to_html
 from .models import ChatMessage
 from .pet_link import PetChatLink
 from .prompt import PromptBuilder, load_character_manifest
@@ -413,7 +415,19 @@ class MessageBubble(QFrame):
         self.body.setObjectName("bubble-body")
         self.body.setWordWrap(True)
         self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.body.setText(content)
+        # AI 回复按 Markdown 渲染（链接可点、可选中复制）；用户消息保持纯文本（上游 c33be7d3）
+        if role == "assistant":
+            self.body.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+            self.body.setOpenExternalLinks(True)
+        self._raw_text = ""
+        self._markdown = False
+        self._render_cost_ms = 0.0
+        # 流式输出时 Markdown 重排的节流：长回答单次渲染+排版可达 20ms 以上（上游 6000 字实测
+        # 20.6ms），超过打字机 18ms 一拍就会卡；渲染变慢时合并到定时器里做。
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self._render_body)
+        self.set_content(content)
         self.body.setMinimumWidth(360 if role == "assistant" else 120)
         surface_layout.addWidget(self.body)
         panel.addWidget(self.surface)
@@ -425,7 +439,7 @@ class MessageBubble(QFrame):
         tools.setSpacing(2)
         self.copy_button = _chat_tool_button(self.tools, "message-copy-button", "copy", t("chat.window.copy"))
         self.copy_button.clicked.connect(
-            lambda: QApplication.clipboard().setText(self.body.text())
+            lambda: QApplication.clipboard().setText(self._raw_text)   # 复制原文，不是渲染后的 HTML
         )
         tools.addWidget(self.copy_button)
         if role == "user":
@@ -454,8 +468,31 @@ class MessageBubble(QFrame):
         if role == "user":
             root.setDirection(QHBoxLayout.Direction.RightToLeft)
 
-    def set_content(self, text: str) -> None:
-        self.body.setText(str(text))
+    @property
+    def content(self) -> str:
+        """原始文本（Markdown 源码）；复制按钮与外部读取都用它，而不是渲染后的 HTML。"""
+        return self._raw_text
+
+    def set_content(self, text: str, *, markdown: bool | None = None) -> None:
+        self._raw_text = str(text)
+        self._markdown = (self.role == "assistant") if markdown is None else bool(markdown)
+        if self._markdown and getattr(self, "state", "normal") == "streaming" and self._render_cost_ms > 8.0:
+            if not self._render_timer.isActive():
+                self._render_timer.start(int(min(250.0, max(50.0, self._render_cost_ms * 4))))
+            return
+        self._render_body()
+
+    def _render_body(self) -> None:
+        self._render_timer.stop()
+        if self._markdown and self._raw_text:
+            started = time.perf_counter()
+            self.body.setTextFormat(Qt.TextFormat.RichText)
+            self.body.setText(markdown_to_html(self._raw_text))
+            self.body.heightForWidth(max(1, self.body.width()))
+            self._render_cost_ms = (time.perf_counter() - started) * 1000.0
+        else:
+            self.body.setTextFormat(Qt.TextFormat.PlainText)
+            self.body.setText(self._raw_text)
 
     def set_state(self, state: str) -> None:
         # 打字机每 tick 都会调本方法：状态未变时全部视觉副作用都是冗余
@@ -463,6 +500,8 @@ class MessageBubble(QFrame):
         if state == getattr(self, "state", None):
             return
         self.state = state
+        if self._render_timer.isActive():  # 离开流式状态：立刻渲染最终内容，不等节流
+            self._render_body()
         self.setProperty("state", state)
         self.surface.setProperty("state", state)
         is_error = state == "error"
@@ -2022,7 +2061,7 @@ class ChatWindow(QDialog):
         self._pending_output = ""
         self._pending_finish_text = None
         if self._bubble:
-            self._bubble.set_content(t("chat.window.request_failed") + str(text))
+            self._bubble.set_content(t("chat.window.request_failed") + str(text), markdown=False)
             self._bubble.set_state("error")
         self._reset()
         self.pet_link.error(text)
