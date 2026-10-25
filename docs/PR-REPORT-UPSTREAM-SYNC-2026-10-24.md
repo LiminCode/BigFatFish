@@ -194,3 +194,37 @@ frameseq / convert / library 族 **241 passed**。两个坏目录删掉后停桌
 
 **没做的**：看门狗对「同步直读也是空帧」仍然静默——那条路以后至少该记一次 WARNING，本轮没动
 （它不是根因，改它要连带看门狗的节流口径）。
+
+## 八、追记（2026-10-24 晚）：简报 / 笔记 / Slack 关注的提示词明文可改、effort 可选、三级优先级
+
+用户反馈「设置里没有简报的配置项」——其实在「自动化与联动 → 工作简报」（开关 / 只在工作日 / 几点 /
+模型 / 来源），但发给 AI 的提示词是黑箱、effort 写死、没有优先级。两个提交（`b1ad9fa4`、`7f8a2c93`）：
+
+- **提示词明文可改**：三节各加一行「发给 Claude 的提示词」——预填内置模板（简报的按当前来源开关拼出来），
+  占位符发送前替换（简报 `{now} {hours} {prs} {priority_rules}`、笔记 `{now} {original} {language}`、
+  Slack `{now} {since} {max_items}`）；和内置一字不差存空串（跟着以后的版本更新）、改过整份存
+  （简报 / 笔记按界面语言 `prompt_zh` / `prompt_en`，Slack 一份 `prompt`）；「恢复内置」。
+  渲染不用 `str.format`（用户文本里的 JSON 示例花括号会炸，而要求写 `{{` 会让编辑框里的字和真正发出去的不一样），
+  `work_briefing.render_template` 只换认识的占位符；笔记 / Slack 内置模板里原先的 `{{` 转义一并去掉。
+  取舍：简报改过模板之后，来源开关只管 Claude 能用哪些工具，提示词里要不要提某个来源由用户自己写——
+  提示里写明了。
+- **effort**：三节各加「思考强度」（low / medium / high / xhigh，默认 high = 那个账号原来的默认），显式传
+  `--effort`；`normalize_effort` 只认四档（它会拼进 shell 命令）。
+- **三级优先级**：内置提示词多一段「优先级」——每条行首 ★★★（今天必须处理）/ ★★（本周内）/ ★（知悉即可），
+  由模型按紧急程度、截止、是否有人在等定，日程行不标；bug 行 `- ★★★ 🐞 [编号]`。窗口 `_decorate` 按星数上色
+  （白天 / 黑夜各一套 `p1/p2/p3` 令牌，★★★ 加粗），bug 底色照旧（检测时先跳过行首的星）。
+  设置页加「优先级偏好」多行框，非空时作为「我的优先级偏好（优先于你的判断）：…」追加进 `{priority_rules}`
+  ——这就是用户说的「以后加自己的偏好」，现在就能写。
+- 共用部件 `settings_prompt_editor.PromptEditor`（多行框 + 恢复内置，口径同语音报时的内置台词库）。
+
+**测试**：`test_work_briefing_prompt_editing.py` 10 条、`test_prompt_editing_notes_slack.py` 7 条、三处设置页
+各 1–3 条新用例，全部先红后绿；简报 / 笔记 / Slack / 设置相关 15 个文件 **175 passed**；ruff 干净。
+**实机**：真 `windows` 平台截图（隔离 APPDATA）「自动化与联动」整页，三节的「思考强度」「发给 Claude 的提示词」
+「恢复内置」都在位，提示文案换行正常（`settings-shots/automation-zh.png`，会话 scratchpad）。
+**用新提示词真跑一次简报**（本机 WSL、公司账号、sonnet、effort high，结果存进桌宠的 `work-briefing.json`）：
+22 轮、148.8 s、输入 419k / 输出 20k tokens、$1.08（上一版同口径 21 轮 / 135 s / $0.92——多出来的是每条的星级判断）；
+0 个工具被拒。星级分布：Jira ★★★ 1 / ★★ 13 / ★ 14，PR ★★ 9 / ★ 11，Slack ★★ 1 / ★ 1，「Do first」第一条
+是 `★★★ 🐞` 那个 High 级 bug（工单号从略）——模型没有把所有 bug 都标成 ★★★（15 个 bug 里只有 1 个三星），说明它确实在按紧急程度
+判而不是按类型。窗口里星按级别上色（真平台截图 `saved-light.png` / `saved-dark.png`，会话 scratchpad）。
+**注意**：设置窗口是独立进程——用户当时开着的那个还是旧代码，看不到新行，关掉重开才有；旧窗口里点保存
+会把新键丢掉（旧 normalize 不认识）。
