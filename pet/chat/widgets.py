@@ -5,12 +5,13 @@ import json
 import logging
 import mimetypes
 import re
+import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, QSize, Qt, Signal, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QImageReader, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QImageReader, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -533,25 +534,125 @@ class MessageBubble(QFrame):
         self.update()
 
 
+#: 粘贴/拖拽进来的内存图落盘处（系统临时目录下；附件链只认路径，图必须先有路径）。
+_CLIPBOARD_IMAGE_DIR = "big-fat-fish-chat-clipboard"
+#: 剪贴板缓存的懒清扫阈值：超过一天没人引用的 paste-*.png 在下次落盘时清掉。
+_CLIPBOARD_IMAGE_MAX_AGE_S = 24 * 3600
+
+
+def _clipboard_image_dir() -> Path:
+    root = Path(tempfile.gettempdir()) / _CLIPBOARD_IMAGE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - _CLIPBOARD_IMAGE_MAX_AGE_S
+    for stale in root.glob("paste-*.png"):
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass  # 清扫是顺手的事，占用/权限问题不值得中断粘贴
+    return root
+
+
+def _mime_to_image(mime) -> QImage:
+    """mimeData.imageData() 的两种形态（QImage / QPixmap）归一成 QImage。"""
+    data = mime.imageData()
+    if isinstance(data, QImage):
+        return data
+    if isinstance(data, QPixmap):
+        return data.toImage()
+    return QImage()
+
+
+def _save_clipboard_image(image: QImage) -> Path | None:
+    """内存图 → 临时 PNG（附件链只认路径）。失败返回 None（调用方按无图处理）。"""
+    if image is None or image.isNull():
+        return None
+    try:
+        path = _clipboard_image_dir() / f"paste-{time.time_ns()}.png"
+        if image.save(str(path), "PNG"):
+            return path
+    except OSError:
+        logging.getLogger(__name__).exception("剪贴板图片落盘失败")
+    return None
+
+
+def _is_clipboard_cache_file(path: Path) -> bool:
+    """只认我们自己在剪贴板缓存目录里落盘的文件（用户文件的删除权不在我们）。"""
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return False
+    return (resolved.name.startswith("paste-") and resolved.suffix == ".png"
+            and resolved.parent == (Path(tempfile.gettempdir()) / _CLIPBOARD_IMAGE_DIR).resolve())
+
+
+def _discard_clipboard_cache(path) -> None:
+    """附件移除/发送完成后，把粘贴产生的临时文件收回（用户文件绝不动）。"""
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, TypeError):
+        return
+    if not _is_clipboard_cache_file(resolved):
+        return
+    try:
+        resolved.unlink(missing_ok=True)
+    except OSError:
+        pass  # 删除失败只是临时目录里多躺一天，懒清扫会收
+
+
 class AttachmentTextEdit(QPlainTextEdit):
+    """输入框：文本编辑 + 附件入口（上游 e969c38e）。
+
+    三条进附件的路：
+
+    - 拖拽本地文件（一直以来的）；
+    - **Ctrl+V 粘贴**：剪贴板里的图（截图工具/复制图片）优先于文本——截图工具
+      常同时塞一段占位文本，按文本粘就把图丢了；复制的本地文件同样进附件；
+    - **拖拽内存图**（浏览器里直接拖图，没有本地 URL）：与粘贴同一条落盘路。
+
+    内存图没有路径，先落成临时 PNG 再走统一的附件校验——"附件链只认路径"这一件事不变。
+    """
+
     files_dropped = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
 
+    def insertFromMimeData(self, source) -> None:  # noqa: N802 (Qt 命名)
+        if source.hasImage():
+            path = _save_clipboard_image(_mime_to_image(source))
+            if path is not None:
+                self.files_dropped.emit([str(path)])
+                return
+        if source.hasUrls():
+            paths = [url.toLocalFile() for url in source.urls() if url.isLocalFile()]
+            if paths:
+                self.files_dropped.emit(paths)
+                return
+        super().insertFromMimeData(source)
+
     def dragEnterEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasUrls() and any(url.isLocalFile() for url in event.mimeData().urls()):
+        mime = event.mimeData()
+        if mime.hasImage() or (mime.hasUrls() and any(url.isLocalFile() for url in mime.urls())):
             event.acceptProposedAction()
             return
         super().dragEnterEvent(event)
 
     def dropEvent(self, event) -> None:  # noqa: N802
-        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-        if paths:
-            self.files_dropped.emit(paths)
-            event.acceptProposedAction()
-            return
+        mime = event.mimeData()
+        if mime.hasUrls():
+            paths = [url.toLocalFile() for url in mime.urls() if url.isLocalFile()]
+            if paths:
+                self.files_dropped.emit(paths)
+                event.acceptProposedAction()
+                return
+        if mime.hasImage():
+            path = _save_clipboard_image(_mime_to_image(mime))
+            if path is not None:
+                self.files_dropped.emit([str(path)])
+                event.acceptProposedAction()
+                return
         super().dropEvent(event)
 
 
@@ -722,10 +823,13 @@ class ChatComposer(QFrame):
 
     def remove_attachment(self, path: Path) -> None:
         self.attachment_paths = [item for item in self.attachment_paths if item != path]
+        _discard_clipboard_cache(path)
         self._refresh_attachments()
         self._update_enabled()
 
     def clear_attachments(self) -> None:
+        for path in self.attachment_paths:
+            _discard_clipboard_cache(path)
         self.attachment_paths.clear()
         self._refresh_attachments()
         self._update_enabled()
