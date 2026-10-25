@@ -435,6 +435,10 @@ class DynamicIsland(QWidget):
             # WS_EX_TOPMOST），这时重申只会把岛插回菜单之上、把菜单挡住（2026-10-20 用户截图 +
             # 实机探针：弹菜单让应用变前台、焦点落到 Popup，两条路各重申一次）。
             return False
+        if any(widget.isVisible() and widget.property("coversIsland") for widget in QApplication.topLevelWidgets()):
+            # 本进程有说好了要盖在岛上的窗口（近 7 天仪表盘：岛离屏幕顶边太近时贴顶盖住岛）。
+            # 它被激活时这里不能把岛顶回去，否则岛挡在磁贴中间（2026-10-24 实机截图）
+            return False
         if _native_reassert_topmost(self):
             return True
         # 非 Windows（macOS / Linux **未验证**）：Qt 层 raise_() 兜底

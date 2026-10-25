@@ -118,13 +118,13 @@ def test_tracker_marks_the_minute_of_the_last_input_and_throttles_saves(tmp_path
     path = tmp_path / "activity.json"
 
     tracker.sample()                         # 5 秒前动过 → 09:00 这一分钟
-    clock.now = _at(9, 1, 0)
+    clock.now = _at(9, 0, 50)
     tracker.sample()                         # 锁屏：不记
-    clock.now = _at(9, 3, 0)
+    clock.now = _at(9, 1, 10)
     tracker.sample()                         # 700 秒前（太久，醒来时不可信）：不记
-    assert not path.exists(), "不到 5 分钟不落盘"
-    clock.now = _at(9, 21, 0)
-    tracker.sample()                         # 09:20:59 → 09:20；距上次落盘已超 5 分钟
+    assert not path.exists(), "不到 1 分钟不落盘"
+    clock.now = _at(9, 1, 40)
+    tracker.sample()                         # 09:01:39 → 09:01；距上次落盘已超 1 分钟
     assert path.exists()
 
     assert tracker.log.summary(DAY).active_minutes == 2

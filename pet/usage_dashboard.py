@@ -197,12 +197,14 @@ def footer_text(data: DashboardData) -> str:
 # ---------------------------------------------------------------- 摆在哪
 
 def place_above(anchor: QRect, size, available: QRect, gap: int = GAP) -> QRect:
-    """窗口放在 ``anchor``（岛）正上方、水平居中；上面放不下就放到下面；再夹回屏幕里。"""
+    """窗口放在 ``anchor``（岛）正上方、水平居中；再夹回屏幕里。
+
+    岛离屏幕顶边太近、上面放不下时，贴着顶边盖在岛上面——不放到岛下面（用户 2026-10-24：
+    卡片是往下展开的，仪表盘要在上面）。
+    """
     width, height = size.width(), size.height()
     x = anchor.center().x() - width // 2
     y = anchor.top() - gap - height
-    if y < available.top():
-        y = anchor.bottom() + 1 + gap
     x = max(available.left(), min(x, available.right() + 1 - width))
     y = max(available.top(), min(y, available.bottom() + 1 - height))
     return QRect(x, y, width, height)

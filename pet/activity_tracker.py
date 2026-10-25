@@ -7,7 +7,7 @@
 走、锁屏时探测返回 None，这两段自然不算。
 
 落盘节流：有新分钟时最多每 ``SAVE_EVERY_S`` 写一次（几 KB），``stop()``（退出收口）再
-写一次；崩溃最多丢几分钟。只在 Windows 上启动（别的平台探测恒为 None）。
+写一次；被强制结束（任务管理器、开发时重启）最多丢一分钟。只在 Windows 上启动（别的平台探测恒为 None）。
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ FILE_NAME = "activity.json"
 
 class ActivityTracker(QObject):
     INTERVAL_MS = 30_000
-    SAVE_EVERY_S = 300.0
+    SAVE_EVERY_S = 60.0
     #: 最后一次输入比这更早就不记（刚从睡眠醒来时滴答数的算术不可信）
     MAX_AGE_S = 600.0
 

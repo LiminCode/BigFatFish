@@ -2,7 +2,7 @@
 """近 7 天仪表盘：点灵动岛上的「今日用量」数字，在岛的上方弹出四张 Metro 磁贴。
 
 钉住的行为：点数字（且只有显示用量时）才发请求；磁贴的大数字是今天、柱子是 7 天且今天在
-最右；没有记录的天不装作是 0；窗口放在岛的上方、放不下才放下面；再点一次、按 Esc 都收起；
+最右；没有记录的天不装作是 0；窗口放在岛的上方、放不下就贴顶盖住岛（不放下面）；再点一次、按 Esc 都收起；
 对话记录在后台线程读，开着时刷新，旧的在途结果作废。
 """
 
@@ -90,13 +90,13 @@ def test_footer_says_since_when_activity_has_been_recorded():
 
 # ---------------------------------------------------------------- 摆在哪
 
-def test_dashboard_sits_above_the_island_and_falls_back_below():
+def test_dashboard_sits_above_the_island_never_below():
     screen = QRect(0, 0, 1920, 1040)
     size = QSize(500, 480)
     above = place_above(QRect(700, 900, 300, 44), size, screen)
     assert above.bottom() < 900 and abs(above.center().x() - 850) <= 2, "岛的正上方、水平居中"
-    below = place_above(QRect(700, 0, 300, 44), size, screen)
-    assert below.top() > 44, "岛停在屏幕顶上：上面放不下，放到下面"
+    near_top = place_above(QRect(700, 190, 300, 44), size, screen)
+    assert near_top.top() == screen.top(), "上面放不下：贴着屏幕顶边盖在岛上，不放到岛下面"
     edge = place_above(QRect(1800, 900, 100, 44), size, screen)
     assert edge.right() <= screen.right(), "夹回屏幕里"
 
@@ -223,4 +223,23 @@ def test_switching_theme_before_the_first_show_takes_effect():
         assert window.grab().toImage().pixelColor(4, 4).name() == window.colors["page"] == "#f2f2f2"
     finally:
         window.deleteLater()
+        app.processEvents()
+
+
+def test_the_island_does_not_jump_back_over_the_open_dashboard(tmp_path):
+    """仪表盘贴顶盖在岛上时，岛不能因为「本进程窗口被激活」/ 心跳把自己顶回最上、挡住磁贴（实机截图）。"""
+    from pet.usage_dashboard_ui import UsageDashboardWindow
+
+    island = _island(tmp_path, info_mode="usage_today")
+    window = UsageDashboardWindow()
+    try:
+        assert island.reassert_topmost() is True
+        window.show()
+        app.processEvents()
+        assert island.reassert_topmost() is False
+        window.hide()
+        assert island.reassert_topmost() is True, "收起之后照常保活"
+    finally:
+        window.deleteLater()
+        island.deleteLater()
         app.processEvents()

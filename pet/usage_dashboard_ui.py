@@ -183,6 +183,7 @@ class UsageDashboardWindow(QWidget):
         self.setObjectName("usageDashboard")
         self.setWindowTitle(t("dashboard.title"))
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setProperty("coversIsland", True)      # 开着时岛不重申置顶（见 DynamicIsland.reassert_topmost）
         self.app_label = QLabel(t("dashboard.app"), self)
         self.app_label.setObjectName("dashboardApp")
         self.title_label = QLabel(t("dashboard.title"), self)
