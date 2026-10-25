@@ -118,6 +118,15 @@ _PERSON_TOOLTIPS = {"idle": "island.personal.idle", "unread": "island.personal.u
 _BELL_ICON_W = 14
 _BELL_ICON_H = 15
 _BELL_UNREAD_COLOR = QColor("#e8a33b")
+# Metro 样式（style="metro"）：方角平条，每个图标一块方磁贴，磁贴之间留缝；悬停的那块朝光标倾斜
+_METRO_BLOCK = 28        # 磁贴边长（胶囊条高 32，上下各留 2）
+_METRO_GAP = 3           # 相邻两块磁贴之间的缝
+_METRO_TEXT_GAP = 8      # 磁贴与文字、文字与文字之间
+_METRO_PAD = 2           # 条的左右内边距
+_METRO_BLOCKS = ("icon", "usage", "link", "briefing", "personal", "bell")
+# 磁贴倾斜：设置页大磁贴的 ±4° / 900px 视距放到 28px 的小块上不到 1px，看不出来；小块要更大的角度、更近的视点
+_METRO_TILT_DEG = (24.0, 34.0)       # 悬停, 按下
+_METRO_TILT_DISTANCE = 80.0
 _PLACEHOLDER_KEYS = {"island.balance.placeholder": "余额 --", "island.tier.placeholder": "余额峰谷 --",
                      "island.usage.placeholder": "今日 --"}
 
@@ -337,6 +346,11 @@ class DynamicIsland(QWidget):
         # 内容层位图缓存（paintEvent 的文字绘制是实测大头，见 _content_cache）
         self._content_pixmap: QPixmap | None = None
         self._content_cache_key: tuple | None = None
+        # Metro：鼠标停在哪块磁贴上（倾斜它）、光标在哪、是不是按着
+        self._metro_hover: str | None = None
+        self._metro_hover_pos: QPoint | None = None
+        self._metro_pressed = False
+        self.setMouseTracking(True)     # 不按键也收移动事件（Metro 磁贴悬停倾斜；别的样式直接忽略）
         self._geo_from: QRect | None = None
         self._geo_to: QRect | None = None
         self._geo_t = 0.0
@@ -601,12 +615,18 @@ class DynamicIsland(QWidget):
 
     def briefing_button_rect(self) -> QRectF | None:
         """按钮的可点区域（比图标大一圈，整条胶囊高度）；不显示返回 None。"""
+        if self._metro():
+            return self._metro_hit_rect("briefing")
         return self._button_rect(self._briefing_icon_left(), _BRIEF_ICON_W, float(self.width()))
 
     def personal_button_rect(self) -> QRectF | None:
+        if self._metro():
+            return self._metro_hit_rect("personal")
         return self._button_rect(self._personal_icon_left(), _PERSON_ICON_W, float(self.width()))
 
     def notification_button_rect(self) -> QRectF | None:
+        if self._metro():
+            return self._metro_hit_rect("bell")
         return self._button_rect(self._bell_icon_left(), _BELL_ICON_W, float(self.width()))
 
     def _button_hit(self, rect: QRectF | None, pos) -> bool:
@@ -623,8 +643,113 @@ class DynamicIsland(QWidget):
     def _personal_hit(self, pos) -> bool:
         return self._button_hit(self.personal_button_rect(), pos)
 
+    # ------------------------------------------------------------ Metro 样式
+    def _metro(self) -> bool:
+        return str(self._cfg.get("style") or "") == "metro"
+
+    def _metro_tokens(self) -> dict:
+        """Metro 的颜色：设置页同一套令牌，白天 / 黑夜跟「外观」里的主题（system / light / dark）。"""
+        from .settings_theme_qss import METRO_TOKENS
+        from .settings_widgets import _system_dark
+
+        theme = str((self.config.get("context_menu_appearance") or {}).get("theme") or "system")
+        dark = theme == "dark" or (theme != "light" and _system_dark())
+        return METRO_TOKENS["dark" if dark else "light"]
+
+    def _metro_layout(self) -> tuple[list[tuple[str, str, QRectF]], int]:
+        """Metro 胶囊从左到右摆什么：[(名字, "block" 或 "text", 矩形)], 总宽。
+
+        磁贴与磁贴之间留 ``_METRO_GAP`` 的缝，挨着文字的留 ``_METRO_TEXT_GAP``。只在 Metro 下用；
+        别的样式仍按 ``_capsule_width`` / ``_toolbar_left`` 原来的排法。
+        """
+        icon, name, info, status = self._visible_parts()
+        fm = self.fontMetrics()
+        items: list[tuple[str, str, QRectF]] = []
+        block_y = (_CAPSULE_HEIGHT - _METRO_BLOCK) / 2.0
+        x = float(_CAPSULE_INSET + _METRO_PAD)
+
+        def place(key: str, kind: str, width: float) -> None:
+            nonlocal x
+            if items:
+                x += _METRO_GAP if kind == "block" and items[-1][1] == "block" else _METRO_TEXT_GAP
+            rect = QRectF(x, block_y, width, _METRO_BLOCK) if kind == "block" else QRectF(x, 0, width, _CAPSULE_HEIGHT)
+            items.append((key, kind, rect))
+            x += width
+
+        if icon:
+            place("icon", "block", _METRO_BLOCK)
+        if name:
+            place("name", "text", fm.horizontalAdvance(self._character_name()))
+        if info:
+            text_w = fm.horizontalAdvance(self._info_text())
+            if self._info_mode() == "usage_today":
+                place("usage", "block", max(_METRO_BLOCK, text_w + 16))
+            else:
+                place("time", "text", text_w)
+        if status:
+            for index, (_tone, text) in enumerate(self._session_counts):
+                place(f"count{index}", "text", fm.horizontalAdvance(text))
+            place("link", "block", _METRO_BLOCK)
+        if self._briefing_state != "hidden":
+            place("briefing", "block", _METRO_BLOCK)
+        if self._personal_state != "hidden":
+            place("personal", "block", _METRO_BLOCK)
+        if self._notification_count is not None:
+            place("bell", "block", _METRO_BLOCK)
+        width = round(x) + _METRO_PAD + _CAPSULE_INSET
+        return items, max(120, width)
+
+    def metro_blocks(self) -> dict[str, QRectF]:
+        """Metro 下每块磁贴的矩形（窗口坐标）；别的样式返回空。"""
+        if not self._metro():
+            return {}
+        return {key: rect for key, kind, rect in self._metro_layout()[0] if kind == "block"}
+
+    def _metro_hit_rect(self, key: str) -> QRectF | None:
+        """磁贴的可点区：左右各延半道缝（相邻两块正好不重叠），整条胶囊高度。"""
+        rect = self.metro_blocks().get(key)
+        if rect is None:
+            return None
+        return QRectF(rect.left() - _METRO_GAP / 2, 0, rect.width() + _METRO_GAP, _CAPSULE_HEIGHT)
+
+    def metro_hover(self) -> str | None:
+        """鼠标正停在哪块磁贴上（Metro 以外恒为 None）。"""
+        return self._metro_hover
+
+    def metro_tilt(self, key: str):
+        """这块磁贴现在的倾斜变换：鼠标下的那块朝光标倾斜（按下更明显），别的是恒等变换。"""
+        from PySide6.QtGui import QTransform
+
+        from .settings_widgets import tilt_transform
+
+        rect = self.metro_blocks().get(key)
+        if rect is None or key != self._metro_hover or self._metro_hover_pos is None:
+            return QTransform()
+        return tilt_transform(rect.toAlignedRect(), self._metro_hover_pos, pressed=self._metro_pressed,
+                              degrees=_METRO_TILT_DEG, distance=_METRO_TILT_DISTANCE)
+
+    def _metro_block_at(self, pos) -> str | None:
+        if self._mode == "docked" and not self._hover_peek:
+            return None
+        point = QPointF(pos)
+        for key, rect in self.metro_blocks().items():
+            if rect.contains(point):
+                return key
+        return None
+
+    def _set_metro_hover(self, key: str | None, pos: QPoint | None) -> None:
+        if key is None:
+            pos = None
+        if (key, pos) != (self._metro_hover, self._metro_hover_pos):
+            self._metro_hover, self._metro_hover_pos = key, pos
+            if key is None:
+                self._metro_pressed = False
+            self.update()
+
     def usage_rect(self) -> QRectF | None:
         """信息槽「今日用量」数字的可点区域（左右各延 4px，整条胶囊高度）；信息槽不显示用量时返回 None。"""
+        if self._metro():
+            return self._metro_hit_rect("usage")
         icon, name, info, _status = self._visible_parts()
         if not info or self._info_mode() != "usage_today":
             return None
@@ -844,6 +969,16 @@ class DynamicIsland(QWidget):
             f"QPushButton:hover {{ background: {accent_hex}; color: #ffffff; }}"
             f"QPushButton:pressed {{ background: {secondary_hex}; }}"
         )
+        if self._metro():
+            # Metro：方角、2px 描边、粗体；悬停浅底，按下反色（和设置页按钮同一口径）
+            tokens = self._metro_tokens()
+            button_style = (
+                f"QPushButton {{ color: {tokens['text']}; background: transparent;"
+                f" border: 2px solid {tokens['outline']}; border-radius: 0;"
+                f" padding: 3px 10px; font-size: 12px; font-weight: 600; }}"
+                f"QPushButton:hover {{ background: {tokens['tile_hover']}; }}"
+                f"QPushButton:pressed {{ background: {tokens['outline']}; color: {tokens['page']}; }}"
+            )
         for btn in (self._card_toggle_btn, self._card_chat_btn,
                     self._card_settings_btn):
             btn.setStyleSheet(button_style)
@@ -1254,6 +1389,8 @@ class DynamicIsland(QWidget):
         return scaled
 
     def _capsule_width(self) -> int:
+        if self._metro():
+            return self._metro_layout()[1]
         icon, name, info, status = self._visible_parts()
         fm = self.fontMetrics()
         # 左右边距各 16px，让连接图标到右边界的距离与图标到左边界的距离一致。
@@ -1417,6 +1554,11 @@ class DynamicIsland(QWidget):
         """
         opacity = self._opacity()
         style = str(self._cfg.get("style") or "dark")
+        if style == "metro":
+            tokens = self._metro_tokens()
+            page = QColor(tokens["page"])
+            page.setAlpha(round(255 * opacity))
+            return page, QColor(tokens["title"]), QColor(tokens["muted"])
         if style == "light":
             return (QColor(255, 255, 255, round(242 * opacity)),
                     QColor(31, 35, 40), QColor(107, 114, 128))
@@ -1487,10 +1629,10 @@ class DynamicIsland(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-    def _paint_briefing_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+    def _paint_briefing_icon(self, painter: QPainter, x: float, y: float, color: QColor, *, plain: bool = False) -> None:
         """「工作简报」图标：一页纸，上面三行字；有没看过的那份时右上角多一个圆点。"""
         w, h, stroke = float(_BRIEF_ICON_W), float(_BRIEF_ICON_H), 1.5
-        unread = self._briefing_state == "unread"
+        unread = self._briefing_state == "unread" and not plain   # plain：Metro 由整块磁贴的底色表达未读
         pen = QPen(_BRIEF_UNREAD_COLOR if unread else color, stroke)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -1506,10 +1648,10 @@ class DynamicIsland(QWidget):
             painter.setBrush(_BRIEF_UNREAD_COLOR)
             painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
 
-    def _paint_personal_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+    def _paint_personal_icon(self, painter: QPainter, x: float, y: float, color: QColor, *, plain: bool = False) -> None:
         """「个人助理」图标：一个小人（圆头 + 肩弧）；有没看过的个人简报时换紫色，右上角一个圆点。"""
         w, h, stroke = float(_PERSON_ICON_W), float(_PERSON_ICON_H), 1.5
-        unread = self._personal_state == "unread"
+        unread = self._personal_state == "unread" and not plain
         pen = QPen(_PERSON_UNREAD_COLOR if unread else color, stroke)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -1525,10 +1667,10 @@ class DynamicIsland(QWidget):
             painter.setBrush(_PERSON_UNREAD_COLOR)
             painter.drawEllipse(QPointF(x + w - 0.5, y + 0.5), 3.0, 3.0)
 
-    def _paint_bell_icon(self, painter: QPainter, x: float, y: float, color: QColor) -> None:
+    def _paint_bell_icon(self, painter: QPainter, x: float, y: float, color: QColor, *, plain: bool = False) -> None:
         """「通知」图标：一只铃铛（钟体 + 底边 + 小铃舌）；有新的时换琥珀色，右上角一个实心角标。"""
         w, h, stroke = float(_BELL_ICON_W), float(_BELL_ICON_H), 1.5
-        unread = bool(self._notification_count)
+        unread = bool(self._notification_count) and not plain
         pen = QPen(_BELL_UNREAD_COLOR if unread else color, stroke)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -1607,7 +1749,7 @@ class DynamicIsland(QWidget):
     def _paint_strip(self, painter: QPainter) -> None:
         """停靠细条：圆角条 + 靠屏侧主题色亮线 + 状态点（竖条加图标）。"""
         rect = QRectF(0, 0, self.width(), self.height())
-        radius = min(rect.width(), rect.height()) / 2.0
+        radius = 0.0 if self._metro() else min(rect.width(), rect.height()) / 2.0   # Metro：方角
         background, primary, _secondary = self._style_palette()
         opacity = self._opacity()
         if isinstance(background, QColor):
@@ -1776,7 +1918,112 @@ class DynamicIsland(QWidget):
         self._content_cache_key = key
         return pm
 
+    def _paint_metro_block(self, painter: QPainter, key: str, rect: QRectF, tokens: dict) -> None:
+        """一块 Metro 磁贴：实色方块 + 居中的图标 / 文字。未读的磁贴整块换成那个状态的颜色、图标白色。"""
+        hovered = key == self._metro_hover
+        fill = QColor(tokens["tile_hover" if hovered else "tile"])
+        ink = QColor(tokens["text"])
+        if key == "icon":
+            fill = self._accent_color()
+        elif key == "briefing" and self._briefing_state == "unread":
+            fill, ink = QColor(_BRIEF_UNREAD_COLOR), QColor(255, 255, 255)
+        elif key == "personal" and self._personal_state == "unread":
+            fill, ink = QColor(_PERSON_UNREAD_COLOR), QColor(255, 255, 255)
+        elif key == "bell" and self._notification_count:
+            fill, ink = QColor(_BELL_UNREAD_COLOR), QColor(255, 255, 255)
+        painter.save()
+        if hovered:
+            painter.setTransform(self.metro_tilt(key), True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(fill)
+        painter.drawRect(rect)
+        cx, cy = rect.center().x(), rect.center().y()
+        if key == "icon":
+            icon_pm = self._icon_pixmap_scaled(_ICON_PIXMAP_PX)
+            if icon_pm is not None:
+                painter.drawPixmap(QPointF(cx - _ICON_PIXMAP_PX / 2.0, cy - _ICON_PIXMAP_PX / 2.0), icon_pm)
+            elif not self._icon_image_mode():
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._icon_text())
+        elif key == "usage":
+            painter.setPen(ink)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._info_text())
+        elif key == "link":
+            self._paint_link_icon(painter, cx - _LINK_ICON_W / 2.0, cy - _LINK_ICON_H / 2.0)
+        elif key == "briefing":
+            self._paint_briefing_icon(painter, cx - _BRIEF_ICON_W / 2.0, cy - _BRIEF_ICON_H / 2.0, ink, plain=True)
+        elif key == "personal":
+            self._paint_personal_icon(painter, cx - _PERSON_ICON_W / 2.0, cy - _PERSON_ICON_H / 2.0, ink, plain=True)
+        elif key == "bell":
+            self._paint_bell_icon(painter, cx - _BELL_ICON_W / 2.0, cy - _BELL_ICON_H / 2.0, ink, plain=True)
+        painter.restore()
+
+    def _metro_content_cache(self) -> QPixmap:
+        """Metro 的内容层缓存：文字 + 除了「鼠标下那块」以外的所有磁贴。
+
+        鼠标下的那块要跟着光标倾斜，由 ``_paint_capsule`` 每帧现画；缓存键里带着它是哪块，
+        光标在块内移动不重建缓存（只重画那一块）。
+        """
+        tokens = self._metro_tokens()
+        _background, primary, secondary = self._style_palette()
+        items, _width = self._metro_layout()
+        dpr = self.devicePixelRatioF()
+        key = ("metro", tuple((k, kind, rect.getRect()) for k, kind, rect in items), self._metro_hover,
+               self._character_name(), self._info_text(), tuple(self._session_counts), self._api_state,
+               self._briefing_state, self._personal_state, self._notification_count, tuple(sorted(tokens.items())),
+               self._accent_color().name(), self._icon_text(), self.font().toString(), dpr, self.width(),
+               self._icon_pixmap_token)
+        if self._content_pixmap is not None and self._content_cache_key == key:
+            return self._content_pixmap
+        pm = QPixmap(max(1, round(self.width() * dpr)), max(1, round(_CAPSULE_HEIGHT * dpr)))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setFont(self.font())
+        tones = {f"count{i}": tone for i, (tone, _text) in enumerate(self._session_counts)}
+        for k, kind, rect in items:
+            if kind == "block":
+                if k != self._metro_hover:
+                    self._paint_metro_block(painter, k, rect, tokens)
+                continue
+            if k == "name":
+                painter.setPen(primary)
+                text = self._character_name()
+            elif k == "time":
+                painter.setPen(secondary)
+                text = self._info_text()
+            else:
+                tone = tones.get(k, "")
+                painter.setPen(QColor(_SESSION_COUNT_COLORS[tone]) if tone in _SESSION_COUNT_COLORS else secondary)
+                text = self._session_counts[int(k[5:])][1]
+            painter.drawText(rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+        painter.end()
+        self._content_pixmap = pm
+        self._content_cache_key = key
+        return pm
+
+    def _paint_metro_capsule(self, painter: QPainter) -> None:
+        """Metro：方角平条（无描边、无阴影），卡片底板也是方角；鼠标下的那块磁贴现画并倾斜。"""
+        background, _p, _s = self._style_palette()
+        if self._mode == "expanded":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._readable_card_background(background))
+            painter.drawRect(QRectF(0, 0, self.width(), self.height()))
+        rect, _radius = self._squished_capsule_rect()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        painter.drawRect(rect)
+        painter.drawPixmap(0, 0, self._metro_content_cache())
+        key = self._metro_hover
+        rect = self.metro_blocks().get(key) if key else None
+        if key and rect is not None:
+            self._paint_metro_block(painter, key, rect, self._metro_tokens())
+
     def _paint_capsule(self, painter: QPainter) -> None:
+        if self._metro():
+            self._paint_metro_capsule(painter)
+            return
         # 展开时先画卡片底板（胶囊下方一整块，圆角连续；内容区遵守同心圆角）
         if self._mode == "expanded":
             panel = QRectF(0, 0, self.width(), self.height())
@@ -1848,8 +2095,9 @@ class DynamicIsland(QWidget):
 
     # ------------------------------------------------------------ 悬停
     def enterEvent(self, event) -> None:  # noqa: N802
-        # 展开卡片时不悬停放大（整窗缩放会截掉贴边的卡片底板，见 paintEvent）
-        self._hover_scale_target = 1.0 if self._mode == "expanded" else 1.02
+        # 展开卡片时不悬停放大（整窗缩放会截掉贴边的卡片底板，见 paintEvent）；Metro 不整体放大，
+        # 改为鼠标下的那块磁贴倾斜
+        self._hover_scale_target = 1.0 if self._mode == "expanded" or self._metro() else 1.02
         if self._mode == "docked" and not self._hover_peek:
             self._dock_back_timer.stop()
             self._hover_peek = True
@@ -1859,6 +2107,7 @@ class DynamicIsland(QWidget):
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         self._hover_scale_target = 1.0
+        self._set_metro_hover(None, None)
         if self._mode == "docked" and self._hover_peek:
             self._dock_back_timer.start()
         self._ensure_anim_timer()
@@ -1878,12 +2127,19 @@ class DynamicIsland(QWidget):
             self._press_global = event.globalPosition().toPoint()
             self._drag_offset = self._press_global - self.pos()
             self._dragging = False
+            if self._metro_hover is not None:
+                self._metro_pressed = True      # 按下：那块磁贴倾斜得更明显
+                self.update()
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._press_global is None or event.buttons() & Qt.MouseButton.LeftButton == 0:
+            if self._metro():                   # 悬停：鼠标下的那块磁贴朝光标倾斜
+                pos = event.position()
+                key = self._metro_block_at(pos)
+                self._set_metro_hover(key, pos.toPoint() if key else None)
             return
         global_pos = event.globalPosition().toPoint()
         if not self._dragging and (global_pos - self._press_global).manhattanLength() >= QApplication.startDragDistance():
@@ -1895,6 +2151,7 @@ class DynamicIsland(QWidget):
             # squish/kick 弹簧冻在中途
             self._geo_from = None
             self._geo_to = None
+            self._set_metro_hover(None, None)   # 拖起来就不再倾斜
             if self._mode == "expanded":
                 self.collapse_card(animate=False)  # 拖拽起手直接落位，不播收起动画
             if self._mode == "docked":
@@ -1970,6 +2227,9 @@ class DynamicIsland(QWidget):
         self._press_global = None
         self._drag_offset = None
         self._dragging = False
+        if self._metro_pressed:
+            self._metro_pressed = False
+            self.update()
         self._emit_geometry_changed()
         event.accept()
 

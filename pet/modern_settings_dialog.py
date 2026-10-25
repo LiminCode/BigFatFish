@@ -304,6 +304,7 @@ class ModernSettingsDialog(QDialog):
             (t("settings.dlg.black"), "dark"),
             (t("settings.dlg.white"), "light"),
             (t("settings.dlg.glass"), "glass"),
+            (t("settings.dlg.metro"), "metro"),
         ):
             self.island_style_select.addItem(label, value)
         self.island_style_select.setCurrentData(str(island_cfg.get("style") or "dark"))

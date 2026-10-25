@@ -670,7 +670,7 @@ def _clean_dynamic_island_data(value) -> dict:
     card_source = str(result.get("card_source") or "auto").strip()
     result["card_source"] = card_source if card_source in {"auto", "balance", "claude"} else "auto"
     style = str(result.get("style") or "dark").strip()
-    result["style"] = style if style in {"dark", "light", "glass"} else "dark"
+    result["style"] = style if style in {"dark", "light", "glass", "metro"} else "dark"
     try:
         result["opacity"] = max(0.4, min(1.0, float(result.get("opacity", 1.0))))
     except (TypeError, ValueError):
