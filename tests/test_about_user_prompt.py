@@ -26,8 +26,10 @@ def _settings(about: str = ABOUT) -> ChatSettings:
 
 def _system(builder: PromptBuilder, settings: ChatSettings, character: str = "shenshen", **kwargs) -> str:
     messages = builder.build_messages(settings, character, [], "嗨", **kwargs)
-    assert messages[0]["role"] == "system" and messages[-1] == {"role": "user", "content": "嗨"}
-    return messages[0]["content"]
+    assert messages[0]["role"] == "system" and messages[-1]["content"].endswith("] 嗨")   # 本轮消息带时间标记
+    system, sep, note = messages[0]["content"].partition("\n\n【时间信息】")   # 时间说明接在最后，这里只看前面
+    assert sep and note
+    return system
 
 
 def test_about_user_follows_the_settings_persona():
@@ -136,6 +138,6 @@ def test_chat_window_sends_about_user_with_the_persona(tmp_path, no_keyring):
         window.input.setPlainText("我最近在忙什么？")
         window.send_message()
         system = window.service.sent[0][0][0]
-        assert system["role"] == "system" and system["content"].endswith(f"\n\n{ABOUT}")
+        assert system["role"] == "system" and f"\n\n{ABOUT}\n\n【时间信息】" in system["content"]
     finally:
         window.close()

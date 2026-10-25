@@ -261,7 +261,8 @@ def test_confirm_creates_session_sends_and_writes_back(tmp_path):
     # 请求：system prompt 来自角色设置，user 消息含文件内容，key 已解析
     assert len(service.sent) == 1
     messages, config = service.sent[0]
-    assert messages[0] == {"role": "system", "content": "sys-prompt"}
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"].startswith("sys-prompt\n\n【时间信息】")   # 时间感知：system 末尾附说明
     assert "文件正文ABC" in messages[-1]["content"]
     assert config.api_key == "sk-x"
 
