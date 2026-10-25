@@ -96,7 +96,8 @@ def test_changes_are_saved_back_through_normalize(tmp_path, monkeypatch):
         assert not dialog.work_notes_model_edit.isHidden(), "选了自定义：输入框出现"
         dialog.work_notes_model_edit.setText("claude-sonnet-5-5")
         swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY) == {"enabled": False, "repo_dir": "E:\\mem", "model": "claude-sonnet-5-5"}
+        assert config.get(wn.CONFIG_KEY) == {"enabled": False, "repo_dir": "E:\\mem", "model": "claude-sonnet-5-5",
+                                             "effort": "high", "prompt_zh": "", "prompt_en": ""}
         dialog.work_notes_model_edit.setText("bad model!")
         swn.save_work_notes_settings(dialog)
         assert config.get(wn.CONFIG_KEY)["model"] == "sonnet", "怪名字退回默认"
@@ -131,3 +132,29 @@ def test_the_section_speaks_english(tmp_path, monkeypatch):
         assert dialog.work_notes_model_select.itemText(dialog.work_notes_model_select.findData(swn.CUSTOM)) == "Custom…"
     finally:
         _close(dialog)
+
+
+# ---------------------------------------------------------------- effort / 提示词（2026-10-24）
+
+def test_effort_and_prompt_rows_show_the_builtin_and_save_only_changes(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, effort="medium")
+    try:
+        assert _row_page(dialog, "work_notes_effort") == "自动化与联动"
+        assert _row_page(dialog, "work_notes_prompt") == "自动化与联动"
+        assert dialog.work_notes_effort_select.currentData() == "medium"
+        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
+        assert not dialog.work_notes_prompt_restore.isEnabled()
+        swn.save_work_notes_settings(dialog)
+        assert config.get(wn.CONFIG_KEY)["prompt_zh"] == "" and config.get(wn.CONFIG_KEY)["effort"] == "medium"
+
+        dialog.work_notes_prompt_edit.setPlainText("我的笔记模板 {original}")
+        dialog.work_notes_effort_select.setCurrentIndex(dialog.work_notes_effort_select.findData("low"))
+        swn.save_work_notes_settings(dialog)
+        saved = config.get(wn.CONFIG_KEY)
+        assert saved["prompt_zh"] == "我的笔记模板 {original}" and saved["prompt_en"] == "" and saved["effort"] == "low"
+        dialog.work_notes_prompt_restore.click()
+        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()

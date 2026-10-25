@@ -80,7 +80,9 @@ def normalize(value) -> dict:
     data = value if isinstance(value, dict) else {}
     repo_dir = str(data.get("repo_dir") or "").strip() or default_repo_dir()
     return {"enabled": bool(data.get("enabled", True)), "repo_dir": repo_dir,
-            "model": wb.normalize_model(data.get("model"))}
+            "model": wb.normalize_model(data.get("model")), "effort": wb.normalize_effort(data.get("effort")),
+            # 用户改过的提示词模板（按界面语言各一份；空 = 内置），2026-10-24
+            "prompt_zh": wb.normalize_text(data.get("prompt_zh")), "prompt_en": wb.normalize_text(data.get("prompt_en"))}
 
 
 def notes_dir(settings: dict, folder: str = NOTES_DIR) -> Path:
@@ -398,7 +400,7 @@ _PROMPT = """你是我的工作笔记助手。现在是 {now}（本地时间）�
 4. 标签：`tags` 给 1～4 个，小写英文或中文，不带 #，例如 jira、slack、评审、等回复。
 
 输出格式（严格遵守，不要加别的开场白、不要用代码围栏）——只输出一个 JSON 对象：
-{{"title": "...", "summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" 或 null, "reason": "...", "tags": ["..."], "error": null}}
+{"title": "...", "summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" 或 null, "reason": "...", "tags": ["..."], "error": null}
 某一步做不了就把原因写进 "error"，其余字段照常填。
 
 <note>
@@ -417,7 +419,7 @@ What to do:
 4. Tags: `tags` gives 1–4 lowercase tags without #, for example jira, slack, review, waiting.
 
 Output format (strictly, no preamble, no code fences) — exactly one JSON object:
-{{"title": "...", "summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" or null, "reason": "...", "tags": ["..."], "error": null}}
+{"title": "...", "summary": "...", "details": "- ...\\n- ...", "remind_at": "2026-10-16T09:00" or null, "reason": "...", "tags": ["..."], "error": null}
 If a step cannot be done, put the reason in "error" and fill the other fields as usual.
 
 <note>
@@ -463,14 +465,26 @@ def usage_of(record: dict) -> tuple[str, int, int, float]:
     return "+".join(names), tokens_in, tokens_out, _float(record.get("total_cost_usd"))
 
 
-def build_prompt(note: Note, now: dt.datetime, language: str | None = None) -> str:
-    """按界面语言选整套提示词（2026-10-19：英文界面下笔记的摘要、标题、要点也要是英文）。"""
+def default_prompt_template(language: str | None = None) -> str:
+    """内置提示词模板（设置页里给用户看、给用户改的那份）：明文，占位符 {now} {original} {language}。"""
     if language is None:
         from .i18n import current_language
 
         language = current_language()
-    template = _PROMPTS.get(language, _PROMPT)
-    return template.format(now=f"{now:%Y-%m-%d %H:%M}", original=note.original, language=t("notes.prompt.language"))
+    return _PROMPTS.get(language, _PROMPT).strip()
+
+
+def render_prompt(template: str, note: Note, now: dt.datetime) -> str:
+    """填占位符（只换认识的三个；JSON 示例里的花括号原样保留）。"""
+    return wb.render_template(template, now=f"{now:%Y-%m-%d %H:%M}", original=note.original,
+                              language=t("notes.prompt.language"))
+
+
+def build_prompt(note: Note, now: dt.datetime, language: str | None = None, *, template: str | None = None) -> str:
+    """按界面语言选整套提示词（2026-10-19：英文界面下笔记的摘要、标题、要点也要是英文）；
+    ``template``（用户改过的）给了就原样用它。"""
+    chosen = template.strip() if template and template.strip() else default_prompt_template(language)
+    return render_prompt(chosen, note, now)
 
 
 def _clean_tags(raw) -> list[str]:
@@ -520,15 +534,16 @@ def parse_summary(stdout: str, now: dt.datetime) -> SummaryResult:
 
 
 def summarize(note: Note, now: dt.datetime, model: str, *, run: wb.WslRunner | None = None,
-              clock: Callable[[], float] | None = None) -> SummaryResult:
+              clock: Callable[[], float] | None = None, effort: str = wb.EFFORT,
+              template: str | None = None) -> SummaryResult:
     """让 WSL 里的 Claude Code 读一条笔记（阻塞，几十秒）。任何失败都折成 ``ok=False`` 加原因。"""
     import time
 
     run = run or claude_hooks.run_wsl
     clock = clock or time.monotonic
     started = clock()
-    code, out = run(["-e", "bash", "-lc", wb.claude_command(model)], input_text=build_prompt(note, now),
-                    timeout=CLAUDE_TIMEOUT_S)
+    code, out = run(["-e", "bash", "-lc", wb.claude_command(model, effort=effort)],
+                    input_text=build_prompt(note, now, template=template), timeout=CLAUDE_TIMEOUT_S)
     if code == 127 and not out:
         result = SummaryResult(error=t("notes.error.no_wsl"))
     else:

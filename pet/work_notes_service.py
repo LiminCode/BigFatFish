@@ -235,11 +235,15 @@ class WorkNotesService(QObject):
     def _start_summary(self, note: wn.Note, *, attempt: int = 0) -> None:
         self._busy.add(note.name)
         generation, summarize = self._generation, self._summarize
-        now, model, name = self._now(), self.settings()["model"], note.name
+        settings = self.settings()
+        now, model, name = self._now(), settings["model"], note.name
+        # 用户改过的提示词按界面语言取（空 = 内置）；effort 一并带过去
+        extra = {"effort": settings.get("effort", wn.wb.EFFORT),
+                 "template": settings.get(f"prompt_{wn.wb.prompt_language()}", "")}
 
         def run() -> None:
             try:
-                result = summarize(note, now, model)
+                result = summarize(note, now, model, **extra)
             except Exception as exc:  # noqa: BLE001
                 result = wn.SummaryResult(error=t("notes.sync.summary_crashed", name=type(exc).__name__))
             try:

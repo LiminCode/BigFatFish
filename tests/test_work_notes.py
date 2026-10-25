@@ -282,9 +282,10 @@ def test_obsidian_vaults_are_read_from_the_app_config(tmp_path, monkeypatch):
 def test_settings_have_safe_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     settings = wn.normalize(None)
-    assert settings == {"enabled": True, "repo_dir": str(tmp_path / "WorkSpace" / "AI-Base-Memory"), "model": "sonnet"}
+    assert settings == {"enabled": True, "repo_dir": str(tmp_path / "WorkSpace" / "AI-Base-Memory"), "model": "sonnet",
+                        "effort": "high", "prompt_zh": "", "prompt_en": ""}
     assert wn.normalize({"enabled": 0, "repo_dir": " D:\\x ", "model": "bad model!"}) == {
-        "enabled": False, "repo_dir": "D:\\x", "model": "sonnet"}
+        "enabled": False, "repo_dir": "D:\\x", "model": "sonnet", "effort": "high", "prompt_zh": "", "prompt_en": ""}
     assert wn.notes_dir(settings) == tmp_path / "WorkSpace" / "AI-Base-Memory" / "note"
 
 

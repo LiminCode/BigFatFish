@@ -14,7 +14,9 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
 from . import claude_hooks
 from . import work_notes as wn
 from .i18n import t
+from .settings_prompt_editor import PromptEditor
 from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleSwitch
+from .settings_work_briefing import effort_select
 
 #: 模型下拉里的几个常用名（和 Slack 关注一致）；配置里写了别的也认（当作自定义）
 MODEL_CHOICES = (("sonnet", "Sonnet"), ("haiku", "Haiku"), ("opus", "Opus"))
@@ -78,6 +80,16 @@ def work_notes_rows(dialog) -> list[SettingRow]:
     select.currentIndexChanged.connect(lambda _index: edit.setVisible(select.currentData() == CUSTOM))
     dialog.work_notes_model_select = select
     dialog.work_notes_model_edit = edit
+    effort = effort_select(dialog, settings["effort"])
+    dialog.work_notes_effort_select = effort
+    # 发给 Claude 的提示词（明文、可改；按界面语言各存一份），2026-10-24
+    language = wn.wb.prompt_language()
+    prompt = PromptEditor(dialog, default=wn.default_prompt_template(language), stored=settings[f"prompt_{language}"],
+                          accessible_name=t("notes.settings.prompt"))
+    dialog.work_notes_prompt_editor = prompt
+    dialog.work_notes_prompt_edit = prompt.edit
+    dialog.work_notes_prompt_restore = prompt.restore
+    dialog.work_notes_prompt_language = language
 
     return [
         SettingRow("work_notes_enabled", t("notes.settings.enabled"),
@@ -85,6 +97,8 @@ def work_notes_rows(dialog) -> list[SettingRow]:
         SettingRow("work_notes_repo_dir", t("notes.settings.repo_dir"), t("notes.settings.repo_dir_hint"), repo),
         SettingRow("work_notes_model", t("notes.settings.model"), t("notes.settings.model_hint"), select),
         SettingRow("work_notes_model_custom", t("notes.settings.custom_model"), "", edit, stacked=True),
+        SettingRow("work_notes_effort", t("notes.settings.effort"), t("notes.settings.effort_hint"), effort),
+        SettingRow("work_notes_prompt", t("notes.settings.prompt"), t("notes.settings.prompt_hint"), prompt, stacked=True),
     ]
 
 
@@ -106,4 +120,6 @@ def save_work_notes_settings(dialog) -> None:
         "enabled": check.isChecked(),
         "repo_dir": dialog.work_notes_repo_edit.text().strip(),
         "model": chosen_model(dialog),
+        "effort": dialog.work_notes_effort_select.currentData(),
+        f"prompt_{dialog.work_notes_prompt_language}": dialog.work_notes_prompt_editor.value(),
     }))

@@ -97,13 +97,15 @@ class SlackWatchService(QObject):
         self._generation += 1
         generation, generate = self._generation, self._generate
         now = self._now()
-        since, model = sw.since_for(sw.load_state(self._config.dir), now), self.settings()["model"]
+        settings = self.settings()
+        since, model = sw.since_for(sw.load_state(self._config.dir), now), settings["model"]
+        extra = {"effort": settings.get("effort", sw.wb.EFFORT), "template": settings.get("prompt", "")}
         self._busy = True
         self.started.emit(manual)
 
         def run() -> None:
             try:
-                result = generate(now, since, model)
+                result = generate(now, since, model, **extra)
             except Exception as exc:  # noqa: BLE001
                 result = sw.WatchResult(error=f"检查时出错：{type(exc).__name__}",
                                         checked_at=now.isoformat(timespec="seconds"))

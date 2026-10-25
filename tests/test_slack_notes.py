@@ -186,7 +186,7 @@ def test_new_items_are_archived_and_the_alert_can_snooze_them_all(tmp_path, repo
     notes = WorkNotesController(host, notes_service, colors=_COLORS, open_window=lambda: opened.append(1), slack=True)
     config = notes_service._config
     config.set(sw.CONFIG_KEY, {"enabled": True, "interval_minutes": 15, "idle_minutes": 10, "model": "sonnet"})
-    watch = SlackWatchService(config, generate=lambda when, since, model: sw.parse_output(_claude_json()),
+    watch = SlackWatchService(config, generate=lambda when, since, model, **_kw: sw.parse_output(_claude_json()),
                               spawn=lambda run: run(), now=lambda: NOW, active=lambda idle_s: True)
     SlackWatchController(host, watch, notes=notes)
     watch.check()
