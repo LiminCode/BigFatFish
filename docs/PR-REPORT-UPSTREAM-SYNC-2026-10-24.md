@@ -228,3 +228,44 @@ frameseq / convert / library 族 **241 passed**。两个坏目录删掉后停桌
 判而不是按类型。窗口里星按级别上色（真平台截图 `saved-light.png` / `saved-dark.png`，会话 scratchpad）。
 **注意**：设置窗口是独立进程——用户当时开着的那个还是旧代码，看不到新行，关掉重开才有；旧窗口里点保存
 会把新键丢掉（旧 normalize 不认识）。
+
+## 九、追记（2026-10-24 晚）：新一级域「简报与笔记」
+
+用户：简报这些放到设置第一层，名字体现「定时向 AI 发请求 / AI 协助的笔记」。提交 `62f83fac`：
+- `SETTINGS_DOMAIN_NAV` 加 `("简报与笔记", "briefing")`，位置在「AI 与对话」之后、「自动化与联动」之前；中文名是
+  内部标识（`select_page("简报与笔记")` 在英文界面下照样认，显示为 "Briefings & notes"）；侧栏图标一页纸 + 三行字 +
+  一颗星（呼应三级优先级的星）。
+- 页面顺序：折叠说明「这一页是什么」（共同点：按时向 Claude 发一次**只读**请求；谁在干活——三个走 WSL 里的工作账号、
+  个人助理走个人 key；你能改什么；结果放哪）→ 工作简报 + 怎么运作 → Slack 关注 → 工作笔记 + 怎么运作 → 个人助理 +
+  怎么运作。「自动化与联动」只剩 Agent 联动、VS Code 工作区、通知中心、文案风格、台词。
+- `SettingsSection.title` 新属性：页面组织与测试按它认节，不再去抓标签控件。
+- 取舍：没有给旧位置留别名或搜索重定向——设置搜索本来就按行索引、与页面无关，搜「简报」照样命中。
+
+**测试**：新增 2 条（页面归属与顺序、英文名）先红后绿；9 个钉着侧栏顺序 / 节归属的既有测试改成新顺序
+（`test_menu_layout` 两处、`test_architecture`、`test_desktop_pet_features`、`test_settings_interaction_tabs`、
+`test_settings_english`、四个功能节的设置测试）；设置相关 14 个文件 **194 passed**；ruff 干净。
+**实机**：真 `windows` 平台截图（隔离 APPDATA）整扇设置窗停在「简报与笔记」页，中 / 英各一张
+（`settings-shots/domain-briefing-zh.png` / `-en.png`，会话 scratchpad），侧栏 10 项顺序与测试一致。
+## 十、补记：同日早些的三个简报提交（当时没写报告，开 PR 前补齐）
+
+`dbc23f44` **bug 单置顶 + QA 场景**：Jira 分两次查——先查 bug（最多 20 条），再查其余（最多 15 条、排除 bug），
+bug 不再被「最多 15 条」挤掉；bug 行以 🐞 开头，下面附一行「QA 报的场景」（报告人、环境、步骤、实际 / 预期，有来回推时
+写 QA 最后怎么说）；概要先提 bug，「建议先做」bug 排前；窗口里 🐞 行及其场景行画浅红底（白天 / 黑夜各一令牌）。
+`e23da32a` **用量栏**：「生成于」下面一条图标栏——模型、effort、用时、输入 / 输出 tokens、花费（复用笔记的 `NoteMetaBar`，
+加 `keys` / `framed` / `show_values`，新增仪表盘图标）；`claude -p` 显式传 `--effort high`（结果 JSON 不报 effort）；
+Briefing 多 model / effort / tokens_in / tokens_out / cost_usd 并落盘。
+`28cb4f0e` **Atlassian 插件只读入口**：放行 `discover` / `executeRead`（实机读 bug 评论被拒，QA 最后的回复就丢了），
+同组 `executeWrite` / `executeDestructive` 仍拒绝，Jira 关掉时也不放行。
+
+**修改文件说明**：`pet/work_briefing.py`（提示词、工具名单、Briefing 字段）、`pet/work_briefing_ui.py`（底色、用量栏）、
+`pet/note_meta_bar.py`（泛化）、`pet/locale/*.json`、`scripts/capture_briefing_window.py`（示例加一条虚构 bug）；
+测试 `tests/test_work_briefing_bugs.py`（12 条）、`tests/test_work_briefing_usage.py`（7 条），改前红。
+**性能分析**（本机 WSL 真跑，公司账号，sonnet）：改前 7 轮 / 79 s / 3 条 bug 可见；bug 分查 + 逐条读评论后
+23 轮 / 176 s / 12 条 bug；放行只读入口后 21 轮 / 135 s / 413k 输入 token / $0.92（0 个工具被拒）。多出来的都是逐条
+`getJiraIssue`——是功能本身的代价，不是回归；窗口侧上色是一次 `setMarkdown` 后遍历文档块，毫秒级。
+**实机运行记录**：三次真实简报的结果都存进了桌宠的 `work-briefing.json`、窗口截图核过（bug 底色、用量栏、英文界面）；
+第一次放行前 `denied=['…discover', '…executeRead']`，放行后 `denied=[]`，每条 bug 带上了 QA 最后一条评论。
+
+**合并前全量**（隔离 worktree，HEAD = `62f83fac`，含另一个会话同期的仪表盘 / 岛磁贴 5 个提交）：
+**4 failed / 5698 passed / 14 skipped，736.58 s**；4 条全是本机既有基线（路径超 260、两条 cp1252 子进程输出、
+多显示器负原点），与第六节那次相同。
