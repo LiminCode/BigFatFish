@@ -10,13 +10,14 @@ from __future__ import annotations
 import datetime as dt
 import json
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtWidgets import QApplication
 
 from pet import activity_log
 from pet.activity_log import ActivityLog, work_day
 from pet.activity_tracker import ActivityTracker
 
-app = QCoreApplication.instance() or QCoreApplication([])
+# 必须是 QApplication：本文件按字母序很早被收集，建成 QCoreApplication 会让之后建窗口的测试原生崩溃
+app = QApplication.instance() or QApplication([])
 
 DAY = dt.date(2026, 10, 20)
 
