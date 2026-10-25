@@ -98,12 +98,16 @@ class WorkBriefingService(QObject):
         generation, generate = self._generation, self._generate
         settings = self.settings()
         now, model, sources = self._now(), settings["model"], settings["sources"]
+        # 用户改过的提示词按界面语言取（空 = 内置）；effort 与优先级偏好一并带过去
+        extra = {"effort": settings.get("effort", wb.EFFORT),
+                 "template": settings.get(f"prompt_{wb.prompt_language()}", ""),
+                 "priority_rules": settings.get("priority_rules", "")}
         self._busy = True
         self.started.emit(manual)
 
         def run() -> None:
             try:
-                briefing = generate(now, model, sources=sources)
+                briefing = generate(now, model, sources=sources, **extra)
             except Exception as exc:  # noqa: BLE001 - 任何失败都算「这次没生成」，线程不许带病退出
                 briefing = wb.Briefing(error=f"生成时出错：{type(exc).__name__}")
             try:

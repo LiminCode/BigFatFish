@@ -44,7 +44,7 @@ def test_bugs_are_queried_on_their_own_so_the_cap_never_drops_them(language):
 @pytest.mark.parametrize("language", ["zh", "en"])
 def test_bugs_lead_the_jira_section_with_a_marker_and_the_reported_scenario(language):
     prompt = wb.build_prompt(MONDAY_10, "", language=language)
-    assert f"- {wb.BUG_MARK} [" in prompt, "bug 行以固定记号开头，窗口靠它上色"
+    assert f"{wb.BUG_MARK} [" in prompt, "bug 行以固定记号开头（前面是优先级星），窗口靠它上色"
     assert "getJiraIssue" in prompt
     scenario = "QA 报的场景" if language == "zh" else "QA's reported scenario"
     assert scenario in prompt

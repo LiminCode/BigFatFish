@@ -8,16 +8,26 @@
 """
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QLineEdit, QPlainTextEdit
 
 from . import claude_hooks
 from . import work_briefing as wb
 from .i18n import t
 from .settings_help import help_section
+from .settings_prompt_editor import PromptEditor
 from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleSwitch
 
 MODEL_CHOICES = (("sonnet", "Sonnet"), ("haiku", "Haiku"), ("opus", "Opus"))
 CUSTOM = "__custom__"
+
+
+def effort_select(dialog, current: str) -> ModernSelect:
+    """effort 下拉（四档）；简报 / 笔记 / Slack 关注三处共用。"""
+    select = ModernSelect(dialog, width=140)
+    for value in wb.EFFORT_CHOICES:
+        select.addItem(value, value)
+    select.setCurrentIndex(max(0, select.findData(wb.normalize_effort(current))))
+    return select
 
 
 def section_title() -> str:
@@ -74,6 +84,8 @@ def work_briefing_rows(dialog) -> list[SettingRow]:
     select.currentIndexChanged.connect(lambda _index: edit.setVisible(select.currentData() == CUSTOM))
     dialog.work_briefing_model_select = select
     dialog.work_briefing_model_edit = edit
+    effort = effort_select(dialog, settings["effort"])
+    dialog.work_briefing_effort_select = effort
 
     rows = [
         SettingRow("work_briefing_enabled", t("briefing.settings.enabled"),
@@ -82,6 +94,7 @@ def work_briefing_rows(dialog) -> list[SettingRow]:
         SettingRow("work_briefing_time", t("briefing.settings.time"), t("briefing.settings.time_hint"), time_select),
         SettingRow("work_briefing_model", t("briefing.settings.model"), t("briefing.settings.model_hint"), select),
         SettingRow("work_briefing_model_custom", t("briefing.settings.custom_model"), "", edit, stacked=True),
+        SettingRow("work_briefing_effort", t("briefing.settings.effort"), t("briefing.settings.effort_hint"), effort),
     ]
     dialog.work_briefing_source_checks = {}
     for source in wb.SOURCES:
@@ -90,6 +103,26 @@ def work_briefing_rows(dialog) -> list[SettingRow]:
         dialog.work_briefing_source_checks[source] = toggle
         rows.append(SettingRow(f"work_briefing_source_{source}", t(f"briefing.settings.source.{source}"),
                                t(f"briefing.settings.source.{source}_hint"), toggle))
+
+    # 发给 Claude 的提示词（明文、可改；按界面语言各存一份）与优先级偏好（2026-10-24 用户要求）
+    language = wb.prompt_language()
+    prompt = PromptEditor(dialog, default=wb.default_prompt_template(language, settings["sources"]),
+                          stored=settings[f"prompt_{language}"], accessible_name=t("briefing.settings.prompt"))
+    dialog.work_briefing_prompt_editor = prompt
+    dialog.work_briefing_prompt_edit = prompt.edit
+    dialog.work_briefing_prompt_restore = prompt.restore
+    dialog.work_briefing_prompt_language = language
+    rules = QPlainTextEdit(dialog)
+    rules.setPlaceholderText(t("briefing.settings.priority_rules"))
+    rules.setAccessibleName(t("briefing.settings.priority_rules"))
+    rules.setMinimumSize(320, 70)
+    rules.setMaximumHeight(140)
+    rules.setPlainText(settings["priority_rules"])
+    dialog.work_briefing_priority_rules_edit = rules
+    rows.append(SettingRow("work_briefing_prompt", t("briefing.settings.prompt"), t("briefing.settings.prompt_hint"),
+                           prompt, stacked=True))
+    rows.append(SettingRow("work_briefing_priority_rules", t("briefing.settings.priority_rules"),
+                           t("briefing.settings.priority_rules_hint"), rules, stacked=True))
     return rows
 
 
@@ -111,5 +144,9 @@ def save_work_briefing_settings(dialog) -> None:
         "weekdays_only": dialog.work_briefing_weekdays_check.isChecked(),
         "time": dialog.work_briefing_time_select.currentData(),
         "model": chosen_model(dialog),
+        "effort": dialog.work_briefing_effort_select.currentData(),
         "sources": {source: toggle.isChecked() for source, toggle in dialog.work_briefing_source_checks.items()},
+        # 只存当前界面语言那一份（编辑框里就是它）；另一种语言的保持原样
+        f"prompt_{dialog.work_briefing_prompt_language}": dialog.work_briefing_prompt_editor.value(),
+        "priority_rules": dialog.work_briefing_priority_rules_edit.toPlainText(),
     }))

@@ -36,7 +36,8 @@ CONFIG_KEY = "work_briefing"
 DEFAULT_TIME = "09:00"
 DEFAULT_MODEL = "sonnet"
 #: 显式传给 ``claude -p`` 的 effort：结果 JSON 里不报 effort，不传就只能猜那个账号的默认值。
-#: 取 high 是因为那个账号设置里的 effortLevel 就是 high（2026-10-24 实测），行为不变。
+#: 默认 high 是因为那个账号设置里的 effortLevel 就是 high（2026-10-24 实测）；设置页可选。
+EFFORT_CHOICES = ("low", "medium", "high", "xhigh")
 EFFORT = "high"
 #: 菜单里能选的生成时间（配置里手写别的时刻也认）。
 TIME_CHOICES = ("08:00", "08:30", "09:00", "09:30", "10:00")
@@ -115,7 +116,7 @@ _PROMPTS = {
                 "ORDER BY priority DESC, updated DESC，最多 20 条），再查其余的（JQL：assignee = currentUser() AND issuetype != Bug AND statusCategory != Done "
                 "ORDER BY updated DESC，最多 15 条）；站点没有 Bug 这个类型、查询报错时，改成一次查全部，按工单类型认 bug / defect。"
                 "站点地址取自 getAccessibleAtlassianResources 的返回。\n"
-                "   这一节里 bug 排在最前，每条一行：`- {bug} [编号](<站点地址>/browse/编号) 一句话标题 · ` 加上用反引号包住的状态，再加优先级。"
+                "   这一节里 bug 排在最前，每条一行：`- <星级> {bug} [编号](<站点地址>/browse/编号) 一句话标题 · ` 加上用反引号包住的状态，再加 Jira 里的优先级字段（星级见下面「优先级」）。"
                 "每条 bug 用 getJiraIssue 读一遍描述和最近的评论，在它下面缩进两格写一行 `  - QA 报的场景：` 加报告人、环境 / 版本、"
                 "怎么操作、实际看到什么、预期是什么（一两句，照描述写，不要猜；描述里没有就写「描述里没写复现步骤」）；"
                 "评论里有来回推（比如「复现不了」「按设计如此」）时，把 QA 最后一次怎么说的也写进这一行。\n"
@@ -133,6 +134,11 @@ _PROMPTS = {
         "titles": {"jira": "Jira", "pr": "PR", "slack": "Slack", "calendar": "日程", "email": "邮件", "suggestions": "建议先做"},
         "bugs": "\nBug 优先：bug 的优先级总是高于其他工单。有未完成的 bug 时，`概要：` 那一行先提 bug。\n",
         "bugs_first": "「建议先做」里 bug 排在其他工作前面（优先级高的、QA 刚回复的最先），除非别的事今天到期。\n",
+        # 三级优先级（2026-10-24 用户要求）：星在行首、由模型判断；用户的偏好经 {priority_rules} 追加
+        "priority": "\n优先级：每一条（工单、PR、Slack 话题、邮件、建议）的行首都标三级之一——★★★ 今天必须处理、★★ 本周内、"
+                    "★ 知悉即可——紧跟在 `- ` 或编号后面，例如 `- ★★ [仓库#编号](链接) 标题`{priority_bug}。"
+                    "按紧急程度、截止、是否有人在等我来定；日程行不标。{priority_rules}\n",
+        "priority_bug": "，bug 行是 `- ★★★ {bug} [编号](链接) 标题`",
         "suggestions_note": "（最多 3 条）",
         "no_prs": "（没有查到）",
     },
@@ -146,8 +152,8 @@ _PROMPTS = {
                 "ORDER BY priority DESC, updated DESC, at most 20), then the rest (JQL: assignee = currentUser() AND issuetype != Bug AND statusCategory != Done "
                 "ORDER BY updated DESC, at most 15); if the site has no Bug type and the query fails, query everything once and tell bugs / defects "
                 "apart by issue type. Take the site URL from getAccessibleAtlassianResources.\n"
-                "   Bugs lead this section, one line each: `- {bug} [KEY](<site>/browse/KEY) one-line title · ` then the status in backticks, then the "
-                "priority. Read each bug with getJiraIssue (description and latest comments) and under it, indented two spaces, write one line "
+                "   Bugs lead this section, one line each: `- <stars> {bug} [KEY](<site>/browse/KEY) one-line title · ` then the status in backticks, then "
+                "Jira's priority field (stars: see “Priority” below). Read each bug with getJiraIssue (description and latest comments) and under it, indented two spaces, write one line "
                 "`  - QA's reported scenario: ` with the reporter, environment / version, the steps, what actually happens and what was expected "
                 "(one or two sentences, from the description, never guessed; if it has none, say the description has no repro steps); "
                 "when the comments go back and forth (e.g. “cannot reproduce”, “works as designed”), add what QA said last.\n"
@@ -170,6 +176,10 @@ _PROMPTS = {
         "titles": {"jira": "Jira", "pr": "PR", "slack": "Slack", "calendar": "Calendar", "email": "Email", "suggestions": "Do first"},
         "bugs": "\nBugs first: a bug always outranks other issues. When there are open bugs, the `Summary:` line mentions them first.\n",
         "bugs_first": "In “Do first”, bugs come before other work (high priority and freshly answered by QA first) unless something else is due today.\n",
+        "priority": "\nPriority: start every item (issue, PR, Slack topic, email, suggestion) with one of three levels — ★★★ must be handled today, "
+                    "★★ this week, ★ FYI — right after `- ` or the number, e.g. `- ★★ [repo#number](link) title`{priority_bug}. "
+                    "Judge by urgency, due dates and whether someone is waiting on me; calendar lines are not rated.{priority_rules}\n",
+        "priority_bug": "; a bug line is `- ★★★ {bug} [KEY](link) title`",
         "suggestions_note": " (at most 3 items)",
         "no_prs": "(nothing found)",
     },
@@ -198,6 +208,17 @@ def normalize_model(value) -> str:
     return model if _MODEL_RE.fullmatch(model) else DEFAULT_MODEL
 
 
+def normalize_effort(value) -> str:
+    """effort 也会拼进 shell 命令：只认四档，别的退回默认。"""
+    effort = str(value or "").strip().lower()
+    return effort if effort in EFFORT_CHOICES else EFFORT
+
+
+def normalize_text(value) -> str:
+    """多行文本设置（提示词模板 / 优先级偏好）：去首尾空白，空 = 用内置。"""
+    return str(value or "").strip() if isinstance(value, str) else ""
+
+
 def normalize_sources(value) -> dict:
     """来源开关：只认 ``SOURCES`` 里的键，缺的按默认（邮件默认关）。"""
     raw = value if isinstance(value, dict) else {}
@@ -211,7 +232,12 @@ def normalize(value) -> dict:
         "time": normalize_time(raw.get("time")),
         "weekdays_only": raw.get("weekdays_only", True) is not False,
         "model": normalize_model(raw.get("model")),
+        "effort": normalize_effort(raw.get("effort")),
         "sources": normalize_sources(raw.get("sources")),
+        # 用户改过的提示词模板（按界面语言各一份；空 = 内置）与优先级偏好（空 = 不追加）
+        "prompt_zh": normalize_text(raw.get("prompt_zh")),
+        "prompt_en": normalize_text(raw.get("prompt_en")),
+        "priority_rules": normalize_text(raw.get("priority_rules")),
     }
 
 
@@ -267,11 +293,11 @@ def _sq(value: str) -> str:
     return "'" + str(value).replace("'", "'\\''") + "'"
 
 
-def claude_command(model: str, sources: dict | None = None) -> str:
+def claude_command(model: str, sources: dict | None = None, effort: str = EFFORT) -> str:
     """在发行版的登录 shell 里跑的那一行；提示词从标准输入进去。"""
     allowed = " ".join(_sq(name) for name in allowed_tools(sources))
     denied = " ".join(_sq(name) for name in denied_tools(sources))
-    return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {_sq(normalize_model(model))} --effort {EFFORT}"
+    return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {_sq(normalize_model(model))} --effort {normalize_effort(effort)}"
             f" --output-format json --no-session-persistence --max-turns {MAX_TURNS}"
             f" --tools '' --allowedTools {allowed} --disallowedTools {denied}")
 
@@ -381,29 +407,57 @@ def prompt_language(language: str | None = None) -> str:
     return language if language in _PROMPTS else "zh"
 
 
-def build_prompt(now: dt.datetime, prs: str, sources: dict | None = None, language: str | None = None) -> str:
-    """按界面语言与来源开关拼提示词：只列开着的来源，输出小节也只要那几节。"""
+#: 模板里的占位符（只认这几个；别的花括号——比如 JSON 示例——原样保留）
+_PLACEHOLDER_RE = re.compile(r"\{(now|hours|prs|priority_rules|bug|since|max_items|original|language)\}")
+
+
+def render_template(template: str, **values) -> str:
+    """把模板里**给了值的**占位符换掉，其余文字一个字不动。
+
+    不用 ``str.format``：用户编辑的模板里会有 JSON 示例这类花括号，``format`` 会把它们当占位符炸掉，
+    而要求用户写 ``{{`` 又会让编辑框里的文字和真正发出去的不一样。"""
+    return _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), str(template))
+
+
+def default_prompt_template(language: str | None = None, sources: dict | None = None) -> str:
+    """内置提示词模板（设置页里给用户看、给用户改的那份）：按界面语言与来源开关拼出来，
+    留着 ``{now}`` ``{hours}`` ``{prs}`` ``{priority_rules}`` 四个占位符，发送前由 ``render_template`` 填。"""
     lang = prompt_language(language)
     texts = _PROMPTS[lang]
     enabled = _sources(sources)
-    stamp = f"{now:%Y-%m-%d %H:%M} 星期{_WEEKDAYS[now.weekday()]}" if lang == "zh" else f"{now:%A %Y-%m-%d %H:%M}"
-    hours = lookback_hours(now)
-    body = texts["head"].format(now=stamp)
+    body = texts["head"]
     number = 0
     for source in ("jira", "pr", "slack", "calendar", "email"):
         if not enabled.get(source):
             continue
         number += 1
-        body += f"{number}. " + texts[source].format(hours=hours, prs=prs.strip() or texts["no_prs"], bug=BUG_MARK) + "\n"
+        body += f"{number}. " + render_template(texts[source], bug=BUG_MARK) + "\n"
     if enabled.get("jira") or enabled.get("pr"):
         body += texts["links"]
     if enabled.get("jira"):
         body += texts["bugs"] + (texts["bugs_first"] if enabled.get("suggestions") else "")
+    # bug 行的示例只在 Jira 开着时给（关了 Jira 的提示词里不该出现 🐞）
+    bug_example = render_template(texts["priority_bug"], bug=BUG_MARK) if enabled.get("jira") else ""
+    body += texts["priority"].replace("{priority_bug}", bug_example)
     sections = [f"`## {texts['titles'][source]}`" for source in ("jira", "pr", "slack", "calendar", "email") if enabled.get(source)]
     if enabled.get("suggestions"):
         sections.append(f"`## {texts['titles']['suggestions']}`{texts['suggestions_note']}")
     body += texts["output"].format(sections=("、" if lang == "zh" else ", ").join(sections))
-    return body
+    return body.strip()   # 设置页编辑框存取都按去首尾空白比对，内置版本身就不带尾换行
+
+
+def build_prompt(now: dt.datetime, prs: str, sources: dict | None = None, language: str | None = None, *,
+                 template: str | None = None, priority_rules: str = "") -> str:
+    """发给 Claude 的提示词：``template`` 给了（用户改过的）就原样用它，否则按界面语言与来源开关拼内置的；
+    两条路都只填四个占位符。``priority_rules`` 非空时作为「我的优先级偏好」追加进 ``{priority_rules}``。"""
+    lang = prompt_language(language)
+    texts = _PROMPTS[lang]
+    stamp = f"{now:%Y-%m-%d %H:%M} 星期{_WEEKDAYS[now.weekday()]}" if lang == "zh" else f"{now:%A %Y-%m-%d %H:%M}"
+    rules = normalize_text(priority_rules)
+    return render_template(
+        template.strip() if template and template.strip() else default_prompt_template(lang, sources),
+        now=stamp, hours=lookback_hours(now), prs=prs.strip() or texts["no_prs"],
+        priority_rules=(" " + t("briefing.prompt.priority_rules", rules=rules)) if rules else "")
 
 
 # ---------------------------------------------------------------- 结果
@@ -467,7 +521,8 @@ def parse_output(stdout: str) -> Briefing:
 
 
 def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: WslRunner | None = None,
-             clock: Callable[[], float] | None = None) -> Briefing:
+             clock: Callable[[], float] | None = None, effort: str = EFFORT, template: str | None = None,
+             priority_rules: str = "") -> Briefing:
     """生成一份简报（阻塞：PR 来源开着先 gh，再 claude）。任何失败都折成 ``ok=False`` 加原因。"""
     import time
 
@@ -475,13 +530,15 @@ def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: 
     clock = clock or time.monotonic
     started = clock()
     enabled = _sources(sources)
+    effort = normalize_effort(effort)
     pr_out = ""
     if enabled.get("pr"):
         code, pr_out = run(["-e", "bash", "-lc", pr_command()], timeout=GH_TIMEOUT_S)
         if code == 127 and not pr_out:
             return Briefing(error=t("briefing.error.no_wsl"))
-    prompt = build_prompt(now, format_pull_requests(pr_out) if enabled.get("pr") else "", sources=enabled)
-    code, out = run(["-e", "bash", "-lc", claude_command(model, enabled)], input_text=prompt, timeout=CLAUDE_TIMEOUT_S)
+    prompt = build_prompt(now, format_pull_requests(pr_out) if enabled.get("pr") else "", sources=enabled,
+                          template=template, priority_rules=priority_rules)
+    code, out = run(["-e", "bash", "-lc", claude_command(model, enabled, effort)], input_text=prompt, timeout=CLAUDE_TIMEOUT_S)
     if code == 127 and not out:
         return Briefing(error=t("briefing.error.no_wsl"))
     briefing = parse_output(out)
@@ -489,7 +546,7 @@ def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: 
         briefing.markdown = linkify(briefing.markdown, pull_request_links(pr_out))
     briefing.generated_at = now.isoformat(timespec="seconds")
     briefing.seconds = round(clock() - started, 1)
-    briefing.effort = EFFORT
+    briefing.effort = effort
     return briefing
 
 

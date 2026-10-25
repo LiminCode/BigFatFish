@@ -85,6 +85,7 @@ def test_saving_writes_sources_and_the_rest(tmp_path, monkeypatch):
         swb.save_work_briefing_settings(dialog)
         saved = config.get(wb.CONFIG_KEY)
         assert saved == {"enabled": True, "time": "10:00", "weekdays_only": False, "model": "claude-opus-5-5",
+                         "effort": "high", "prompt_zh": "", "prompt_en": "", "priority_rules": "",
                          "sources": {**wb.DEFAULT_SOURCES, "email": True, "calendar": False}}
         assert any("Gmail" in name for name in wb.allowed_tools(saved["sources"])), "开了邮件 → 简报能用邮件工具"
     finally:
@@ -107,5 +108,70 @@ def test_the_section_speaks_english(tmp_path, monkeypatch):
         body = dialog.findChild(SettingRow, "settingRow_work_briefing_flow").hint_label.text()
         assert "What is sent to Claude" in body and "read-only" in body and "Never" in body
         assert dialog.work_briefing_model_select.itemText(dialog.work_briefing_model_select.findData(swb.CUSTOM)) == "Custom…"
+    finally:
+        _close(dialog)
+
+
+# ---------------------------------------------------------------- effort / 提示词 / 优先级偏好（2026-10-24）
+
+def test_effort_prompt_and_priority_rows_exist_and_show_the_builtin_prompt(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, effort="medium",
+                             sources={**wb.DEFAULT_SOURCES, "email": True})
+    try:
+        for row_id in ("work_briefing_effort", "work_briefing_prompt", "work_briefing_priority_rules"):
+            assert _page_of(dialog, row_id) == "自动化与联动", row_id
+        assert dialog.work_briefing_effort_select.currentData() == "medium"
+        # 没改过：编辑框里是按当前来源开关拼出的内置模板（含邮件那一段），「恢复内置」置灰
+        shown = dialog.work_briefing_prompt_edit.toPlainText()
+        assert shown == wb.default_prompt_template("zh", {**wb.DEFAULT_SOURCES, "email": True})
+        assert "邮件" in shown and "{now}" in shown and "{prs}" in shown
+        assert not dialog.work_briefing_prompt_restore.isEnabled()
+        assert dialog.work_briefing_priority_rules_edit.toPlainText() == ""
+        hint = dialog.findChild(SettingRow, "settingRow_work_briefing_prompt").hint_label.text()
+        assert "{now}" in hint and "来源开关" in hint
+    finally:
+        _close(dialog)
+
+
+def test_saving_stores_the_prompt_only_when_it_differs_from_the_builtin(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        dialog.work_briefing_effort_select.setCurrentIndex(dialog.work_briefing_effort_select.findData("xhigh"))
+        dialog.work_briefing_priority_rules_edit.setPlainText("  QA 报的 bug 一律 ★★★  ")
+        swb.save_work_briefing_settings(dialog)
+        saved = config.get(wb.CONFIG_KEY)
+        assert saved["effort"] == "xhigh" and saved["priority_rules"] == "QA 报的 bug 一律 ★★★"
+        assert saved["prompt_zh"] == "" and saved["prompt_en"] == "", "和内置一字不差 → 存空串，跟着以后的版本更新"
+
+        dialog.work_briefing_prompt_edit.setPlainText("我的模板 {now} {prs}")
+        assert dialog.work_briefing_prompt_restore.isEnabled()
+        swb.save_work_briefing_settings(dialog)
+        assert config.get(wb.CONFIG_KEY)["prompt_zh"] == "我的模板 {now} {prs}"
+        assert config.get(wb.CONFIG_KEY)["prompt_en"] == "", "只存当前界面语言那一份"
+
+        dialog.work_briefing_prompt_restore.click()
+        assert dialog.work_briefing_prompt_edit.toPlainText() == wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
+        assert not dialog.work_briefing_prompt_restore.isEnabled()
+        swb.save_work_briefing_settings(dialog)
+        assert config.get(wb.CONFIG_KEY)["prompt_zh"] == ""
+    finally:
+        _close(dialog)
+
+
+def test_an_edited_prompt_is_shown_on_reopen_and_the_english_page_edits_the_english_one(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, prompt_zh="改过的中文模板 {now}")
+    try:
+        assert dialog.work_briefing_prompt_edit.toPlainText() == "改过的中文模板 {now}"
+        assert dialog.work_briefing_prompt_restore.isEnabled()
+    finally:
+        _close(dialog)
+    config, dialog = _dialog(tmp_path, monkeypatch, language="en", prompt_zh="改过的中文模板 {now}")
+    try:
+        assert dialog.work_briefing_prompt_edit.toPlainText() == wb.default_prompt_template("en", wb.DEFAULT_SOURCES)
+        assert dialog.findChild(SettingRow, "settingRow_work_briefing_effort").label.text() == "Effort"
+        dialog.work_briefing_prompt_edit.setPlainText("my template {now}")
+        swb.save_work_briefing_settings(dialog)
+        saved = config.get(wb.CONFIG_KEY)
+        assert saved["prompt_en"] == "my template {now}" and saved["prompt_zh"] == "改过的中文模板 {now}"
     finally:
         _close(dialog)

@@ -16,6 +16,7 @@ dark），右上角一个按钮可以当场切换并写回那个偏好；文字�
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCharFormat, QTextCursor
@@ -30,11 +31,14 @@ from .settings_widgets import TiltButton, _system_dark
 ALERT_ID = "work-briefing"
 THEMES = ("system", "light", "dark")
 
-#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签、bug 行的底色
+#: 简报窗口在设置页令牌之外多用的几个：链接色、行内代码的小标签、bug 行的底色、三级优先级的星色
 _EXTRA_TOKENS = {
-    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f", "bug": "#fbe3e4"},
-    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea", "bug": "#4a2328"},
+    "light": {"link": "#0a6fd6", "chip": "#e6e6e8", "chip_text": "#1f1f1f", "bug": "#fbe3e4",
+              "p1": "#d93025", "p2": "#e8710a", "p3": "#8a8a90"},
+    "dark": {"link": "#6cb4ff", "chip": "#38383f", "chip_text": "#e6e6ea", "bug": "#4a2328",
+             "p1": "#ff6b61", "p2": "#ffa94d", "p3": "#8c8c94"},
 }
+_STAR_RE = re.compile(r"^[★☆]+")
 
 
 def briefing_tokens(dark: bool) -> dict:
@@ -272,13 +276,19 @@ class WorkBriefingWindow(QWidget):
 
         ``setMarkdown`` 之后做而不是靠样式表——Qt 的文档样式表只在导入 HTML 时生效。"""
         document = self.body.document()
-        chips, links, bugs = [], [], []
+        chips, links, bugs, stars = [], [], [], []
         bug_indent = None   # 正在 bug 行之下时：bug 那一项的列表缩进级别
         block = document.begin()
         while block.isValid():
             items = block.textList()
             indent = items.format().indent() if items is not None else 0
-            if items is not None and block.text().lstrip().startswith(wb.BUG_MARK):
+            text = block.text()
+            lead = len(text) - len(text.lstrip())
+            star = _STAR_RE.match(text[lead:])
+            if star is not None:   # 行首的星：按星数上色（★★★ 最醒目）
+                stars.append((block.position() + lead, star.end(), min(3, star.end())))
+            after_stars = text[lead + (star.end() if star else 0):].lstrip()
+            if items is not None and after_stars.startswith(wb.BUG_MARK):
                 bug_indent = indent
             elif bug_indent is not None and not (items is not None and indent > bug_indent):
                 bug_indent = None
@@ -313,6 +323,13 @@ class WorkBriefingWindow(QWidget):
                 cursor.setPosition(position)
                 cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
                 cursor.mergeCharFormat(fmt)
+        for position, length, level in stars:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(self._colors[f"p{4 - level}"]))
+            fmt.setFontWeight(700 if level == 3 else 400)
+            cursor.setPosition(position)
+            cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(fmt)
 
 
 def theme_preference(config) -> str:
