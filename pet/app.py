@@ -2308,17 +2308,13 @@ class AppShell:
                 _ChatService.unregister_global_finished(self._on_global_chat_finished)
             except Exception:
                 logging.exception("退出时注销全局聊天订阅失败")
-        # 岛对话气泡（进程级）：提交会话并关闭——每条消息本就即时落盘，
-        # 这里只兜底保存飞行中的流式回复（口径同各窗 quick_chat 的退出保存）
+        # 岛对话气泡（进程级）：**不再**在退出时整份保存会话（上游 e3807027 H1）——
+        # 完整聊天窗与岛聊天共享同一会话对象，岛聊天的内存快照可能是旧的；退出时整份覆盖
+        # 会丢掉已在完整窗口里落盘的新消息。岛聊天的流式回复在 _finished 回调里通过
+        # append_message 即时落盘（quick_chat.py），退出时无需、也不应再覆盖保存。
+        # 代价：退出时正在流式输出的岛回复会丢失。
         bubble = getattr(self, "island_chat", None)
         if bubble is not None:
-            _island_session = getattr(bubble, "session", None)
-            _island_store = getattr(bubble, "store", None)
-            if _island_session is not None and _island_store is not None:
-                try:
-                    _island_store.save(_island_session)
-                except Exception:
-                    logging.exception("退出前保存灵动岛对话会话失败")
             try:
                 bubble.close()
             except Exception:
