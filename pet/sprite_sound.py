@@ -76,7 +76,7 @@ def _pack_cache_key(pack):
 class SpriteSoundPlayer:
     """点击/碰撞音效统一播放器（duck-typed config：get/dir 即可）。
 
-    逐 sprite 取源（B7b）：旧架构每只桌宠是独立进程、各读自己的
+    逐 sprite 取源（B7b）：旧架构每只肥鱼是独立进程、各读自己的
     ``config-slot-N.json``（门/音量/音源包都取自己那份），点哪只响哪只的配置。
     本类通过 ``config_for(sprite)`` 把"身份 → 配置面"交给壳解析：
 

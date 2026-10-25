@@ -303,7 +303,7 @@ class MovieLibrary(QObject):
         self._low_warm_timer.setSingleShot(True)
         self._low_warm_timer.setInterval(2000)
         self._low_warm_timer.timeout.connect(self._warm_low_priority_background)
-        # 隐藏即暂停：桌宠不可见时预热没有任何可见收益，停掉定时器并
+        # 隐藏即暂停：肥鱼不可见时预热没有任何可见收益，停掉定时器并
         # 让在飞的预热线程尽快退出（低功耗铁律）。
         self._warm_paused = False
         self._low_first_frames_done = False  # 低优先级池首帧预热是否完整跑完
@@ -1241,7 +1241,7 @@ class MovieLibrary(QObject):
           "reader 已退出"判据排除；宽限期满 reader 自行退出后，re-arm 已不可能
           成功（_rearm_loop_reader 判 is_alive），start() 必走全新队列路径；
         - 显示槽只在非软停驻留的 clip 上清空（与 webm_clip.clear_display_frame
-          的既有契约一致："软停驻留（park）绝不清"）；桌宠真正显示的是
+          的既有契约一致："软停驻留（park）绝不清"）；肥鱼真正显示的是
           PetSprite 自己那份 pixmap，清空已停播 clip 的显示槽无可见变化。
         """
         freed = 0

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """工作简报：让 WSL 里登录着工作账号的 Claude Code 汇总 Jira / PR / Slack / 日程。
 
-桌宠自己用的是另一个账号的 API key，读不到工作账号的东西；它只负责定时触发、把结果
+肥鱼自己用的是另一个账号的 API key，读不到工作账号的东西；它只负责定时触发、把结果
 摆出来。这里守住的几条线：
 
 - 交给 Claude Code 的工具只有读取类的，内置工具（Bash / 读写文件）一个不给；
@@ -35,7 +35,7 @@ app = QApplication.instance() or QApplication([])
 MONDAY_10 = dt.datetime(2026, 10, 12, 10, 0)        # 星期一
 TUESDAY_10 = dt.datetime(2026, 10, 13, 10, 0)
 SATURDAY_10 = dt.datetime(2026, 10, 17, 10, 0)
-ON = {"enabled": True, "time": "09:00", "weekdays_only": True, "model": "sonnet"}
+ON = {"enabled": True, "time": "09:00", "weekdays_only": True, "model": "sonnet", "sources": dict(wb.DEFAULT_SOURCES)}
 
 REPORT = "概要：先回两条私信，下午有例会。\n\n## Jira\n- DEMO-1：示例工单（进行中）\n\n## PR\n无\n"
 
@@ -54,7 +54,8 @@ def _prs(*titles) -> str:
 
 def test_it_is_off_until_someone_turns_it_on(tmp_path):
     assert Config(tmp_path).get(wb.CONFIG_KEY) == {
-        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet"}
+        "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "sources": dict(wb.DEFAULT_SOURCES)}
+    assert wb.DEFAULT_SOURCES["email"] is False, "邮件默认关"
 
 
 def test_the_setting_survives_a_restart_and_bad_values_are_cleaned(tmp_path):
@@ -136,7 +137,7 @@ def test_the_command_runs_headless_with_builtin_tools_switched_off():
     assert " claude -p " in command and "--output-format json" in command
     assert "--tools ''" in command, "Bash / 读写文件这些内置工具一个不给"
     assert "--no-session-persistence" in command, "不在工作账号的会话列表里留一条"
-    assert f"{ch.HEADLESS_ENV}=1 " in command, "让桌宠自己的 hook 认出这次运行"
+    assert f"{ch.HEADLESS_ENV}=1 " in command, "让肥鱼自己的 hook 认出这次运行"
     assert "bypassPermissions" not in command and "dangerously" not in command
 
 
@@ -145,7 +146,7 @@ def test_a_strange_model_name_never_reaches_the_shell():
     assert "--model 'claude-opus-5-5'" in wb.claude_command("claude-opus-5-5")
 
 
-# ---------------------------------------------------------------- PR 列表（桌宠自己用 gh 查）
+# ---------------------------------------------------------------- PR 列表（肥鱼自己用 gh 查）
 
 def test_pull_requests_are_listed_under_two_headings():
     text = wb.format_pull_requests(_prs("Fix login", "Add cache") + f"\n{wb.PR_MARK}\n" + _prs("My change"))
@@ -273,7 +274,7 @@ def _service(tmp_path, settings=ON, now=MONDAY_10, result=None):
     config.set(wb.CONFIG_KEY, dict(settings))
     made = []
 
-    def generate(when, model):
+    def generate(when, model, **_kw):
         made.append((when, model))
         return result or wb.parse_output(_claude_json())
 
@@ -315,7 +316,7 @@ def test_a_failure_is_recorded_so_the_next_check_waits(tmp_path):
 def test_only_one_generation_at_a_time(tmp_path):
     config = Config(tmp_path)
     pending = []
-    service = WorkBriefingService(config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=pending.append, now=lambda: MONDAY_10)
     assert service.generate_now() is True and service.busy
     assert service.generate_now() is False
@@ -383,7 +384,7 @@ def test_a_failure_is_said_out_loud_not_swallowed(tmp_path):
 def test_asking_for_one_now_says_it_has_started_and_does_not_start_twice(tmp_path):
     config = Config(tmp_path)
     pending = []
-    service = WorkBriefingService(config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=pending.append, now=lambda: MONDAY_10)
     host = FakeHost()
     controller = WorkBriefingController(host, service)
@@ -433,7 +434,7 @@ def _find(menu: QMenu, text: str):
 @pytest.fixture
 def briefing_shell(shell, monkeypatch):  # noqa: F811
     monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")
-    service = WorkBriefingService(shell._config, generate=lambda when, model: wb.parse_output(_claude_json()),
+    service = WorkBriefingService(shell._config, generate=lambda when, model, **_kw: wb.parse_output(_claude_json()),
                                   spawn=lambda run: run(), now=lambda: MONDAY_10)
     shell.work_briefing = WorkBriefingController(shell, service)
     return shell

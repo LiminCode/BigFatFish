@@ -3,7 +3,7 @@
 
 工单背景（2026-10「SMTC 视频被当歌曲」）：``now_playing`` 只读
 title / artist / album_title，只要有标题且 ``playback_status == PLAYING``
-就当歌曲，于是 Edge 播放 B 站视频时桌宠会显示「我在唱《<视频标题>》」、去
+就当歌曲，于是 Edge 播放 B 站视频时肥鱼会显示「我在唱《<视频标题>》」、去
 歌词接口取词、并开唱歌动画（唱歌动画只看系统音量峰值，视频自然也算）。
 
 本文件钉住修复后的口径（两条腿）：**A. 明确 VIDEO(2) 的会话不进唱歌链路**；
@@ -305,7 +305,7 @@ def test_missing_media_type_degrades_to_unknown(monkeypatch):
 
     这不是假想：本机实测未安装 ``winrt-Windows.Media`` 时访问该属性会抛
     AttributeError（见模块 docstring），而 ``_read_async`` 的字段异常兜底是
-    "整次采样返回 None"——若不单独兜住，桌宠会在这种环境里彻底不显示歌词。
+    "整次采样返回 None"——若不单独兜住，肥鱼会在这种环境里彻底不显示歌词。
     """
     _install_winrt(
         monkeypatch,
@@ -528,7 +528,7 @@ def test_paused_video_session_does_not_veto_volume_trigger(monkeypatch):
 
     否决判定要求"当前会话在播"：暂停的会话说明不了声音来自哪里（可能是游戏、
     或不上报 SMTC 的播放器）。常见的"后台挂着一个暂停的 B 站页签"就属于这种
-    情况，按会话存在与否决会让桌宠对任何声音都不唱歌。
+    情况，按会话存在与否决会让肥鱼对任何声音都不唱歌。
     """
     _loud_system(monkeypatch, [_video_session(status=PAUSED)])
     assert _prime_verdict() == ((VIDEO, True, False),)

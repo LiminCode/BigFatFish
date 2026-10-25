@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Qt QScreen.grabWindow 抓屏：验证真实屏幕上透明桌宠是否可见。"""
+"""Qt QScreen.grabWindow 抓屏：验证真实屏幕上透明肥鱼是否可见。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication([])
 screen = app.primaryScreen()
-# 抓右下角区域（桌宠预期位置屏幕 x1050-1511, y534-815）
+# 抓右下角区域（肥鱼预期位置屏幕 x1050-1511, y534-815）
 x, y, w, h = 900, 470, 636, 394
 pix = screen.grabWindow(0, x, y, w, h)
 out = os.path.join(ROOT, 'grab_qt.png')

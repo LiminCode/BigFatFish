@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """灵动岛对话气泡。
 
-桌宠隐藏后灵动岛是唯一常驻的交互面：点击岛（或 AI 回复到达时）在岛上
+肥鱼隐藏后灵动岛是唯一常驻的交互面：点击岛（或 AI 回复到达时）在岛上
 弹出对话气泡，发送/流式回复与快速对话气泡共用同一套会话链路
-（SessionStore / ChatService / PromptBuilder），只是锚点从桌宠换成岛。
+（SessionStore / ChatService / PromptBuilder），只是锚点从肥鱼换成岛。
 
 与 QuickChatBubble 的行为差异：
 
@@ -12,8 +12,8 @@
 - 支持两种弹出形态：交互式（激活窗口、聚焦输入框，用户主动点击）与
   预览式（不激活不抢焦点，AI 回复到达时自动弹出，超时自动收回）；
 - 预览态若用户点进气泡（窗口激活）则视为开始交互，不再自动收回；
-- 附带「显示桌宠」按钮：桌宠隐藏时点击岛弹的是气泡而不是卡片，
-  恢复桌宠的入口要留在气泡里。
+- 附带「显示肥鱼」按钮：肥鱼隐藏时点击岛弹的是气泡而不是卡片，
+  恢复肥鱼的入口要留在气泡里。
 """
 from __future__ import annotations
 
@@ -22,13 +22,14 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 
 from .quick_chat import QuickChatBubble
+from .i18n import t
 
 # 预览式弹出的自动收回时长（与展开卡片 _CARD_AUTO_COLLAPSE_MS 同口径）
 _AUTO_COLLAPSE_MS = 15_000
 
 
 class IslandChatBubble(QuickChatBubble):
-    """锚定灵动岛的快速对话气泡（桌宠隐藏时的对话代理）。"""
+    """锚定灵动岛的快速对话气泡（肥鱼隐藏时的对话代理）。"""
 
     show_pet_requested = Signal()
 
@@ -37,9 +38,9 @@ class IslandChatBubble(QuickChatBubble):
         self._anchor: QWidget | None = None
         # 预览式弹出不激活窗口：显式声明，避免 Windows 上 show() 抢前台焦点
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.title_label.setText("灵动岛对话")
+        self.title_label.setText(t("island.chat.title"))
 
-        self.show_pet_btn = QPushButton("显示桌宠")
+        self.show_pet_btn = QPushButton(t("island.card.show_pet"))
         self.show_pet_btn.setObjectName("quick-chat-send")
         # 样式表已生效后才创建的子控件不会自动跟上气泡放大后的字号，显式给一次
         self.show_pet_btn.setFont(self.font())
@@ -84,7 +85,7 @@ class IslandChatBubble(QuickChatBubble):
                       duration_ms: int | None = None) -> None:
         """联动/系统反馈气泡：预览式弹出（不抢焦点），超时自动收回。
 
-        供桌宠隐藏时的气泡改道使用（window_alerts.redirect_hidden_bubble →
+        供肥鱼隐藏时的气泡改道使用（window_alerts.redirect_hidden_bubble →
         AppShell 注入调用）；后到的反馈覆盖前一条并重置收回定时器（最新
         状态优先）。``duration_ms`` 缺省用预览态统一时长。"""
         self.show_for_island(island, activate=False, reply_text=text)

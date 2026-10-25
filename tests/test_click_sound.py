@@ -532,7 +532,7 @@ def test_play_with_effect_returns_false_when_error_persists(tmp_path, monkeypatc
 
 
 def test_click_sound_immediate_toggle_in_dialog_affects_pet_window(tmp_path, monkeypatch):
-    """回归测试：设置对话框中即时关闭点击音效，桌宠窗口点击立即不播放。"""
+    """回归测试：设置对话框中即时关闭点击音效，肥鱼窗口点击立即不播放。"""
     from pet.config import Config
     from pet.window import PetWindow
     from pet.modern_settings_dialog import ModernSettingsDialog
@@ -743,7 +743,7 @@ def test_system_player_child_is_reaped_after_exit(monkeypatch, tmp_path, system_
     """#199：拉起的播放器句柄必须登记并在退出后被 poll 回收（POSIX 僵尸）。
 
     旧实现丢弃 Popen 返回值且全文件无 poll/wait：每次点击音都留一个僵尸，
-    桌宠长开就是"调几次留几个"。
+    肥鱼长开就是"调几次留几个"。
     """
     target = _make_file(tmp_path, "click.wav")
     _install_python_as_player(monkeypatch)

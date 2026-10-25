@@ -109,13 +109,13 @@ def main() -> int:
     host = _Host(screens[0])
     sbr = window_placement.stable_body_local_rect(host)
     print(f"[body] 身体框（窗口局部）= {_rect_text(sbr)}")
-    print(f"[scenario] 桌宠初始停在 {screens[0].name()}（真实场景：在主屏上往各屏拖）")
+    print(f"[scenario] 肥鱼初始停在 {screens[0].name()}（真实场景：在主屏上往各屏拖）")
 
     for index, screen in enumerate(screens):
         avail = screen.availableGeometry()
         target_x = avail.center().x() - host._w // 2
         target_y = avail.center().y() - host._h // 2
-        # 1) 不带快照（= 4.2.1 现状）：被钉在桌宠当前所在屏（screens[0]）
+        # 1) 不带快照（= 4.2.1 现状）：被钉在肥鱼当前所在屏（screens[0]）
         host._interaction_area = None
         host._screen = screens[0]
         window_placement.move_window_towards(host, target_x, target_y)
@@ -142,7 +142,7 @@ def main() -> int:
     print(f"  无快照: {tuple(round(v, 1) for v in window_placement.throw_bounds(host))}")
 
     print("[verdict] 多屏活动区域已启用：请在上面的 [drag→…] 行确认每块屏的"
-          "「落在目标屏=True」；再在真实界面上把桌宠从主屏拖/丢到副屏看是否跟手。")
+          "「落在目标屏=True」；再在真实界面上把肥鱼从主屏拖/丢到副屏看是否跟手。")
     return 0
 
 

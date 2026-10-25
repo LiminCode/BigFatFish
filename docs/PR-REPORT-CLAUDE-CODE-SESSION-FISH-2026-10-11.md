@@ -1,6 +1,6 @@
 # PR 报告：Claude Code 会话小鱼、Claude 通道、跨屏、BigFish 身份与一批体验改动
 
-> **基线**：`658e586`（main：Claude Code 联动提速、多会话收敛、审批提醒与 WSL 通道）
+> **基线**：`1694010`（main：Claude Code 联动提速、多会话收敛、审批提醒与 WSL 通道）
 > **分支**：`feature/claude-session-fish`　**日期**：`2026-10-11`
 > **范围**：144 个文件，+18613 / −1541（`git diff --shortstat origin/main..HEAD`）；
 > 实现 `pet/` 63 个文件 +6282 / −944，测试 53 个文件 +7564 / −583，工具 `tools/` 15 个新文件，
@@ -35,7 +35,7 @@
 - 事件文件只存元数据：提问正文不落盘（详情卡里的「最近的问题」是点开时从本机 transcript 现读进内存的）。
 - 单屏下 `home_bounds` 恒为 `None`、`cross_screen` 恒为 `False`：事件与边界路径与改动前相同。
 - 跳转时窗口没调到前台就不发 VS Code 链接（链接在当前聚焦窗口生效，发错会新开空对话）。
-- `tests/test_architecture.py` 的退役层守卫不变；`modern_settings_dialog.py` 的行数预算随「保存」功能校准到 2413（提交 `b298c59` 记录）。
+- `tests/test_architecture.py` 的退役层守卫不变；`modern_settings_dialog.py` 的行数预算随「保存」功能校准到 2413（提交 `1bddb09` 记录）。
 
 ## 二、修改文件说明
 
@@ -91,8 +91,8 @@
 
 ### 删除
 
-`pet/updater.py`、`pet/update_settings.py`、`tests/test_updater.py`、`tests/test_update_feature.py`（移除在线更新，提交 `f4bb5f1`）；
-`tests/test_dynamic_island_balance_tier_time.py`（岛的余额峰谷信息槽被今日用量取代，提交 `0d9679b`）。
+`pet/updater.py`、`pet/update_settings.py`、`tests/test_updater.py`、`tests/test_update_feature.py`（移除在线更新，提交 `b9dd2ac`）；
+`tests/test_dynamic_island_balance_tier_time.py`（岛的余额峰谷信息槽被今日用量取代，提交 `d4f9267`）。
 
 ### 未改动
 
@@ -270,9 +270,9 @@
 | 洗牌出牌并落盘 | 0.69ms / 次，状态文件约 2KB | 每次自言自语 / 开弹窗 | 本会话实测（35 张图 + 5 句台词，600 次平均） |
 | 动图配图 | 300×428、122 帧、7.5MB 的 GIF：3 秒换 24 帧，进程 CPU 读数约 0，RSS +8MB | 气泡显示动图期间 | 本会话实测 |
 | 气泡字体换等线 | 「中文 + 英文」+1MB（与微软雅黑 UI 相同）；缺字形时两者同样一次性 +51MB；默认 Segoe UI 画第一句中文即 +51MB | 首次渲染 | 本会话实测（逐句量 RSS） |
-| 「护驾」落点计算 | 6 只 0.46ms / 24 只 2.39ms；没有鱼在飞时每 tick +48ns | 点一次算一次 | 提交 `b12e901` 记录 |
-| 「最近的对话」回填 | 16 个会话 84ms | 展开卡片时（服务内节流） | 提交 `56da3d9` / `31ef3c8` 记录 |
-| 今日用量 | 首次 36MB / 108ms，之后每次约 2ms | 周期刷新 | 提交 `0d9679b` 记录 |
+| 「护驾」落点计算 | 6 只 0.46ms / 24 只 2.39ms；没有鱼在飞时每 tick +48ns | 点一次算一次 | 提交 `0391a52` 记录 |
+| 「最近的对话」回填 | 16 个会话 84ms | 展开卡片时（服务内节流） | 提交 `15b8444` / `ce293be` 记录 |
+| 今日用量 | 首次 36MB / 108ms，之后每次约 2ms | 周期刷新 | 提交 `d4f9267` 记录 |
 
 逐条回答：
 

@@ -348,7 +348,7 @@ def test_refresh_rate_change_rewires_tick_interval(tmp_path):
     """同分辨率切刷新率（60→180Hz）时 refreshRateChanged 应让 tick 间隔立即重读。
 
     回归：此前只接 geometryChanged，同分辨率模式切换不重读刷新率，
-    运行中的桌宠卡在 16ms(60Hz) 档直到重启（任务A 实锤缺口）。
+    运行中的肥鱼卡在 16ms(60Hz) 档直到重启（任务A 实锤缺口）。
     """
     screen = FakeScreen((0, 0, 1920, 1080), (0, 0, 1920, 1040), refresh=60.0)
     shell = _make_shell(tmp_path, {"on_top": False}, screen=screen)

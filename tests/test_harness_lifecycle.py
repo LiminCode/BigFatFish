@@ -430,109 +430,6 @@ def _harness_submenu(menu):
     return action.menu()
 
 
-def test_harness_submenu_wires_three_lifecycle_actions(tmp_path, monkeypatch):
-    """子菜单齐全，且各自绑到正确的 (action, target)（启动/重启/停止 不能串线）。
-
-    启动是**双目标**（2026-10）：web 界面 / 桌面端界面各一个入口；重启/停止仍
-    只有一套（只作用于 web 服务进程，不跟随拉起目标）。
-    """
-    from PySide6.QtWidgets import QApplication, QMenu
-
-    app = QApplication.instance() or QApplication([])
-    from pet.context_menus.shared import add_harness
-
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "pet.context_menus.shared.launch_harness_gui",
-        lambda pet, action="start", target="auto": calls.append((action, target)),
-    )
-
-    class _Pet:
-        pass
-
-    menu = QMenu()
-    add_harness(menu, _Pet())
-    submenu = _harness_submenu(menu)
-    assert _menu_labels(submenu) == [
-        "启动 dsh web 界面", "启动桌面端界面", "重启服务", "停止服务",
-    ]
-    for action in submenu.actions():
-        action.trigger()
-    # 菜单可见时的回调会被推迟到关闭后执行；这里直接驱动菜单关闭路径
-    menu.close()
-    app.processEvents()
-    assert calls == [
-        ("start", "web"), ("start", "desktop"), ("restart", "auto"), ("stop", "auto"),
-    ]
-    del app, tmp_path
-
-
-def test_lite_build_hides_the_harness_submenu(tmp_path, monkeypatch):
-    """纯桌宠（无 on_open_chat）版本连 DeepSeek Harness 子菜单都不显示。
-
-    门禁在 pet/context_menus/legacy.py：``on_open_chat`` 为空时不调 add_harness。
-    这里用带门禁的 legacy 构建器 + 一个最小替身验证——替身只提供门禁判定需要
-    的属性，其它属性缺失时构建器会在门禁**之后**才用到它，不影响结论。
-    """
-    import inspect
-
-    from PySide6.QtWidgets import QApplication, QMenu
-
-    app = QApplication.instance() or QApplication([])
-    import pet.context_menus.legacy as legacy_mod
-
-    source = inspect.getsource(legacy_mod.build_legacy_menu)
-    gate_at = source.index("on_open_chat")
-    harness_at = source.index("add_harness")
-    assert gate_at < harness_at, "门禁必须包住 add_harness（纯桌宠版不得出现 Harness 入口）"
-
-    # 子菜单的顶层标题（旧的平级项「启动 DeepSeek Harness」已不存在）：
-    # 轻量替身也验证四个入口都在子菜单内、不会绕过门禁漏成平级项。
-    from pet.context_menus.shared import add_harness
-
-    class _Pet:
-        pass
-
-    menu = QMenu()
-    add_harness(menu, _Pet())
-    assert "DeepSeek Harness" in _menu_labels(menu)
-    assert "启动 dsh web 界面" not in _menu_labels(menu)
-    assert "启动桌面端界面" not in _menu_labels(menu)
-    assert "停止服务" not in _menu_labels(menu)
-    submenu = _harness_submenu(menu)
-    assert _menu_labels(submenu) == [
-        "启动 dsh web 界面", "启动桌面端界面", "重启服务", "停止服务",
-    ]
-    menu.close()
-    app.processEvents()
-    del app, tmp_path, monkeypatch
-
-
-# ------------------------------------------------------------ GUI 线程模型（复审 P1-3/P1-4）
-def test_harness_submenu_actions_close_on_trigger(tmp_path, monkeypatch):
-    """四个 Harness 入口都必须 close_on_trigger：菜单先关闭、回调延迟执行，
-    确认框才不会在 macOS 原生菜单跟踪会话里被 AppKit 抑制。"""
-    from PySide6.QtWidgets import QApplication, QMenu
-
-    app = QApplication.instance() or QApplication([])
-    from pet.context_menus.shared import add_harness
-
-    class _Pet:
-        pass
-
-    menu = QMenu()
-    add_harness(menu, _Pet())
-    submenu = _harness_submenu(menu)
-    assert _menu_labels(submenu) == [
-        "启动 dsh web 界面", "启动桌面端界面", "重启服务", "停止服务",
-    ]
-    for action in submenu.actions():
-        assert bool(action.property("closeOnTrigger")), action.text()
-    menu.close()
-    app.processEvents()
-    del app, tmp_path, monkeypatch
-
-
 def test_launch_harness_gui_probes_off_gui_thread(monkeypatch):
     """停止/重启的进程反查（PowerShell，最长 10s）必须在 worker 线程执行：
     点菜单后 GUI 线程不得被 describe_harness_process 阻塞。"""
@@ -689,7 +586,7 @@ def _patch_posix(monkeypatch, calls, *, pgid=4321, own_pgrp=9999):
 
 def test_terminate_process_tree_posix_kills_group_not_single_pid(monkeypatch):
     """POSIX 分支必须按进程组终止：dsh 常以 npx→node 两层存在，只 kill 顶层
-    pid 会留下 node 子进程（docstring 声称'进程树'）。桌宠自拉实例 spawn 时
+    pid 会留下 node 子进程（docstring 声称'进程树'）。肥鱼自拉实例 spawn 时
     start_new_session=True，进程组即 dsh 自己的组，killpg 安全。"""
     calls: list[tuple] = []
     _patch_posix(monkeypatch, calls, pgid=1234)  # 目标是自己的组长
@@ -704,7 +601,7 @@ def test_terminate_process_tree_posix_kills_group_not_single_pid(monkeypatch):
 
 def test_terminate_process_tree_posix_never_signals_own_group(monkeypatch):
     """目标进程的组恰好是本进程组时（异常配置），必须回退单 pid kill——
-    killpg 打自己的组会把桌宠一起带走。"""
+    killpg 打自己的组会把肥鱼一起带走。"""
     calls: list[tuple] = []
     _patch_posix(monkeypatch, calls, pgid=1234, own_pgrp=1234)  # 目标组即本进程组
     monkeypatch.setattr(hl, "_terminate_process_tree", _REAL_TERMINATE_PROCESS_TREE)

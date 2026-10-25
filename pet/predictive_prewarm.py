@@ -134,7 +134,7 @@ class PredictivePrewarm:
 
         **掷骰只掷一次，产物照存**（含 idle/turn）——盲审 P1-1：若掷出 idle/turn
         就拒收并在窗口内逐帧重掷，稳态分布会从 30/10/40/20 漂到 ≈1/0/67/31
-        （桌宠不再回待机）。``should_predict`` 只闸**预热**（idle/turn pinned，
+        （肥鱼不再回待机）。``should_predict`` 只闸**预热**（idle/turn pinned，
         预热是纯浪费，规格 A6-2），不闸预测本身。
 
         返回 True 表示本帧实际创建了预测（供测试/打点）。

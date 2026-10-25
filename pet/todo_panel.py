@@ -261,7 +261,7 @@ class TodoPanelDialog(QDialog):
         self._add_btn.clicked.connect(self.begin_add)
         footer.addWidget(self._add_btn)
         footer.addStretch(1)
-        hint = QLabel("提醒开关与提前量在 桌宠设置 → 自动化与联动")
+        hint = QLabel("提醒开关与提前量在 肥鱼设置 → 自动化与联动")
         hint.setObjectName("todoHintLabel")
         hint.setWordWrap(True)
         footer.addWidget(hint, stretch=1)
@@ -357,7 +357,7 @@ class TodoPanelDialog(QDialog):
         config = getattr(self._app, "config", None)
         enabled = bool(config.get("todo_reminder_enabled", True)) if config else True
         if not enabled:
-            self._next_label.setText("提醒已关闭：可在 桌宠设置 → 自动化与联动 中开启")
+            self._next_label.setText("提醒已关闭：可在 肥鱼设置 → 自动化与联动 中开启")
             return
         summary = summarize_next(items, datetime.now())
         self._next_label.setText(f"下一条：{summary}" if summary else "")

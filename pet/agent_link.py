@@ -5,7 +5,7 @@
 1. 绝不使用 mtime 盲轮询；
 2. 统一事件协议：<config.dir>/agent-events/<agent>.jsonl，采用有界 Byte-Offset Tail 毫秒级增量读取；
 3. 状态词汇统一：idle / thinking / working / attention / sleeping / error；
-4. 状态 -> 桌宠动作映射：
+4. 状态 -> 肥鱼动作映射：
    - thinking -> 写代码 (或 深度思考碎碎念)
    - working -> 原地敲击桌面互动
    - attention -> 气泡提示 ("需要你看一眼～")
@@ -127,12 +127,12 @@ def _which(name: str) -> str | None:
 # reconcile 产物）。安装产物与 dsh 版本无关，EAC 桌面端 / 原生 CLI 均可加载。
 #
 # pnpm 入口的定位见 _find_pnpm_cli：npm 全局安装、nvm / nvm-windows 版本目录、
-# pnpm ≤10 的 pnpm.cjs、包装脚本、独立 pnpm.exe 都要认（issue：桌宠找不到 pnpm）。
+# pnpm ≤10 的 pnpm.cjs、包装脚本、独立 pnpm.exe 都要认（issue：肥鱼找不到 pnpm）。
 
 DSH_PLUGIN_NAME = "@dsh-pet/bridge"
 DSH_PROFILE_HOME = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh")))
 
-# Windows 探测/安装子进程隐藏窗口（与 harness_launcher 同款）：桌宠是无控制台
+# Windows 探测/安装子进程隐藏窗口（与 harness_launcher 同款）：肥鱼是无控制台
 # 的 GUI 进程，node/cmd 子进程不隐藏会弹出可见终端窗口。
 _HIDDEN_KWARGS: dict = (
     {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
@@ -1024,7 +1024,7 @@ class DirGlobTailer:
     """目录下按 glob 匹配多个 jsonl 文件的增量 tail（新文件发现 + 淘汰）。
 
     用于多 DSH 实例各自写入 dsh-{pid}.jsonl 的场景（P0-2 多实例分区写入）。
-    每个实例一个文件，桌宠侧读全部 dsh*.jsonl（含旧版单实例的 dsh.jsonl），
+    每个实例一个文件，肥鱼侧读全部 dsh*.jsonl（含旧版单实例的 dsh.jsonl），
     避免 Windows 上多进程并行写同一文件的行交织。
 
     兼容旧版单文件语义：保留 ``_initial_backfill_done`` 属性（读写代理到所有
@@ -1102,7 +1102,7 @@ class DirGlobTailer:
         旧实现按文件名字典序取前 max_files——实机（2026-09-29）桥目录里积了
         172 个陈旧 ``dsh-*.jsonl``（6 个写者还活着，其中最新写入的文件写于 2.5
         小时前），它排在名字序第 74 位，被 64 名的预算挤出扫描集合：那个会话
-        的状态事件桌宠一条都读不到（功能缺陷）。文件名的 pid 大小与"哪个会话
+        的状态事件肥鱼一条都读不到（功能缺陷）。文件名的 pid 大小与"哪个会话
         还活着"无关，只有 mtime 能表达活跃度。
 
         顺手清掉「写者进程已死 **且** 超过 ``_BRIDGE_STALE_FILE_AGE_S`` 未写入」
@@ -1347,7 +1347,7 @@ class BaseAgentMonitor(QObject):
     # LLM API 错误（llm_error 事件，errorCode=真实码如 bad_response_status_code，
     # errorKind=api）：(agent_key, record)
     llm_error = Signal(str, object)
-    # 用户介入信号（user_action 事件）：用户 DSH 审批/回答 → 桌宠应关闭对应弹窗
+    # 用户介入信号（user_action 事件）：用户 DSH 审批/回答 → 肥鱼应关闭对应弹窗
     user_action = Signal(str, object)
     # 未知桥接事件（DSH 桥接写出的、Pet 全部识别路径都不认识的事件名）：
     # (agent_key, record) —— Manager 侧据此提醒用户更新/重装 bridge。
@@ -1625,7 +1625,7 @@ class BaseAgentMonitor(QObject):
                 # 因为 DSH 等审批时 agent 仍在 running，状态还是 working）。
                 # 只收桥接后的 UI 事件 approval/request 与兼容旧名
                 # approval/requested；裸 approval/asked 只是状态/审计信号（驱动
-                # dsh_state 锁存 waiting_approval），绝不驱动桌宠审批弹窗——普通
+                # dsh_state 锁存 waiting_approval），绝不驱动肥鱼审批弹窗——普通
                 # 工具调用（如 pwsh 跑 Get-Location）被宿主标成 approval/asked
                 # 也不能误触发。减法后气泡是纯提示（无点选回写）。
                 if ev in ("approval/request", "approval/requested"):
@@ -1663,7 +1663,7 @@ class BaseAgentMonitor(QObject):
                 if ev == "user_action":
                     self._emit(self.user_action, (self.agent_key, data))
                 # 未知桥接事件：DSH 桥接写出的、Pet 全部识别路径（语义层/状态机/
-                # 直通名单）都不认识的事件名 → 大概率 bridge 与桌宠版本不匹配，
+                # 直通名单）都不认识的事件名 → 大概率 bridge 与肥鱼版本不匹配，
                 # 呈递给 Manager 弹「更新/重装 bridge」提醒。claude/cursor 的
                 # transcript 噪声不算（只查 DSH 监视器）；session/meta 等按
                 # type 字段直通的也不在此列。
@@ -1694,10 +1694,10 @@ class BaseAgentMonitor(QObject):
 class DshMonitor(BaseAgentMonitor):
     """DeepSeek Harness (DSH) 监视器。
 
-    事件来源：随桌宠内置的桥接插件（integrations/dsh-pet-bridge），开启联动时
+    事件来源：随肥鱼内置的桥接插件（integrations/dsh-pet-bridge），开启联动时
     经用户同意后通过 `dsh plugin --profile web install <dir>` 一键安装（关闭时自动卸载）。
     插件把 agent 状态写入固定桥目录 `<数据基目录>/dsh-pet-bridge/dsh.jsonl`
-    （与桌宠变体无关，源码/打包版路径一致），本监视器 byte-offset tail 读取。
+    （与肥鱼变体无关，源码/打包版路径一致），本监视器 byte-offset tail 读取。
 
     **单读方**（2026-10 减法）：DSH 桥目录只有这一个读者——一个
     DirGlobTailer + 一个轮询线程，每条记录解析一次后分发给两个消费者：
@@ -2086,19 +2086,19 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
     - settings.json 的 hooks 必须是「数组对象」格式：
       {"PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "..."}]}]}
       写成字符串 Claude Code 不识别；
-    - hook 命令不依赖 sys.executable（PyInstaller 打包后它是桌宠 exe，不能跑 -c），
+    - hook 命令不依赖 sys.executable（PyInstaller 打包后它是肥鱼 exe，不能跑 -c），
       也不起任何解释器：source 一段只用 shell 内建命令的 sh 脚本。Windows 上
       Claude Code 用 Git Bash 跑 hook；找不到 Git Bash 才回退到 PowerShell 脚本；
     - 注入/卸载只动带 ``x-dsh-pet`` 标记的条目，用户已有的其他 hooks 条目原样保留；
     - 同一 Claude Code 的多个会话写同一个事件文件：按 ``sessionId`` 记账后收敛成
       一个 Agent 级状态（``ClaudeSessionTracker``），一个会话收工不等于全部收工；
-    - 事件文件归本桌宠所有：启动时先建好（tailer 对首次见到的文件会跳到末尾防
+    - 事件文件归本肥鱼所有：启动时先建好（tailer 对首次见到的文件会跳到末尾防
       回放，文件若由第一条事件创建，那一批事件就被跳掉了），超过约 1MB 且没有会话
       在忙时清空（hook 是 shell 脚本，没法自己轮转）。
     """
 
     HOOK_EVENTS = claude_hooks.HOOK_EVENTS
-    HOOK_MARKER = "claude_event_hook"  # 识别本桌宠注入条目的标记
+    HOOK_MARKER = "claude_event_hook"  # 识别本肥鱼注入条目的标记
     HOOK_FLAG = claude_hooks.HOOK_FLAG  # 结构化字段标识
     _TRIM_BYTES = 1_000_000
 
@@ -2107,7 +2107,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
         self._sessions = claude_hooks.ClaudeSessionTracker()
 
     def start(self) -> bool:
-        """启动时刷新 hook 脚本（脚本整体归本桌宠所有，升级版本自动覆盖旧版）。"""
+        """启动时刷新 hook 脚本（脚本整体归本肥鱼所有，升级版本自动覆盖旧版）。"""
         try:
             self._ensure_hook_script(self.events_file)
             self.events_file.touch(exist_ok=True)
@@ -2160,7 +2160,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
     @classmethod
     def install_hooks(cls, events_file: Path) -> bool:
         """注入 Claude Code 官方 hooks（数组对象格式），事件追加到 jsonl。
-        只移除/新增带本桌宠结构化标记的条目，用户已有 hooks 不受影响。"""
+        只移除/新增带本肥鱼结构化标记的条目，用户已有 hooks 不受影响。"""
         settings_path = cls.get_settings_path()
         try:
             entries = cls._local_entries(events_file)
@@ -2205,7 +2205,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
 
     @classmethod
     def uninstall_hooks(cls) -> bool:
-        """关闭联动时移除本桌宠注入的 hooks 条目（仅带标记的，用户自有条目不碰）。"""
+        """关闭联动时移除本肥鱼注入的 hooks 条目（仅带标记的，用户自有条目不碰）。"""
         settings_path = cls.get_settings_path()
         if not settings_path.is_file():
             return True
@@ -2263,7 +2263,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
 
     @classmethod
     def uninstall_wsl_hooks(cls, *, runner: claude_hooks.WslRunner = claude_hooks.run_wsl) -> bool:
-        """移除 WSL 默认发行版里本桌宠注入的 hooks（阻塞，只许在后台线程调用）。"""
+        """移除 WSL 默认发行版里本肥鱼注入的 hooks（阻塞，只许在后台线程调用）。"""
         try:
             store = claude_hooks.WslSettingsStore(runner)
             text = store.read()
@@ -2315,7 +2315,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
         """进程已经不在的会话按「已关闭」处理。
 
         Claude Code 被直接杀掉（关窗口、崩溃、断电重启）时不发 ``SessionEnd``：它的
-        会话小鱼会一直留着，忙到一半的还会让桌宠一直停在「工作中」。这里拿 Claude
+        会话小鱼会一直留着，忙到一半的还会让肥鱼一直停在「工作中」。这里拿 Claude
         Code 自己的运行中会话清单核对进程（见 ``claude_session_info``）；清单里
         没有记录的会话不动——没有记录不等于没了。
         """
@@ -2600,7 +2600,7 @@ class AgentLinkManager(QObject):
     - set_enabled 安装/卸载编排（授权弹窗、后台安装、hooks 注入/移除）；
     - 对既有调用面（PetWindow / AppShell / ProactiveScreenWatcher / 测试）的薄转发。
     去抖/节流/完成确认与气泡/音效/动画调度都在本类内实现。
-    挂载于 PetWindow，持有 4 个 Agent 的监视器，并根据状态驱动桌宠动作与气泡。
+    挂载于 PetWindow，持有 4 个 Agent 的监视器，并根据状态驱动肥鱼动作与气泡。
     """
 
     install_finished = Signal(str, bool, str, int)  # (agent_key, ok, message, install_token)
@@ -2705,7 +2705,7 @@ class AgentLinkManager(QObject):
         # 自定义联动 Agent：配置驱动的只读监视器（key/path 已在 config 清洗时
         # 保证合法唯一）；显示名合并进实例级 agent_names，类级 AGENT_NAMES
         # 保持仅内置（modern_settings_dialog 等按内置枚举处不受影响）。
-        # 注意：运行中新增/修改 custom_agents 需重启桌宠生效。
+        # 注意：运行中新增/修改 custom_agents 需重启肥鱼生效。
         self.agent_names: dict[str, str] = dict(self.AGENT_NAMES)
         for item in (self.cfg.get("agent_link", {}).get("custom_agents") or []):
             key = str(item.get("key") or "")
@@ -2971,7 +2971,7 @@ class AgentLinkManager(QObject):
                     self.win if hasattr(self.win, "winId") else None,
                     "开启 Claude Code 联动",
                     "开启联动需要在 ~/.claude/settings.json 中配置事件 hooks，\n"
-                    "用于在 Agent 干活时同步通知桌宠播放对应动作。\n\n"
+                    "用于在 Agent 干活时同步通知肥鱼播放对应动作。\n\n"
                     "是否允许注入 hooks 配置？（关闭联动时会自动移除）",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -2989,7 +2989,7 @@ class AgentLinkManager(QObject):
                     self.win if hasattr(self.win, "winId") else None,
                     "开启 Claude Code (WSL) 联动",
                     "开启联动需要在 WSL 默认发行版的 ~/.claude/settings.json 中配置事件 hooks。\n"
-                    "事件只写到本机桌宠目录，内容仅有时间、事件名、会话 ID 和工具名。\n\n"
+                    "事件只写到本机肥鱼目录，内容仅有时间、事件名、会话 ID 和工具名。\n\n"
                     "是否允许注入 hooks 配置？（关闭联动时会自动移除）",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -3013,7 +3013,7 @@ class AgentLinkManager(QObject):
                     self.win if hasattr(self.win, "winId") else None,
                     "开启 DSH 联动",
                     "开启联动需要向 DeepSeek Harness 安装一个桥接小插件\n"
-                    "（把 DSH 的运行状态写到本地文件给桌宠读，仅本地、无网络）。\n\n"
+                    "（把 DSH 的运行状态写到本地文件给肥鱼读，仅本地、无网络）。\n\n"
                     "是否允许一键安装？（关闭联动时会自动卸载）",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
@@ -3079,7 +3079,7 @@ class AgentLinkManager(QObject):
         return True
 
     def pause(self) -> None:
-        """桌宠隐藏时暂停所有监视器，丢弃待播联动动作，并取消所有完成确认计时器
+        """肥鱼隐藏时暂停所有监视器，丢弃待播联动动作，并取消所有完成确认计时器
         （否则隐藏期间计时器到期会在隐藏窗口上切动画/弹气泡）。"""
         for mon in self.monitors.values():
             mon.pause()
@@ -3090,7 +3090,7 @@ class AgentLinkManager(QObject):
         self._sound_last_event.clear()
 
     def resume(self) -> None:
-        """桌宠恢复显示时恢复活动的监视器。"""
+        """肥鱼恢复显示时恢复活动的监视器。"""
         for mon in self.monitors.values():
             mon.resume()
 
@@ -3223,7 +3223,7 @@ class AgentLinkManager(QObject):
         self.notify_dsh_state("thinking")
 
     def _on_agent_state(self, agent_key: str, state: str, gen: int = 0) -> None:
-        """接收 Agent 状态变更并调度桌宠动作/气泡（带去抖与节流）。"""
+        """接收 Agent 状态变更并调度肥鱼动作/气泡（带去抖与节流）。"""
         if not self._gen_current(agent_key, gen):
             return
         # 兜底：该 agent 已回待机（任务结束）但审批/问题还没收到 resolved → 交互必然失效。
@@ -3241,7 +3241,7 @@ class AgentLinkManager(QObject):
                 elif hasattr(self.win, "hide_bubble"):
                     self.win.hide_bubble()
 
-        # 桌宠隐藏：动画/声音不呈现，但状态簿记（_last_raw / 成本 / 完成确认
+        # 肥鱼隐藏：动画/声音不呈现，但状态簿记（_last_raw / 成本 / 完成确认
         # 调度）照常推进——岛反馈面可用时气泡经 _show_link_bubble 改道灵动岛
         # （无注入时维持丢弃）。此前整段 return 会连簿记一起丢，隐藏期间
         # start/done 反馈气泡全部消失（岛反馈面引入后用户实测）。
@@ -3292,7 +3292,7 @@ class AgentLinkManager(QObject):
 
         log.debug("Agent 状态变更 [%s]: %s", agent_key, state)
 
-        # 状态 -> 桌宠行为映射（手册 §8.2）
+        # 状态 -> 肥鱼行为映射（手册 §8.2）
         if state in ("thinking", "working"):
             # busy 动作池轮换（写代码/吃Token 为主，每第 3 次插播短摸鱼），
             # 经 request_link_anim 平滑衔接：正在播的一次性动作不被打断。
@@ -4153,9 +4153,9 @@ class AgentLinkManager(QObject):
         （约 10s 窗口），仍被占才放弃——主动识屏长答复可能占位 15-20s。"""
         if not hasattr(self.win, "show_bubble"):
             return
-        # 桌宠隐藏时 show_bubble/show_alert 会静默丢弃：改道灵动岛反馈面
+        # 肥鱼隐藏时 show_bubble/show_alert 会静默丢弃：改道灵动岛反馈面
         # （AppShell 经 hidden_bubble_redirect 注入；无注入/岛不可用维持丢弃）。
-        # 审批/问题等常驻提示气泡不经本函数（走 show_alert 队列），仍需桌宠可见。
+        # 审批/问题等常驻提示气泡不经本函数（走 show_alert 队列），仍需肥鱼可见。
         is_visible = getattr(self.win, "isVisible", None)
         if callable(is_visible) and not is_visible():
             from . import window_alerts as _window_alerts
@@ -4171,7 +4171,7 @@ class AgentLinkManager(QObject):
             return
         busy_until = getattr(self.win, "_bubble_busy_until", 0.0)
         # window.hold_bubble 以 time.monotonic() 写入 _bubble_busy_until，这里必须
-        # 用同一时钟域比较——曾误用 time.time()（epoch 秒），在真实桌宠上恒判
+        # 用同一时钟域比较——曾误用 time.time()（epoch 秒），在真实肥鱼上恒判
         # "未被占用"，让位/重试门禁失效（普通气泡顶掉识屏占位、重要气泡不排队
         # 重试直接覆盖）。同步修正于 PR57 合并后审计（F1）。
         if time.monotonic() < busy_until:
@@ -4516,7 +4516,7 @@ class AgentLinkManager(QObject):
         """DSH 桥接写出的未知事件 → 提醒用户更新/重装 bridge。
 
         事件名不在 Pet 任何识别路径（语义层 / 状态机 / _poll 直通名单）里，
-        大概率是 bridge 与桌宠版本不匹配写出的新事件。同一 agent 在冷却
+        大概率是 bridge 与肥鱼版本不匹配写出的新事件。同一 agent 在冷却
         窗口内只提醒一次——未知事件可能成串到达，逐条弹窗会刷屏。
         """
         if not isinstance(record, dict):
@@ -4530,7 +4530,7 @@ class AgentLinkManager(QObject):
         event = str(record.get("event") or "").strip()
         text = self._dialogue(
             "bridge.unknown",
-            f"检测到未知的桥接事件（{event}），当前桌宠不认识它——"
+            f"检测到未知的桥接事件（{event}），当前肥鱼不认识它——"
             "可能是 bridge 版本过旧，请更新或重装 bridge 插件",
             name=name,
             event=event,

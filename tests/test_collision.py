@@ -273,7 +273,7 @@ class TestCollisionImpulseAndMomentum:
 
     def test_zero_and_infinite_mass_interactions(self):
         """测试零质量与无限质量（如拖拽、锁定状态）。"""
-        # Case A: 一个无限质量 (如被锁定的桌宠)，一个普通质量
+        # Case A: 一个无限质量 (如被锁定的肥鱼)，一个普通质量
         m_fixed = collision.MemberState(
             runtime_id="fixed", x=100.0, y=0.0, radius_x=50.0, radius_y=50.0,
             vx=0.0, vy=0.0, mass=1.0, is_infinite_mass=True, flags=collision.FLAG_LOCK_POSITION,
@@ -405,7 +405,7 @@ class TestPositionSeparationAndMultiBody:
     def test_multi_body_three_bodies_collision(self):
         """测试三体同时重叠：向量合并与迭代分离后跨 tick 收敛（plan4 §6.4：
         单 tick 最多 4 轮迭代，残余重叠由后续 tick 继续修正，绝不死循环）。"""
-        # 构造三只桌宠紧密排列在一条线上 (A, B, C)
+        # 构造三只肥鱼紧密排列在一条线上 (A, B, C)
         # 半径均为 50px，A 在 x=0, B 在 x=70 (与 A 重叠 30), C 在 x=140 (与 B 重叠 30)
         mA = collision.MemberState(runtime_id="A", x=0.0, y=0.0, radius_x=50.0, radius_y=50.0, vx=100.0, vy=0.0)
         mB = collision.MemberState(runtime_id="B", x=70.0, y=0.0, radius_x=50.0, radius_y=50.0, vx=0.0, vy=0.0)

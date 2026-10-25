@@ -96,13 +96,14 @@ class WorkBriefingService(QObject):
     def _launch(self, *, manual: bool) -> bool:
         self._generation += 1
         generation, generate = self._generation, self._generate
-        now, model = self._now(), self.settings()["model"]
+        settings = self.settings()
+        now, model, sources = self._now(), settings["model"], settings["sources"]
         self._busy = True
         self.started.emit(manual)
 
         def run() -> None:
             try:
-                briefing = generate(now, model)
+                briefing = generate(now, model, sources=sources)
             except Exception as exc:  # noqa: BLE001 - 任何失败都算「这次没生成」，线程不许带病退出
                 briefing = wb.Briefing(error=f"生成时出错：{type(exc).__name__}")
             try:

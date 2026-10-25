@@ -21,7 +21,10 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "character",
         "playback_speed",
         "size",
-        "music",
+        "vscode_workspaces",
+        "youtube_music",
+        "claude_desktop",
+        "wsl_claude_code",
         "default.separator-playback",
         "pet_controls",
         "quick_launch",
@@ -93,7 +96,7 @@ def test_user_layout_filters_hidden_unavailable_and_empty_submenus():
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "桌宠控制",
+                    "label": "肥鱼控制",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "no_move", "visible": True},
@@ -131,7 +134,7 @@ def test_user_layout_filters_hidden_unavailable_and_empty_submenus():
         {
             "type": "submenu",
             "id": "pet_controls",
-            "label": "桌宠控制",
+            "label": "肥鱼控制",
             "visible": True,
             "children": (
                 {"type": "action", "id": "no_move", "visible": True},
@@ -307,6 +310,10 @@ def test_missing_user_layout_resolves_versioned_default():
         "character",
         "playback_speed",
         "size",
+        "vscode_workspaces",
+        "youtube_music",
+        "claude_desktop",
+        "wsl_claude_code",
         "drag_physics",
         "no_move",
         "mouse_through",
@@ -317,21 +324,9 @@ def test_missing_user_layout_resolves_versioned_default():
         "spawn_pet",
         "clear_spawned_pets",
         "rally_pets",
-        "agent_cost",
-        "music",
-        "music_pause",
-        "music_next",
-        "music_prev",
-        "music_quit",
-        "music_lyric_align",
-        "music_open_netease",
-        "music_open_qqmusic",
         "golden_spin",
         "edge_probe",
         "quick_launch",
-        "balance",
-        "harness",
-        "deepseek_web",
         "github_project",
         "agent_link",
         "proactive_screen",
@@ -361,7 +356,10 @@ def test_missing_user_layout_resolves_versioned_default():
         "character",
         "playback_speed",
         "size",
-        "music",
+        "vscode_workspaces",
+        "youtube_music",
+        "claude_desktop",
+        "wsl_claude_code",
         "pet_controls",
         "quick_launch",
         "tools_help",
@@ -416,7 +414,7 @@ def test_saved_layout_drops_removed_mouse_through_action(tmp_path):
         "nodes": [
             {"type": "action", "id": "modern_settings", "visible": True},
             {
-                "type": "submenu", "id": "pet_controls", "label": "桌宠控制", "visible": True,
+                "type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True,
                 "children": [
                     {"type": "action", "id": "no_move", "visible": True},
                     {"type": "action", "id": "mouse_through", "visible": True},
@@ -523,12 +521,15 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "切换角色",
         "播放速率",
         "大小",
-        "音乐",
-        "桌宠控制",
+        "VS Code 工作区",
+        "YouTube Music",
+        "Claude Desktop",
+        "Claude Code（WSL）",
+        "肥鱼控制",
         "快捷启动",
         "工具与帮助",
         "Agent 联动",
-        "桌宠设置",
+        "肥鱼设置",
         "退出",
     ]
     if sys.platform == "win32":
@@ -542,70 +543,35 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     expected_rendered = [
         "厉害了我的鲸", "|",
         "护驾", "AI 对话", "看看屏幕", "|",
-        "播放动画", "切换角色", "播放速率", "大小", "音乐", "|",
-        "桌宠控制", "快捷启动", "|",
+        "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music",
+        "Claude Desktop", "Claude Code（WSL）", "|",
+        "肥鱼控制", "快捷启动", "|",
         "工具与帮助", "Agent 联动", "|",
-        "桌宠设置", "退出",
+        "肥鱼设置", "退出",
     ]
     if sys.platform == "win32":
         expected_rendered.insert(-3, "主动识屏")
-    # tools 段顺序：… Agent 联动 [主动识屏] 待办提醒 | 桌宠设置 退出
+    # tools 段顺序：… Agent 联动 [主动识屏] 待办提醒 | 肥鱼设置 退出
     # （报时/节日四项默认 visible: false，不渲染）
     expected_rendered.insert(-3, "待办提醒")
     assert rendered == expected_rendered
-    pet_controls = next(action.menu() for action in menu.actions() if action.text() == "桌宠控制")
+    pet_controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     assert [action.text() for action in pet_controls.actions() if not action.isSeparator()] == [
         "拖动物理",
         "不移动",
         "窗口置顶",
         "开机自启",
         "回到右下角",
-        "隐藏桌宠",
+        "隐藏肥鱼",
         "生小肥鱼",
         "退出子肥鱼",
-        "显示本轮消费",
         "黄金回旋",
         "边缘探头",
     ]
     tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    expected_tools = [
-        "DeepSeek 余额",
-        "DeepSeek Harness",
-        "打开网页版 DeepSeek",
-        "GitHub 项目页",
-    ]
+    # 「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 下线：工具与帮助只剩项目页
+    expected_tools = ["GitHub 项目页"]
     assert [action.text() for action in tools.actions() if not action.isSeparator()] == expected_tools
-    # Harness 现在是子菜单（挂在既有 harness id 上，用户老布局无需迁移）：
-    # 启动（双目标：dsh web 界面 / 桌面端界面）+ 重启 / 停止必须齐全——
-    # 「停止」是用户关掉静默常驻服务的唯一入口。
-    harness_action = next(
-        action for action in tools.actions() if action.text() == "DeepSeek Harness"
-    )
-    harness_menu = harness_action.menu()
-    assert harness_menu is not None
-    assert [action.text() for action in harness_menu.actions()] == [
-        "启动 dsh web 界面",
-        "启动桌面端界面",
-        "重启服务",
-        "停止服务",
-    ]
-    # 音乐子菜单里的「歌词对齐」：实测网易云音乐完全不上报播放进度，快进 / 中途
-    # 开始播放后只能手动对准，五个手柄必须齐全（同样挂在单一 id 上，老布局免迁移）。
-    music_action = next(action for action in menu.actions() if action.text() == "音乐")
-    music_menu = music_action.menu()
-    assert music_menu is not None
-    align_action = next(
-        action for action in music_menu.actions() if action.text() == "歌词对齐"
-    )
-    align_menu = align_action.menu()
-    assert align_menu is not None
-    assert [action.text() for action in align_menu.actions()] == [
-        "回到开头（现在这句算开头）",
-        "上一句",
-        "下一句",
-        "后退 5 秒",
-        "前进 5 秒",
-    ]
     menu.close()
     app.processEvents()
 
@@ -869,7 +835,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected
 
     def owner(setting_id):
@@ -889,8 +855,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     assert owner("api_url") == "AI 与对话"
     assert owner("voice_chime_enabled") == "语音"
     assert owner("file_interpret_enabled") == "文件识别"
-    assert owner("music_player_netease") == "桌宠"
-    assert owner("music_player_qqmusic") == "桌宠"
+    assert owner("music_lyric") == "肥鱼"
     assert "待分类（开发期）" not in [
         label.text() for label in dialog.findChildren(settings_mod.QLabel)
     ]
@@ -995,7 +960,7 @@ def test_voice_domain_owns_only_tts_rows(tmp_path, monkeypatch):
     """「语音」域按 2026-09-17 定稿口径只收鱼开口说话（TTS）类设置：
     语音报时组 + 节日提醒组（节日提醒原在「自动化与联动」域，但带 speak/TTS 播报）。
 
-    音效类不属此域：点击音效回「互动 · 点击反馈」、碰撞音效回「桌宠」碰撞组
+    音效类不属此域：点击音效回「互动 · 点击反馈」、碰撞音效回「肥鱼」碰撞组
     （见下面两个用例），Agent 提示音效仍留在 Agent 联动折叠框。
     """
     from PySide6.QtWidgets import QApplication
@@ -1087,7 +1052,7 @@ def test_click_sound_rows_return_to_interaction_click_feedback(tmp_path, monkeyp
             "点击音效 4 行原本排在 click_self_talk 之前"
         )
         # click_ 前缀里另有余额 / 点击台词绑定，同样留在「互动」。
-        for setting_id in ("click_balance", "click_talk_bindings"):
+        for setting_id in ("click_talk_bindings",):
             keep_row = dialog.findChild(settings_mod.SettingRow, f"settingRow_{setting_id}")
             assert keep_row is not None, f"{setting_id} 行必须存在"
             assert interaction_page.isAncestorOf(keep_row), f"{setting_id} 必须留在「互动」域"
@@ -1099,7 +1064,7 @@ def test_click_sound_rows_return_to_interaction_click_feedback(tmp_path, monkeyp
 
 
 def test_collision_sound_rows_return_to_pet_collision_groups(tmp_path, monkeypatch):
-    """碰撞音效 2 行回「桌宠」：开关紧随碰撞开关（多开碰撞组），音量随物理参数进
+    """碰撞音效 2 行回「肥鱼」：开关紧随碰撞开关（多开碰撞组），音量随物理参数进
     「碰撞参数（高级）」；「语音」域不再持有。"""
     from PySide6.QtWidgets import QApplication
 
@@ -1112,7 +1077,7 @@ def test_collision_sound_rows_return_to_pet_collision_groups(tmp_path, monkeypat
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     try:
         labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
-        pet_page = dialog.pages.widget(labels.index("桌宠"))
+        pet_page = dialog.pages.widget(labels.index("肥鱼"))
         voice_page = dialog.pages.widget(labels.index("语音"))
 
         primary = _section_of(dialog, settings_mod, "collision_sound_enabled")
@@ -1186,7 +1151,7 @@ def test_agent_sound_rows_stay_in_agent_link_fold(tmp_path, monkeypatch):
 
 
 def test_sound_and_festival_search_jump_to_owning_domains(tmp_path, monkeypatch):
-    """搜索按「语音」定稿口径跳域：点击音效 → 互动、碰撞音效 → 桌宠、
+    """搜索按「语音」定稿口径跳域：点击音效 → 互动、碰撞音效 → 肥鱼、
     节日提醒 / 语音报时 → 语音、Agent 提示音 → 自动化与联动。"""
     from PySide6.QtWidgets import QApplication
 
@@ -1205,8 +1170,8 @@ def test_sound_and_festival_search_jump_to_owning_domains(tmp_path, monkeypatch)
             ("音效音源", "互动", True),
             ("试听音效", "互动", True),
             ("click_sound_volume", "互动", True),
-            ("碰撞音效", "桌宠", True),
-            ("碰撞音量", "桌宠", False),
+            ("碰撞音效", "肥鱼", True),
+            ("碰撞音量", "肥鱼", False),
             ("报时频率", "语音", True),
             ("节日提醒", "语音", True),
             ("立即试听", "语音", True),
@@ -1241,7 +1206,7 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    expected_sidebar = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
@@ -1362,8 +1327,9 @@ def test_settings_visual_hierarchy_uses_shared_product_tokens(tmp_path, monkeypa
     page_title = dialog.pages.currentWidget().findChild(settings_mod.QLabel, "pageTitle")
     section_title = dialog.pages.currentWidget().findChild(settings_mod.QLabel, "sectionTitle")
     row = dialog.findChild(SettingRow, "settingRow_autostart")
-    assert page_title.font().pixelSize() == 22
-    assert section_title.font().pixelSize() == 13
+    assert page_title.font().pixelSize() == 30          # Metro：大而轻的页标题（2026-10-14）
+    assert page_title.font().weight() <= 400
+    assert section_title.font().pixelSize() == 15
     assert row.label.font().pixelSize() == 13
     assert row.label.font().weight() == 500
     assert row.hint_label.font().pixelSize() == 12
@@ -1603,7 +1569,7 @@ def test_settings_domains_use_semantic_sidebar_icons():
 
     assert SETTINGS_DOMAIN_NAV == (
         ("常规", "settings"),
-        ("桌宠", "pet"),
+        ("肥鱼", "pet"),
         ("互动", "interaction"),
         ("菜单", "application"),
         ("桌面组件", "island"),
@@ -1693,7 +1659,7 @@ def test_menu_preview_uses_resolver_and_omits_empty_submenu(tmp_path, monkeypatc
         editor.preview.topLevelItem(i).text(0)
         for i in range(editor.preview.topLevelItemCount())
     ]
-    assert "桌宠控制" not in preview_labels
+    assert "肥鱼控制" not in preview_labels
     dialog.reject()
     app.processEvents()
 
@@ -1725,7 +1691,7 @@ def test_menu_preview_refreshes_after_tree_shape_changes():
         editor.preview.topLevelItem(index)
         for index in range(editor.preview.topLevelItemCount())
     ]
-    preview_controls = next(item for item in preview_roots if item.text(0) == "桌宠控制")
+    preview_controls = next(item for item in preview_roots if item.text(0) == "肥鱼控制")
     assert action_label in [item.text(0) for item in preview_roots]
     assert action_label not in [
         preview_controls.child(index).text(0)
@@ -1750,7 +1716,7 @@ def test_menu_preview_and_runtime_qmenu_share_the_same_layout_structure():
     for node in layout["nodes"]:
         node["visible"] = node["id"] in visible_root_ids
         if node["id"] == "pet_controls":
-            node["label"] = "常用桌宠操作"
+            node["label"] = "常用肥鱼操作"
             for child in node["children"]:
                 child["visible"] = child["id"] == "drag_physics"
 
@@ -2119,7 +2085,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "桌宠控制",
+                    "label": "肥鱼控制",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "drag_physics", "visible": True},
@@ -2140,7 +2106,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
                 {
                     "type": "submenu",
                     "id": "pet_controls",
-                    "label": "我的桌宠操作",
+                    "label": "我的肥鱼操作",
                     "visible": True,
                     "children": [
                         {"type": "action", "id": "no_move", "visible": True},
@@ -2170,7 +2136,7 @@ def test_user_layout_gains_future_default_action_without_losing_custom_order(
     assert result.source == "normalized"
     assert result.diagnostics == ("default-action-added:future_action",)
     controls = result.nodes[0]
-    assert controls["label"] == "我的桌宠操作"
+    assert controls["label"] == "我的肥鱼操作"
     assert [child["id"] for child in controls["children"]] == [
         "no_move",
         "future_action",
@@ -2269,7 +2235,7 @@ def test_settings_action_popups_share_the_modern_select_visual_tokens():
         editor.customize_menu, editor.more_menu, launcher.add_menu,
     ]
     assert all(menu.objectName() == "SettingsPopup" for menu in menus)
-    assert all("border-radius: 10px" in menu.styleSheet() for menu in menus)
+    assert all("border-radius: 0" in menu.styleSheet() for menu in menus), "Metro：弹出面板也是方角"
     assert all("padding: 6px" in menu.styleSheet() for menu in menus)
     assert all("min-height: 22px" in menu.styleSheet() for menu in menus)
     editor.close()
@@ -2333,24 +2299,38 @@ def test_menu_editor_header_columns_are_user_resizable():
     app.processEvents()
 
 
-def test_settings_tabs_are_compact_left_aligned_plugin_style_navigation():
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
+def test_settings_tabs_are_a_vertical_accordion_of_full_width_tiles():
+    """2026-10-14 起页内任务不再是左右的分段标签，而是上下折叠的磁贴表头（Windows Phone）：
+    表头占满宽度、一次只开一页、点别的表头就切过去。"""
+    from PySide6.QtWidgets import QApplication, QWidget
 
     from pet.modern_settings_dialog import SettingsTabContainer
+    from pet.settings_widgets import SettingsDisclosureHeader
 
     app = QApplication.instance() or QApplication([])
     tabs = SettingsTabContainer()
+    pages = []
     for key, label in (("layout", "菜单编排"), ("launcher", "快捷启动"), ("appearance", "外观")):
-        tabs.addTab(key, label, QWidget())
+        page = QWidget()
+        pages.append(page)
+        tabs.addTab(key, label, page)
     tabs.resize(900, 420)
     tabs.show()
     app.processEvents()
 
-    assert tabs.tab_bar.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Maximum
-    assert tabs.tab_layout.alignment() & Qt.AlignmentFlag.AlignLeft
-    assert tabs.tab_bar.width() < tabs.width() * 0.7
-    assert all(button.property("navigationStyle") == "plugin" for button in tabs._buttons)
+    headers = tabs.headers()
+    assert len(headers) == 3 and all(isinstance(h, SettingsDisclosureHeader) for h in headers)
+    assert all(h.width() == tabs.width() for h in headers), "表头是满宽的磁贴"
+    assert [h.isChecked() for h in headers] == [True, False, False]
+    assert [p.isVisibleTo(tabs) for p in pages] == [True, False, False], "一次只开一页"
+    assert all(h.property("navigationStyle") == "accordion" for h in headers)
+    headers[2].click()
+    app.processEvents()
+    assert tabs.currentKey() == "appearance"
+    assert [p.isVisibleTo(tabs) for p in pages] == [False, False, True]
+    assert headers[2].accessibleName().startswith("收起") and headers[0].accessibleName().startswith("展开")
+    headers[2].click()                                   # 点开着的那块：保持打开，不会整页空掉
+    assert tabs.currentKey() == "appearance" and headers[2].isChecked()
     tabs.close()
     app.processEvents()
 
@@ -2537,83 +2517,6 @@ def test_pending_preview_refresh_is_cancelled_when_editor_destroyed():
     assert editor._preview_refresh_pending is True
     shiboken6.delete(editor)  # 同步销毁：等价于窗口关闭后 C++ 对象消失
     app.processEvents()  # 不得抛 RuntimeError（旧实现此处必红）
-
-
-def test_music_align_ready_and_callback_routing(monkeypatch):
-    """「歌词对齐」的可用性判定与回调路由。
-
-    实测依据（2026-09-21）：网易云音乐不上报播放进度 → 位置只能本地估算 →
-    快进后必须手动对齐；而报了进度的播放器（Chrome / QQ 音乐）位置本来就跟着
-    走，此时必须置灰（否则手动对齐会与真值打架）。
-    """
-    from PySide6.QtCore import QObject
-    from PySide6.QtWidgets import QApplication
-
-    from pet.context_menus import registry as registry_mod
-    from pet.context_menus import shared as shared_mod
-    from pet.music_lyric import LyricLine
-    from pet.music_lyric_controller import MusicLyricController
-
-    app = QApplication.instance() or QApplication([])
-
-    class Win(QObject):
-        _alert_current = None
-        _sticky_bubble_active = False
-        _speech_bubble = None
-
-        def isVisible(self):
-            return True
-
-        def show_bubble(self, *args, **kwargs):
-            return None
-
-        def hold_bubble(self, *args, **kwargs):
-            return None
-
-    class Cfg:
-        def get(self, key, default=None):
-            return default
-
-    class Pet:
-        cfg = Cfg()
-
-    ctrl = MusicLyricController(Win())
-    ctrl._tracker.load(
-        [LyricLine(0.0, "A"), LyricLine(5.0, "B")], now=0.0, position=None,
-    )
-    pet = Pet()
-    pet._music_lyric = ctrl
-    assert registry_mod._music_align_ready(pet) is True     # 本地时钟 + 有词
-
-    # 报进度的播放器：位置本就跟着快进走，不该提供手动对齐
-    ctrl._tracker.position(0.0, reported=1.0)
-    assert registry_mod._music_align_ready(pet) is False
-
-    # 宿主 __getattr__ 兜底返回可调用对象时，不能把它当成控制器
-    class Loose:
-        cfg = Cfg()
-
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-
-    assert registry_mod._music_align_ready(Loose()) is False
-
-    # 五个手柄各自路由到控制器对应方法
-    calls: list = []
-    monkeypatch.setattr(ctrl, "resync_to_start", lambda: calls.append("start") or True)
-    monkeypatch.setattr(
-        ctrl, "resync_to_line", lambda d: calls.append(("line", d)) or True,
-    )
-    monkeypatch.setattr(ctrl, "nudge", lambda s: calls.append(("nudge", s)) or True)
-
-    for kind in ("start", "prev", "next", "back5", "fwd5"):
-        assert shared_mod._align_lyric(pet, kind) is True
-    assert calls == [
-        "start", ("line", -1), ("line", 1), ("nudge", -5.0), ("nudge", 5.0),
-    ]
-    assert shared_mod._align_lyric(pet, "不存在的动作") is False
-    ctrl.shutdown()
-    app.processEvents()
 
 
 def _stylesheet_font_family(sheet: str) -> str:

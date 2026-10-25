@@ -150,7 +150,7 @@ def test_format_bytes_has_human_readable_units():
 
 def test_petinstance_build_window_wires_file_eater(tmp_path, monkeypatch):
     """回归：PR73 在 _build_window 里接线 install_file_eater()，#76 重构时被
-    丢掉——真实建窗路径必须把文件投喂 handler 挂到每只桌宠上。
+    丢掉——真实建窗路径必须把文件投喂 handler 挂到每只肥鱼上。
 
     用记录替身窗锁定 app 层 seam（install_file_eater 幂等/acceptDrops 的
     mixin 行为由 test_install_file_eater_is_idempotent_and_accepts_drops

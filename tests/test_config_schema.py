@@ -93,7 +93,6 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "music_lyric_cache_limit",
         "music_lyric_enabled",
         "music_lyric_lead_seconds",
-        "music_player_paths",
         "music_sing_enabled",
         "music_sing_grace_seconds",
         "no_move",
@@ -134,6 +133,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "todo_reminder_enabled",
         "todo_reminder_lead_minutes",
         "tray_icon",
+        "ui_language",
         "user_customized",
         "voice_chime_custom_quotes_en",
         "voice_chime_custom_quotes_zh",
@@ -145,6 +145,11 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "voice_chime_show_bubble",
         "voice_chime_show_quote",
         "work_briefing",
+        "vscode_workspaces",
+        "notifications",
+        "slack_watch",
+        "work_notes",
+        "personal",
         "festival_custom_quotes_cn",
         "festival_custom_quotes_west",
         "festival_reminder_cn",
@@ -310,71 +315,6 @@ def _write_config(tmp_path, payload: dict) -> None:
     (cfg_dir / "config.json").write_text(
         json.dumps(payload, ensure_ascii=False), encoding="utf-8"
     )
-
-
-def test_music_player_paths_is_cleaned_on_load(tmp_path):
-    """手改 config.json 的 music_player_paths 要活下来，并被清洗成干净形态（P1-3）。"""
-    _write_config(
-        tmp_path,
-        {
-            "version": 4,
-            "music_player_paths": {
-                "netease": "  D:/Custom/cloudmusic.exe  ",  # 两端空白要 strip
-                "qqmusic": "D:/QQMusic/QQMusic.exe",
-                "unknown": "D:/evil.exe",                    # 未知播放器键丢弃
-                "netease_backup": 42,                        # 非字符串值丢弃
-            },
-        },
-    )
-    cfg = Config(base=tmp_path)
-
-    assert cfg.data["music_player_paths"] == {
-        "netease": "D:/Custom/cloudmusic.exe",
-        "qqmusic": "D:/QQMusic/QQMusic.exe",
-    }
-
-
-def test_music_player_paths_survives_reload(tmp_path):
-    """reload() 的白名单覆盖路径必须带上该键（P1-3）。
-
-    此前键不在白名单：reload() 只覆盖白名单键，手填路径被静默丢弃，
-    ``cfg.get("music_player_paths", {})`` 永远返回 {}。
-    """
-    _write_config(
-        tmp_path,
-        {"version": 4, "music_player_paths": {"netease": "D:/Custom/cloudmusic.exe"}},
-    )
-    cfg = Config(base=tmp_path)
-    cfg.reload()
-    assert cfg.data["music_player_paths"] == {"netease": "D:/Custom/cloudmusic.exe"}
-
-
-def test_music_player_paths_dirty_values_are_normalized(tmp_path):
-    """脏值（非 dict / 非字符串 / 空串 / 超长）不得让 Config() 抛，且不落非法值。"""
-    for dirty in ("not-a-dict", ["netease"], 42, None):
-        _write_config(tmp_path, {"version": 4, "music_player_paths": dirty})
-        cfg = Config(base=tmp_path)
-        assert cfg.data["music_player_paths"] == {}, dirty
-
-    _write_config(
-        tmp_path,
-        {"version": 4, "music_player_paths": {"netease": "", "qqmusic": "   ", "x": []}},
-    )
-    cfg = Config(base=tmp_path)
-    assert cfg.data["music_player_paths"] == {}
-
-    _write_config(tmp_path, {"version": 4, "music_player_paths": {"netease": "x" * 900}})
-    cfg = Config(base=tmp_path)
-    assert len(cfg.data["music_player_paths"]["netease"]) == 500
-
-
-def test_set_cleans_music_player_paths(tmp_path):
-    """set() 路径同样走清洗（名单覆盖该键）。"""
-    cfg = Config(base=tmp_path)
-    cfg.set("music_player_paths", {"netease": "D:/a.exe", "bogus": "D:/b.exe"})
-    assert cfg.data["music_player_paths"] == {"netease": "D:/a.exe"}
-    cfg.set("music_player_paths", "not-a-dict")
-    assert cfg.data["music_player_paths"] == {}
 
 
 def test_huge_integer_literal_falls_back_to_default(tmp_path):

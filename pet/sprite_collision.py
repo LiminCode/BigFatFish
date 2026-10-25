@@ -97,7 +97,7 @@ CONTACT_DV_FLOOR = 50.0     # 已 thrown 成员继续吸收冲量的下限 (px/s
 SEPARATION_DEBOUNCE_SECS = 0.24
 # 静态成员速度时效（秒）：岛速只在几何事件回调里刷新，岛停下后不会再有
 # 回调——超过该时长未刷新的速度样本按 0 处理（防「幽灵速度」把贴到静止
-# 岛上的桌宠拍进 THROWN）。取值≈拖拽手势的采样间隙上界，远小于人的
+# 岛上的肥鱼拍进 THROWN）。取值≈拖拽手势的采样间隙上界，远小于人的
 # 「按住停顿」体感（0.15s ≈ 25 tick@T0）。
 STATIC_VELOCITY_TTL_SECS = 0.15
 # 拖拽成员速度上限（px/s）：拖拽中的 sprite 自身 velocity 恒 0（on_press
@@ -188,7 +188,7 @@ class SpriteCollisionWorld:
         # 写速度与写几何一样经 add_static_member 打脏 _static_dirty（静止豁免
         # 被唤醒）。时刻用于时效过期：岛速只在几何回调里刷新，「按住不动」
         # （零回调）或松手样本落进桥侧死区时旧速度会残留——静止的岛把贴上
-        # 来的桌宠拍进 THROWN 的「幽灵速度」通道，过期是最后一道闸。
+        # 来的肥鱼拍进 THROWN 的「幽灵速度」通道，过期是最后一道闸。
         self._static_member_velocity: Dict[str, Tuple[float, float]] = {}
         # 拖拽成员速度估计：member_id -> (vx, vy)。拖拽中的 sprite 自身
         # velocity 恒 0（on_press 清零、on_move 只 set_pos），碰撞世界按相邻

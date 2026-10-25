@@ -8,9 +8,10 @@
 三块：
 
 - ``SessionHistory``：一个会话一行（同一个会话再打开 = 就地更新），按最后活动时间
-  留最近 N 天、最多 M 条；落盘到桌宠配置目录的一个 JSON 文件。**只存路径、标题、
-  入口这类信息，不存对话内容。**
-- 回填（``scan_local`` / ``scan_wsl``）：桌宠没开着时打开过的对话，从 Claude Code 自己
+  留最近 N 天、最多 M 条；落盘到肥鱼配置目录的一个 JSON 文件。**只存路径、标题、
+  入口这类信息，不存对话内容。** 置顶（``set_pinned``，2026-10-20）的行一直排在最前、
+  不过期、不被条数上限挤掉，直到取消置顶。
+- 回填（``scan_local`` / ``scan_wsl``）：肥鱼没开着时打开过的对话，从 Claude Code 自己
   的 transcript 里补出来。那是它的**内部格式**（字段随版本变），所以读不到就跳过，
   绝不因此出错。目录取会话**开头**那一条的 ``cwd``——那才是这份记录归属的目录
   （也就是能 ``--resume`` 的目录）；会话中途 ``cd`` 过，后面的 ``cwd`` 会变。
@@ -31,7 +32,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable
 
-from . import claude_hooks, claude_session_info
+from . import claude_hooks, claude_launchers, claude_session_info
+from .i18n import t
 from .claude_session_info import ENTRY_CLI, ENTRY_VSCODE
 
 log = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ SCAN_LIMIT = 80
 
 WSL_AGENT = "claude_wsl"
 #: 入口 → 列表里的说法
-_WHERE_TEXT = {ENTRY_VSCODE: "VS Code", ENTRY_CLI: "终端", "sdk-cli": "脚本"}
+_WHERE_KEYS = {ENTRY_VSCODE: "history.where.vscode", ENTRY_CLI: "history.where.terminal", "sdk-cli": "history.where.script"}
 #: 会话 ID 会拼进命令行：只放行 UUID 用得到的字符
 _SESSION_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z-]{7,63}$")
 #: transcript 文件名：会话 ID（UUID）。同目录下 ``agent-*.jsonl`` 之类的不是会话
@@ -84,14 +86,14 @@ def ago_text(seconds: float) -> str:
     """多久以前（列表右侧那一栏）。"""
     seconds = max(0.0, float(seconds))
     if seconds < 60:
-        return "刚刚"
+        return t("ago.now")
     if seconds < 3600:
-        return f"{int(seconds // 60)} 分钟前"
+        return t("ago.minutes", n=int(seconds // 60))
     if seconds < _DAY_S:
-        return f"{int(seconds // 3600)} 小时前"
+        return t("ago.hours", n=int(seconds // 3600))
     if seconds < 2 * _DAY_S:
-        return "昨天"
-    return f"{int(seconds // _DAY_S)} 天前"
+        return t("ago.yesterday")
+    return t("ago.days", n=int(seconds // _DAY_S))
 
 
 @dataclass
@@ -107,6 +109,7 @@ class HistoryEntry:
     git_branch: str = ""
     distro: str = ""
     last_seen: float = 0.0
+    pinned: bool = False             # 用户置顶：一直排最前，直到取消
 
     @property
     def key(self) -> tuple[str, str]:
@@ -131,10 +134,22 @@ class HistoryEntry:
     @property
     def where(self) -> str:
         """从哪开的：「终端」「VS Code」「终端 · WSL」。"""
-        text = _WHERE_TEXT.get(self.entrypoint, "")
+        key = _WHERE_KEYS.get(self.entrypoint)
+        text = t(key) if key else ""
         if self.is_wsl:
-            return f"{text} · WSL" if text else "WSL"
+            return t("history.where.wsl_suffix", text=text) if text else t("history.where.wsl")
         return text
+
+    @property
+    def host(self) -> str:
+        """在哪开的，给列表挑图标：``vscode`` / ``terminal``（本机）/ ``wsl``（WSL 终端）/ ``script`` / 空。"""
+        if self.entrypoint == ENTRY_VSCODE:
+            return "vscode"
+        if self.entrypoint == "sdk-cli":
+            return "script"
+        if self.is_wsl:
+            return "wsl"
+        return "terminal" if self.entrypoint == ENTRY_CLI else ""
 
     @property
     def resume_command(self) -> str:
@@ -206,6 +221,14 @@ class SessionHistory:
     def remove(self, key: tuple[str, str]) -> bool:
         return self._entries.pop(tuple(key), None) is not None
 
+    def set_pinned(self, key: tuple[str, str], pinned: bool) -> bool:
+        """置顶 / 取消置顶。返回有没有变化（没这一行、或本来就是这个状态 = False）。"""
+        entry = self._entries.get(tuple(key))
+        if entry is None or entry.pinned == bool(pinned):
+            return False
+        entry.pinned = bool(pinned)
+        return True
+
     def clear(self) -> bool:
         had = bool(self._entries)
         self._entries.clear()
@@ -213,12 +236,15 @@ class SessionHistory:
 
     # ---------------------------------------------------------------- 读取
     def _prune(self) -> list[HistoryEntry]:
-        """丢掉过期的，返回可以列出来的（知道目录的），新的在前、不超过上限。"""
+        """丢掉过期的，返回可以列出来的（知道目录的）：置顶的在前，其余新的在前，不超过上限。
+
+        置顶的不过期；排在最前所以也不会被上限挤掉（上限挤的是队尾那些没置顶的）。
+        """
         cutoff = self._clock() - self.max_age_days * _DAY_S
-        for key in [key for key, entry in self._entries.items() if entry.last_seen < cutoff]:
+        for key in [key for key, entry in self._entries.items() if entry.last_seen < cutoff and not entry.pinned]:
             del self._entries[key]
         listed = sorted((e for e in self._entries.values() if e.cwd),
-                        key=lambda e: e.last_seen, reverse=True)
+                        key=lambda e: (not e.pinned, -e.last_seen))
         for entry in listed[self.max_entries:]:
             del self._entries[entry.key]
         return listed[:self.max_entries]
@@ -246,8 +272,11 @@ class SessionHistory:
                 seen = float(row.get("last_seen") or 0.0)
             except (TypeError, ValueError):
                 continue
-            self.record(str(row.get("agent") or ""), str(row.get("session_id") or ""), seen=seen,
+            agent, session_id = str(row.get("agent") or ""), str(row.get("session_id") or "")
+            self.record(agent, session_id, seen=seen,
                         **{name: row.get(name) for name in _FIELDS if isinstance(row.get(name), str)})
+            if row.get("pinned") is True:
+                self.set_pinned((agent, session_id), True)
 
     def save(self) -> bool:
         if self._path is None:
@@ -411,8 +440,12 @@ def terminal_resume_argv(entry: HistoryEntry, *, which: Callable[[str], str | No
         if not wsl_path:
             return None
         inner = [wsl_path, *(["-d", entry.distro] if entry.distro else []), "--cd", entry.cwd, "--",
-                 "bash", "-lic", f"claude --resume {entry.session_id}; exec bash"]
-        return [terminal, *inner] if terminal else ["cmd", "/c", "start", "", *inner]
+                 "bash", "-lic"]
+        script = f"claude --resume {entry.session_id}; exec bash"
+        if terminal:
+            # wt 把 ``;`` 当子命令分隔符（哪怕在引号里），要转义；见 claude_launchers.wt_script
+            return [terminal, *inner, claude_launchers.wt_script(script)]
+        return ["cmd", "/c", "start", "", *inner, script]
     inner = ["cmd", "/k", "claude", "--resume", entry.session_id]
     if terminal:
         return [terminal, "-d", entry.cwd, *inner]

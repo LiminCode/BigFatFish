@@ -14,14 +14,15 @@
 2. **节日试听**：复用 ``FestivalReminderService.remind_now``（文案组装与让位逻辑
    同源），文本走宿主 ``system_notify``、语音走上面那条本地音频通道。
 
-3. **避让桌宠位置**：没有 parent 窗口可读几何，改读配置目录里的 runtime 状态文件
-   （桌宠启动/移动时写的 ``pet-runtime-v2-*.json`` / ``runtime-*.json``）。
+3. **避让肥鱼位置**：没有 parent 窗口可读几何，改读配置目录里的 runtime 状态文件
+   （肥鱼启动/移动时写的 ``pet-runtime-v2-*.json`` / ``runtime-*.json``）。
 """
 
 from __future__ import annotations
 
 import importlib.util
 import logging
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ _STANDALONE_CHIME_CLASS = None
 def show_transient_notice(text: str) -> None:
     """独立设置进程内的可见反馈：瞬时 tooltip（非模态、不阻塞、无需点确认）。
 
-    设置进程没有桌宠气泡可挂，模态 QMessageBox 又会卡住试听期间的界面，
+    设置进程没有肥鱼气泡可挂，模态 QMessageBox 又会卡住试听期间的界面，
     tooltip 是这里最轻的"一定看得见"通道。
     """
     from PySide6.QtGui import QCursor
@@ -62,7 +63,7 @@ def _standalone_chime_class():
     class _StandaloneChimeService(VoiceChimeService):
         """独立设置进程音频通道：文本反馈改走进程内瞬时提示。
 
-        原实现的 `_bubble` 先看 ``voice_chime_show_bubble`` 再退到桌宠窗口/系统
+        原实现的 `_bubble` 先看 ``voice_chime_show_bubble`` 再退到肥鱼窗口/系统
         通知；本进程两样都没有，用户在设置页关掉气泡开关后，"edge-tts 缺失 /
         合成失败 / 播放器不可用"就会彻底静默（点了试听没反应）。这里只换文本
         通道（保留全部合成/播放/缓存逻辑），保证试听在任何配置下都有可见结果。
@@ -85,7 +86,7 @@ class _StandaloneHost:
 
     def __init__(self, config, parent=None) -> None:
         self.config = config
-        # 独立进程没有桌宠窗口：win 保持 None，气泡路径自然落到 system_notify。
+        # 独立进程没有肥鱼窗口：win 保持 None，气泡路径自然落到 system_notify。
         self.win = None
         self._parent = parent
         self._chime = None
@@ -130,7 +131,7 @@ def _guard_voice_preview(dialog) -> None:
     if button is None:
         return
     button.setEnabled(False)
-    button.setToolTip("独立设置进程试听需要 edge-tts 库：请运行 pip install edge-tts 后重试")
+    button.setToolTip(t("settings.standalone.previewing_separate_settings_process_nee"))
 
 
 def preview_voice_chime(dialog, text: str = "") -> None:
@@ -150,9 +151,9 @@ def preview_festival(dialog) -> None:
 
 
 def standalone_pet_geometry(config):
-    """读配置目录 runtime 状态文件，返回一只活桌宠窗口的几何矩形。
+    """读配置目录 runtime 状态文件，返回一只活肥鱼窗口的几何矩形。
 
-    设置进程没有 parent 窗口可读几何，只能取桌宠自己留下的运行时标记。
+    设置进程没有 parent 窗口可读几何，只能取肥鱼自己留下的运行时标记。
     ``slot_manager.read_live_instances`` 同时认 ``pet-runtime-v2-*.json``（多窗）
     与旧 ``runtime-*.json``，并顺手清掉死进程/损坏的标记。读不到返回 None，
     调用方保持默认位置（不许因为读文件失败而崩）。
@@ -164,7 +165,7 @@ def standalone_pet_geometry(config):
     try:
         instances = slot_manager_mod.read_live_instances(config.dir)
     except Exception:
-        logger.debug("读取桌宠运行时标记失败", exc_info=True)
+        logger.debug("读取肥鱼运行时标记失败", exc_info=True)
         return None
     for _pid, x, y, w, h in instances:
         if w > 0 and h > 0:

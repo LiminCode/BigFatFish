@@ -322,7 +322,7 @@ class TestActivityGate:
         try:
             clock.advance(60)
             assert win._idle_reduction_active() is True
-            # 按住左键 = 用户正握着桌宠：视为活跃
+            # 按住左键 = 用户正握着肥鱼：视为活跃
             win._press_global = QPointF(0, 0).toPoint()
             try:
                 assert win._idle_reduction_active() is False

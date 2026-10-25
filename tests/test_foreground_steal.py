@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""issue #98 回归：桌宠不得夺走其他应用的前台与键盘焦点。
+"""issue #98 回归：肥鱼不得夺走其他应用的前台与键盘焦点。
 
-现场症状：全局 Ctrl+C/Ctrl+V 失效（右键复制粘贴同样无效），退出桌宠后恢复。
-实测根因：桌宠窗口是 WS_EX_TOOLWINDOW 工具窗口，但**没有 WS_EX_NOACTIVATE**，
-因此鼠标点击会把它变成前台窗口（`GetForegroundWindow()` 变成桌宠）。此后用户
-的键盘输入全部落到桌宠上，而桌宠既不处理 Ctrl+C 也不处理 Ctrl+V，也没有任何
-控件持有焦点 —— 观感就是"整机复制粘贴坏了"，点回原窗口或退出桌宠才恢复。
+现场症状：全局 Ctrl+C/Ctrl+V 失效（右键复制粘贴同样无效），退出肥鱼后恢复。
+实测根因：肥鱼窗口是 WS_EX_TOOLWINDOW 工具窗口，但**没有 WS_EX_NOACTIVATE**，
+因此鼠标点击会把它变成前台窗口（`GetForegroundWindow()` 变成肥鱼）。此后用户
+的键盘输入全部落到肥鱼上，而肥鱼既不处理 Ctrl+C 也不处理 Ctrl+V，也没有任何
+控件持有焦点 —— 观感就是"整机复制粘贴坏了"，点回原窗口或退出肥鱼才恢复。
 
 本文件锁定修复契约：
-1. 桌宠窗口必须带 WS_EX_NOACTIVATE（Windows）；点击它不改变前台窗口；
+1. 肥鱼窗口必须带 WS_EX_NOACTIVATE（Windows）；点击它不改变前台窗口；
 2. 同时必须仍能收到鼠标点击（NOACTIVATE 只影响激活，不影响消息投递）。
 """
 from __future__ import annotations
@@ -124,17 +124,17 @@ def _make_pet(tmp_path) -> PetWindow:
 
 
 def test_pet_window_has_noactivate_ex_style(tmp_path):
-    """桌宠窗口必须带 WS_EX_NOACTIVATE，否则点击会夺走前台（issue #98）。"""
+    """肥鱼窗口必须带 WS_EX_NOACTIVATE，否则点击会夺走前台（issue #98）。"""
     app = QApplication.instance() or QApplication([])
     win = _make_pet(tmp_path)
     try:
         win.show()
         _pump(app)
         ex = _ex_style(int(win.winId()))
-        assert ex & WS_EX_TOOLWINDOW, '桌宠应仍是工具窗口（不进任务栏/Alt+Tab）'
+        assert ex & WS_EX_TOOLWINDOW, '肥鱼应仍是工具窗口（不进任务栏/Alt+Tab）'
         assert ex & WS_EX_NOACTIVATE, (
-            f'桌宠窗口缺少 WS_EX_NOACTIVATE（ex={ex:#010x}）：点击它会夺走前台窗口，'
-            '导致用户的 Ctrl+C/Ctrl+V 落到桌宠上（issue #98）'
+            f'肥鱼窗口缺少 WS_EX_NOACTIVATE（ex={ex:#010x}）：点击它会夺走前台窗口，'
+            '导致用户的 Ctrl+C/Ctrl+V 落到肥鱼上（issue #98）'
         )
     finally:
         win.close()
@@ -143,7 +143,7 @@ def test_pet_window_has_noactivate_ex_style(tmp_path):
 
 
 def test_clicking_pet_does_not_steal_foreground(tmp_path):
-    """跨进程实测：点击桌宠后，前台窗口仍属于原来的应用。
+    """跨进程实测：点击肥鱼后，前台窗口仍属于原来的应用。
 
     必须跨进程：同进程窗口共享前台队列，`GetForegroundWindow()` 分不清。
     """
@@ -162,7 +162,7 @@ def test_clicking_pet_does_not_steal_foreground(tmp_path):
         assert holder_hwnd, '无法启动前台持有进程'
         if not holder_is_foreground:
             pytest.skip('前台锁拒绝把新窗口推上前台（本机环境），'
-                        '无法判定桌宠是否夺前台')
+                        '无法判定肥鱼是否夺前台')
 
         win = _make_pet(tmp_path)
         # 先给窗口一帧真实角色内容：点击必须落在不透明区域，否则逐像素穿透会
@@ -185,21 +185,21 @@ def test_clicking_pet_does_not_steal_foreground(tmp_path):
             lx, ly = win.width() // 2, win.height() // 2
         cx, cy = rect.left + lx, rect.top + ly
 
-        # 安全哨兵：只有光标下确实是桌宠窗口时才发真实点击，绝不误点别的应用
+        # 安全哨兵：只有光标下确实是肥鱼窗口时才发真实点击，绝不误点别的应用
         under = _hwnd(u32.WindowFromPoint(wt.POINT(cx, cy)))
         if under != pet_hwnd:
-            pytest.skip(f'桌宠未处于光标所在位置（under={under:#x}），跳过真实点击')
+            pytest.skip(f'肥鱼未处于光标所在位置（under={under:#x}），跳过真实点击')
 
         _click_at(cx, cy)
         _pump(app, 50)
 
         foreground = _hwnd(u32.GetForegroundWindow())
         assert foreground != pet_hwnd, (
-            '点击桌宠后它成了前台窗口：用户的键盘输入（含 Ctrl+C/Ctrl+V）会落到'
-            f'桌宠上而不是原应用（issue #98）。foreground={foreground:#x} pet={pet_hwnd:#x}'
+            '点击肥鱼后它成了前台窗口：用户的键盘输入（含 Ctrl+C/Ctrl+V）会落到'
+            f'肥鱼上而不是原应用（issue #98）。foreground={foreground:#x} pet={pet_hwnd:#x}'
         )
         assert foreground == holder_hwnd, (
-            f'点击桌宠后前台窗口既不是桌宠也不是原应用：'
+            f'点击肥鱼后前台窗口既不是肥鱼也不是原应用：'
             f'foreground={foreground:#x} holder={holder_hwnd:#x}'
         )
     finally:

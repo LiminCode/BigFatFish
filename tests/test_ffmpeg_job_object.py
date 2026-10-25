@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """孤儿 ffmpeg 回归：Windows Job Object（KILL_ON_JOB_CLOSE）验收。
 
-实机定案（2026-09-17）：桌宠进程被 ``Stop-Process`` / 任务管理器强杀
+实机定案（2026-09-17）：肥鱼进程被 ``Stop-Process`` / 任务管理器强杀
 （``TerminateProcess``，父进程任何清理代码都不执行）后，imageio-ffmpeg 拉起的
 ffmpeg 子进程不退出——本机实测残留一个 62MB 的 ``ffmpeg-win-x86_64``；每次强杀
 / 崩溃留一个。

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""歌词显示控制器：把"当前在放什么歌 + 唱到哪句"同步到桌宠气泡。
+"""歌词显示控制器：把"当前在放什么歌 + 唱到哪句"同步到肥鱼气泡。
 
 职责边界（沿用本项目既有的控制器模式，如 ``edge_probe.EdgeProbeController``）：
 
@@ -32,6 +32,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from . import music_lyric, now_playing
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -410,7 +411,7 @@ class MusicLyricController(QObject):
         只停表、**不复位状态**：``_on_tick`` 本来就在不可见时短路，隐藏期间
         进度基准同样不推进，所以"停表"与"继续空转"的观感完全一致，而复位会
         顺带清掉纯音乐标志（``_reset`` 清它是给"关掉功能"用的，见那里的说明），
-        桌宠恢复显示后就可能对着纯音乐唱起来。
+        肥鱼恢复显示后就可能对着纯音乐唱起来。
         """
         self._timer.stop()
 
@@ -425,7 +426,7 @@ class MusicLyricController(QObject):
     def set_music_mode_enabled(self, on: bool) -> None:
         """右键菜单「退出/进入音乐模式」：仅本次运行有效，不写配置。
 
-        改的是内存里的开关（再叠加一层自己的启停），所以重启桌宠后仍按设置页
+        改的是内存里的开关（再叠加一层自己的启停），所以重启肥鱼后仍按设置页
         的配置生效——"退出模式"是临时动作，不该悄悄改掉用户的设置。
         """
         self._user_mode_off = not bool(on)
@@ -467,7 +468,7 @@ class MusicLyricController(QObject):
         self._instrumental = False
         self._hint = ""
         # 必须清掉窗口上的纯音乐标志：否则关掉歌词功能后标志仍是 True，
-        # check_music_sing 每拍都会直接 return，桌宠**再也不会唱歌**。
+        # check_music_sing 每拍都会直接 return，肥鱼**再也不会唱歌**。
         self._set_instrumental_flag(False)
 
     # ------------------------------------------------------------ 气泡
@@ -625,7 +626,7 @@ class MusicLyricController(QObject):
         **必须复位 ``_sample_stop``**：它一旦被 ``_stop_sample_thread`` 置位就没有
         别的复位路径，而 ``_sample_loop`` 的 ``while not _sample_stop.is_set()``
         会在进入时立刻退出——不复位的话「关闭歌词再打开」之后采样永久停摆
-        （歌词再也不随播放更新，直到重启桌宠）。
+        （歌词再也不随播放更新，直到重启肥鱼）。
         """
         thread = self._sample_thread
         if thread is not None and thread.is_alive():
@@ -816,8 +817,7 @@ class MusicLyricController(QObject):
             return
         try:
             alert(
-                "这个播放器不上报播放进度，歌词按开始时间估算。"
-                "快进或从中途开始播放后，用右键菜单「音乐 → 歌词对齐」校正。",
+                t("lyrics.ui.player_doesn_t_report_playback"),
                 sticky=False,
                 duration_ms=12000,
                 alert_id="music-lyric-estimated",
@@ -852,7 +852,7 @@ class MusicLyricController(QObject):
         """纯音乐：换标题为「正在听」、显示随机提示，并**不唱**。
 
         曲目没有歌词可唱，所以清掉唱歌状态（由 music_sing 的开关决定是否
-        真的在唱），避免桌宠对着纯音乐做唱歌动画。
+        真的在唱），避免肥鱼对着纯音乐做唱歌动画。
         """
         self._instrumental = True
         self._hint = pick_instrumental_hint()

@@ -94,7 +94,10 @@ def capture(args: argparse.Namespace) -> None:
     destination = Path(args.destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="desktop-pet-settings-capture-") as data_dir:
-        dialog = ModernSettingsDialog(Config(Path(data_dir)), include_ai=True)
+        config = Config(Path(data_dir))
+        if args.language:
+            config.set("ui_language", args.language)   # 界面语言（zh / en），设置窗口按它出文案
+        dialog = ModernSettingsDialog(config, include_ai=True)
         dialog.resize(args.width, args.height)
         dialog.show()
         app.processEvents()
@@ -281,6 +284,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--menu-details", action="store_true")
     parser.add_argument("--interaction-details", action="store_true")
     parser.add_argument("--image-previews", action="store_true")
+    parser.add_argument("--language", choices=("zh", "en"), default="")
     return parser.parse_args()
 
 

@@ -3,6 +3,7 @@ import json, ssl, threading, urllib.error, urllib.request
 from collections.abc import Iterator
 from typing import Any
 from .models import ProviderConfig
+from ..i18n import t
 
 import re as _re
 
@@ -59,18 +60,18 @@ def test_connection(config, timeout: float = 10.0):
         req = urllib.request.Request(endpoint, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'), headers=headers, method='POST')
         with urllib.request.urlopen(req, timeout=timeout, context=_make_ssl_context(config.verify_ssl)) as resp:
             resp.read(4096)
-            return True, f'连接成功（HTTP {resp.status}）'
+            return True, t("chat.provider.connected_http_status", status=resp.status)
     except urllib.error.HTTPError as exc:
         detail = exc.read(2048).decode('utf-8', 'replace')
         msg = _safe_error_detail(detail)
-        if exc.code in (401, 403): return False, f'认证失败（HTTP {exc.code}）：{msg}'
-        return False, f'请求失败（HTTP {exc.code}）：{msg}'
+        if exc.code in (401, 403): return False, t("chat.provider.authentication_failed_http_code_msg", code=exc.code, msg=msg)
+        return False, t("chat.provider.request_failed_http_code_msg", code=exc.code, msg=msg)
     except urllib.error.URLError as exc:
         reason = exc.reason
         hint = _CERT_HINT if _is_cert_verify_error(reason) else ''
-        return False, f'网络连接失败：{reason}{hint}'
+        return False, t("chat.provider.network_connection_failed_reason_hint", reason=reason, hint=hint)
     except OSError as exc:
-        return False, f'网络请求失败：{exc}'
+        return False, t("chat.provider.network_request_failed_exc", exc=exc)
 
 def normalize_chat_endpoint(base_url,chat_path='/v1/chat/completions'):
     base=str(base_url or '').strip().rstrip('/'); path=str(chat_path or '/v1/chat/completions').strip(); path=path if path.startswith('/') else '/'+path
@@ -86,7 +87,7 @@ class SSEParser:
     def __init__(self): self._buffer=b''; self.done=False
     def feed(self,chunk:bytes):
         self._buffer+=chunk
-        if len(self._buffer)>1024*1024: raise ProviderError('SSE 缓冲超过 1MB 上限（服务端未按事件分隔）')  # 审查 GLM-M5：防异常 provider 无界堆积
+        if len(self._buffer)>1024*1024: raise ProviderError(t("chat.provider.sse_buffer_exceeded_1mb_limit"))  # 审查 GLM-M5：防异常 provider 无界堆积
         out=[]
         while True:
             found=None
@@ -102,9 +103,9 @@ class SSEParser:
             if not payload_text: continue  # 空 data: 心跳行（部分 OpenAI 兼容服务用作 keepalive），跳过不解析——否则 json.loads('') 中止整条流（审查 DS-L20）
             if payload_text=='[DONE]': self.done=True; continue
             try: payload=json.loads(payload_text)
-            except json.JSONDecodeError as exc: raise ProviderError('Provider 返回了无效 JSON') from exc
+            except json.JSONDecodeError as exc: raise ProviderError(t("chat.provider.provider_returned_invalid_json")) from exc
             if isinstance(payload,dict) and payload.get('error'):
-                err=payload['error']; msg=err.get('message','Provider 返回错误') if isinstance(err,dict) else str(err); raise ProviderError(str(msg))
+                err=payload['error']; msg=err.get('message',t("chat.provider.provider_returned_error")) if isinstance(err,dict) else str(err); raise ProviderError(str(msg))
             choices=payload.get('choices',[]) if isinstance(payload,dict) else []
             if choices:
                 delta=choices[0].get('delta',{}) or {}; content=delta.get('content') if isinstance(delta,dict) else None
@@ -123,8 +124,8 @@ class OpenAICompatibleProvider:
             detail=exc.read(2048).decode('utf-8','replace'); raise ProviderError(_safe_error_detail(detail),exc.code) from exc
         except urllib.error.URLError as exc:
             reason=exc.reason; hint=_CERT_HINT if _is_cert_verify_error(reason) else ''
-            raise ProviderError(f'网络连接失败：{reason}{hint}') from exc
-        except OSError as exc: raise ProviderError(f'网络请求失败：{exc}') from exc
+            raise ProviderError(t("chat.provider.network_connection_failed_reason_hint", reason=reason, hint=hint)) from exc
+        except OSError as exc: raise ProviderError(t("chat.provider.network_request_failed_exc", exc=exc)) from exc
         if response_holder is not None:
             response_holder.append(response)
         parser=SSEParser()
@@ -143,6 +144,6 @@ class OpenAICompatibleProvider:
 def _safe_error_detail(raw):
     try:
         data=json.loads(raw)
-        if isinstance(data,dict) and isinstance(data.get('error'),dict): return str(data['error'].get('message','Provider 请求失败'))
+        if isinstance(data,dict) and isinstance(data.get('error'),dict): return str(data['error'].get('message',t("chat.provider.provider_request_failed")))
     except Exception: pass
-    return ' '.join(raw.split())[:300] or 'Provider 请求失败'
+    return ' '.join(raw.split())[:300] or t("chat.provider.provider_request_failed")

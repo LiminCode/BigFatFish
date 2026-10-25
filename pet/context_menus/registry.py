@@ -19,23 +19,13 @@ from .shared import (
     add_action,
     add_agent_link_menu,
     add_autostart,
-    add_balance,
+    add_claude_desktop,
     add_clear_spawned_pets,
-    add_deepseek_web,
     add_drag_physics,
     add_edge_probe,
     add_golden_spin,
-    add_harness,
     add_hide_pet,
     add_look_screen,
-    add_agent_cost,
-    add_music_lyric_align,
-    add_music_next,
-    add_music_open_netease,
-    add_music_open_qqmusic,
-    add_music_pause,
-    add_music_prev,
-    add_music_quit,
     add_no_move,
     add_on_top,
     add_proactive_menu,
@@ -44,33 +34,33 @@ from .shared import (
     add_return_corner,
     add_spawn_pet,
     add_submenu,
+    add_vscode_workspaces_menu,
+    add_wsl_claude_code,
+    add_youtube_music,
     build_animation_categories,
     build_character_menu,
     build_size_menu,
     build_speed_menu,
 )
+from ..i18n import maybe_t, t
 
 
+#: 动作的中文名（zh 原文；键是内部标识）。显示时经 MENU_ACTIONS.label() 取 menu.action.* 跟随界面语言。
 ACTION_LABELS = {
     "ojingjing": "厉害了我的鲸", "chat": "AI 对话", "look_screen": "看看屏幕",
     "animations_hub": "播放动画", "character": "切换角色", "playback_speed": "播放速率",
     "size": "大小", "drag_physics": "拖动物理", "no_move": "不移动",
     "on_top": "窗口置顶", "autostart": "开机自启",
-    "return_corner": "回到右下角", "hide_pet": "隐藏桌宠",
+    "return_corner": "回到右下角", "hide_pet": "隐藏肥鱼",
     "spawn_pet": "生小肥鱼", "clear_spawned_pets": "退出子肥鱼",
     "rally_pets": "护驾",
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
-    "music": "音乐", "music_pause": "暂停 / 播放", "music_next": "切歌",
-    "music_prev": "上一首",
-    "music_quit": "退出音乐模式", "music_open_netease": "打开网易云并播放",
-    "music_open_qqmusic": "打开QQ音乐并播放",
-    "music_lyric_align": "歌词对齐",
-    "agent_cost": "显示本轮消费",
-    "quick_launch": "快捷启动", "balance": "DeepSeek 余额",
-    "harness": "启动 DeepSeek Harness", "deepseek_web": "打开网页版 DeepSeek",
+    "vscode_workspaces": "VS Code 工作区", "youtube_music": "YouTube Music",
+    "claude_desktop": "Claude Desktop", "wsl_claude_code": "Claude Code（WSL）",
+    "quick_launch": "快捷启动",
     "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
     "proactive_screen": "主动识屏", "todo_panel": "待办提醒",
-    "modern_settings": "桌宠设置", "quit": "退出",
+    "modern_settings": "肥鱼设置", "quit": "退出",
 }
 
 
@@ -88,26 +78,39 @@ ACTION_ICONS = {
     "spawn_pet": "spawn", "clear_spawned_pets": "clear",
     "rally_pets": "interaction",
     "golden_spin": "play", "edge_probe": "corner",
-    "music_next": "play", "music_prev": "play", "music_quit": "stop", "agent_cost": "balance",
-    "music": "play", "music_pause": "pause", "music_open_netease": "play",
-    "music_open_qqmusic": "play", "music_lyric_align": "play",
-    "quick_launch": "application", "balance": "balance", "harness": "harness",
-    "deepseek_web": "web", "github_project": "web", "agent_link": "automation",
+    "vscode_workspaces": "application", "youtube_music": "play",
+    "claude_desktop": "sparkle", "wsl_claude_code": "ubuntu",
+    "quick_launch": "application", "github_project": "web", "agent_link": "automation",
     "proactive_screen": "screen", "todo_panel": "todo",
     "modern_settings": "settings", "quit": "quit",
     "voice_chime_now": "chat", "voice_chime_toggle": "chat",
     "festival_now": "todo", "festival_toggle": "todo",
 }
 
+#: （中文名, 图标值）——中文名是 zh 原文，显示时用 icon_choice_label(值)
 CUSTOM_ICON_CHOICES = (
     ("默认图标", "default"), ("无图标", "none"),
     ("对话", "chat"), ("屏幕", "screen"), ("播放", "play"),
     ("角色", "character"), ("速度", "speed"), ("尺寸", "size"),
-    ("桌宠", "pet"), ("交互", "interaction"), ("置顶", "pin"),
+    ("肥鱼", "pet"), ("交互", "interaction"), ("置顶", "pin"),
     ("隐藏", "hide"), ("应用", "application"), ("余额", "balance"),
     ("清除", "clear"), ("网页", "web"), ("下载", "download"), ("更新", "update"),
     ("自动化", "automation"), ("设置", "settings"), ("待办", "todo"),
 )
+
+
+#: 模板自带子菜单：id →（模板里出现过的中文原名们, 文案键）
+SUBMENU_LABEL_KEYS = {
+    # 用户在 94b42b7 之前保存的编排里仍是「桌宠控制」，那也是模板原名而不是用户改的名，
+    # 同样要跟界面语言走。
+    "pet_controls": (("肥鱼控制", "桌宠控制"), "menu.submenu.pet_controls"),
+    "tools_help": (("工具与帮助",), "menu.submenu.tools_help"),
+}
+
+
+def icon_choice_label(value: str) -> str:
+    """图标选项在当前语言下的名字。"""
+    return t(f"menu.icon.{value}")
 
 
 @dataclass(frozen=True)
@@ -115,58 +118,33 @@ class MenuActionSpec:
     build: Builder
     available: Availability = lambda _pet: True
     enabled: Enablement = lambda _pet: True
-    disabled_reason: str = "当前功能未启用"
+    disabled_reason: str = "menu.registry.feature_not_enabled"   # 文案键（或现成文字），显示时 maybe_t
 
 
 def _callback_available(name: str) -> Availability:
     return lambda pet: callable(getattr(pet, name, None))
 
 
-def _music_lyric_configured(pet) -> bool:
-    """音乐相关菜单项是否出现：只看设置里有没有开启歌词功能。
-
-    刻意**不**依赖实时播放状态——否则菜单结构会随"此刻有没有在放歌"变来变去
-    （测试也会因此依赖机器状态）。没在播时改为置灰（见 enabled）。
-    """
-    return bool(pet.cfg.get("music_lyric_enabled", False))
-
-
-def _music_align_ready(pet) -> bool:
-    """「歌词对齐」是否可用：只有位置靠本地时钟估算时才有意义。
-
-    播放器报了真实进度（Chrome / QQ 音乐）时位置本来就跟着快进走，手动对齐
-    只会跟真值打架；还没有歌词可对齐时同理。**必须 isinstance 校验**——宿主
-    可能用 ``__getattr__`` 兜底返回任意对象（测试替身就这么干），只判 None 会
-    把无关对象当成控制器（同 ``shared._music_controller`` 的教训）。
-    """
-    from ..music_lyric_controller import MusicLyricController
-
-    controller = getattr(pet, "_music_lyric", None)
-    if not isinstance(controller, MusicLyricController):
-        return False
-    return bool(controller.align_available())
-
-
 def _build_chat(menu, pet):
-    return add_action(menu, "AI 对话", "chat", pet.on_open_chat, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.ai_chat"), "chat", pet.on_open_chat, close_on_trigger=True)
 
 
 def _build_animations(menu, pet):
-    submenu = add_submenu(menu, "播放动画", "play")
+    submenu = add_submenu(menu, t("menu.registry.play_animation"), "play")
     build_animation_categories(submenu, pet, icons=False, leaf_role_icons=True)
     return submenu
 
 
 def _build_settings(menu, pet):
-    return add_action(menu, "桌宠设置", "settings", pet.on_open_modern_settings, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.fish_settings"), "settings", pet.on_open_modern_settings, close_on_trigger=True)
 
 
 def _build_todo_panel(menu, pet):
-    return add_action(menu, "待办提醒", "todo", pet.on_open_todo_panel, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.do_reminders"), "todo", pet.on_open_todo_panel, close_on_trigger=True)
 
 
 def _build_voice_chime_now(menu, pet):
-    return add_action(menu, "立即报时", "chat", pet.on_voice_chime_now, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.say_time_now"), "chat", pet.on_voice_chime_now, close_on_trigger=True)
 
 
 def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
@@ -182,7 +160,7 @@ def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
         cfg = getattr(pet, "cfg", None)
         enabled = bool(cfg.get(key, False)) if cfg is not None else False
         return add_action(
-            menu, on_label if enabled else off_label, icon,
+            menu, t(on_label if enabled else off_label), icon,
             getattr(pet, callback), close_on_trigger=True,
         )
 
@@ -190,24 +168,24 @@ def _flag_toggle_spec(key: str, on_label: str, off_label: str, icon: str,
 
 
 _build_voice_chime_toggle = _flag_toggle_spec(
-    "voice_chime_enabled", "关闭语音报时", "启用语音报时", "chat",
+    "voice_chime_enabled", "menu.toggle.voice_chime_off", "menu.toggle.voice_chime_on", "chat",
     "on_toggle_voice_chime",
 )
 
 _build_festival_toggle = _flag_toggle_spec(
-    "festival_reminder_enabled", "关闭节日提醒", "启用节日提醒", "todo",
+    "festival_reminder_enabled", "menu.toggle.festival_off", "menu.toggle.festival_on", "todo",
     "on_toggle_festival",
 )
 
 
 def _build_festival_now(menu, pet):
-    return add_action(menu, "今日节日", "todo", pet.on_festival_now, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.today_festival"), "todo", pet.on_festival_now, close_on_trigger=True)
 
 
 def _build_github(menu, _pet):
     return add_action(
         menu,
-        "GitHub 项目页",
+        t("menu.registry.github_project_page"),
         "web",
         lambda: QDesktopServices.openUrl(QUrl(REPO_URL)),
         close_on_trigger=True,
@@ -226,7 +204,7 @@ class MenuActionRegistry:
                 enabled=lambda pet: bool(
                     pet.cfg.get("menu_easter_egg", DEFAULT_MENU_EASTER_EGG).get("enabled", True)
                 ),
-                disabled_reason="彩蛋入口已在设置中停用",
+                disabled_reason="menu.registry.easter_egg_entry_turned_off",
             ),
             "chat": MenuActionSpec(_build_chat, _callback_available("on_open_chat")),
             "look_screen": MenuActionSpec(add_look_screen, _callback_available("on_look_screen")),
@@ -249,22 +227,13 @@ class MenuActionRegistry:
                 add_rally_pets,
                 _callback_available("on_rally_pets"),
                 enabled=lambda pet: bool(getattr(pet, "has_small_pets", False)),
-                disabled_reason="还没有小肥鱼",
+                disabled_reason="menu.registry.no_little_fish_yet",
             ),
-            # 始终可用：消费统计与歌词无关，不该被歌词开关卡住。
-            "agent_cost": MenuActionSpec(add_agent_cost),
-            "music_pause": MenuActionSpec(add_music_pause, _music_lyric_configured),
-            "music_next": MenuActionSpec(add_music_next, _music_lyric_configured),
-            "music_prev": MenuActionSpec(add_music_prev, _music_lyric_configured),
-            "music_quit": MenuActionSpec(add_music_quit, _music_lyric_configured),
-            "music_lyric_align": MenuActionSpec(
-                add_music_lyric_align,
-                _music_lyric_configured,
-                enabled=_music_align_ready,
-                disabled_reason="当前不需要手动对齐（播放器会上报进度，或还没有歌词）",
-            ),
-            "music_open_netease": MenuActionSpec(add_music_open_netease),
-            "music_open_qqmusic": MenuActionSpec(add_music_open_qqmusic),
+            "youtube_music": MenuActionSpec(add_youtube_music),
+            "claude_desktop": MenuActionSpec(add_claude_desktop),
+            "wsl_claude_code": MenuActionSpec(add_wsl_claude_code),
+            "vscode_workspaces": MenuActionSpec(add_vscode_workspaces_menu,
+                                                _callback_available("open_vscode_workspace")),
             "golden_spin": MenuActionSpec(
                 add_golden_spin,
                 _callback_available("trigger_golden_spin"),
@@ -273,11 +242,8 @@ class MenuActionRegistry:
             "quick_launch": MenuActionSpec(
                 lambda menu, pet: add_quick_launch_menu(menu, pet.cfg),
                 enabled=lambda pet: bool(configured_quick_apps(pet.cfg)),
-                disabled_reason="尚未配置快捷启动应用",
+                disabled_reason="menu.registry.no_quick_launch_apps_configured",
             ),
-            "balance": MenuActionSpec(add_balance, _callback_available("on_show_balance")),
-            "harness": MenuActionSpec(add_harness, _callback_available("on_open_chat")),
-            "deepseek_web": MenuActionSpec(lambda menu, pet: add_deepseek_web(menu)),
             "github_project": MenuActionSpec(_build_github),
             "agent_link": MenuActionSpec(add_agent_link_menu),
             "proactive_screen": MenuActionSpec(
@@ -325,13 +291,24 @@ class MenuActionRegistry:
 
     def disabled_reason(self, action_id: str) -> str:
         spec = self._specs.get(action_id)
-        return spec.disabled_reason if spec is not None else "当前不可用"
+        return maybe_t(spec.disabled_reason) if spec is not None else t("menu.registry.unavailable_right_now")
 
     def default_icon(self, action_id: str) -> str:
         return ACTION_ICONS.get(action_id, "")
 
     def label(self, action_id: str) -> str:
-        return ACTION_LABELS.get(action_id, action_id)
+        """动作在当前语言下的名字；表外的 id 原样返回。"""
+        return t(f"menu.action.{action_id}") if action_id in ACTION_LABELS else action_id
+
+    def default_label(self, node) -> str:
+        """节点不算别名时的名字：模板自带的子菜单（名字还是模板里的中文原文）按界面语言翻译，
+        用户自建 / 改过名的子菜单原样；动作节点取 label()。"""
+        node_id = str(node.get("id") or "")
+        label = str(node.get("label") or "")
+        known = SUBMENU_LABEL_KEYS.get(node_id)
+        if known is not None and (label == "" or label in known[0]):
+            return t(known[1])
+        return label or self.label(node_id)
 
     def icon(self, widget, action_id: str, override=None) -> QIcon:
         """Resolve semantic or local-file presentation with a safe fallback."""
@@ -366,7 +343,7 @@ class MenuActionRegistry:
             if node.get("type") == "submenu":
                 submenu = add_submenu(
                     menu,
-                    str(node.get("alias") or node.get("label") or ""),
+                    str(node.get("alias") or self.default_label(node)),
                 )
                 self.populate(
                     submenu, pet, node.get("children", ()), enabled_actions=enabled,

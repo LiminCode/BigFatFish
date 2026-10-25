@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import catalog
+from .i18n import t
 
 
 def _discover_click_names(character_id: str) -> list[str]:
@@ -49,14 +50,13 @@ class ClickTalkBindingsDialog(QDialog):
             for action_id, texts in config.click_talk_bindings(self.character_id).items()
         }
 
-        self.setWindowTitle("点击动画台词绑定")
+        self.setWindowTitle(t("click_talk.ui.click_animation_lines"))
         self.resize(560, 420)
         self.setMinimumSize(480, 360)
 
         layout = QVBoxLayout(self)
         hint = QLabel(
-            "每个点击动画可绑定多条专属自言自语台词，每行一条。\n"
-            "点击桌宠时会优先播放当前动画绑定的台词；未绑定时回退全局随机自言自语。"
+            t("click_talk.ui.each_click_animation_can_have")
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -68,7 +68,7 @@ class ClickTalkBindingsDialog(QDialog):
         body.addWidget(self.list)
 
         right = QVBoxLayout()
-        right.addWidget(QLabel("绑定台词（每行一条）："))
+        right.addWidget(QLabel(t("click_talk.ui.bound_lines_one_per_line")))
         self.text_edit = QPlainTextEdit()
         right.addWidget(self.text_edit)
         body.addLayout(right)
@@ -76,8 +76,8 @@ class ClickTalkBindingsDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        save = QPushButton("保存")
-        cancel = QPushButton("取消")
+        save = QPushButton(t("click_talk.ui.save"))
+        cancel = QPushButton(t("click_talk.ui.cancel"))
         save.clicked.connect(self._save)
         cancel.clicked.connect(self.reject)
         buttons.addWidget(cancel)

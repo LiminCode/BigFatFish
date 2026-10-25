@@ -486,7 +486,7 @@ if __name__ == "__main__":  # pragma: no cover
 class TestInstallBridgeScaffoldsMissingProfile:
     """安装链缺口：全新 dsh（从未运行过）没有 profile，一键安装桥接必失败。
 
-    dsh-app-boot 的 initProfile 会在首次运行时补出 profile；桌宠侧安装桥接
+    dsh-app-boot 的 initProfile 会在首次运行时补出 profile；肥鱼侧安装桥接
     前若一个 profile 都没有，应按同一套三件套（manifest + cordis.patch.yml +
     pnpm-workspace.yaml）补出默认 web profile 再继续，而不是把全新用户挡住。
     """

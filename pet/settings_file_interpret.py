@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from .config import _default_file_interpret_data
 from .settings_widgets import BrowserDoubleSpinBox, SettingRow, SettingsSection, ToggleSwitch
+from .i18n import t
 
 # 与 Config 归一化区间同源（config.py file_interpret 段）
 _PROGRESS_INTERVAL_RANGE = (5.0, 120.0)
@@ -42,7 +43,7 @@ def create_file_interpret_controls(dialog) -> None:
     dialog.file_interpret_interval_spin = BrowserDoubleSpinBox(dialog)
     dialog.file_interpret_interval_spin.setRange(*_PROGRESS_INTERVAL_RANGE)
     dialog.file_interpret_interval_spin.setDecimals(0)
-    dialog.file_interpret_interval_spin.setSuffix(" 秒")
+    dialog.file_interpret_interval_spin.setSuffix(t("settings.file.s"))
     dialog.file_interpret_interval_spin.setValue(
         _clamp_interval(cfg.get("progress_interval_seconds", defaults["progress_interval_seconds"]))
     )
@@ -57,14 +58,14 @@ def build_file_interpret_rows(dialog) -> list[SettingRow]:
     return [
         SettingRow(
             "file_interpret_enabled",
-            "拖文件后询问解读",
-            "桌宠吃掉文件后弹气泡询问是否交给 AI 解读；关闭则只播吃动画，不询问。",
+            t("settings.file.ask_before_reading_dropped_file"),
+            t("settings.file.after_fish_eats_file_bubble"),
             dialog.file_interpret_enabled_check,
         ),
         SettingRow(
             "file_interpret_progress_interval",
-            "进度汇报间隔",
-            "解读进行中每隔多少秒冒泡汇报一次进度（5–120 秒）。",
+            t("settings.file.progress_report_interval"),
+            t("settings.file.how_often_seconds_bubble_reports"),
             dialog.file_interpret_interval_spin,
         ),
     ]
@@ -77,7 +78,7 @@ def build_file_interpret_page(dialog) -> QWidget:
     layout = QVBoxLayout(content)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(18)
-    layout.addWidget(SettingsSection("拖文件解读", rows, content))
+    layout.addWidget(SettingsSection(t("settings.file.read_dropped_files"), rows, content))
     layout.addStretch(1)
     return content
 

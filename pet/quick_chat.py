@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """快速对话气泡（Quick Chat）。
 
-点击桌宠弹出的头顶小气泡输入框；回车发送，AI 回复在气泡内流式显示，
+点击肥鱼弹出的头顶小气泡输入框；回车发送，AI 回复在气泡内流式显示，
 与完整 AI 对话窗口共用同一会话历史（SessionStore / ChatService）。
 """
 from __future__ import annotations
@@ -31,6 +31,7 @@ from .chat.models import ChatMessage
 from .chat.prompt import PromptBuilder
 from .chat.service import ChatService
 from .chat.session_store import SessionStore
+from .i18n import t
 
 _PAGE_SIZE = 500
 
@@ -38,7 +39,7 @@ _PAGE_SIZE = 500
 # 截断到 _REPLY_PREVIEW_LIMIT 字并提示全文在聊天窗（气泡内提供直达按钮）。
 # 回复区加高到两倍后上限随之翻倍（原 150）：不然加高的部分只是空白。
 _REPLY_PREVIEW_LIMIT = 300
-_REPLY_PREVIEW_SUFFIX = "…（全文见聊天窗）"
+_REPLY_PREVIEW_SUFFIX_KEY = "quick_chat.ui.full_reply_in_chat_window"   # 用时 t()：跟界面语言
 
 # 气泡整体放大倍数（宽度、留白、圆角、按钮、字号）。原始尺寸（320~460 宽、系统
 # 默认字号）在高分屏上偏小；再乘「气泡文字大小」设置（bubble_text_scale，100 =
@@ -63,7 +64,7 @@ def _surface_radius(preset: dict) -> float:
 
     breath_bubble 是有机水滴形（speech_bubble 专属几何，preset 里 radius=0）：
     quick_chat 不支持该形状，按 0 渲染会变直角方框——同一
-    self_talk_bubble_style 设置在桌宠气泡与快速对话两套观感。这里用大圆角
+    self_talk_bubble_style 设置在肥鱼气泡与快速对话两套观感。这里用大圆角
     近似，与 speech_bubble 同设置不破解；普通预设用自己的 radius。
     """
     if preset.get("shape") == "breath_bubble":
@@ -87,7 +88,7 @@ class QuickChatBubble(QFrame):
         self._capture_compat = False
         self._capture_host: QWidget | None = None
         self._scale = quick_chat_scale(config)
-        apply_family(self)   # 与桌宠气泡同一种字体（等线）
+        apply_family(self)   # 与肥鱼气泡同一种字体（等线）
         font = self.font()
         if font.pointSizeF() > 0:
             font.setPointSizeF(font.pointSizeF() * self._scale)
@@ -143,7 +144,7 @@ class QuickChatBubble(QFrame):
         layout.setSpacing(px(8))
 
         header = QHBoxLayout()
-        title = QLabel("快速对话")
+        title = QLabel(t("quick_chat.ui.quick_chat"))
         title.setObjectName("quick-chat-title")
         self.title_label = title  # 子类（灵动岛气泡）改标题用
         header.addWidget(title)
@@ -181,7 +182,7 @@ class QuickChatBubble(QFrame):
         for btn in (self.prev_btn, self.next_btn):
             btn.setObjectName("quick-chat-page")
             btn.setFixedSize(px(28), px(24))
-        self.open_chat_btn = QPushButton("去聊天窗")
+        self.open_chat_btn = QPushButton(t("quick_chat.ui.open_chat_window"))
         self.open_chat_btn.setObjectName("quick-chat-open")
         self.page_row.addWidget(self.prev_btn)
         self.page_row.addWidget(self.page_label)
@@ -193,8 +194,8 @@ class QuickChatBubble(QFrame):
 
         input_row = QHBoxLayout()
         self.input = QLineEdit()
-        self.input.setPlaceholderText("输入消息，回车发送…")
-        self.send_btn = QPushButton("发送")
+        self.input.setPlaceholderText(t("quick_chat.ui.type_message_enter_send"))
+        self.send_btn = QPushButton(t("quick_chat.ui.send"))
         self.send_btn.setObjectName("quick-chat-send")
         input_row.addWidget(self.input, 1)
         input_row.addWidget(self.send_btn)
@@ -334,7 +335,7 @@ class QuickChatBubble(QFrame):
         self.update()
 
     def set_capture_compat(self, on: bool, host: QWidget | None = None) -> None:
-        """直播捕获兼容：把快速对话气泡作为桌宠主窗的子内容渲染（issue #62）。
+        """直播捕获兼容：把快速对话气泡作为肥鱼主窗的子内容渲染（issue #62）。
 
         开启后快速对话不再是独立 Tool 窗口，而成为主窗子控件，捕获主窗时即可
         看到并操作它；关闭后恢复独立置顶 Tool 窗口形态。
@@ -402,7 +403,7 @@ class QuickChatBubble(QFrame):
         self._page = 0
         self._pages = []
         self.page_widget.setVisible(False)
-        self.hint_label.setText("思考中…")
+        self.hint_label.setText(t("quick_chat.ui.thinking"))
         config = self.settings.active_config
         config.api_key = self.config.resolve_api_key(config)
         config.mcp_servers = self.config.resolve_mcp_servers(config)
@@ -415,7 +416,7 @@ class QuickChatBubble(QFrame):
     def _started(self, request_id: str) -> None:
         if request_id != self._active_request_id:
             return
-        self.hint_label.setText("生成中…")
+        self.hint_label.setText(t("quick_chat.ui.generating"))
 
     def _delta(self, request_id: str, text: str) -> None:
         if request_id != self._active_request_id:
@@ -446,7 +447,7 @@ class QuickChatBubble(QFrame):
         self._active_request_id = None
         self._handoff = False
         self.hint_label.setText("")
-        self._set_reply_text(f"请求失败：{text}")
+        self._set_reply_text(t("quick_chat.ui.request_failed_text", text=text))
         self._render_reply()
 
     def _stopped(self, request_id: str) -> None:
@@ -454,7 +455,7 @@ class QuickChatBubble(QFrame):
             return
         self._active_request_id = None
         self._handoff = False
-        self.hint_label.setText("已停止")
+        self.hint_label.setText(t("quick_chat.ui.stopped"))
 
     # ------------------------------------------------------------ 显示
     def _set_reply_text(self, full_text: str) -> None:
@@ -465,7 +466,7 @@ class QuickChatBubble(QFrame):
         """
         self._reply_full = str(full_text or "")
         self._reply_text = truncate_bubble_text(
-            self._reply_full, _REPLY_PREVIEW_LIMIT, _REPLY_PREVIEW_SUFFIX
+            self._reply_full, _REPLY_PREVIEW_LIMIT, t(_REPLY_PREVIEW_SUFFIX_KEY)
         )
         self._reply_truncated = self._reply_text != self._reply_full
 

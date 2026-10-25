@@ -289,9 +289,9 @@ def test_golden_spin_defaults_to_main_sprite(tmp_path):
         shell._delete_runtime_marker()
 
 
-# ---------------------------------------------------------------- F3 隐藏桌宠
+# ---------------------------------------------------------------- F3 隐藏肥鱼
 def test_hide_child_keeps_window_and_other_pets(tmp_path):
-    """右击子肥鱼「隐藏桌宠」只藏这一只（窗口与主宠照旧）。"""
+    """右击子肥鱼「隐藏肥鱼」只藏这一只（窗口与主宠照旧）。"""
     shell, _instance, _config = _make_shell(tmp_path)
     try:
         child = _spawn_child(shell)
@@ -360,30 +360,6 @@ def test_look_screen_remembers_clicked_sprite(tmp_path, monkeypatch):
         # 无参调用 = 主宠（兼容既有调用面）
         shell.look_at_screen()
         assert shell._look_sprite is shell.sprite
-    finally:
-        shell.clear_spawned_pets()
-        shell._delete_runtime_marker()
-
-
-# ---------------------------------------------------------------- A 余额
-def test_balance_gets_shell_as_parent(tmp_path, monkeypatch):
-    """余额父窗 = 壳（与 overlay 点击路径同口径）。"""
-    instance = None
-    mini = _MiniAppShell()
-    shell, instance, _config = _make_shell(
-        tmp_path, template="modern", app_shell=mini)
-    mini.instance = instance
-    bubbles: list = []
-    monkeypatch.setattr(
-        shell, "show_bubble",
-        lambda text, duration_ms=3200, **kw: bubbles.append(text))
-    try:
-        child = _spawn_child(shell)
-        menu = build_sprite_full_menu(shell, child)
-        _require(menu, "DeepSeek 余额").trigger()
-        # 真实 _show_balance_payload 落壳（含 persona 文案渲染，需壳的 cfg 面）
-        assert any("余额 12.34" in text for text in bubbles), \
-            "余额气泡必须落壳（OverlayWindow 没有 show_bubble）"
     finally:
         shell.clear_spawned_pets()
         shell._delete_runtime_marker()

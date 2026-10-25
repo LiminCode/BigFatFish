@@ -1,0 +1,152 @@
+{
+  "activity.default": [
+    "Master~ {name} is working on {label} in session {sessionName}; I'm keeping an eye on {tool} for you~",
+    "Hmph, {name} in session {sessionName} is still at it with {tool}, already on step {step}.",
+    "{name} is still busy in session {sessionName}; no need to hover, Master, I'm watching it for you~"
+  ],
+  "activity.edit": [
+    "Master~ {name} is editing {label} in session {sessionName}; it's just normal editing for now~",
+    "Hmph, {name} in session {sessionName} is changing things with {tool}, already on step {step}.",
+    "{name} keeps editing in session {sessionName}; hold on a moment, Master~"
+  ],
+  "activity.read": [
+    "Master~ {name} is reading {label} in session {sessionName}; I'll peek along with you~",
+    "Hmph, {name} in session {sessionName} is reading with {tool}; just looking things up, nothing more.",
+    "{name} is reading what it needs in session {sessionName}, already on step {step}~"
+  ],
+  "activity.run": [
+    "Master~ {name} is running {label} in session {sessionName}; it's just the normal run~",
+    "Hmph, {tool} in session {sessionName} is already running; {name} is on step {step}.",
+    "{name} is still executing in session {sessionName}; I'll wait for the result on your behalf, Master~"
+  ],
+  "activity.search": [
+    "Master~ {name} is searching for {label} in session {sessionName}; I'll dive in and help fish for clues~",
+    "Hmph, {name} in session {sessionName} keeps searching with {tool}; don't swim too far out in that sea of info.",
+    "{name} has searched up to step {step} in session {sessionName}; still moving along~"
+  ],
+  "agent.attention": [
+    "Master~ {name} needs you to take a look now.",
+    "{name} has stopped and is waiting for you; I'll hold the fort~",
+    "Hey, Master, it's your call now; {name} is waiting for you~"
+  ],
+  "agent.error": [
+    "Uu~ {name} really hit an error; come take a look, Master.",
+    "Hmph, {name} did mess up this time; such trouble for Master.",
+    "{name} is in an error state; I'll keep watch, don't panic, Master~"
+  ],
+  "agent.missing": [
+    "Master~ I can't detect {name} for now; is it not installed yet?",
+    "Hmph, {name} isn't on this machine; I already checked for you.",
+    "I can't find an installation of {name}; could you check, Master~"
+  ],
+  "approval.generic": [
+    "Master~ {name} in session {sessionName} has an action waiting for your approval.",
+    "Hmph, {name} in session {sessionName} is waiting for your decision; it's about {label}.",
+    "{name} in session {sessionName} is waiting for confirmation about the tool {toolName}; you decide, Master~"
+  ],
+  "approval.tool": [
+    "Master~ {name} in session {sessionName} is asking to use the tool {toolName}; nothing has run yet.",
+    "Hmph, {name} in session {sessionName} wants to do {label}; no using {toolName} without Master's approval.",
+    "{name} in session {sessionName} is waiting for tool approval; you decide, Master~"
+  ],
+  "balance.loading": [
+    "One moment, Master~ I'm checking the balance, back in a flash.",
+    "Let me dive down and look at the balance; don't rush me, Master~",
+    "Balance lookup in progress… a bowl of rice as a reward afterwards wouldn't hurt."
+  ],
+  "balance.result": [
+    "Master~ got the balance: {text}",
+    "Found it: the current result is {text}",
+    "It's {text}~ Hmph, fast, right? You may call me clever, but never fat."
+  ],
+  "bridge.install.failed": [
+    "Uu~ the bridge for {name} failed to install: {detail}",
+    "Hmph, something went wrong building the bridge to {name}: {detail}; take a look, Master.",
+    "{name} isn't connected yet; here's what happened: {detail}"
+  ],
+  "bridge.install.pending": [
+    "Installing the bridge for {name}; hold on a moment, Master~",
+    "Building bridges is such a chore… but Master asked, so of course I'll do it properly.",
+    "The link to {name} is being installed; almost there~"
+  ],
+  "bridge.install.success": [
+    "Bridged~ the plugin for {name} is installed.",
+    "Hmph, finally connected {name}; pretty reliable this time, aren't I.",
+    "{name} is ready~ You may call me clever, but never fat!"
+  ],
+  "bridge.uninstall.failed": [
+    "The bridge for {name} wasn't fully removed; please check, Master.",
+    "Hmph, {name} still has leftovers from the uninstall; no peace for this whale.",
+    "Uninstalling the {name} bridge didn't finish completely; just a heads-up, Master~"
+  ],
+  "bridge.unknown": [
+    "I got a bridge event I don't recognise ({event})… maybe the bridge needs an update or a reinstall?",
+    "Uu~ the bridge sent “{event}”, which I can't read; update the bridge for me, Master.",
+    "A strange event “{event}” popped up; reinstalling the bridge should sort it out~"
+  ],
+  "done.attention": [
+    "{name} has stopped; take a look at the result, Master~",
+    "{name} paused this round and is waiting for Master to check.",
+    "The result is right here; {name} is holding off, and I'll look it over with you~"
+  ],
+  "done.success": [
+    "Master~ {name} finished this round; go see what it made.",
+    "Hmph, finally done without a hitch; {name} was almost reliable this time.",
+    "{name} is done~ go inspect it, Master; I'm off for some rice and a nap."
+  ],
+  "failure.generic": [
+    "Master~ this round of {name} in session {sessionName} failed; the failure type is {failureType}.",
+    "Hmph, {name} in session {sessionName} hit error {errorCode}: {errorMessage}",
+    "{name} in session {sessionName} already retried {retries} times, retries exhausted: {retryExhausted}; you decide what's next, Master~"
+  ],
+  "failure.retry": [
+    "Master~ {name} in session {sessionName} retried {retries} times and still didn't make it.",
+    "Hmph, {name} in session {sessionName} keeps failing after retries with {errorCode}: {errorMessage}",
+    "{name} in session {sessionName} failed with type {failureType}, retries exhausted: {retryExhausted}; let's try another way, Master~"
+  ],
+  "failure.tool": [
+    "Uu~ the tool run by {name} in session {sessionName} failed in the end; the failure type is {failureType}.",
+    "Hmph, {name} in session {sessionName} hit error {errorCode}: {errorMessage}",
+    "{name} in session {sessionName} already retried {retries} times, retries exhausted: {retryExhausted}; come take a look, Master~"
+  ],
+  "llm_error.api": [
+    "Uu~ the AI service errored out; check again later, Master.",
+    "The model service isn't answering properly… hmph, this time it really isn't the whale slacking.",
+    "The AI API request failed; check the network or the model service, Master~"
+  ],
+  "model_access.many": [
+    "Uu~ model access in session {sessionName} has failed {count} times in a row; don't keep ramming it, Master.",
+    "Session {sessionName} is up to {consecutiveRetryCount} consecutive model access failures; error code {errorCode}: {errorMessage}",
+    "Attempt {retry} at model access in session {sessionName} still failed; wait a bit, Master, charging ahead will only wear this whale out~"
+  ],
+  "model_access.one": [
+    "Uu~ this model access in session {sessionName} failed; wait a moment and try again, Master.",
+    "Model access in session {sessionName} didn't go through; error code {errorCode}: {errorMessage}",
+    "Attempt {retry} in session {sessionName} hasn't succeeded yet, {consecutiveRetryCount} consecutive failures; I'll keep watch for you~"
+  ],
+  "question.empty": [
+    "Master~ {name} in session {sessionName} is waiting for you to pick from the options.",
+    "Hmph, {name} in session {sessionName} is stuck at {label}; pick one, Master.",
+    "{name} is waiting for your choice in session {sessionName}; it can only continue once you've picked~"
+  ],
+  "question.many": [
+    "Master~ {name} in session {sessionName} has {count} questions waiting for your answers.",
+    "Ah~ session {sessionName} has {count} questions; that looks like a lot even to me.",
+    "{name} in session {sessionName} is waiting for these {count} answers; take your time, Master~"
+  ],
+  "question.one": [
+    "Master~ {name} in session {sessionName} is asking you: {body}",
+    "{name} in session {sessionName} has a question for you to decide: {body}",
+    "{name} in session {sessionName} is waiting for the answer to this: {body}"
+  ],
+  "start": [
+    "Master~ {name} has started working; I'll keep an eye on it for you~",
+    "Hmph, {name} finally got to work; not like I was waiting for it or anything.",
+    "{name} is in work mode now; rest easy, Master, I'll watch it like a good whale~"
+  ],
+  "thinking": [
+    "Hmm… {name} is thinking hard; don't rush it, Master~",
+    "This whale's head is thinking along with {name}… n-not spacing out, honest.",
+    "{name} is still analysing; just normal thinking for now, I'll wait with you, Master~"
+  ]
+}

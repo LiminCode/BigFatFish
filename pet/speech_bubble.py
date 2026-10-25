@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""桌宠自言自语与聊天状态使用的轻量气泡。
+"""肥鱼自言自语与聊天状态使用的轻量气泡。
 
 macOS 焦点问题由气泡窗口自身解决：`WindowDoesNotAcceptFocus`、
 `WA_ShowWithoutActivating` 和透明鼠标事件共同保证提示不会成为键盘或
@@ -274,7 +274,7 @@ BUBBLE_STYLE_PRESETS = {
 
 
 class PetSpeechBubble(QFrame):
-    """不依赖桌宠透明窗口的独立气泡，支持跨屏幕边界自动选位。"""
+    """不依赖肥鱼透明窗口的独立气泡，支持跨屏幕边界自动选位。"""
 
     clicked = Signal()
 
@@ -570,7 +570,7 @@ class PetSpeechBubble(QFrame):
         if (self._content_kind == "image" and not self._source_pixmap.isNull()
                 and self._image_max_edge is not None):
             # 按原始大小显示：水泡长到刚好装下图片，但整个水泡不超过上限。小图不撑大
-            # 水泡，保持与桌宠相称的基础尺寸。能放图的安全区实测是画布宽的 55%、高的
+            # 水泡，保持与肥鱼相称的基础尺寸。能放图的安全区实测是画布宽的 55%、高的
             # 58.5%（_rebuild 几何里按水泡主体的外接框再内缩得到；240～600 宽下恒定）。
             target = natural_image_size(
                 self._source_pixmap.size(), self._image_max_edge, self._image_scale)
@@ -603,7 +603,7 @@ class PetSpeechBubble(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not self._interactive)
 
     def set_capture_compat(self, on: bool, host: QWidget | None = None) -> None:
-        """直播捕获兼容：把气泡作为桌宠主窗的子内容渲染（issue #62）。
+        """直播捕获兼容：把气泡作为肥鱼主窗的子内容渲染（issue #62）。
 
         开启后气泡不再是独立 Tool 窗口，而成为主窗子控件；OBS/直播姬捕获
         主窗时即可看到气泡。放置可用区从整个屏幕收窄为主窗矩形，避免子控件
@@ -1310,20 +1310,20 @@ class PetSpeechBubble(QFrame):
             self._tail_tip = QPointF(local.right() - 4, tip_y)
         else:
             # 重叠兜底：capture 子模式（stream_capture_mode）下气泡只能落在主窗
-            # 矩形内，空间不足时会压在桌宠身上，此时上面四个"完全不重叠"的分支
-            # 全部失效、一律走这里。改用中心判定，保证三角指向桌宠所在的一侧，
-            # 而不是无条件朝上（实机表现为「三角指向了桌宠的反方向」）。
+            # 矩形内，空间不足时会压在肥鱼身上，此时上面四个"完全不重叠"的分支
+            # 全部失效、一律走这里。改用中心判定，保证三角指向肥鱼所在的一侧，
+            # 而不是无条件朝上（实机表现为「三角指向了肥鱼的反方向」）。
             # 这里 anchor_center 与 local 都是本窗口局部坐标，不存在坐标系混用。
-            # 按**主导方向**选边：只看 y 会把"桌宠在侧边"误判成上下
-            # （实测：桌宠贴屏幕顶且气泡被挤到它右侧时，anchor 中心 y 偏下，
-            # 旧逻辑判成"朝下"，而桌宠其实在右边）。横向差更大就走左右。
+            # 按**主导方向**选边：只看 y 会把"肥鱼在侧边"误判成上下
+            # （实测：肥鱼贴屏幕顶且气泡被挤到它右侧时，anchor 中心 y 偏下，
+            # 旧逻辑判成"朝下"，而肥鱼其实在右边）。横向差更大就走左右。
             dx = anchor_center.x() - local.center().x()
             dy = anchor_center.y() - local.center().y()
             if abs(dx) > abs(dy):
                 # 主导方向是横向
                 tip_y = min(max(anchor_center.y(), 18), local.height() - 18)
                 if dx > 0:
-                    # 桌宠在气泡**右侧**：尾巴从右边探出朝右
+                    # 肥鱼在气泡**右侧**：尾巴从右边探出朝右
                     self._surface_rect = local.adjusted(4, 3, -10, -4)
                     self._tail_base = (
                         QPointF(self._surface_rect.right() - 2, tip_y - 6),
@@ -1331,7 +1331,7 @@ class PetSpeechBubble(QFrame):
                     )
                     self._tail_tip = QPointF(local.right() - 4, tip_y)
                 else:
-                    # 桌宠在气泡**左侧**：尾巴从左边探出朝左
+                    # 肥鱼在气泡**左侧**：尾巴从左边探出朝左
                     self._surface_rect = local.adjusted(10, 3, -4, -4)
                     self._tail_base = (
                         QPointF(self._surface_rect.left() + 2, tip_y - 6),
@@ -1339,7 +1339,7 @@ class PetSpeechBubble(QFrame):
                     )
                     self._tail_tip = QPointF(4, tip_y)
             elif dy >= 0:
-                # 桌宠中心在气泡下方：尾巴从底边朝下伸向桌宠
+                # 肥鱼中心在气泡下方：尾巴从底边朝下伸向肥鱼
                 self._surface_rect = local.adjusted(4, 3, -4, -10)
                 tip_x = min(max(anchor_center.x(), 20), local.width() - 20)
                 self._tail_base = (
@@ -1348,7 +1348,7 @@ class PetSpeechBubble(QFrame):
                 )
                 self._tail_tip = QPointF(tip_x, local.bottom() - 4)
             else:
-                # 桌宠中心在气泡上方：尾巴从顶边朝上伸向桌宠
+                # 肥鱼中心在气泡上方：尾巴从顶边朝上伸向肥鱼
                 self._surface_rect = local.adjusted(4, 10, -4, -4)
                 tip_x = min(max(anchor_center.x(), 20), local.width() - 20)
                 self._tail_base = (

@@ -110,3 +110,23 @@ mode ∈ {legacy, whale_maid} : 内置预设[key] → 调用方原文案
   `tests/test_persona_settings.py`（config 清洗与 phrase_for_agent/custom_for_agent
   路由）、`tests/test_persona_template.py`（schema 对齐）、
   `tests/test_agent_link.py`（气泡文案族）。
+
+## 8. 设置页的只读预览与「改成我的台词」（2026-10-18）
+
+- 表达风格选内置模式时，逐事件编辑框**只读地显示 `builtin_phrases(mode)`**（折叠框改名「『X』的台词（只读）」），
+  `host._dialogue_preview = True`；`_dialogue_flush_scope` 在预览期间**不写缓冲**，所以保存 / 切层 / 导出都不会把
+  内置台词混进 `dialogue_phrases`。切回自定义时从缓冲恢复用户的台词。
+- 「以『X』为底改成我的台词」（`settings_pet_controls._adopt_builtin_phrases`）：把整套内置台词写进 global 层缓冲、
+  切到 `custom`、展开折叠框。自定义台词已有内容时先确认；Agent 专属层不动。内置 JSON 仍只读。
+- 导出模板（`_current_dialogue_template`）从 2026-10-18 起带**当前显示**的台词（内置或用户的），不再是空骨架；
+  导入会先切到 `custom` 再写编辑框。报告：`docs/PR-REPORT-DIALOGUE-PREVIEW-2026-10-18.md`。
+
+## 9. 英文版内置预设（2026-10-19）
+
+- 数据：`pet/persona_presets/<mode>.en.json`（`legacy.en.json`、`whale_maid.en.json`），键集合与中文版一致，
+  每条占位符不超出中文版用到的（`tests/test_persona_presets_english.py` 锁契约）。
+- 加载：`load_builtin_presets()` 同时读进 `_presets_by_lang[lang][mode]`；`builtin_phrases(mode, language=None)`
+  缺省取 `i18n.current_language()`，有该语言的文件就按键覆盖中文、缺键回退中文，没有文件整套中文。
+  `phrase_keys()` / `default_phrases()` 仍只看中文版（事件词表由中文文件定义）。
+- 影响面：运行时渲染（`PhrasePicker.get`）、设置页的只读预览与「改成我的台词」都跟界面语言；
+  用户自定义台词（`dialogue_phrases`）不受语言影响。再加语言 = 加 `<mode>.<lang>.json` 并登记到 `_PRESET_LANGUAGES`。

@@ -5,7 +5,7 @@
 
 - **任务栏按钮 / Alt-Tab**：图标取窗口图标（``apply_app_icon``）；归到哪个应用下
   由「应用用户模型 ID」决定（``set_process_identity``）——不设的话，从源码运行的
-  桌宠窗口会和所有别的 Python 程序归成一组，用 Python 的图标。
+  肥鱼窗口会和所有别的 Python 程序归成一组，用 Python 的图标。
 - **任务管理器的进程名**：取 exe 的版本资源，程序自己改不了。从源码运行时由
   ``tools/make_launcher.py`` 生成的 ``BigFish.exe`` 解决；打包版本来就是自己的 exe。
 - **托盘图标**：鱼的当前帧，另有来源，不归这里管。

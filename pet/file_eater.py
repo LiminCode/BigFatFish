@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""“吃垃圾文件”模拟功能：拖文件给桌宠后播放吃动画并记录统计。
+"""“吃垃圾文件”模拟功能：拖文件给肥鱼后播放吃动画并记录统计。
 
 重要边界：本模块只做视觉反馈与统计，绝不删除/移动/修改被拖入的文件。
 统计写到配置目录下的 file_eaten_stats.json，供用户查看累计吃了多少文件。
@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject
 from PySide6.QtCore import QUrl
+from .i18n import t
 
 STATS_FILE_NAME = "file_eaten_stats.json"
 STATS_HISTORY_LIMIT = 50
@@ -127,7 +128,7 @@ def _pick_eating_animation(pet) -> str | None:
 
 
 class FileEaterDropHandler(QObject):
-    """挂在桌宠窗口上的拖放事件过滤器 + 吃文件反馈控制器。"""
+    """挂在肥鱼窗口上的拖放事件过滤器 + 吃文件反馈控制器。"""
 
     def __init__(self, pet):
         super().__init__(pet)
@@ -227,17 +228,14 @@ class FileEaterDropHandler(QObject):
         if not callable(show):
             return
         if files and folders:
-            batch = f"{files} 个文件、{folders} 个文件夹"
+            batch = t("feeding.ui.files_files_folders_folders", files=files, folders=folders)
         elif files:
-            batch = f"{files} 个文件"
+            batch = t("feeding.ui.files_files", files=files)
         elif folders:
-            batch = f"{folders} 个文件夹"
+            batch = t("feeding.ui.folders_folders", folders=folders)
         else:
-            batch = "空气"
+            batch = t("feeding.ui.thin_air")
         text = (
-            f"啊呜～吃掉 {batch}（{format_bytes(total_bytes)}），"
-            f"累计吃掉 {stats.get('file_count', 0)} 个文件、"
-            f"{stats.get('folder_count', 0)} 个文件夹，"
-            f"共 {format_bytes(stats.get('total_bytes', 0))}！"
+            t("feeding.ui.om_nom_ate_batch_v", batch=batch, v=format_bytes(total_bytes), v2=stats.get('file_count', 0), v3=stats.get('folder_count', 0), v4=format_bytes(stats.get('total_bytes', 0)))
         )
-        show(text, subtitle="放心，只是做个样子，文件没有删除或移动哦")
+        show(text, subtitle=t("feeding.ui.don_t_worry_just_show"))

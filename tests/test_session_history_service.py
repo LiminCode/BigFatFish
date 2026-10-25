@@ -225,6 +225,24 @@ def test_remove_clear_and_panel_state_are_persisted(tmp_path):
     assert service.entries() == []
 
 
+def test_pinning_is_persisted_and_announced(tmp_path):
+    service = _service(tmp_path)
+    service.on_session_update("claude", _update(cwd="C:\\a"))
+    service.on_session_update("claude", _update(SID_B, cwd="C:\\b"))
+    service.changes.clear()
+
+    assert service.set_pinned(("claude", SID_A), True) is True
+    assert service.changes == [1] and service._save_timer.isActive()
+    assert [(e.session_id, e.pinned) for e in service.entries()] == [(SID_A, True), (SID_B, False)]
+    assert service.set_pinned(("claude", SID_A), True) is False and service.changes == [1]
+    assert service.set_pinned(("claude", "gone"), True) is False
+
+    service.flush()
+    again = SessionHistory(tmp_path / "history.json")
+    again.load()
+    assert [(e.session_id, e.pinned) for e in again.entries()] == [(SID_A, True), (SID_B, False)]
+
+
 # ---------------------------------------------------------------- 点一行
 
 @pytest.fixture

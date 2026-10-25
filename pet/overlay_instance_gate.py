@@ -19,7 +19,7 @@ QLockFile（与 ``pet/__main__.py`` 的 ``settings.lock``、frameseq 的
 - 活着的持有进程绝不被抢锁（即使锁文件 mtime 已老）；
 - 锁文件根本不存在（配置目录不可写之类的环境错误）→ 放行启动并留痕，口径同
   ``app.py::_settings_process_running`` 的「拿不到锁但锁文件不存在 = 环境错误」
-  ——坏环境下桌宠必须还能起来，宁可少一层保护。
+  ——坏环境下肥鱼必须还能起来，宁可少一层保护。
 
 留痕：接管/拒绝/放行都写一行 logging（开发运行可见 stderr），并追加到
 ``<config_dir>/pet-overlay-gate.log``。打包产物是 pythonw 无控制台的 GUI 进程，
@@ -150,7 +150,7 @@ class OverlayInstanceGate:
             return True
         if not self.path.exists():
             # 环境错误（配置目录不可写等）：锁文件根本没建起来，不是"已有实例"。
-            # 放行启动，否则坏环境下桌宠会永久静默起不来。
+            # 放行启动，否则坏环境下肥鱼会永久静默起不来。
             self._acquired = True
             logger.warning(
                 "overlay 进程门不可用（锁文件不存在，按环境错误放行）: %s", self.path)

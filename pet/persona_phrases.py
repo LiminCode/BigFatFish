@@ -2,8 +2,9 @@
 """表达风格台词渲染（data-over-code：内置文案全部外置为 JSON 预设）。
 
 内置表达风格（dialogue_mode=legacy / whale_maid）的文案不写死在代码里，而是
-各自对应仓库数据文件 ``pet/persona_presets/<mode>.json``：模块导入（启动）时
-加载一次；:func:`reload_builtin_presets` 供测试与未来「重设/恢复内置」设置
+各自对应仓库数据文件 ``pet/persona_presets/<mode>.json``（中文）与
+``<mode>.<lang>.json``（其他界面语言，2026-10-19 起有 en；按键覆盖、缺键回退中文）：
+模块导入（启动）时加载一次；:func:`reload_builtin_presets` 供测试与未来「重设/恢复内置」设置
 入口重新读盘（当前无生产调用方）。custom 模式的台词属于用户数据，持久化在
 config.json 的 ``dialogue_phrases`` 键（按 agent_key 分层的统一预设），同样
 不落任何代码文件。
@@ -149,7 +150,11 @@ def render_template(template: str, values: Mapping[str, Any] | None = None, auto
 # ---------------------------------------------------------------------------
 _PRESET_DIR = Path(__file__).with_name("persona_presets")
 _BUILTIN_MODES = ("legacy", "whale_maid")
+#: 除默认中文之外另有一份文件的界面语言：``<mode>.<lang>.json``（2026-10-19 起有 en）。文件可以不全：
+#: 某语言缺某个键时回退到中文那条；整个文件不存在就整套回退到中文。
+_PRESET_LANGUAGES = ("en",)
 _presets: dict[str, dict[str, list[str]]] = {}
+_presets_by_lang: dict[str, dict[str, dict[str, list[str]]]] = {}
 
 
 def _clean_preset_events(raw: object) -> dict[str, list[str]]:
@@ -171,12 +176,15 @@ def _clean_preset_events(raw: object) -> dict[str, list[str]]:
     return cleaned
 
 
-def _read_preset_file(mode: str) -> dict[str, list[str]]:
-    path = _PRESET_DIR / f"{mode}.json"
+def _read_preset_file(mode: str, language: str = "") -> dict[str, list[str]]:
+    path = _PRESET_DIR / (f"{mode}.{language}.json" if language else f"{mode}.json")
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError:
-        logging.getLogger(__name__).warning("内置台词预设缺失，按空预设处理：%s", path)
+        if language:
+            logging.getLogger(__name__).debug("内置台词预设没有 %s 版，整套回退中文：%s", language, path)
+        else:
+            logging.getLogger(__name__).warning("内置台词预设缺失，按空预设处理：%s", path)
         return {}
     except ValueError:
         logging.getLogger(__name__).warning("内置台词预设 JSON 无效，按空预设处理：%s", path)
@@ -190,8 +198,10 @@ def load_builtin_presets() -> dict[str, dict[str, list[str]]]:
     返回读盘快照；渲染实时读全局注册表，:func:`reload_builtin_presets` 供
     测试/未来设置入口重新读盘，已持有的 PhrasePicker 无需重建。
     """
-    global _presets
+    global _presets, _presets_by_lang
     _presets = {mode: _read_preset_file(mode) for mode in _BUILTIN_MODES}
+    _presets_by_lang = {language: {mode: _read_preset_file(mode, language) for mode in _BUILTIN_MODES}
+                        for language in _PRESET_LANGUAGES}
     return {mode: dict(phrases) for mode, phrases in _presets.items()}
 
 
@@ -200,9 +210,18 @@ def reload_builtin_presets() -> dict[str, dict[str, list[str]]]:
     return load_builtin_presets()
 
 
-def builtin_phrases(mode: str) -> dict[str, list[str]]:
-    """某内置模式当前的预设文案映射（未知模式 / 未加载 → 空，调用方走 fallback）。"""
-    return _presets.get(str(mode or "").lower()) or {}
+def builtin_phrases(mode: str, language: str | None = None) -> dict[str, list[str]]:
+    """某内置模式当前的预设文案映射（未知模式 / 未加载 → 空，调用方走 fallback）。
+
+    ``language`` 缺省取界面语言：有该语言的文件就按键覆盖中文（缺的键仍是中文），没有就整套中文。
+    """
+    base = _presets.get(str(mode or "").lower()) or {}
+    if language is None:
+        from .i18n import current_language
+
+        language = current_language()
+    localized = (_presets_by_lang.get(str(language or "").lower()) or {}).get(str(mode or "").lower()) or {}
+    return {**base, **localized} if localized else base
 
 
 def phrase_for_agent(phrases: Mapping[str, Any] | None, agent_key: str, key: str) -> list[str] | None:

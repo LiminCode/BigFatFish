@@ -9,8 +9,9 @@ from .models import ChatSettings, ProviderConfig, SecretStore
 from .anthropic_provider import test_connection
 from .themes import CHAT_UI_STYLE_LABELS, CHAT_UI_VIEW_ASPECT, theme_names
 from .utils import _safe_emit
+from ..i18n import t
 
-# 本对话框只读写经典风格的 chat_background 键（肥鱼版 DeepSeek 走主设置窗的
+# 本对话框只读写经典风格的 chat_background 键（肥鱼版宽屏 走主设置窗的
 # modern_chat_background），所以裁切入口按单一风格标注名称；名字取自 themes 的
 # 单一来源，不在本模块重复字面量。
 _CLASSIC_STYLE_LABEL = CHAT_UI_STYLE_LABELS['classic']
@@ -38,7 +39,7 @@ class ChatSettingsDialog(QDialog):
         self._deleted_provider_ids: set[str] = set()
         self._loading_provider = False
         self._test_done.connect(self._on_test_done)
-        self.setWindowTitle('AI 对话设置')
+        self.setWindowTitle(t("chat.settings.ai_chat_settings"))
 
         # API 列表：管理多套 Provider，快速切换当前 API
         self.provider_combo = QComboBox()
@@ -48,10 +49,10 @@ class ChatSettingsDialog(QDialog):
         idx = self.provider_combo.findData(self.settings.active_provider)
         if idx >= 0:
             self.provider_combo.setCurrentIndex(idx)
-        self.add_provider_btn = QPushButton('添加')
-        self.add_provider_btn.setToolTip('复制当前 API 配置为一份新配置，便于填不同的地址/模型/Key')
-        self.delete_provider_btn = QPushButton('删除')
-        self.delete_provider_btn.setToolTip('删除当前选中的 API 配置；至少保留一个')
+        self.add_provider_btn = QPushButton(t("chat.settings.add"))
+        self.add_provider_btn.setToolTip(t("chat.settings.duplicate_current_api_profile_so"))
+        self.delete_provider_btn = QPushButton(t("chat.settings.delete"))
+        self.delete_provider_btn.setToolTip(t("chat.settings.delete_selected_api_profile_at"))
         provider_row = QWidget()
         provider_lay = QHBoxLayout(provider_row)
         provider_lay.setContentsMargins(0, 0, 0, 0)
@@ -66,7 +67,7 @@ class ChatSettingsDialog(QDialog):
         self.model = QLineEdit(p.model)
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.key.setPlaceholderText('留空表示不修改已保存的 Key')
+        self.key.setPlaceholderText(t("chat.settings.leave_blank_keep_saved_key"))
         self.key_hint = QLabel(self._key_status(p))
         self.key_hint.setObjectName('key-hint')
         self.key_hint.setWordWrap(True)
@@ -84,14 +85,14 @@ class ChatSettingsDialog(QDialog):
         self.tokens.setValue(p.max_tokens)
         # 视觉模型（看看屏幕）：默认同聊天模型推导；取消勾选可手填（如免费 glm-4.6v-flash）
         self.vmodel = QLineEdit(p.vision_model)
-        self.vmodel.setPlaceholderText('留空自动推导；免费视觉可用智谱 glm-4.6v-flash')
-        self.vsame = QCheckBox('视觉模型同聊天模型（ds 文本模型自动换 vision-exp；GLM/Kimi 等多模态直接复用）')
+        self.vmodel.setPlaceholderText(t("chat.settings.leave_blank_derive_automatically_zhipu"))
+        self.vsame = QCheckBox(t("chat.settings.same_vision_model_as_chat"))
         self.vsame.setChecked(p.vision_same_as_chat)
         self.vurl = QLineEdit(p.vision_base_url)
-        self.vurl.setPlaceholderText('视觉 API 地址（留空复用聊天地址；GLM 填 https://open.bigmodel.cn/api/paas/v4）')
+        self.vurl.setPlaceholderText(t("chat.settings.vision_api_address_leave_blank"))
         self.vkey = QLineEdit()
         self.vkey.setEchoMode(QLineEdit.EchoMode.Password)
-        self.vkey.setPlaceholderText('视觉 API Key（留空复用聊天 Key）')
+        self.vkey.setPlaceholderText(t("chat.settings.vision_api_key_leave_blank"))
         _vextra = [self.vmodel, self.vurl, self.vkey]
         def _vtoggle(c):
             for w in _vextra:
@@ -101,11 +102,11 @@ class ChatSettingsDialog(QDialog):
         # 聊天背景：纯色 / 内置主题 / 自定义图片 + 裁切取景
         self._bg_keys = [k for k, _ in theme_names()]
         self.bg_mode = QComboBox()
-        self.bg_mode.addItems(['纯色（奶油）'] + [n for _, n in theme_names()] + ['自定义图片…'])
+        self.bg_mode.addItems([t("chat.settings.solid_cream")] + [n for _, n in theme_names()] + [t("chat.settings.custom_image")])
         cur = str(config.get('chat_background', '') or '')
         self.bg = QLineEdit(cur if cur and not cur.startswith('builtin:') else '')
-        self.bg.setPlaceholderText('自定义图片路径，或点浏览选图')
-        self.bg_btn = QPushButton('浏览…')
+        self.bg.setPlaceholderText(t("chat.settings.path_custom_image_click_browse"))
+        self.bg_btn = QPushButton(t("chat.settings.browse"))
         self.bg_btn.clicked.connect(self._pick_bg)
         bg_row = QWidget()
         bg_lay = QHBoxLayout(bg_row)
@@ -114,7 +115,7 @@ class ChatSettingsDialog(QDialog):
         bg_lay.addWidget(self.bg_btn)
         # 显式父对象：无父时 setVisible(True) 会瞬时建顶层原生窗口，慢机/远程桌面
         # 可能闪一下（下面 addWidget 之后才真正入布局）。
-        self.crop_btn = QPushButton(f'裁切取景（{_CLASSIC_STYLE_LABEL}）…', self)
+        self.crop_btn = QPushButton(t("chat.settings.crop_framing_classic_style_label", CLASSIC_STYLE_LABEL=_CLASSIC_STYLE_LABEL), self)
         self.crop_btn.clicked.connect(self._crop_bg)
         # contain/stretch 下取景框被渲染路径整体忽略（见 themes.py 的 fill 语义）；
         # 本对话框没有填充方式控件，直接按配置里的经典风格填充值决定入口是否可见。
@@ -128,27 +129,27 @@ class ChatSettingsDialog(QDialog):
         self.bg_mode.setCurrentIndex(0 if not cur else (theme_idx if theme_idx is not None else len(self._bg_keys) + 1))
         bg_row.setVisible(bool(cur) and theme_idx is None)
         self.bg_mode.currentIndexChanged.connect(lambda i: bg_row.setVisible(i == len(self._bg_keys) + 1))
-        self.skip_ssl = QCheckBox('跳过 SSL 证书验证（开着代理/梯子、本地网关或自签名证书时勾选）')
+        self.skip_ssl = QCheckBox(t("chat.settings.skip_ssl_certificate_verification_tick"))
         self.skip_ssl.setChecked(not p.verify_ssl)
-        self.system_notify_check = QCheckBox('对话完成 / 生成失败 / 需要授权时，在桌面右下角弹系统通知')
+        self.system_notify_check = QCheckBox(t("chat.settings.show_system_notification_at_bottom"))
         self.system_notify_check.setChecked(bool(config.get("system_notifications_enabled", True)))
 
-        form.insertRow(0, 'API 列表', provider_row)
-        for label, w in [('Provider 名称', self.name), ('API 地址', self.url),
-                         ('模型', self.model), ('', self.vsame), ('视觉模型', self.vmodel), ('视觉 API 地址', self.vurl), ('视觉 API Key', self.vkey),
+        form.insertRow(0, t("chat.settings.api_list"), provider_row)
+        for label, w in [(t("chat.settings.provider_name"), self.name), (t("chat.settings.api_address"), self.url),
+                         (t("chat.settings.model"), self.model), ('', self.vsame), (t("chat.settings.vision_model"), self.vmodel), (t("chat.settings.vision_api_address"), self.vurl), (t("chat.settings.vision_api_key"), self.vkey),
                          ('API Key', self.key), ('', self.key_hint),
-                         ('系统通知', self.system_notify_check),
+                         (t("chat.settings.system_notifications"), self.system_notify_check),
                          ('System Prompt', self.prompt),
-                         ('聊天背景', bgmode_row), ('', bg_row),
-                         ('超时（秒）', self.timeout), ('Temperature', self.temp),
+                         (t("chat.settings.chat_background"), bgmode_row), ('', bg_row),
+                         (t("chat.settings.timeout_seconds"), self.timeout), ('Temperature', self.temp),
                          ('Max Tokens', self.tokens)]:
             form.addRow(label, w)
         form.addRow(self.skip_ssl)
         self.result = QLabel('')
         self.result.setWordWrap(True)
-        self.test = QPushButton('测试连接')
+        self.test = QPushButton(t("chat.settings.test_connection"))
         self.test.clicked.connect(self._run_test)
-        save = QPushButton('保存')
+        save = QPushButton(t("chat.settings.save"))
         save.clicked.connect(self.save)
         buttons = QHBoxLayout()
         buttons.addWidget(self.test)
@@ -239,7 +240,7 @@ class ChatSettingsDialog(QDialog):
         new_id = self._new_provider_id()
         new = ProviderConfig(
             new_id,
-            name=f'{base.name} 副本',
+            name=t("chat.settings.name_copy", name=base.name),
             base_url=base.base_url,
             chat_path=base.chat_path,
             model=base.model,
@@ -305,7 +306,7 @@ class ChatSettingsDialog(QDialog):
 
     # ---------------------------------------------------------------- 保存与测试
     def _pick_bg(self):
-        path, _ = QFileDialog.getOpenFileName(self, '选择聊天背景图', '', '图片文件 (*.png *.jpg *.jpeg *.webp *.bmp)')
+        path, _ = QFileDialog.getOpenFileName(self, t("chat.settings.choose_chat_background_image"), '', t("chat.settings.image_files_png_jpg_jpeg"))
         if path:
             self.bg.setText(path)
 
@@ -317,13 +318,13 @@ class ChatSettingsDialog(QDialog):
         value = '' if i == 0 else ('builtin:' + self._bg_keys[i - 1] if i <= len(self._bg_keys) else self.bg.text().strip())
         pix = resolve_bg_pixmap(value)
         if pix is None:
-            self.crop_btn.setText(f'无可裁背景（{_CLASSIC_STYLE_LABEL}）')
+            self.crop_btn.setText(t("chat.settings.no_background_crop_classic_style", CLASSIC_STYLE_LABEL=_CLASSIC_STYLE_LABEL))
             return
         crops = dict(self.config.get('chat_bg_crops', {}) or {})
         initial = crops.get(value)
         if initial is None and value.startswith('builtin:'):
-            t = get_theme(value[8:])
-            initial = tuple(t['focus']) if t else None
+            theme = get_theme(value[8:])
+            initial = tuple(theme['focus']) if theme else None
         dlg = CropDialog(pix, initial, self, _CLASSIC_STYLE_LABEL, CHAT_UI_VIEW_ASPECT['classic'])
         accepted = dlg.exec()
         reset, box = dlg.result_box() if accepted else (False, None)
@@ -341,8 +342,8 @@ class ChatSettingsDialog(QDialog):
         """当前是否已保存 API Key（提示用户留空不修改，无需每次重输）。"""
         saved = p.api_key or SecretStore().get(p.api_key_ref)
         if saved:
-            return '已保存 API Key（留空保持不变，修改 System Prompt 无需重输）'
-        return '尚未设置 API Key（填入后保存即生效）'
+            return t("chat.settings.api_key_saved_leave_blank")
+        return t("chat.settings.no_api_key_yet_enter")
 
     def _provisional_config(self) -> ProviderConfig:
         """用表单当前值构造一份临时配置（不保存），供测试连接使用。"""
@@ -366,7 +367,7 @@ class ChatSettingsDialog(QDialog):
         if self._test_thread is not None and self._test_thread.is_alive():
             return
         self.test.setEnabled(False)
-        self.test.setText('测试中…')
+        self.test.setText(t("chat.settings.testing"))
         self.result.setText('')
         self.result.setStyleSheet('color: #666666;')
         self._test_thread = threading.Thread(
@@ -385,7 +386,7 @@ class ChatSettingsDialog(QDialog):
 
     def _on_test_done(self, ok: bool, message: str):
         self.test.setEnabled(True)
-        self.test.setText('测试连接')
+        self.test.setText(t("chat.settings.test_connection"))
         self.result.setText(message)
         self.result.setStyleSheet('color: #16a34a;' if ok else 'color: #dc2626;')
         self._test_thread = None
@@ -411,13 +412,13 @@ class ChatSettingsDialog(QDialog):
             p.api_key_ref = p.api_key_ref or f'provider/{provider_id}'
             if not SecretStore().set(p.api_key_ref, key):
                 p.api_key = key
-                QMessageBox.warning(self, '安全存储不可用', '无法使用系统安全存储，Key 仅本次运行保留，重启需重输。')
+                QMessageBox.warning(self, t("chat.settings.secure_storage_unavailable"), t("chat.settings.system_keychain_can_t_used"))
         vkey = str(draft.get('vision_key') or '')
         if vkey:
             p.vision_api_key_ref = p.vision_api_key_ref or f'provider/{provider_id}/vision'
             if not SecretStore().set(p.vision_api_key_ref, vkey):
                 p.vision_api_key = vkey
-                QMessageBox.warning(self, '安全存储不可用', '无法使用系统安全存储，Key 仅本次运行保留，重启需重输。')
+                QMessageBox.warning(self, t("chat.settings.secure_storage_unavailable"), t("chat.settings.system_keychain_can_t_used"))
 
     def save(self):
         # 保存前基于磁盘最新配置重取快照：另一个设置窗口可能在本窗口打开期间
@@ -447,5 +448,5 @@ class ChatSettingsDialog(QDialog):
         self.config.set('system_notifications_enabled', self.system_notify_check.isChecked())
         self.config.set_chat_settings(self.settings)
         if not self.config.save():
-            QMessageBox.warning(self, '保存失败', '配置未能写入磁盘，改动可能在重启后丢失。\n\n配置路径：' + str(self.config.path))
+            QMessageBox.warning(self, t("chat.settings.save_failed"), t("chat.settings.settings_could_not_written_disk") + str(self.config.path))
         self.accept()

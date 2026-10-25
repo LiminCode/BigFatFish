@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GitHub 连接器：桌宠对话经 Messages API 的 MCP connector 查 GitHub（只读）。
+"""GitHub 连接器：肥鱼对话经 Messages API 的 MCP connector 查 GitHub（只读）。
 
 网络与系统钥匙串都是边界，用替身：假客户端按脚本吐流并记录请求，假钥匙串是
 一个内存字典。真实链路（Claude API → GitHub MCP 服务器）见 PR 报告里的实机记录。
@@ -170,7 +170,7 @@ def test_connectors_combine_with_the_refusal_fallback(monkeypatch):
 def test_screen_reading_never_carries_connectors(monkeypatch):
     client = _use(monkeypatch, _Stream(["在写代码"]))
 
-    ap.describe_image(b"jpeg", "截图", "你是桌宠", _claude(mcp_servers=[GITHUB]),
+    ap.describe_image(b"jpeg", "截图", "你是肥鱼", _claude(mcp_servers=[GITHUB]),
                       model="claude-sonnet-5", base_url="", api_key="k")
 
     assert "mcp_servers" not in client.calls[0][1], "识屏是后台定时请求，不该多花工具定义的钱"

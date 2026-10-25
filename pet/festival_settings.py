@@ -56,6 +56,7 @@ from .modern_settings_dialog import (
 )
 from .settings_widgets import ModernSelect
 from .voice_chime import clean_flag
+from .i18n import maybe_t, t
 
 
 class FestivalSettingsPage(QWidget):
@@ -91,7 +92,7 @@ class FestivalSettingsPage(QWidget):
         # ---- 提醒时间 ----
         self.mode_select = ModernSelect(self, width=170)
         for key in MODE_KEYS:
-            self.mode_select.addItem(MODE_LABELS[key], key)
+            self.mode_select.addItem(maybe_t(f"settings.festival.mode_{key}") if key in MODE_LABELS else key, key)
         self.mode_select.setCurrentData(
             clean_mode(self.config.get("festival_reminder_mode", DEFAULT_MODE))
         )
@@ -102,11 +103,11 @@ class FestivalSettingsPage(QWidget):
         self.count_spin.setValue(
             clean_count(self.config.get("festival_reminder_count", DEFAULT_COUNT))
         )
-        self.count_spin.setToolTip("把提醒次数均匀铺在 09:00–21:00 之间")
+        self.count_spin.setToolTip(t("settings.festival.spread_reminders_evenly_between_09"))
 
         self.times_edit = QLineEdit(self)
         self.times_edit.setText(str(self.config.get("festival_reminder_times", DEFAULT_TIMES) or ""))
-        self.times_edit.setPlaceholderText("如 09:00, 12:30, 20:00（逗号分隔）")
+        self.times_edit.setPlaceholderText(t("settings.festival.e_g_09_00_12"))
 
         # ---- 文案 ----
         self.quote_check = ToggleSwitch(self)
@@ -116,8 +117,7 @@ class FestivalSettingsPage(QWidget):
         self.custom_cn_edit.setMinimumSize(280, 84)
         self.custom_cn_edit.setMaximumHeight(180)
         self.custom_cn_edit.setPlaceholderText(
-            "每行一条，追加到内置中文文案库（古诗词/名言），例如：\n"
-            "今夜月明人尽望，不知秋思落谁家。"
+            t("settings.festival.one_per_line_appended_built")
         )
         self.custom_cn_edit.setPlainText(
             str(self.config.get("festival_custom_quotes_cn", "") or "")
@@ -127,16 +127,15 @@ class FestivalSettingsPage(QWidget):
         self.custom_west_edit.setMinimumSize(280, 84)
         self.custom_west_edit.setMaximumHeight(180)
         self.custom_west_edit.setPlaceholderText(
-            "One quote per line, appended to the built-in Western library.\n"
-            "内置库只收录公有领域作品；其余（如影视/游戏台词）请自行在此添加。"
+            t("settings.festival.one_quote_per_line_appended")
         )
         self.custom_west_edit.setPlainText(
             str(self.config.get("festival_custom_quotes_west", "") or "")
         )
 
         # ---- 试听 ----
-        self.preview_btn = QPushButton("立即试听", self)
-        self.preview_btn.setToolTip("按当前配置立即演示一次节日提醒（无需等到节日当天）")
+        self.preview_btn = QPushButton(t("settings.festival.preview_now"), self)
+        self.preview_btn.setToolTip(t("settings.festival.show_festival_reminder_right_now"))
         self.preview_btn.clicked.connect(self._on_preview_clicked)
 
         # ---- Layout ----
@@ -146,41 +145,36 @@ class FestivalSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "基础设置",
+                t("settings.festival.basics"),
                 [
                     SettingRow(
                         "festival_reminder_enabled",
-                        "启用节日提醒",
-                        "命中节日/节气当天，按下方时间用桌宠气泡告知今天是什么日子，"
-                        "并附一句与节日氛围匹配的文案。默认关闭。",
+                        t("settings.festival.enable_festival_reminders"),
+                        t("settings.festival.festival_solar_term_day_fish"),
                         self.enabled_check,
                     ),
                     SettingRow(
                         "festival_reminder_cn",
-                        "中国节日",
-                        "春节、元宵、端午、七夕、中元、中秋、重阳、腊八、除夕、"
-                        "元旦、劳动节、儿童节、国庆节等（含清明节）。",
+                        t("settings.festival.chinese_festivals"),
+                        t("settings.festival.spring_festival_lantern_festival_dragon"),
                         self.cn_check,
                     ),
                     SettingRow(
                         "festival_reminder_solar_terms",
-                        "24 节气",
-                        "立春、雨水、惊蛰……冬至共 24 个节气，节气当天同样提醒。",
+                        t("settings.festival.x_24_solar_terms"),
+                        t("settings.festival.start_spring_rain_water_awakening"),
                         self.solar_terms_check,
                     ),
                     SettingRow(
                         "festival_reminder_west",
-                        "西方节日",
-                        "情人节、愚人节、复活节、母亲节、父亲节、万圣节、"
-                        "平安夜、圣诞节。内置文案只取公有领域作品。",
+                        t("settings.festival.western_holidays"),
+                        t("settings.festival.valentine_day_april_fools_day"),
                         self.west_check,
                     ),
                     SettingRow(
                         "festival_reminder_speak",
-                        "语音播报",
-                        "用语音念出节日提醒（音色/语速/音调/音量沿用「语音报时」的设置）。"
-                        "与语音报时共用同一条音频通道，因此不会叠音；两者恰好同一分钟时"
-                        "由报时让位。需要 edge-tts，缺失时只出气泡不出声。",
+                        t("settings.festival.read_aloud"),
+                        t("settings.festival.read_festival_reminder_aloud_voice"),
                         self.speak_check,
                     ),
                 ],
@@ -190,26 +184,24 @@ class FestivalSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "提醒时间",
+                t("settings.festival.reminder_times"),
                 [
                     SettingRow(
                         "festival_reminder_mode",
-                        "提醒方式",
-                        "「按提醒次数」把下面的次数均匀铺在 09:00–21:00；"
-                        "「自定义提醒时间」则完全按你填写的时刻提醒。",
+                        t("settings.festival.reminder_mode"),
+                        t("settings.festival.by_count_spreads_number_below"),
                         self.mode_select,
                     ),
                     SettingRow(
                         "festival_reminder_count",
-                        "提醒次数",
-                        "每天提醒几次（1–6）。仅在「按提醒次数」模式生效。",
+                        t("settings.festival.reminders_per_day"),
+                        t("settings.festival.how_many_reminders_per_day"),
                         self.count_spin,
                     ),
                     SettingRow(
                         "festival_reminder_times",
-                        "自定义提醒时间",
-                        "仅在「自定义提醒时间」模式生效；HH:MM 逗号分隔，"
-                        "如 09:00, 12:30, 20:00。留空则回落 09:00。",
+                        t("settings.festival.custom_reminder_times"),
+                        t("settings.festival.only_used_custom_times_mode"),
                         self.times_edit,
                     ),
                 ],
@@ -219,38 +211,32 @@ class FestivalSettingsPage(QWidget):
 
         root.addWidget(
             SettingsSection(
-                "文案",
+                t("settings.festival.lines"),
                 [
                     SettingRow(
                         "festival_reminder_show_quote",
-                        "附带文案",
-                        "提醒时在节日名称后附一句诗词/名言/经典引文（与节日氛围匹配）。"
-                        "关闭后只报节日名称。",
+                        t("settings.festival.add_line"),
+                        t("settings.festival.add_poem_saying_classic_quote"),
                         self.quote_check,
                     ),
                     SettingRow(
                         "festival_custom_quotes_cn",
-                        "自定义中文文案",
-                        "每行一条，**追加**到内置中文库之后参与轮换；"
-                        "留空则只用内置古诗词/名言库。",
+                        t("settings.festival.custom_chinese_lines"),
+                        t("settings.festival.one_per_line_appended_built_2"),
                         self.custom_cn_edit,
                         stacked=True,
                     ),
                     SettingRow(
                         "festival_custom_quotes_west",
-                        "自定义西文文案",
-                        "每行一条，**追加**到内置西文库之后参与轮换。"
-                        "内置库只收录公有领域作品（莎士比亚、狄更斯、KJV 圣经等），"
-                        "影视/游戏台词等受版权保护的内容请自行在此添加。",
+                        t("settings.festival.custom_western_lines"),
+                        t("settings.festival.one_per_line_appended_built_3"),
                         self.custom_west_edit,
                         stacked=True,
                     ),
                     SettingRow(
                         "festival_preview",
-                        "立即试听",
-                        "按当前配置立即演示一次，无需等到节日当天；"
-                        "开启「语音播报」时会一并念出来，否则只显示气泡。"
-                        "当天没有节日/节气时会直接说明。",
+                        t("settings.festival.preview_now"),
+                        t("settings.festival.show_one_reminder_now_current"),
                         self.preview_btn,
                     ),
                 ],

@@ -63,7 +63,7 @@ BUBBLE_TEXT_SLACK = 4
 
 # 自适应列宽：短文案维持 248px（视觉与旧版一致），文案变长后逐步放宽到
 # 360px 上限。加宽换来每行装更多字——长文案的总行数、翻页次数与「末页孤行」
-# 概率一起下降；上限兼顾气泡观感与桌宠贴边时剩余的可用空间。
+# 概率一起下降；上限兼顾气泡观感与肥鱼贴边时剩余的可用空间。
 BUBBLE_TEXT_COLUMN_MAX = 360
 BUBBLE_TEXT_COLUMN_GROWTH_CHARS = 60   # 超过这个字数才开始放宽
 BUBBLE_TEXT_COLUMN_GROWTH_SPAN = 100   # 再长 100 字到达列宽上限

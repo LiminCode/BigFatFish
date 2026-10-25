@@ -217,7 +217,7 @@ _FFMPEG_INPUT_PARAMS = [
 # 机制：0xc0000142 = STATUS_DLL_INIT_FAILED。关机时系统先发
 # WM_QUERYENDSESSION，随后开始拆除本次登录会话（窗口站、桌面堆、CSRSS 等）。
 # 若本进程在这之后仍 CreateProcess 新的 ffmpeg，进程虽然创建成功，其
-# user32/gdi32 却初始化失败——系统于是弹出错误对话框。桌宠的 ffmpeg 启停
+# user32/gdi32 却初始化失败——系统于是弹出错误对话框。肥鱼的 ffmpeg 启停
 # 极其频繁（冷首帧预热 / reader 换代 / 元数据探测 / 圈末回收后 fresh spawn），
 # 撞上关机窗口的概率因此几乎为 100%。
 #

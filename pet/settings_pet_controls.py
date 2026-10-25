@@ -12,7 +12,6 @@ import sys
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
-    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -41,7 +40,7 @@ from .config import (
 )
 from .context_menus.icons import vector_widget_icon
 from .fun_image_popup import oijingjing_image_path, resolve_fun_asset
-from .persona_phrases import PUBLIC_DIALOGUE_EVENTS, phrase_keys
+from .persona_phrases import PUBLIC_DIALOGUE_EVENTS, builtin_phrases, phrase_keys
 from .persona_template import build_persona_template
 from .settings_widgets import (
     AUDIO_NAME_FILTER,
@@ -53,6 +52,7 @@ from .settings_widgets import (
     ResourcePathPicker,
     ResponsiveToggleActionRow,
     SettingRow,
+    TiltButton,
     ToggleSwitch,
     _line_edit,
 )
@@ -62,28 +62,22 @@ from .speech_bubble_text import (
     SELF_TALK_IMAGE_MAX_EDGE_MIN,
     clamp_image_max_edge,
 )
+from .i18n import maybe_t, t
 
 
 #: 「直播捕获兼容」基础文案（描述能力本身）；legacy 拓扑逐字用它。
-STREAM_CAPTURE_HINT = "让 OBS 等工具能够枚举并捕获桌宠窗口。"
+#: （存文案键，用时 t()：模块导入时界面语言可能还没定）
+STREAM_CAPTURE_HINT = "settings.pet.stream_capture_hint"
 #: overlay 拓扑：该键无任何消费者（不建 PetWindow，壳上也无运行期入口），
 #: 重启同样不生效——如实说明不支持（配合置灰控件）。
-STREAM_CAPTURE_OVERLAY_HINT = (
-    STREAM_CAPTURE_HINT + "当前单窗口渲染模式暂不支持直播捕获兼容。"
-)
+STREAM_CAPTURE_OVERLAY_HINT = "settings.pet.stream_capture_overlay_extra"   # 接在基础文案后面
 
 #: 「省电模式」（idle_low_fps_enabled）文案，按拓扑分流：
 #: overlay 下该键唯一作用是关掉后台动画预热（``app.py`` 建库与
 #: ``_sync_animation_prewarm``）；可见帧率由素材 clip 自持定时器按素材 fps
 #: 驱动，与开关无关；legacy 的 PetWindow 仍按半帧率呈现。
-IDLE_LOW_FPS_OVERLAY_HINT = (
-    "开启后停止后台动画预热（降低待机占用，首次切换动画可能略慢）。"
-    "动画帧率不受影响：闲置时的系统降载自动进行，与本开关无关。"
-)
-IDLE_LOW_FPS_LEGACY_HINT = (
-    "一段时间不操作桌宠时，动画按半帧率呈现（24fps 素材 → 12fps 效果）"
-    "并停止后台动画预热，任何交互立即恢复全帧率。"
-)
+IDLE_LOW_FPS_OVERLAY_HINT = "settings.pet.idle_low_fps_overlay_hint"
+IDLE_LOW_FPS_LEGACY_HINT = "settings.pet.idle_low_fps_legacy_hint"
 
 #: overlay 单合成窗下物理上只能整窗生效的窗口级键（一窗多宠）：一套窗旗标
 #: （置顶 / 鼠标穿透 / 光标隐藏穿透 / 全屏隐藏）、一个窗口透明度、一份锁位与
@@ -99,7 +93,7 @@ OVERLAY_WINDOW_SCOPE_IDS = (
 )
 
 #: 子宠设置页对这些键的补充说明。
-ALL_PETS_SCOPE_NOTE = "（对所有桌宠生效）"
+ALL_PETS_SCOPE_NOTE = "settings.pet.all_pets_scope_note"
 
 
 def _is_overlay_topology() -> bool:
@@ -122,19 +116,19 @@ def stream_capture_hint() -> str:
     后者的行数预算只随实测校准，能不加行就不加。
     """
     if _is_overlay_topology():
-        return STREAM_CAPTURE_OVERLAY_HINT
-    return STREAM_CAPTURE_HINT
+        return t(STREAM_CAPTURE_HINT) + t(STREAM_CAPTURE_OVERLAY_HINT)
+    return t(STREAM_CAPTURE_HINT)
 
 
 def idle_low_fps_hint() -> str:
     """「省电模式」说明文案（按渲染拓扑分流，同 ``stream_capture_hint``）。"""
     if _is_overlay_topology():
-        return IDLE_LOW_FPS_OVERLAY_HINT
-    return IDLE_LOW_FPS_LEGACY_HINT
+        return t(IDLE_LOW_FPS_OVERLAY_HINT)
+    return t(IDLE_LOW_FPS_LEGACY_HINT)
 
 
 def _apply_window_scope_rows(host) -> None:
-    """overlay 一窗多宠：子宠设置页给窗口级键补「对所有桌宠生效」。
+    """overlay 一窗多宠：子宠设置页给窗口级键补「对所有肥鱼生效」。
 
     子宠页写的是自己的 ``config-slot-N.json``，但这些键在单合成窗里作用于整窗
     ——不提示的话用户会以为改的只是那一只。主宠页不加（它本来就是全局视角），
@@ -150,9 +144,9 @@ def _apply_window_scope_rows(host) -> None:
         return
     for setting_id in OVERLAY_WINDOW_SCOPE_IDS:
         row = host.findChild(SettingRow, f"settingRow_{setting_id}")
-        if row is None or ALL_PETS_SCOPE_NOTE in row.hint_label.text():
+        if row is None or t(ALL_PETS_SCOPE_NOTE) in row.hint_label.text():
             continue
-        row.hint_label.setText(row.hint_label.text() + ALL_PETS_SCOPE_NOTE)
+        row.hint_label.setText(row.hint_label.text() + t(ALL_PETS_SCOPE_NOTE))
         control = getattr(row, "control", None)
         if control is not None:
             # SettingRow 构造期把 hint 写进 accessibleDescription；改文案后同步，
@@ -190,12 +184,12 @@ def build_pet_controls(host) -> None:
     host.spawn_inherit_dynamic_island_check.setChecked(
         bool(host.config.get("spawn_inherit_dynamic_island", False))
     )
-    host.clear_spawned_pets_btn = QPushButton("一键退出…", host)
+    host.clear_spawned_pets_btn = TiltButton(t("settings.pet.close_all"), host)
     host.clear_spawned_pets_btn.clicked.connect(host._on_clear_spawned_pets)
     if host.config.instance_id:
         # 子肥鱼不能关闭主肥鱼进程，只允许主肥鱼执行退出操作。
         host.clear_spawned_pets_btn.setEnabled(False)
-        host.clear_spawned_pets_btn.setToolTip("请在主肥鱼的设置里操作")
+        host.clear_spawned_pets_btn.setToolTip(t("settings.pet.change_main_fish_settings"))
 
     host.on_top_check = ToggleSwitch(host)
     host.on_top_check.setChecked(bool(host.config.get("on_top", True)))
@@ -215,10 +209,10 @@ def build_pet_controls(host) -> None:
 
     # 甩出力度四档：gentle (轻柔) / standard (标准) / strong (强力) / crazy (疯狂)
     host.throw_strength_select = ModernSelect(host, width=132)
-    host.throw_strength_select.addItem("轻柔", "gentle")
-    host.throw_strength_select.addItem("标准", "standard")
-    host.throw_strength_select.addItem("强力", "strong")
-    host.throw_strength_select.addItem("疯狂", "crazy")
+    host.throw_strength_select.addItem(t("settings.pet.gentle"), "gentle")
+    host.throw_strength_select.addItem(t("settings.pet.standard"), "standard")
+    host.throw_strength_select.addItem(t("settings.pet.strong"), "strong")
+    host.throw_strength_select.addItem(t("settings.pet.wild"), "crazy")
     current_strength = str(host.config.get("throw_strength", "standard") or "standard")
     host.throw_strength_select.setCurrentData(current_strength if current_strength in {"gentle", "standard", "strong", "crazy"} else "standard")
 
@@ -270,7 +264,7 @@ def build_pet_controls(host) -> None:
     host.autostart_check.setChecked(host._autostart_initial)
     if host.config.instance_id:
         host.autostart_check.setEnabled(False)
-        host.autostart_check.setToolTip("仅主桌宠可设置")
+        host.autostart_check.setToolTip(t("settings.pet.only_main_fish_can_set"))
     host.dock_icon_check = None
     if sys.platform == "darwin":
         host.dock_icon_check = ToggleSwitch(host)
@@ -289,19 +283,15 @@ def build_pet_controls(host) -> None:
     click_vol = float(host.config.get("click_sound_volume", 0.70))
     host.click_sound_volume_spin.setValue(int(round(click_vol * 100)))
 
-    host.click_sound_preview_btn = QPushButton("试听", host)
+    host.click_sound_preview_btn = TiltButton(t("settings.pet.preview"), host)
     host.click_sound_preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
-    host.click_sound_preview_btn.setFixedWidth(72)
+    host.click_sound_preview_btn.setMinimumWidth(72)   # 最小宽度：英文文案更长
     host.click_sound_preview_btn.clicked.connect(host._preview_click_sound)
 
     host.click_sound_check.toggled.connect(host._update_click_sound_controls)
     # 音效开关即时生效：对话框的批量写回发生在关闭时，但声音开关是即时
     # 听觉反馈——用户关掉后期望立刻静音，而不是等关对话框。
     host.click_sound_check.toggled.connect(host._apply_click_sound_enabled_now)
-    host.click_balance_check = None
-    if host.include_ai:
-        host.click_balance_check = ToggleSwitch(host)
-        host.click_balance_check.setChecked(bool(host.config.get("click_show_balance", False)))
     host.click_self_talk_check = ToggleSwitch(host)
     host.click_self_talk_check.setChecked(bool(host.config.get("click_show_self_talk", False)))
     host.click_self_talk_speak_check = ToggleSwitch(host)
@@ -323,13 +313,11 @@ def build_pet_controls(host) -> None:
         host.music_browser_media_check.setChecked(
             bool(host.config.get("music_browser_media_enabled", False))
         )
-    host.agent_cost_check = ToggleSwitch(host)
-    host.agent_cost_check.setChecked(bool(host.config.get("agent_cost_enabled", False)))
     host.music_lyric_lead_spin = BrowserDoubleSpinBox(host)
     host.music_lyric_lead_spin.setRange(LEAD_MIN_SECONDS, LEAD_MAX_SECONDS)
     host.music_lyric_lead_spin.setSingleStep(0.1)
     host.music_lyric_lead_spin.setDecimals(1)
-    host.music_lyric_lead_spin.setSuffix(" 秒")
+    host.music_lyric_lead_spin.setSuffix(t("settings.pet.s"))
     host.music_lyric_lead_spin.setValue(
         float(host.config.get("music_lyric_lead_seconds", LYRIC_LEAD_SECONDS))
     )
@@ -339,31 +327,6 @@ def build_pet_controls(host) -> None:
     host.golden_spin_direct_check.setChecked(bool(host.config.get("golden_spin_direct", False)))
     host.edge_probe_check = ToggleSwitch(host)
     host.edge_probe_check.setChecked(bool(host.config.get("edge_probe_enabled", False)))
-    host.balance_refresh_spin = None
-    host.balance_tier_mode_select = None
-    host.balance_tier_peak_edit = None
-    host.balance_tier_idle_edit = None
-    host.balance_tier_color_check = None
-    if host.include_ai:
-        host.balance_refresh_spin = BrowserSpinBox(host)
-        host.balance_refresh_spin.setRange(0, 1440)
-        host.balance_refresh_spin.setSuffix(" 分钟")
-        host.balance_refresh_spin.setValue(int(host.config.get("balance_refresh_minutes", 0) or 0))
-        host.balance_tier_mode_select = ModernSelect(host, width=180)
-        host.balance_tier_mode_select.addItem("空闲 / 高峰（默认）", "default")
-        host.balance_tier_mode_select.addItem("梁文谷 / 梁文峰", "liangwen")
-        host.balance_tier_mode_select.addItem("自定义", "custom")
-        host.balance_tier_mode_select.setCurrentData(
-            str(host.config.get("balance_tier_labels_mode", "default") or "default")
-        )
-        host.balance_tier_peak_edit = QLineEdit(host)
-        host.balance_tier_peak_edit.setPlaceholderText("高峰文本，例如：梁文峰")
-        host.balance_tier_peak_edit.setText(str(host.config.get("balance_tier_label_peak", "") or ""))
-        host.balance_tier_idle_edit = QLineEdit(host)
-        host.balance_tier_idle_edit.setPlaceholderText("空闲文本，例如：梁文谷")
-        host.balance_tier_idle_edit.setText(str(host.config.get("balance_tier_label_idle", "") or ""))
-        host.balance_tier_color_check = ToggleSwitch(host)
-        host.balance_tier_color_check.setChecked(bool(host.config.get("balance_tier_color_enabled", True)))
     host.auto_hide_fullscreen_check = None
     host.stream_capture_check = None
     if sys.platform == "win32":
@@ -375,7 +338,7 @@ def build_pet_controls(host) -> None:
             # overlay 无消费者（不建 PetWindow，壳上无 set_stream_capture_mode）：
             # 置灰 + 如实说明，避免用户以为勾上就能被 OBS 枚举。
             host.stream_capture_check.setEnabled(False)
-            host.stream_capture_check.setToolTip(STREAM_CAPTURE_OVERLAY_HINT)
+            host.stream_capture_check.setToolTip(stream_capture_hint())
 
     host.speed_select = ModernSelect(host, width=112)
     current_speed = float(host.config.get("playback_speed", 1.0))
@@ -390,7 +353,7 @@ def build_pet_controls(host) -> None:
     host.gap_spin.setRange(0.0, 3600.0)
     host.gap_spin.setSingleStep(0.5)
     host.gap_spin.setDecimals(1)
-    host.gap_spin.setSuffix(" 秒")
+    host.gap_spin.setSuffix(t("settings.pet.s"))
     host.gap_spin.setValue(float(host.config.get("animation_gap_seconds", 0.0)))
 
     host.self_talk_check = ToggleSwitch(host)
@@ -401,13 +364,15 @@ def build_pet_controls(host) -> None:
     host.self_talk_duration_spin.setRange(1.0, 300.0)
     host.self_talk_duration_spin.setSingleStep(0.5)
     host.self_talk_duration_spin.setDecimals(1)
-    host.self_talk_duration_spin.setSuffix(" 秒")
+    host.self_talk_duration_spin.setSuffix(t("settings.pet.s"))
     host.self_talk_duration_spin.setValue(float(host.config.get(
         "self_talk_duration_seconds", DEFAULT_SELF_TALK_DURATION_SECONDS
     )))
     host.bubble_style_select = ModernSelect(host, width=172)
     for value, preset in BUBBLE_STYLE_PRESETS.items():
-        host.bubble_style_select.addItem(str(preset["label"]), value)
+        # 显示名跟随界面语言；预设表里的中文是 zh 原文
+        label = maybe_t(f"settings.pet.bubble_{value}")
+        host.bubble_style_select.addItem(str(preset["label"]) if label.startswith("settings.") else label, value)
     host.bubble_style_select.setCurrentData(
         str(host.config.get("self_talk_bubble_style", DEFAULT_SELF_TALK_BUBBLE_STYLE))
     )
@@ -419,7 +384,7 @@ def build_pet_controls(host) -> None:
     ):
         spin.setRange(5.0, 3600.0)
         spin.setDecimals(0)
-        spin.setSuffix(" 秒")
+        spin.setSuffix(t("settings.pet.s"))
         spin.setValue(float(value))
     host.texts_edit = QPlainTextEdit(host)
     host.texts_edit.setMinimumSize(240, 82)
@@ -439,7 +404,7 @@ def build_pet_controls(host) -> None:
     host.self_talk_image_max_edge_spin = BrowserSpinBox(host)
     host.self_talk_image_max_edge_spin.setRange(SELF_TALK_IMAGE_MAX_EDGE_MIN, SELF_TALK_IMAGE_MAX_EDGE_MAX)
     host.self_talk_image_max_edge_spin.setSingleStep(20)
-    host.self_talk_image_max_edge_spin.setSuffix(" 像素")
+    host.self_talk_image_max_edge_spin.setSuffix(t("settings.pet.px"))
     host.self_talk_image_max_edge_spin.setValue(clamp_image_max_edge(host.config.get("self_talk_image_max_edge")))
     host.self_talk_image_chance_spin = BrowserSpinBox(host)
     host.self_talk_image_chance_spin.setRange(0, 100)
@@ -452,7 +417,7 @@ def build_pet_controls(host) -> None:
     host.bubble_text_scale_spin.setRange(50, 300)
     host.bubble_text_scale_spin.setSuffix(" %")
     host.bubble_text_scale_spin.setValue(int(host.config.get("bubble_text_scale", 100)))
-    host.click_talk_bindings_btn = QPushButton("编辑…", host)
+    host.click_talk_bindings_btn = TiltButton(t("settings.pet.edit"), host)
     host.click_talk_bindings_btn.setObjectName("clickTalkBindingsButton")
     host.click_talk_bindings_btn.clicked.connect(host._open_click_talk_bindings)
 
@@ -460,7 +425,7 @@ def build_pet_controls(host) -> None:
     agent_link_cfg = host.config.get("agent_link", {})
 
     host.dialogue_mode_select = ModernSelect(host, width=190)
-    for label, value in (("默认模式", "legacy"), ("鲸鱼娘女仆模式", "whale_maid"), ("自定义台词", "custom")):
+    for label, value in ((t("settings.pet.default"), "legacy"), (t("settings.pet.whale_maid"), "whale_maid"), (t("settings.pet.custom_lines"), "custom")):
         host.dialogue_mode_select.addItem(label, value)
     host.dialogue_mode_select.setCurrentData(str(host.config.get("dialogue_mode", "legacy") or "legacy"))
     # 统一预设：global 层是编辑区默认面（flat 旧结构 = global；双层取 global）
@@ -478,14 +443,14 @@ def build_pet_controls(host) -> None:
 
     # 逐 Agent 覆盖层（delta）编辑缓冲：scope（""=global / agent_key）→ {事件: 文本}
     host.dialogue_scope_select = ModernSelect(host, width=190)
-    host.dialogue_scope_select.addItem("默认（全局文案）", "")
+    host.dialogue_scope_select.addItem(t("settings.pet.default_global_lines"), "")
     for agent_key, agent_name in AgentLinkManager.AGENT_NAMES.items():
-        host.dialogue_scope_select.addItem(f"{agent_name} 专属文案", agent_key)
+        host.dialogue_scope_select.addItem(t("settings.pet.lines_agent_name", agent_name=agent_name), agent_key)
     # 自定义 Agent 也支持专属层（跟随 agent_link.custom_agents）
     for item in (agent_link_cfg.get("custom_agents") or []):
         if isinstance(item, dict) and str(item.get("key") or "").strip():
             host.dialogue_scope_select.addItem(
-                f"{str(item.get('name') or item.get('key'))} 专属文案", str(item["key"]).strip())
+                t("settings.pet.lines_v", v=str(item.get('name') or item.get('key'))), str(item["key"]).strip())
     # 记住并恢复上次编辑层（设置页保存时写 dialogue_last_scope；未知值回落全局）
     initial_scope = str(host.config.get("dialogue_last_scope", "") or "")
     if host.dialogue_scope_select.findData(initial_scope) < 0:
@@ -505,9 +470,9 @@ def build_pet_controls(host) -> None:
         edit.setMaximumHeight(120)
         hint = dialogue_params_hint(key)
         if hint:
-            placeholder = "留空使用基础模式台词；本事件支持：" + hint
+            placeholder = t("settings.pet.leave_blank_use_base_style") + hint
         else:
-            placeholder = "留空使用基础模式台词；本事件无可替换参数"
+            placeholder = t("settings.pet.leave_blank_use_base_style_2")
         edit.setPlaceholderText(placeholder)
         host.dialogue_phrase_edits[key] = edit
 
@@ -527,18 +492,26 @@ def build_pet_controls(host) -> None:
         # 恢复上次编辑层：把该层缓冲载入编辑框（行可见性等对话框建完行后再收敛）
         _load_dialogue_scope_into_editors(host, host._dialogue_scope)
     host.dialogue_scope_select.currentIndexChanged.connect(host._on_dialogue_scope_changed)
+    # 内置模式不是黑箱（用户 2026-10-18）：选「默认 / 鲸鱼娘」时下方逐事件编辑框只读地显示那套台词；
+    # 「改成我的台词」把它整套复制进自定义台词再切到自定义模式，之后随便改。预览期间不动自定义缓冲。
+    host._dialogue_preview = False
+    host.dialogue_adopt_btn = TiltButton(t("settings.pet.adopt_builtin"), host)
+    host.dialogue_adopt_btn.setObjectName("dialogueAdoptButton")
+    host.dialogue_adopt_btn.setAccessibleDescription(t("settings.pet.adopt_builtin_hint"))
+    host.dialogue_adopt_btn.clicked.connect(lambda: _adopt_builtin_phrases(host))
+    host.dialogue_mode_select.currentIndexChanged.connect(lambda _index: _apply_dialogue_mode_view(host))
 
     host.dialogue_template_import_edit = QPlainTextEdit(host)
     host.dialogue_template_import_edit.setObjectName("dialogueTemplateImportEdit")
     host.dialogue_template_import_edit.setPlaceholderText(
-        "粘贴 persona-phrases/v1 JSON 模板到这里，然后点击“导入模板”"
+        t("settings.pet.paste_persona_phrases_v1_json")
     )
     host.dialogue_template_import_edit.setMinimumHeight(92)
     host.dialogue_template_import_edit.setMaximumHeight(180)
-    host.dialogue_template_export_btn = QPushButton("一键复制模板", host)
+    host.dialogue_template_export_btn = TiltButton(t("settings.pet.copy_template"), host)
     host.dialogue_template_export_btn.setObjectName("dialogueTemplateExportButton")
     host.dialogue_template_export_btn.clicked.connect(host._export_dialogue_template)
-    host.dialogue_template_import_btn = QPushButton("导入模板", host)
+    host.dialogue_template_import_btn = TiltButton(t("settings.pet.import_template"), host)
     host.dialogue_template_import_btn.setObjectName("dialogueTemplateImportButton")
     host.dialogue_template_import_btn.clicked.connect(host._import_dialogue_template_json)
     host.dialogue_template_actions = QWidget(host)
@@ -560,9 +533,9 @@ def build_pet_controls(host) -> None:
         toggle.setChecked(bool(agent_link_cfg.get(f"sound_{evt_key}_enabled", True)))
         path_val = str(agent_link_cfg.get(f"sound_{evt_key}_path") or default_builtin)
         picker = ResourcePathPicker(path_val, name_filter=AUDIO_NAME_FILTER, parent=host)
-        preview_btn = QPushButton("试听", host)
+        preview_btn = TiltButton(t("settings.pet.preview"), host)
         preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
-        preview_btn.setFixedWidth(72)
+        preview_btn.setMinimumWidth(72)
         preview_btn.clicked.connect(lambda _, k=evt_key: host._preview_agent_sound(k))
         container = ResponsiveToggleActionRow(toggle, picker, preview_btn, host)
         return container, toggle, picker, preview_btn
@@ -586,7 +559,7 @@ def build_pet_controls(host) -> None:
     host.agent_sound_cooldown_spin.setRange(0.0, 30.0)
     host.agent_sound_cooldown_spin.setSingleStep(0.5)
     host.agent_sound_cooldown_spin.setDecimals(1)
-    host.agent_sound_cooldown_spin.setSuffix(" 秒")
+    host.agent_sound_cooldown_spin.setSuffix(t("settings.pet.s"))
     host.agent_sound_cooldown_spin.setValue(float(agent_link_cfg.get("sound_cooldown_seconds", 2.0)))
 
     host.agent_sound_check.toggled.connect(host._update_agent_sound_controls)
@@ -600,16 +573,16 @@ def build_pet_controls(host) -> None:
     host.todo_reminder_check.setChecked(bool(host.config.get("todo_reminder_enabled", True)))
     host.todo_reminder_lead_spin = BrowserSpinBox(host)
     host.todo_reminder_lead_spin.setRange(0, 60)
-    host.todo_reminder_lead_spin.setSuffix(" 分钟")
+    host.todo_reminder_lead_spin.setSuffix(t("settings.pet.min"))
     host.todo_reminder_lead_spin.setValue(int(host.config.get("todo_reminder_lead_minutes", 5) or 0))
 
     appearance = host.config.get("context_menu_appearance", DEFAULT_CONTEXT_MENU_APPEARANCE)
     host.menu_theme_select = ModernSelect(host, width=132)
-    for label, value in (("跟随系统", "system"), ("浅色", "light"), ("深色", "dark")):
+    for label, value in ((t("settings.pet.follow_system"), "system"), (t("settings.pet.light"), "light"), (t("settings.pet.dark"), "dark")):
         host.menu_theme_select.addItem(label, value)
     host.menu_theme_select.setCurrentData(appearance.get("theme", "system"))
     host.menu_density_select = ModernSelect(host, width=132)
-    for label, value in (("紧凑", "compact"), ("标准", "standard"), ("宽松", "spacious")):
+    for label, value in ((t("settings.pet.compact"), "compact"), (t("settings.pet.standard"), "standard"), (t("settings.pet.spacious"), "spacious")):
         host.menu_density_select.addItem(label, value)
     host.menu_density_select.setCurrentData(appearance.get("density", "standard"))
     host.menu_radius_select = ModernSelect(host, width=112)
@@ -617,7 +590,7 @@ def build_pet_controls(host) -> None:
         host.menu_radius_select.addItem(f"{radius} px", radius)
     host.menu_radius_select.setCurrentData(int(appearance.get("corner_radius", 12)))
     host.menu_font_select = ModernSelect(host, width=172)
-    host.menu_font_select.addItem("系统默认", "system")
+    host.menu_font_select.addItem(t("settings.pet.system_default"), "system")
     host._menu_fonts_populated = False
     current_font = str(appearance.get("ui_font") or "system")
     if current_font != "system":
@@ -693,9 +666,9 @@ def _update_island_icon_controls(host, enabled: bool) -> None:
 
 
 def build_island_card_source_select(host, island_cfg: dict):
-    """灵动岛「卡片内容」下拉：自动 / DeepSeek 余额 / Claude Code 会话。"""
+    """灵动岛「卡片内容」下拉：自动 / Claude Code 会话（余额项 2026-10-14 下线，值 balance 仍认但不再可选）。"""
     select = ModernSelect(host, width=160)
-    for label, value in (("自动", "auto"), ("DeepSeek 余额", "balance"), ("Claude Code 会话", "claude")):
+    for label, value in ((t("settings.pet.auto"), "auto"), (t("settings.pet.claude_code_sessions"), "claude")):
         select.addItem(label, value)
     select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
     return select
@@ -724,6 +697,8 @@ def _dialogue_flush_scope(host, scope: str | None = None) -> None:
     """
     if not hasattr(host, "dialogue_scope_select") or not hasattr(host, "dialogue_phrase_edits"):
         return
+    if getattr(host, "_dialogue_preview", False):
+        return  # 编辑框里是内置模式的只读预览，不是用户的自定义台词，不能写回缓冲
     scope = host._dialogue_scope if scope is None else scope
     host._dialogue_scope_buffer[str(scope)] = {
         key: edit.toPlainText() for key, edit in host.dialogue_phrase_edits.items()
@@ -757,6 +732,71 @@ def _apply_dialogue_scope_rows(host) -> None:
             row.setVisible(False)
 
 
+def _builtin_lines_text(mode: str) -> dict[str, str]:
+    """某内置模式每个事件的台词，一行一条（给只读预览与「改成我的」用）。"""
+    return {key: "\n".join(lines) for key, lines in builtin_phrases(mode).items()}
+
+
+def _apply_dialogue_mode_view(host) -> None:
+    """表达风格变了：内置模式 → 编辑框只读地显示那套台词；自定义 → 恢复用户的台词、可编辑。"""
+    if not hasattr(host, "dialogue_phrase_edits") or not hasattr(host, "dialogue_mode_select"):
+        return
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    preview = mode != "custom"
+    box = getattr(host, "dialogue_phrases_box", None)
+    if preview:
+        if not host._dialogue_preview:
+            _dialogue_flush_scope(host)          # 先把用户在自定义模式下打的字收进缓冲
+            host._dialogue_preview = True
+        lines = _builtin_lines_text(mode)
+        for key, edit in host.dialogue_phrase_edits.items():
+            edit.setPlainText(lines.get(key, ""))
+            edit.setReadOnly(True)
+        host.dialogue_scope_select.setEnabled(False)
+        host.dialogue_adopt_btn.setVisible(True)
+        host.dialogue_adopt_btn.setText(t("settings.pet.adopt_builtin_named", mode=host.dialogue_mode_select.currentText()))
+        if box is not None:
+            box.toggle.setText(t("settings.dlg.builtin_lines_readonly", mode=host.dialogue_mode_select.currentText()))
+    else:
+        if host._dialogue_preview:
+            host._dialogue_preview = False
+            _load_dialogue_scope_into_editors(host, str(getattr(host, "_dialogue_scope", "") or ""))
+        for edit in host.dialogue_phrase_edits.values():
+            edit.setReadOnly(False)
+        host.dialogue_scope_select.setEnabled(True)
+        host.dialogue_adopt_btn.setVisible(False)
+        if box is not None:
+            box.toggle.setText(t("settings.dlg.custom_lines_per_event"))
+    if box is not None:
+        box._sync_accessible_name()
+
+
+def _confirm_adopt(host, mode_name: str) -> bool:
+    answer = QMessageBox.question(host, t("settings.pet.adopt_confirm_title"),
+                                  t("settings.pet.adopt_confirm_text", mode=mode_name))
+    return answer == QMessageBox.StandardButton.Yes
+
+
+def _adopt_builtin_phrases(host, confirm=None) -> bool:
+    """把当前内置模式的台词整套复制进自定义台词（global 层），切到自定义模式，解锁编辑。"""
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    if mode == "custom":
+        return False
+    mode_name = host.dialogue_mode_select.currentText()
+    existing = host._dialogue_scope_buffer.get("") or {}
+    if any(str(text or "").strip() for text in existing.values()):
+        if not (confirm or _confirm_adopt)(host, mode_name):
+            return False
+    host._dialogue_scope_buffer[""] = _builtin_lines_text(mode)
+    host._dialogue_scope = ""
+    host.dialogue_scope_select.setCurrentData("")
+    host.dialogue_mode_select.setCurrentData("custom")      # 触发 _apply_dialogue_mode_view：载入缓冲、可编辑
+    box = getattr(host, "dialogue_phrases_box", None)
+    if box is not None:
+        box.set_expanded(True)
+    return True
+
+
 def _on_dialogue_scope_changed(host, index: int) -> None:
     """切换 global/某 Agent 专属文案编辑层：flush 当前层后载入目标层内容。"""
     if not hasattr(host, "dialogue_scope_select"):
@@ -783,19 +823,21 @@ def _dialogue_phrase_values(host) -> dict[str, list[str]]:
 
 
 def _current_dialogue_template(host) -> dict:
-    # 导出 = 纯字段参考模板：phrases 一律留空（不携带当前已配置的台词），
-    # 供 AI 依角色卡从零撰写；当前台词如需备份请直接复制编辑框内容。
-    # agents：为「全部 Agent（含自定义）」各生成一层事件脚手架（值空 = 沿用
-    # global/内置），让 AI 能逐个 Agent 单独配台词。
+    # 导出 = 字段参考模板 + **当前显示的台词**（内置模式就是那套内置台词，自定义就是用户的 global 层）：
+    # 既能当备份，也能直接交给 AI 依角色卡改写（用户 2026-10-18：内置模式不能是黑箱）。
+    # agents：为「全部 Agent（含自定义）」各生成一层事件脚手架（值空 = 沿用 global/内置）。
     agent_keys = [
         str(host.dialogue_scope_select.itemData(index) or "")
         for index in range(host.dialogue_scope_select.count())
     ]
     agent_keys = [key for key in agent_keys if key]
-    return build_persona_template({
-        "dialogue_mode": host.dialogue_mode_select.currentData() or "legacy",
-        "dialogue_phrases": {},
-    }, agent_keys=agent_keys or None)
+    mode = str(host.dialogue_mode_select.currentData() or "legacy")
+    if getattr(host, "_dialogue_preview", False):
+        phrases: dict = {key: list(lines) for key, lines in builtin_phrases(mode).items()}
+    else:
+        _dialogue_flush_scope(host)
+        phrases = _dialogue_scope_values(host, "")
+    return build_persona_template({"dialogue_mode": mode, "dialogue_phrases": phrases}, agent_keys=agent_keys or None)
 
 
 def _export_dialogue_template(host) -> None:
@@ -803,15 +845,14 @@ def _export_dialogue_template(host) -> None:
     try:
         clipboard = QApplication.clipboard()
         if clipboard is None:
-            raise RuntimeError("系统剪贴板不可用")
+            raise RuntimeError(t("settings.pet.system_clipboard_unavailable"))
         clipboard.setText(json.dumps(_current_dialogue_template(host), ensure_ascii=False, indent=2) + "\n")
     except Exception as exc:
-        QMessageBox.warning(host, "导出失败", f"无法写入系统剪贴板：{exc}")
+        QMessageBox.warning(host, t("settings.pet.export_failed"), t("settings.pet.couldn_t_write_system_clipboard", exc=exc))
         return
     QMessageBox.information(
-        host, "导出成功",
-        "模板已复制到剪贴板：可直接粘贴给 AI 依角色卡改写，"
-        "或粘贴回「导入模板」输入框一键导回。",
+        host, t("settings.pet.exported"),
+        t("settings.pet.template_copied_clipboard_paste_ai"),
     )
 
 
@@ -819,23 +860,25 @@ def _import_dialogue_template_json(host) -> None:
     """Import a complete persona template from the inline JSON editor."""
     raw = host.dialogue_template_import_edit.toPlainText().strip()
     if not raw:
-        QMessageBox.warning(host, "导入失败", "请先粘贴 JSON 模板。")
+        QMessageBox.warning(host, t("settings.pet.import_failed"), t("settings.pet.paste_json_template_first"))
         return
     try:
         document = json.loads(raw)
         if not isinstance(document, dict):
-            raise ValueError("模板根节点必须是 JSON 对象")
+            raise ValueError(t("settings.pet.template_root_must_json_object"))
         template_name = str(document.get("template", "") or "")
         if template_name and not template_name.startswith("persona-phrases/"):
-            raise ValueError("不是兼容的 persona-phrases 模板")
+            raise ValueError(t("settings.pet.not_compatible_persona_phrases_template"))
         phrases = document.get("phrases")
         if not isinstance(phrases, dict):
             phrases = document.get("dialogue_phrases")
         if not isinstance(phrases, dict):
-            raise ValueError("模板缺少 phrases 对象")
+            raise ValueError(t("settings.pet.template_has_no_phrases_object"))
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
-        QMessageBox.warning(host, "导入失败", f"JSON 模板无效：{exc}")
+        QMessageBox.warning(host, t("settings.pet.import_failed"), t("settings.pet.invalid_json_template_exc", exc=exc))
         return
+    # 先切到自定义模式：内置模式下编辑框是只读预览，写进去的会在切换时被缓冲覆盖
+    host.dialogue_mode_select.setCurrentData("custom")
     for key, edit in host.dialogue_phrase_edits.items():
         value = phrases.get(key, "")
         if isinstance(value, list):
@@ -864,7 +907,6 @@ def _import_dialogue_template_json(host) -> None:
                 text = "\n".join(str(item) for item in value if isinstance(item, str) and item.strip())
                 if text:
                     edit.setPlainText(text)
-    host.dialogue_mode_select.setCurrentData("custom")
     # agents delta（整体导入）：写入 scope buffer，供切换专属层编辑
     _dialogue_flush_scope(host)
     raw_agents = document.get("agents")
@@ -877,4 +919,4 @@ def _import_dialogue_template_json(host) -> None:
                 for k, v in agent_events.items()
             }
     host.dialogue_template_import_edit.clear()
-    QMessageBox.information(host, "导入成功", "已导入全部弹窗内容模板；点击“保存并退出”后生效。")
+    QMessageBox.information(host, t("settings.pet.imported"), t("settings.pet.every_bubble_text_template_has"))

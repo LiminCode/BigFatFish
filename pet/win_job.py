@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Windows Job Object：ffmpeg 子进程随桌宠进程一起死（含被强杀）。
+"""Windows Job Object：ffmpeg 子进程随肥鱼进程一起死（含被强杀）。
 
-问题（2026-09-17 实机定案）：桌宠进程被 ``Stop-Process`` / 任务管理器结束
+问题（2026-09-17 实机定案）：肥鱼进程被 ``Stop-Process`` / 任务管理器结束
 （= ``TerminateProcess``，父进程不执行任何清理代码）后，imageio-ffmpeg 拉起的
 ``ffmpeg-win-x86_64`` 子进程不会退出——实测残留一个 62MB 的常驻进程，每次强杀
 / 崩溃留一个（正常退出路径由 reader finally 的 terminate 收口，不受影响）。
@@ -15,8 +15,8 @@
 实现要点：
 - **模块级单例 job，绝不 CloseHandle**：关掉自己的句柄就等于触发杀子；句柄
   由内核在进程退出时回收，那正是我们想要的触发点。
-- **只挂 ffmpeg，不挂桌宠自身**：把当前进程挂进 job 会连带杀掉
-  「父桌宠退出后继续运行」的子进程（历史多进程多宠层的要求），也无谓
+- **只挂 ffmpeg，不挂肥鱼自身**：把当前进程挂进 job 会连带杀掉
+  「父肥鱼退出后继续运行」的子进程（历史多进程多宠层的要求），也无谓
   波及 node/pnpm 等由 agent_link 管理的会话进程。只对 imageio-ffmpeg 的 Popen
   唯一漏斗（``webm_clip._PopenCapture._wrapped``）拉起的子进程逐个 Assign。
 - **挂早不挂晚**：Popen 返回后立即 Assign（进程刚创建，几乎不可能已退出）；
@@ -144,7 +144,7 @@ def _ensure_job():
             _configure_failed = True
             logger.warning(
                 'ffmpeg 孤儿防护不可用（Job Object 创建失败：%s）——'
-                '强杀桌宠时残留的 ffmpeg 子进程不会被内核回收', exc,
+                '强杀肥鱼时残留的 ffmpeg 子进程不会被内核回收', exc,
             )
     return _job_handle
 

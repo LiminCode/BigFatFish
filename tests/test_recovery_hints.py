@@ -2,7 +2,7 @@
 """“小白找不回来”开关的恢复提示回归测试（issue #74）。
 
 覆盖两类危险方向：
-- 开启「鼠标穿透」后桌宠不可点击 → 应在开启瞬间提示去托盘/设置里恢复；
+- 开启「鼠标穿透」后肥鱼不可点击 → 应在开启瞬间提示去托盘/设置里恢复；
 - macOS 关闭「显示 Dock 图标」后 Dock 入口消失 → 应提示去菜单栏托盘图标恢复。
 """
 from __future__ import annotations
@@ -94,7 +94,7 @@ def test_enabling_mouse_through_hint_suppressed_when_hidden_or_suppressed(tmp_pa
         monkeypatch.setattr(win, "isVisible", lambda: False)
         win.set_mouse_through(False)
         win.set_mouse_through(True)
-        assert hints == [], "桌宠隐藏时不应尝试在不可见窗口上弹提示"
+        assert hints == [], "肥鱼隐藏时不应尝试在不可见窗口上弹提示"
     finally:
         win.close()
         win.deleteLater()

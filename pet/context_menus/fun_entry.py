@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QMessageBox, QWidget, 
 
 from ..fun_image_popup import oijingjing_image_path, open_ojingjing_window, resolve_fun_asset
 from .shared import defer_menu_callback
+from ..i18n import t
 
 
 def _circle_photo(path: Path, size: int, dpr: float) -> QPixmap:
@@ -213,7 +214,7 @@ class OjingjingMenuEntry(QWidget):
                 open_ojingjing_window(config)
             except Exception as exc:
                 logging.exception("打开彩蛋图片窗口失败")
-                QMessageBox.warning(None, "彩蛋图片不可用", str(exc))
+                QMessageBox.warning(None, t("menu.fun_entry.easter_egg_image_unavailable"), str(exc))
 
         # macOS 的原生 NSMenu 跟踪循环退出前不能可靠创建顶层窗口。
         # 与聊天、设置、退出动作一样，等 QMenu.exec() 返回后再执行。

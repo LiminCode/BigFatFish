@@ -3,7 +3,7 @@
 模型访问失败 = 上游服务端限流/过载类错误（真实状态码作为数据字面量匹配，
 不体现在命名上），以及上游响应连接/超时类故障（TIMEOUT/ETIMEDOUT/连接断等）。
 识别口径与 bridge 端 ``isModelAccessError`` 保持一致（两端同仓同版本发布），
-保证桌宠侧按 session 统计的连续计数兜底与桥端写出的 model_access 事件对齐。"""
+保证肥鱼侧按 session 统计的连续计数兜底与桥端写出的 model_access 事件对齐。"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any

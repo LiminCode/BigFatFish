@@ -115,33 +115,6 @@ def _import_winrt():
     return _Manager
 
 
-def player_process_running(exe_name: str) -> bool:
-    """指定可执行名的进程是否在跑。纯进程扫描，不碰 WinRT。
-
-    按调用方传入的 exe 名精确匹配，**不维护播放器白名单**——白名单会把
-    名单外的播放器（如 LX Music）静默挡掉。
-    扫描失败时返回 True（不拦截），宁可多试一次也不误伤。
-    """
-    wanted = str(exe_name or "").strip().lower()
-    if not wanted:
-        return False
-    try:
-        import psutil
-    except Exception:
-        return True
-    try:
-        for proc in psutil.process_iter(["name"]):
-            try:
-                name = str(proc.info.get("name") or "").lower()
-            except Exception:
-                continue
-            if name == wanted:
-                return True
-    except Exception:
-        return True
-    return False
-
-
 def _session_status(session) -> int | None:
     """读会话的播放状态；读不到返回 ``None``（不抛，视作未知）。"""
     try:
@@ -286,7 +259,7 @@ async def _pick_playing_session(manager, tracked_app_id: str | None = None):
     2. 否则取正在播的会话（多个时按会话枚举顺序取第一个）。
     3. 全都没在播 → **留在当前跟踪的会话上**。旧实现直接退回
        ``sessions[0]``，实测那条正是 Chrome（浏览器标签页），于是用户暂停
-       网易云的瞬间，桌宠就跳到浏览器里那首歌上去了。
+       网易云的瞬间，肥鱼就跳到浏览器里那首歌上去了。
     4. 没有跟踪对象也无人在播 → 退回第一个（保持旧兼容行为）。
 
     **这是传输控制的选择器，语义与唱歌链路刻意隔离**：用户在看视频时点
@@ -516,32 +489,6 @@ def toggle_play_pause() -> bool:
         return False
 
 
-async def _play_session_async(exe_name: str) -> bool:
-    manager_cls = _import_winrt()
-    if manager_cls is None:
-        return False
-    # 该播放器进程不在就直接放弃：既省掉一次可能永久阻塞的调用，
-    # 也让调用方可以据此判断"需要先启动它"。
-    if not player_process_running(exe_name):
-        return False
-    manager = await manager_cls.request_async()
-    wanted = str(exe_name or "").strip().lower()
-    for session in manager.get_sessions():
-        if wanted and wanted in str(session.source_app_user_model_id).lower():
-            return bool(await session.try_play_async())
-    return False
-
-
-def play_session_for(exe_name: str) -> bool:
-    """让指定播放器开始播放；找不到它的会话时返回 False。"""
-    if sys.platform != "win32":
-        return False
-    try:
-        return asyncio.run(_play_session_async(exe_name))
-    except Exception:
-        return False
-
-
 def get_now_playing(
     tracked_app_id: str | None = None, *, allow_browser: bool = True
 ) -> Playback | None:
@@ -555,7 +502,7 @@ def get_now_playing(
     上报成音乐类型，类型过滤挡不住它，只能按会话来源否决。默认 ``True`` 保持
     旧行为（采样层不替调用方做策略决定，由持有配置的调用方显式传入）。
 
-    本函数绝不抛异常——歌词只是锦上添花，不能因为第三方接口异常影响桌宠本体。
+    本函数绝不抛异常——歌词只是锦上添花，不能因为第三方接口异常影响肥鱼本体。
     """
     if sys.platform != "win32":
         return None

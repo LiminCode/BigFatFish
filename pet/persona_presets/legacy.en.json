@@ -1,0 +1,152 @@
+{
+  "activity.default": [
+    "{name} is working on {label} in session {sessionName}.",
+    "In session {sessionName}, {name} is using {tool} for the current step.",
+    "{name} is at step {step} in session {sessionName}; please wait."
+  ],
+  "activity.edit": [
+    "{name} is editing {label} in session {sessionName}.",
+    "In session {sessionName}, {name} is changing content with {tool}.",
+    "{name} is at step {step} in session {sessionName}; editing is still in progress."
+  ],
+  "activity.read": [
+    "{name} is reading {label} in session {sessionName}.",
+    "In session {sessionName}, {name} is looking things up with {tool}.",
+    "{name} is at step {step} in session {sessionName}, reading what it needs."
+  ],
+  "activity.run": [
+    "{name} is running {label} in session {sessionName}.",
+    "In session {sessionName}, {name} has started executing with {tool}.",
+    "{name} is at step {step} in session {sessionName}; the task is still running."
+  ],
+  "activity.search": [
+    "{name} is searching for {label} in session {sessionName}.",
+    "In session {sessionName}, {name} is looking for information with {tool}.",
+    "{name} is at step {step} in session {sessionName}; the search is still in progress."
+  ],
+  "agent.attention": [
+    "{name} needs your confirmation.",
+    "{name} has paused and is waiting for you.",
+    "{name} needs a human to confirm before it can continue."
+  ],
+  "agent.error": [
+    "{name} hit an error while running; please take a look.",
+    "{name} ran into a problem and may need your help.",
+    "{name} is in an error state and cannot continue."
+  ],
+  "agent.missing": [
+    "{name} was not detected for now.",
+    "{name} is not detected on this machine.",
+    "No installation of {name} was found; please check."
+  ],
+  "approval.generic": [
+    "In session {sessionName}, {name} has an action waiting for your approval.",
+    "{name} is waiting for you to confirm {label} in session {sessionName}.",
+    "Please confirm whether {name} in session {sessionName} may continue."
+  ],
+  "approval.tool": [
+    "In session {sessionName}, {name} asks to use the tool {toolName}.",
+    "Please confirm whether {name} in session {sessionName} may run {label}.",
+    "{name} is waiting in session {sessionName} for approval to use {toolName}."
+  ],
+  "balance.loading": [
+    "Checking the balance, one moment.",
+    "Fetching the current balance.",
+    "Balance lookup in progress."
+  ],
+  "balance.result": [
+    "Current balance: {text}",
+    "Balance lookup done: {text}",
+    "Balance received: {text}"
+  ],
+  "bridge.install.failed": [
+    "The bridge for {name} failed to install: {detail}",
+    "Something went wrong connecting {name}: {detail}",
+    "The bridge component for {name} did not install; please check: {detail}"
+  ],
+  "bridge.install.pending": [
+    "Installing the bridge for {name}.",
+    "Connecting {name}, one moment.",
+    "The bridge component for {name} is being installed."
+  ],
+  "bridge.install.success": [
+    "The bridge for {name} is installed.",
+    "{name} is bridged successfully.",
+    "The bridge component for {name} is ready."
+  ],
+  "bridge.uninstall.failed": [
+    "The bridge for {name} was not fully removed.",
+    "Leftovers of the {name} bridge remain; please check.",
+    "Uninstalling the {name} bridge did not finish completely."
+  ],
+  "bridge.unknown": [
+    "Unknown bridge event ({event}); the bridge may need an update or reinstall.",
+    "The bridge sent an event I don't recognise ({event}); please update or reinstall the bridge plugin.",
+    "The bridge wrote an event “{event}” this version doesn't know; update or reinstall the bridge."
+  ],
+  "done.attention": [
+    "{name} has stopped; please confirm the result.",
+    "{name} paused this round and is waiting for your review.",
+    "{name} finished this stage; please check and confirm the result."
+  ],
+  "done.success": [
+    "{name} finished this round.",
+    "{name} is done; the result is ready to look at.",
+    "{name} completed the current task."
+  ],
+  "failure.generic": [
+    "In session {sessionName}, this round of {name} failed; failure type: {failureType}.",
+    "{name} failed in session {sessionName}; error code {errorCode}: {errorMessage}",
+    "{name} in session {sessionName} retried {retries} times; retries exhausted: {retryExhausted}."
+  ],
+  "failure.retry": [
+    "In session {sessionName}, {name} still failed after several retries.",
+    "{name} in session {sessionName} retried {retries} times; error code {errorCode}.",
+    "{name} in session {sessionName} still fails after retrying: {errorMessage}; failure type: {failureType}."
+  ],
+  "failure.tool": [
+    "In session {sessionName}, a tool run by {name} failed.",
+    "{name} hit an error calling a tool in session {sessionName}: {errorMessage}",
+    "A tool run by {name} in session {sessionName} failed; failure type: {failureType}, error code {errorCode}."
+  ],
+  "llm_error.api": [
+    "The AI service is having trouble right now.",
+    "The model request failed; please try again later.",
+    "The AI service isn't responding; check the network or the service status."
+  ],
+  "model_access.many": [
+    "Model access in session {sessionName} has failed {count} times in a row; please try again later.",
+    "Session {sessionName} has {consecutiveRetryCount} consecutive model access failures; error code {errorCode}.",
+    "Model access attempt {retry} in session {sessionName} still failed: {errorMessage}"
+  ],
+  "model_access.one": [
+    "This model access in session {sessionName} failed; please try again later.",
+    "Model access in session {sessionName} didn't go through; error code {errorCode}.",
+    "Model access attempt {retry} in session {sessionName} failed: {errorMessage}"
+  ],
+  "question.empty": [
+    "In session {sessionName}, {name} is waiting for your choice.",
+    "{name} has a {label} in session {sessionName} that needs your confirmation.",
+    "{name} in session {sessionName} is waiting for you to pick an option."
+  ],
+  "question.many": [
+    "In session {sessionName}, {name} has {count} questions waiting for answers.",
+    "{name} has {count} questions for you to confirm in session {sessionName}.",
+    "{name} in session {sessionName} is waiting for you to handle these {count} questions."
+  ],
+  "question.one": [
+    "In session {sessionName}, {name} asks: {body}",
+    "{name} has a question for you to decide in session {sessionName}: {body}",
+    "Please answer the question from {name} in session {sessionName}: {body}"
+  ],
+  "start": [
+    "{name} has started the task.",
+    "{name} is getting to work; please wait.",
+    "{name} has entered this round of execution."
+  ],
+  "thinking": [
+    "{name} is thinking.",
+    "{name} is analysing the current task.",
+    "{name} is still working on it; please wait."
+  ]
+}

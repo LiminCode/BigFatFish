@@ -89,153 +89,6 @@ def test_bubble_text_scale_row_persists(tmp_path, monkeypatch):
     assert Config(tmp_path).get("bubble_text_scale") == 180
 
 
-def test_harness_autostart_toggle_persisted(tmp_path, monkeypatch):
-    """「随桌宠启动 dsh 服务」开关：默认关，开启后保存并持久化。"""
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    config = Config(tmp_path)
-    assert config.get("harness_autostart") is False
-
-    dialog = settings_mod.ModernSettingsDialog(config, include_ai=True)
-    assert dialog.harness_autostart_check.isChecked() is False
-    dialog.harness_autostart_check.setChecked(True)
-    assert dialog._write_config() is True
-    assert Config(tmp_path).get("harness_autostart") is True
-    dialog.close()
-    app.processEvents()
-
-
-def test_harness_autostart_hint_has_no_markdown_and_names_the_real_stop_gate(tmp_path, monkeypatch):
-    """开关说明：不得含字面 Markdown，并如实写全自启门与收口的启动窗口例外。
-
-    实机核对（pet/app.py）：
-    - **自启是三条件合取**（``_harness_autostart_wanted``，:2161-2165）：
-      ``enable_chat`` + 本开关 + **DSH 联动开着**。联动没开时本开关单独是摆设
-      （``test_autostart_gated_off_when_dsh_link_disabled`` 钉住行为），hint 若不写
-      这一条，用户看到的就是「开了却什么都不发生」。
-    - **收口不止「退出 / 关闭 DSH 联动」两条路**：还有 ``pet/app.py:2136-2138`` 的
-      **启动窗口补偿**——刚好在拉起探测期间关掉本项，那一次刚拉起的 web 会被立刻
-      收掉（``test_autostart_stops_immediately_if_gate_flips_after_launch``）。稳态
-      收口与这一次性补偿必须分开写，否则「关闭本项不会停掉已拉起的服务」在最容易
-      被看到的时刻（刚开自启又改主意）就是假话。
-
-    旧文案把 ``**`` 当粗体写进纯文本 hint（原样显示成星号），且缺上面两条事实。
-    """
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=True)
-    row = dialog.findChild(settings_mod.SettingRow, "settingRow_harness_autostart")
-    assert row is not None
-    text = row.hint_label.text()
-    assert "**" not in text, "hint 是纯文本渲染，字面 Markdown 会原样显示成星号"
-    assert "不再自动拉起" in text
-    assert "关闭 DSH 联动" in text, "必须说清已在跑的 web 由谁收口"
-    assert "只会停止" not in text, "不得声称关闭本开关会停掉已拉起的服务"
-    # 自启的必要条件（app.py:2161-2165 的三条件合取）必须写出来
-    assert "同时开着 DSH 联动" in text, "必须写明联动不开则不自启，否则开关像个摆设"
-    # 启动窗口补偿是收口的第三路，必须与稳态收口分开描述
-    assert "例外" in text and "探测期间" in text, (
-        "必须写明「拉起探测期间关掉本项会立刻收掉刚拉起的实例」这一例外"
-    )
-    dialog.close()
-    app.processEvents()
-
-
-def test_readme_harness_autostart_paragraph_matches_the_launch_gates():
-    """README 的「随桌宠启动 dsh 服务」段落与代码同口径（自启门 + 收口例外）。
-
-    同一事实的双处守卫：设置页 hint 由上面那条用例看着，README 段落此前无人看管，
-    于是同一句话在 README 里停在旧口径（缺联动门、缺启动窗口例外）。代码依据同上
-    （``pet/app.py`` :2161-2165 与 :2136-2138）。
-    """
-    from pathlib import Path
-
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    para = next((line for line in readme.splitlines() if "随桌宠启动 dsh 服务" in line), None)
-    assert para is not None, "README 里找不到「随桌宠启动 dsh 服务」段落"
-    assert "DSH 联动" in para
-    assert "不会拉起" in para, "必须写明联动关着时不自启（联动没开时 dsh web 无人消费）"
-    assert "例外" in para and "探测期间" in para, (
-        "必须写明「拉起探测期间关掉开关会立刻收掉刚拉起的实例」这一例外"
-    )
-
-
-def test_harness_target_desktop_disabled_and_never_saved_on_unsupported_platform(tmp_path, monkeypatch):
-    """非 Windows：桌面端目标保留但置灰，且绝不写回 desktop。
-
-    该平台上 ``launch_harness(target="desktop")`` 报 unsupported（web 也不起）：
-    设置页若仍允许选中并保存，用户下一次开自启就是「什么都没发生」，且这句谎话
-    会一直躺在配置里。存量 desktop（比如从 Windows 带过来的配置）必须回落。
-    """
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    monkeypatch.setattr(settings_mod.harness_mod, "DESKTOP_SUPPORTED", False)
-    config = Config(tmp_path)
-    config.set("harness_launch_target", "desktop")  # 存量配置
-
-    dialog = settings_mod.ModernSettingsDialog(config, include_ai=True)
-    select = dialog.harness_launch_target_select
-    desktop_idx = select.findData("desktop")
-    assert desktop_idx >= 0, "项要保留（暂不可用 ≠ 永久不支持），只是置灰"
-    assert select.isItemDisabled(desktop_idx)
-    assert select.currentData() == "auto", "存量 desktop 必须回落到本平台合法的目标"
-
-    select.showPopup()
-    actions = {action.text(): action for action in select._popup.actions()}
-    assert actions["桌面端界面"].isEnabled() is False, "置灰必须落到弹窗项（点不动）"
-    assert actions["dsh web 界面"].isEnabled() is True
-    select._popup.close()
-
-    row = dialog.findChild(settings_mod.SettingRow, "settingRow_harness_launch_target")
-    assert "暂不支持" in row.hint_label.text(), "置灰项必须在说明里给出原因"
-
-    # 程序化硬选 desktop 也存不下去：保存处还有一道门
-    select.setCurrentData("desktop")
-    assert dialog._write_config() is True
-    assert Config(tmp_path).get("harness_launch_target") != "desktop"
-    dialog.close()
-    app.processEvents()
-
-
-def test_harness_target_desktop_selectable_on_supported_platform(tmp_path, monkeypatch):
-    """对照（Windows）：桌面端项可选可存，说明里不出现「暂不支持」（别把门焊死）。"""
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    monkeypatch.setattr(settings_mod.harness_mod, "DESKTOP_SUPPORTED", True)
-
-    dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=True)
-    select = dialog.harness_launch_target_select
-    assert not select.isItemDisabled(select.findData("desktop"))
-    row = dialog.findChild(settings_mod.SettingRow, "settingRow_harness_launch_target")
-    assert "暂不支持" not in row.hint_label.text()
-
-    select.setCurrentData("desktop")
-    assert dialog._write_config() is True
-    assert Config(tmp_path).get("harness_launch_target") == "desktop"
-    dialog.close()
-    app.processEvents()
-
-
 def test_click_sound_path_is_linked_to_enable_toggle_and_persisted(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
 
@@ -322,7 +175,7 @@ def test_click_sound_path_row_sits_directly_below_toggle(tmp_path, monkeypatch):
 
 
 def test_settings_dialog_position_avoids_pet_window(tmp_path, monkeypatch):
-    """设置窗口激活时不应遮挡桌宠：打开时移动到不与桌宠相交的位置。"""
+    """设置窗口激活时不应遮挡肥鱼：打开时移动到不与肥鱼相交的位置。"""
     import pet.modern_settings_dialog as settings_mod
     from PySide6.QtCore import QRect
     from PySide6.QtWidgets import QApplication, QWidget
@@ -711,10 +564,10 @@ def test_windows_ojingjing_children_do_not_intercept_hover():
 
 
 def test_macos_hide_pet_respects_dock_icon_hidden_preference(tmp_path, monkeypatch):
-    """macOS 关闭「显示 Dock 图标」后，隐藏桌宠不得再临时唤回 Dock 图标。
+    """macOS 关闭「显示 Dock 图标」后，隐藏肥鱼不得再临时唤回 Dock 图标。
 
     issue #74：托盘（菜单栏）菜单已承担恢复入口（显示/隐藏、鼠标穿透、
-    桌宠设置），因此隐藏桌宠应尊重用户关闭 Dock 图标的偏好，不再把
+    肥鱼设置），因此隐藏肥鱼应尊重用户关闭 Dock 图标的偏好，不再把
     activation policy 临时改回 Regular，也不写回配置。
     """
     import sys
@@ -794,7 +647,7 @@ def test_linux_settings_has_no_orphan_windows_cursor_passthrough_toggle(tmp_path
 
 
 def test_hide_pet_notifies_and_dock_click_restores(tmp_path, monkeypatch):
-    """用户主动隐藏：弹托盘提示 + macOS 点击 Dock 图标恢复桌宠。"""
+    """用户主动隐藏：弹托盘提示 + macOS 点击 Dock 图标恢复肥鱼。"""
     import sys
 
     from unittest import mock
@@ -819,7 +672,7 @@ def test_hide_pet_notifies_and_dock_click_restores(tmp_path, monkeypatch):
         assert notified, "用户主动隐藏应触发托盘提示回调"
         # 隐藏后 arm Dock 点击恢复监听
         m_sig.connect.assert_called_once()
-        # 点击 Dock 图标 → 应用激活 → 自动恢复桌宠
+        # 点击 Dock 图标 → 应用激活 → 自动恢复肥鱼
         window_mod.PetWindow._restore_on_dock_reactivate(
             win, Qt.ApplicationState.ApplicationActive
         )
@@ -1074,15 +927,19 @@ def test_settings_stylesheet_has_dark_overrides(monkeypatch):
     """深色系统下新版设置必须追加深色覆盖段（白底白字不可读问题）。"""
     from pet.modern_settings_dialog import _settings_stylesheet
 
+    from pet.settings_theme_qss import METRO_TOKENS
+
+    dark, light = METRO_TOKENS["dark"], METRO_TOKENS["light"]
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: True)
     qss = _settings_stylesheet()
-    assert "background: #202024" in qss
-    assert "color: #e4e4e9" in qss
+    assert f"background: {dark['page']}" in qss
+    assert f"color: {dark['text']}" in qss
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: False)
     qss_light = _settings_stylesheet()
-    assert "background: #202024" not in qss_light
-    # 浅色也必须显式给按钮补文字色（防深色 palette 白字）
-    assert "QPushButton { color: #202020; }" in qss_light
+    assert f"background: {dark['page']}" not in qss_light
+    # 浅色也必须显式给按钮补文字色（防深色 palette 白字）：按钮块里有 color
+    button_block = qss_light.split("\nQPushButton {", 1)[1].split("}", 1)[0]
+    assert f"color: {light['text']}" in button_block
 
 
 def test_settings_window_uses_the_explicit_dark_appearance_on_a_light_system(
@@ -1100,7 +957,7 @@ def test_settings_window_uses_the_explicit_dark_appearance_on_a_light_system(
     config.set("context_menu_appearance", {"theme": "dark"})
 
     dialog = settings_mod.ModernSettingsDialog(config, include_ai=False)
-    assert "QDialog { background: #202024" in dialog.styleSheet()
+    assert "background: #1b1b1f" in dialog.styleSheet()       # METRO_TOKENS["dark"]["page"]
 
     dialog.close()
     app.processEvents()
@@ -1118,11 +975,11 @@ def test_settings_window_rethemes_immediately_with_the_appearance_selector(
     monkeypatch.setattr("pet.settings_theme_qss._system_dark", lambda: False)
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=False)
-    assert "QDialog { background: #202024" not in dialog.styleSheet()
+    assert "background: #1b1b1f" not in dialog.styleSheet()
 
     dialog.menu_theme_select.setCurrentData("dark")
     app.processEvents()
-    assert "QDialog { background: #202024" in dialog.styleSheet()
+    assert "background: #1b1b1f" in dialog.styleSheet()
 
     dialog.menu_theme_select.setCurrentData("light")
     app.processEvents()
@@ -1133,10 +990,10 @@ def test_settings_window_rethemes_immediately_with_the_appearance_selector(
 
 
 def test_modern_settings_finished_refreshes_even_on_rejected(tmp_path, monkeypatch):
-    """新版设置直接关闭（Rejected）也必须把改动应用到桌宠。
+    """新版设置直接关闭（Rejected）也必须把改动应用到肥鱼。
 
     回归背景：只有 Accepted（保存并退出）才刷新；X 关闭时 closeEvent 已
-    自动保存，但桌宠 scale/拖动物理等不生效。
+    自动保存，但肥鱼 scale/拖动物理等不生效。
     """
     from PySide6.QtWidgets import QApplication
 
@@ -1161,15 +1018,15 @@ def test_modern_settings_finished_refreshes_even_on_rejected(tmp_path, monkeypat
     owner.config = Config(tmp_path)
     owner.shell._apply_balance_timer = lambda: None
     owner.shell._sync_dynamic_island = lambda: None
-    # Phase 1 门控后 todo 服务走 _sync_todo_service（懒启停）；测试只测桌宠刷新
+    # Phase 1 门控后 todo 服务走 _sync_todo_service（懒启停）；测试只测肥鱼刷新
     owner.shell._sync_todo_service = lambda: None
-    owner.shell._sync_chime_service = lambda: None  # 语音报时同样懒启停，本用例只测桌宠刷新
+    owner.shell._sync_chime_service = lambda: None  # 语音报时同样懒启停，本用例只测肥鱼刷新
     owner.shell._sync_festival_service = lambda: None  # 节日提醒同样懒启停（其内部会连带同步报时通道）
     owner._refresh_chat_windows = lambda: None
     owner._sync_animation_prewarm = lambda: None
     monkeypatch.setattr(app_mod, "_mac_set_dock_icon_visible", lambda *a, **k: None)
     PetInstance._modern_settings_finished(owner, 0)  # QDialog.Rejected（X 关闭）
-    assert refreshed == [1], "Rejected 关闭也必须刷新桌宠"
+    assert refreshed == [1], "Rejected 关闭也必须刷新肥鱼"
 
 
 def test_ai_page_warns_when_keyring_unavailable(tmp_path, monkeypatch):
@@ -1298,8 +1155,8 @@ def test_macos_dock_menu_keeps_settings_reachable_when_pet_is_mouse_through(monk
     assert menu is controller.dock_menu
     assert menu.property("dockMenuInstalled") is callable(getattr(menu, "setAsDockMenu", None))
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
-    assert labels[:3] == ["显示桌宠", "桌宠设置", "AI 对话"]
-    next(action for action in menu.actions() if action.text() == "桌宠设置").trigger()
+    assert labels[:3] == ["显示肥鱼", "肥鱼设置", "AI 对话"]
+    next(action for action in menu.actions() if action.text() == "肥鱼设置").trigger()
     controller.instance.open_modern_settings.assert_called_once_with()
     menu.close()
     app.processEvents()

@@ -694,7 +694,7 @@ def test_modern_pet_context_menu_has_spawn_action_with_avatar_icon(monkeypatch):
 
     direct_actions = [action for action in menu.actions() if not action.isSeparator()]
     assert direct_actions
-    controls = next(action.menu() for action in direct_actions if action.text() == "桌宠控制")
+    controls = next(action.menu() for action in direct_actions if action.text() == "肥鱼控制")
     spawn_action = next(action for action in controls.actions() if action.text() == "生小肥鱼")
     assert not spawn_action.icon().isNull()
     spawn_action.trigger()
@@ -871,8 +871,11 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "切换角色",
         "播放速率",
         "大小",
-        "音乐",
-        "桌宠控制",
+        "VS Code 工作区",
+        "YouTube Music",
+        "Claude Desktop",
+        "Claude Code（WSL）",
+        "肥鱼控制",
         "快捷启动",
         "工具与帮助",
         "Agent 联动",
@@ -883,7 +886,7 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     # 立即报时/语音报时开关/今日节日/节日提醒开关：2026-09-19 起默认模板
     # visible: false，不上默认菜单（用户可在菜单编辑器加回）
     expected_labels.extend([
-        "桌宠设置",
+        "肥鱼设置",
         "退出",
     ])
     assert labels == expected_labels
@@ -899,16 +902,17 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     assert next(action for action in menu.actions() if action.text() == "播放速率").menu() is not None
     assert next(action for action in menu.actions() if action.text() == "大小").menu() is not None
     tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    next(action for action in tools.actions() if action.text() == "打开网页版 DeepSeek").trigger()
-    assert opened_urls == [shared_menu_mod.DEEPSEEK_WEB_URL]
+    # 「打开网页版 DeepSeek」2026-10-14 下线：工具与帮助里剩下的外链入口是项目页
+    next(action for action in tools.actions() if action.text() == "GitHub 项目页").trigger()
+    assert opened_urls == [shared_menu_mod.REPO_URL]
     # 模板模式已迁入设置；默认菜单不再用低频迁移命令占据根菜单。
     assert all("旧版菜单" not in action.text() for action in menu.actions())
     menu.close()
     app.processEvents()
 
 
-def test_pure_pet_context_menu_keeps_web_but_hides_harness():
-    """纯桌宠（无 Chat/DSH 联动）右键菜单去掉 DeepSeek Harness，保留网页版。"""
+def test_context_menu_has_no_deepseek_entries():
+    """「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 全部下线（纯肥鱼版同样没有）。"""
     from PySide6.QtWidgets import QApplication, QMenu
 
     from pet.context_menu import populate_context_menu
@@ -949,12 +953,9 @@ def test_pure_pet_context_menu_keeps_web_but_hides_harness():
         return labels
 
     labels = labels_in(menu)
-    # Harness 入口现为子菜单（标题 "DeepSeek Harness"），纯桌宠版整块不显示
-    assert "DeepSeek Harness" not in labels
-    assert "启动 dsh web 界面" not in labels
-    assert "启动桌面端界面" not in labels
-    assert "停止服务" not in labels
-    assert "打开网页版 DeepSeek" in labels
+    for label in ("DeepSeek 余额", "DeepSeek Harness", "启动 dsh web 界面", "启动桌面端界面", "停止服务", "打开网页版 DeepSeek"):
+        assert label not in labels, label
+    assert "GitHub 项目页" in labels
     menu.close()
     app.processEvents()
 
@@ -1146,6 +1147,40 @@ def test_modern_menu_icons_are_crisp_outline_glyphs(monkeypatch):
     app.processEvents()
 
 
+def test_modern_menu_window_stays_per_pixel_alpha_after_the_fade_in():
+    """圆角四角发黑的回归（2026-10-16）。
+
+    Windows 平台只在「带 alpha 且 FramelessWindowHint」或「不透明度 < 1」时给窗口
+    WS_EX_LAYERED；QMenu 的窗口类型是 Qt.Popup，没有 Frameless 位，所以菜单只在
+    Qt 淡入动画（不透明度 < 1）期间是逐像素透明的，淡入一结束 Qt 就摘掉分层样式，
+    圆角外的透明区域合成成黑色。新版样式必须给菜单和每级子菜单都加上 Frameless 位。
+    """
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QApplication, QMenu, QWidget
+
+    from pet.context_menus.menu_styles.common import inherit_menu_style
+    from pet.context_menus.menu_styles.modern import SHADOW_MARGIN, apply_modern_menu_style
+
+    QApplication.instance() or QApplication([])
+    menu = QMenu()
+    apply_modern_menu_style(menu, {"theme": "light", "translucent": False, "corner_radius": 18})
+    submenu = QMenu("more", menu)
+    inherit_menu_style(menu, submenu)
+    for widget in (menu, submenu):
+        assert widget.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        assert widget.windowFlags() & Qt.WindowType.FramelessWindowHint, "没有 Frameless 位，淡入后四角会黑"
+        assert widget.windowFlags() & Qt.WindowType.Popup, "仍然是弹出菜单"
+        # Windows 自带的弹窗阴影是直角矩形，和圆角对不上：关掉它，在透明边距里自己画软阴影
+        assert widget.windowFlags() & Qt.WindowType.NoDropShadowWindowHint, "系统直角阴影没关"
+        assert f"margin: {SHADOW_MARGIN}px" in widget.styleSheet(), "没有留出画阴影的透明边距"
+        assert widget.findChild(QWidget, "modernShadowLayer") is not None
+    menu.addAction("one")
+    menu.popup(QPoint(40, 40))
+    QApplication.processEvents()
+    assert menu.actionGeometry(menu.actions()[0]).left() >= SHADOW_MARGIN, "条目要落在边距以内的本体里"
+    menu.close()
+
+
 def test_modern_checked_action_is_painted_in_reserved_right_slot():
     from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
@@ -1213,7 +1248,7 @@ def test_modern_menu_starts_with_ojingjing_entry_and_uses_pet_avatar(monkeypatch
     assert entry.height() == 39
     assert entry.findChild(QWidget, "ojingjingAvatar") is not None
     assert entry.findChild(QWidget, "ojingjingClickAccessory") is not None
-    controls = next(action.menu() for action in menu.actions() if action.text() == "桌宠控制")
+    controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     spawn = next(action for action in controls.actions() if action.text() == "生小肥鱼")
     pixmap = spawn.icon().pixmap(18, 18)
     center = pixmap.toImage().pixelColor(pixmap.width() // 2, pixmap.height() // 2)
@@ -1382,15 +1417,18 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert isinstance(dialog.sidebar, QListWidget)
     assert isinstance(dialog.pages, QStackedWidget)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected_pages = ["常规", "桌宠", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+    expected_pages = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_pages
     assert dialog.pages.count() == len(expected_pages)
     assert dialog.search_edit.placeholderText() == "搜索设置…"
     assert all(not dialog.sidebar.item(i).icon().isNull() for i in range(dialog.sidebar.count()))
     assert all(dialog.sidebar.item(i).sizeHint().height() >= 34 for i in range(dialog.sidebar.count()))
     assert "QListWidget#settingsSidebar::item:hover" in dialog.styleSheet()
-    assert "border-right: 1px solid #e3e5e8" in dialog.styleSheet()
-    assert "background: #f7f7f8" in dialog.styleSheet()
+    # Metro（2026-10-14）：侧栏是一整条深一点的带子，没有描边（明 / 暗各一个令牌：前面的用例可能把调色板留成深色）
+    from pet.settings_theme_qss import METRO_TOKENS
+
+    assert any(f"QFrame#sidebarPane {{ background: {tokens['sidebar']}; border: none; }}" in dialog.styleSheet()
+               for tokens in METRO_TOKENS.values())
     section_titles = [label.text() for label in dialog.findChildren(settings_mod.QLabel, "sectionTitle")]
     assert {
         "应用启动", "窗口与系统", "动画与移动", "点击反馈", "自言自语",
@@ -1412,14 +1450,14 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert {"浅色主题", "深色主题", "彩蛋入口"}.issubset(set(section_titles))
     scale_row = dialog.findChild(settings_mod.QWidget, "settingRow_scale")
     assert scale_row is not None
-    assert scale_row.findChild(settings_mod.QLabel, "settingLabel").text() == "桌宠大小"
+    assert scale_row.findChild(settings_mod.QLabel, "settingLabel").text() == "肥鱼大小"
     assert scale_row.findChild(settings_mod.QLabel, "settingHint").text()
     stylesheet = dialog.styleSheet()
     assert "QLineEdit:focus" in stylesheet
     assert "QSpinBox::up-button" in stylesheet
     assert "QScrollBar::handle:vertical" in stylesheet
     assert "font-size: 13px" in stylesheet
-    assert "font-size: 22px" in stylesheet
+    assert "font-size: 30px" in stylesheet          # Metro 页标题
     assert "min-height: 20px" in stylesheet
     dialog.scale_combo.setCurrentIndex(dialog.scale_combo.findData(0.85))
     dialog.on_top_check.setChecked(False)
@@ -1463,10 +1501,10 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     expression_row = dialog.findChild(settings_mod.SettingRow, "settingRow_dialogue_mode")
     assert expression_row is not None
     assert expression_row.findChild(settings_mod.QLabel, "settingLabel").text() == "表达风格"
-    # 产品 hint 文案（modern_settings_dialog.py）以「自言自语、候选内容和主动气泡」起句，
-    # 并显式说明同时覆盖 Agent 状态/审批/提问/错误等联动气泡。
-    assert "自言自语" in expression_row.findChild(settings_mod.QLabel, "settingHint").text()
-    assert "Agent 状态" in expression_row.findChild(settings_mod.QLabel, "settingHint").text()
+    # 产品 hint 文案（2026-10-18 改成说真话）：它只管 Agent 联动气泡与余额结果，不经模型；
+    # 自言自语、对话口吻、主动识屏都不归它管，提示里要点明并指路（见 test_settings_persona_hints）。
+    hint = expression_row.findChild(settings_mod.QLabel, "settingHint").text()
+    assert "Agent 联动气泡" in hint and "审批" in hint and "不经过模型" in hint and "自言自语" in hint
     # 表达风格（dialogue_*）已按 spec（agent-dialogue-per-agent）全量迁入 automation 域
     # 「文案风格与模板」组；互动域不再持有 dialogue 行（见 test_express_style_rows_move_to_agent_domain）。
     assert page_index(expression_row) == sidebar_index("自动化与联动")
@@ -1710,13 +1748,13 @@ def test_chat_appearance_options_follow_selected_window_and_persist_independentl
     dialog = settings_mod.ModernSettingsDialog(config, include_ai=True)
 
     assert [dialog.ai_page.chat_ui_style.itemText(index) for index in range(2)] == [
-        "肥鱼版 DeepSeek", "肥鱼牌小手机",
+        "肥鱼版宽屏", "肥鱼牌小手机",
     ]
     assert dialog.ai_page.chat_ui_style.width() >= 180
     window_row = dialog.findChild(settings_mod.SettingRow, "settingRow_chat_ui_style")
     assert "宽屏现代体验" in window_row.hint_label.text()
     assert "紧凑经典体验" in window_row.hint_label.text()
-    # 内置主题两种风格都可选（肥鱼版 DeepSeek 与肥鱼牌小手机一致）
+    # 内置主题两种风格都可选（肥鱼版宽屏 与肥鱼牌小手机一致）
     modern_options = [
         dialog.ai_page.background_select.itemText(index)
         for index in range(dialog.ai_page.background_select.count())
@@ -2028,11 +2066,10 @@ def test_legacy_config_value_dispatches_legacy_layout(monkeypatch):
     window_mod._populate_context_menu(menu, Pet())
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
     # legacy 布局：无图标、无现代专属入口（看看屏幕/更新与帮助/生小肥鱼层级不同）
-    # Pet 无 on_open_chat，属于纯桌宠版：不显示 DeepSeek Harness 子菜单，保留网页版
     assert labels.index("生小肥鱼") == labels.index("开机自启") + 1
-    assert "DeepSeek Harness" not in labels
-    assert "停止服务" not in labels
-    assert "打开网页版 DeepSeek" in labels
+    # DeepSeek 的三个入口 2026-10-14 全部下线
+    for gone in ("DeepSeek Harness", "停止服务", "打开网页版 DeepSeek", "DeepSeek 余额"):
+        assert gone not in labels
     assert menu.styleSheet() == ""
     icon_actions = [action.text() for action in menu.actions() if not action.icon().isNull()]
     assert icon_actions == []
@@ -2077,8 +2114,8 @@ def test_legacy_config_value_uses_legacy_settings_callback(monkeypatch):
     pet = Pet()
     menu = QMenu()
     populate_context_menu(menu, pet)
-    # legacy 模板的「桌宠设置」走旧版设置回调（不再是现代设置）
-    next(action for action in menu.actions() if action.text() == "桌宠设置").trigger()
+    # legacy 模板的「肥鱼设置」走旧版设置回调（不再是现代设置）
+    next(action for action in menu.actions() if action.text() == "肥鱼设置").trigger()
     assert pet.opened == ["legacy"]
     menu.close()
     app.processEvents()
@@ -2798,7 +2835,7 @@ def test_window_opening_menu_action_uses_native_close_path():
 
     app = QApplication.instance() or QApplication([])
     menu = QMenu()
-    action = add_action(menu, "桌宠设置", None, lambda: None, close_on_trigger=True)
+    action = add_action(menu, "肥鱼设置", None, lambda: None, close_on_trigger=True)
     assert action.property("closeOnTrigger") is True
     menu.close()
     app.processEvents()

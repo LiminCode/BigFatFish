@@ -22,6 +22,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -195,13 +196,13 @@ def summarize_next(items, now: datetime) -> str:
     # daily 且下次就在今天：以“每天”开头；其余（含 daily 已触发顺延到明天）
     # 走通用的 今天/明天/M月D日 前缀。
     if item.get("kind") == "daily" and day == now.date():
-        return f"每天 {item['time']} {item['title']}"
+        return t("todo.ui.daily_v_v2", v=item['time'], v2=item['title'])
     if day == now.date():
-        day_text = "今天"
+        day_text = t("todo.ui.today")
     elif day == now.date() + timedelta(days=1):
-        day_text = "明天"
+        day_text = t("todo.ui.tomorrow")
     else:
-        day_text = f"{day.month}月{day.day}日"
+        day_text = t("todo.ui.month_day", month=day.month, day=day.day)
     return f"{day_text} {item['time']} {item['title']}"
 
 
@@ -256,7 +257,7 @@ class TodoReminderService:
 
     同 ProactiveScreenWatcher：本类不继承 QObject（Qt 在 __init__ 内惰性
     导入，模块顶层保持无 Qt），持有无主 QTimer，由 AppShell 持有引用保证
-    生命周期。tick → 纯函数 advance_todo_state → 桌宠可见且设置未抑制时
+    生命周期。tick → 纯函数 advance_todo_state → 肥鱼可见且设置未抑制时
     冒气泡，否则走 app.system_notify 桌面通知（受
     system_notifications_enabled 全局门控，关闭时该分支静默）；盖戳/归档
     仅在条目变化时落盘。
@@ -331,7 +332,7 @@ class TodoReminderService:
 
     def _notify_fire(self, fire: dict) -> None:
         app = self._app
-        text = f"⏰ 待办提醒：{fire['title']}（{fire['time']}）"
+        text = t("todo.ui.reminder_v_v2", v=fire['title'], v2=fire['time'])
         win = getattr(app, "win", None)
         if win is not None and win.isVisible() and not self._bubble_suppressed():
             win.show_bubble(text, duration_ms=self.BUBBLE_DURATION_MS)
@@ -340,7 +341,7 @@ class TodoReminderService:
             return
         notify = getattr(app, "system_notify", None)
         if callable(notify):
-            notify("待办提醒", f"{fire['title']}（{fire['time']}）",
+            notify(t("todo.ui.do_reminder"), f"{fire['title']}（{fire['time']}）",
                    on_click=getattr(app, "open_todo_panel", None))
 
     def _bubble_suppressed(self) -> bool:

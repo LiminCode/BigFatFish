@@ -13,6 +13,7 @@ from .context_menus.menu_styles import (
     install_modern_check_indicators,
 )
 from .context_menus.menu_styles.common import install_responsive_menu_style, install_stay_open_interaction
+from .i18n import t
 
 TEMPLATE_IDS = ("legacy", "modern")
 
@@ -28,7 +29,7 @@ _FALLBACK_TEMPLATES = {
             {"id": "interaction", "items": ["ojingjing", "chat"]},
             {"id": "playback", "items": ["animations_hub", "character"]},
             {"id": "functions", "items": ["playback_speed", "size", "drag_physics", "return_corner", "no_move", "on_top", "autostart", "spawn_pet"]},
-            {"id": "tools", "items": ["harness", "deepseek_web", "quick_launch"]},
+            {"id": "tools", "items": ["quick_launch"]},
             {"id": "settings", "items": ["modern_settings"]},
             {"id": "template", "items": ["switch_template"]},
             {"id": "exit", "items": ["quit"]},
@@ -44,7 +45,6 @@ _FALLBACK_TEMPLATES = {
             {"id": "spawn", "items": ["spawn_pet"]},
             {"id": "animation", "items": ["animation_categories", "playback_speed", "drag_physics", "character"]},
             {"id": "window", "items": ["return_corner", "on_top", "no_move", "autostart", "size"]},
-            {"id": "tools", "items": ["harness"]},
             {"id": "template", "items": ["switch_template"]},
             {"id": "exit", "items": ["quit"]},
         ],
@@ -74,7 +74,7 @@ def load_menu_template(template_id: str) -> dict:
         # 打包资源缺失时回退内置模板，保证右键菜单始终可用
         return dict(_FALLBACK_TEMPLATES[template_id])
     if data.get("id") != template_id or not isinstance(data.get("groups"), list):
-        raise ValueError(f"无效的右键菜单模板: {template_id}")
+        raise ValueError(t("menu.context_menu.invalid_right_click_menu_template", template_id=template_id))
     return data
 
 

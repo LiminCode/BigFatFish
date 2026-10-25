@@ -152,7 +152,7 @@ def test_version_mismatch_is_skipped(tmp_path, caplog):
 
 
 def test_stale_command_is_dropped(tmp_path, caplog):
-    """桌宠没在跑时写下的指令不允许在下次启动时突然清空子肥鱼。"""
+    """肥鱼没在跑时写下的指令不允许在下次启动时突然清空子肥鱼。"""
     cmd.write_command(tmp_path, cmd.CMD_EXIT_SPAWNED_PETS,
                       now=_now() - cmd.DEFAULT_MAX_AGE_S - 1.0)
     with caplog.at_level(logging.WARNING):

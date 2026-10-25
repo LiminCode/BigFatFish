@@ -314,7 +314,7 @@ def character_display_name(character_id: str) -> str:
 def character_body_box(character_id: str) -> tuple[int, int, int, int] | None:
     """角色稳定身体框 (x1, y1, x2, y2)：源像素、640×360 画布坐标、已镜像对称化。
 
-    桌宠定位基准（贴边/碰撞边界/漫游空间都用它），必须取稳定量而非当前帧：
+    肥鱼定位基准（贴边/碰撞边界/漫游空间都用它），必须取稳定量而非当前帧：
     待机帧可见框几乎不抖，而特效动画逐帧可摆上百像素。来源是角色
     manifest.json 的 body_box 字段；未声明（或非法）的角色包返回 None，
     调用方回退为"窗口即身体"（保持改造前行为）。结果带缓存：该函数在

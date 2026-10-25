@@ -139,7 +139,7 @@ def _bubble_text(overlay) -> str:
 
 
 def test_todo_reminder_bubbles_on_overlay_host(tmp_path):
-    """待办提醒宿主 = 壳：气泡出现在桌宠头顶，而不是退回系统通知。"""
+    """待办提醒宿主 = 壳：气泡出现在肥鱼头顶，而不是退回系统通知。"""
     shell, inst, overlay = _make_overlay_app(tmp_path)
     try:
         overlay.overlay.show()
@@ -234,7 +234,7 @@ def test_prewarm_sync_reaches_overlay_libraries(tmp_path):
 
 # ---------------------------------------------------------------- A5 隐藏指路
 def test_hidden_hint_uses_overlay_tray(tmp_path, monkeypatch):
-    """隐藏桌宠后的「点托盘恢复」提示：overlay 下托盘挂在壳上。"""
+    """隐藏肥鱼后的「点托盘恢复」提示：overlay 下托盘挂在壳上。"""
     shell, inst, overlay = _make_overlay_app(tmp_path)
     try:
         assert overlay.tray is not None, "测试环境应能建出托盘对象"

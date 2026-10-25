@@ -11,7 +11,18 @@ from pathlib import Path
 import shiboken6
 
 from PySide6.QtCore import QEvent, QFileInfo, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFontDatabase, QImageReader, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QCursor,
+    QFontDatabase,
+    QImageReader,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QTransform,
+)
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -34,6 +45,9 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QSizePolicy,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionButton,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +60,7 @@ from .context_menus.icons import (
     vector_widget_icon,
 )
 from .context_menus.quick_launch import fitted_application_icon
+from .i18n import maybe_t, t
 
 
 def _system_font_families() -> tuple[str, ...]:
@@ -71,13 +86,13 @@ BROWSER_CONTROL_SPEC = {
     "border": "#cfd4da",
     "border_hover": "#aeb6c0",
     "focus": "#0a84ff",
-    "radius": 7,
+    "radius": 0,          # Metro：方角
     "scrollbar_width": 8,
 }
 
 SETTINGS_DOMAIN_NAV = (
     ("常规", "settings"),
-    ("桌宠", "pet"),
+    ("肥鱼", "pet"),
     ("互动", "interaction"),
     ("菜单", "application"),
     ("桌面组件", "island"),
@@ -87,12 +102,32 @@ SETTINGS_DOMAIN_NAV = (
     ("文件识别", "file"),
 )
 
+#: 侧栏能力域的中文名 → 文案键。中文名是内部标识（测试、深链接 select_page、页面字典都按它认），
+#: 显示时经 domain_label 跟随界面语言。
+SETTINGS_DOMAIN_KEYS = {
+    "常规": "settings.domain.general",
+    "肥鱼": "settings.domain.pet",
+    "互动": "settings.domain.interaction",
+    "菜单": "settings.domain.menu",
+    "桌面组件": "settings.domain.desktop",
+    "AI 与对话": "settings.domain.ai",
+    "自动化与联动": "settings.domain.automation",
+    "语音": "settings.domain.voice",
+    "文件识别": "settings.domain.file",
+}
+
+
+def domain_label(name: str) -> str:
+    """能力域在当前语言下的显示名；不认识的名字原样返回。"""
+    key = SETTINGS_DOMAIN_KEYS.get(name)
+    return t(key) if key else name
+
 BROWSER_CONTROL_STYLESHEET = """
 QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
     background: #ffffff;
     color: #202124;
     border: 1px solid #cfd4da;
-    border-radius: 7px;
+    border-radius: 0;
     padding: 4px 8px;
     selection-background-color: #0a84ff;
     selection-color: #ffffff;
@@ -110,13 +145,13 @@ QSpinBox::up-button, QDoubleSpinBox::up-button {
     border: none;
     border-left: 1px solid #e3e5e8;
     border-bottom: 1px solid #eceef0;
-    border-top-right-radius: 6px;
+    border-top-right-radius: 0;
 }
 QSpinBox::down-button, QDoubleSpinBox::down-button {
     width: 18px;
     border: none;
     border-left: 1px solid #e3e5e8;
-    border-bottom-right-radius: 6px;
+    border-bottom-right-radius: 0;
 }
 QScrollBar:vertical {
     width: 8px;
@@ -127,7 +162,7 @@ QScrollBar::handle:vertical {
     min-height: 24px;
     margin: 1px;
     background: #c4c8cc;
-    border-radius: 4px;
+    border-radius: 0;
 }
 QScrollBar::handle:vertical:hover { background: #9fa5ab; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
@@ -141,7 +176,7 @@ QScrollBar::handle:horizontal {
     min-width: 24px;
     margin: 1px;
     background: #c4c8cc;
-    border-radius: 4px;
+    border-radius: 0;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 """
@@ -155,30 +190,158 @@ def _widget_dark(widget: QWidget | None = None) -> bool:
         current = current.parentWidget()
     return _system_dark()
 
+# ---------------------------------------------------------------- Metro 磁贴：倾斜
+#: 磁贴最大倾斜角（度）：悬停时轻微、按下时明显。Windows Phone 的 tilt 大约在这个量级。
+TILT_HOVER_DEG = 4.0
+TILT_PRESS_DEG = 8.0
+_TILT_PLANE_DISTANCE = 900.0      # 透视投影里视点到平面的距离（像素）：越小越夸张
+
+
+def tilt_transform(rect: QRect, pos: QPoint | None, *, pressed: bool = False) -> QTransform:
+    """Windows Phone 式的磁贴倾斜：以中心为轴，朝光标那一侧压下去（带一点透视）。
+
+    ``pos`` 为 None 或矩形为空时返回恒等变换。角度与光标到中心的相对距离成正比，光标在
+    正中时只有按下的缩放、不偏。
+    """
+    transform = QTransform()
+    if pos is None or rect.width() <= 0 or rect.height() <= 0:
+        return transform
+    cx, cy = rect.x() + rect.width() / 2.0, rect.y() + rect.height() / 2.0
+    nx = max(-1.0, min(1.0, (pos.x() - cx) / (rect.width() / 2.0)))
+    ny = max(-1.0, min(1.0, (pos.y() - cy) / (rect.height() / 2.0)))
+    degrees = TILT_PRESS_DEG if pressed else TILT_HOVER_DEG
+    transform.translate(cx, cy)
+    # 符号按「光标那一侧往屏幕里压」定（两根轴在 Qt 里的正方向相反，实测定的；测试守着）
+    transform.rotate(-ny * degrees, Qt.Axis.XAxis, _TILT_PLANE_DISTANCE)
+    transform.rotate(-nx * degrees, Qt.Axis.YAxis, _TILT_PLANE_DISTANCE)
+    if pressed:
+        transform.scale(0.985, 0.985)
+    transform.translate(-cx, -cy)
+    return transform
+
+
+class TiltButton(QPushButton):
+    """会朝光标倾斜的按钮（Metro 磁贴手感）。外观仍由样式表决定：这里只是把样式画在一个
+    倾斜过的画布上。子类用 ``_paint_overlay`` 在同一变换下补画箭头之类的附件。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setMouseTracking(True)
+        self._tilt_pos: QPoint | None = None
+
+    def tilt_point(self) -> QPoint | None:
+        """当前让磁贴倾斜的光标位置（控件坐标）；没悬停返回 None。"""
+        return self._tilt_pos
+
+    def current_tilt(self) -> QTransform:
+        return tilt_transform(self.rect(), self._tilt_pos, pressed=self.isDown())
+
+    def _set_tilt_pos(self, pos: QPoint | None) -> None:
+        if pos != self._tilt_pos:
+            self._tilt_pos = pos
+            self.update()
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._set_tilt_pos(self.mapFromGlobal(QCursor.pos()))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._set_tilt_pos(None)
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        self._set_tilt_pos(event.position().toPoint())
+        super().mouseMoveEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setTransform(self.current_tilt())
+        self.style().drawControl(QStyle.ControlElement.CE_PushButton, option, painter, self)
+        self._paint_overlay(painter)
+        painter.end()
+
+    def _paint_overlay(self, painter: QPainter) -> None:
+        """子类钩子：在倾斜后的画布上补画（箭头等）。"""
+        del painter
+
+
+class TiltItemDelegate(QStyledItemDelegate):
+    """让列表（侧栏）里被悬停的那一项像磁贴一样朝光标倾斜。需要视图开 ``setMouseTracking``，
+    并在鼠标移动时刷新视口（见 ``install_tilt``）。"""
+
+    def paint(self, painter, option, index) -> None:  # noqa: N802
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        viewport = option.widget.viewport() if option.widget is not None and hasattr(option.widget, "viewport") else None
+        if hovered and viewport is not None:
+            pos = viewport.mapFromGlobal(QCursor.pos())
+            pressed = bool(QGuiApplication_mouse_buttons() & Qt.MouseButton.LeftButton)
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setTransform(tilt_transform(option.rect, pos, pressed=pressed), True)
+            super().paint(painter, option, index)
+            painter.restore()
+            return
+        super().paint(painter, option, index)
+
+    @staticmethod
+    def install(view) -> "TiltItemDelegate":
+        """挂到一个 item view 上：开鼠标跟踪、鼠标移动时重画视口（倾斜量随光标位置变）。"""
+        delegate = TiltItemDelegate(view)
+        view.setItemDelegate(delegate)
+        view.setMouseTracking(True)
+        view.viewport().installEventFilter(delegate)
+        return delegate
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+            watched.update()
+        return super().eventFilter(watched, event)
+
+
+def QGuiApplication_mouse_buttons():  # noqa: N802 - 小包装，方便测试替换
+    from PySide6.QtGui import QGuiApplication
+
+    return QGuiApplication.mouseButtons()
+
+
 class ToggleSwitch(QAbstractButton):
-    """Small native-looking toggle used by settings cards."""
+    """Metro 风格的开关：方角的轨道、竖条形的滑块；开着时轨道填主题色。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(38, 22)
+        self.setFixedSize(44, 20)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        track = "#0a84ff" if self.isChecked() else ("#3a3a42" if _widget_dark(self) else "#dedede")
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        dark = _widget_dark(self)
+        on = self.isChecked()
+        outline = QColor("#e6e6e6" if dark else "#333333") if self.isEnabled() else QColor("#8a8a8a" if dark else "#b5b5b5")
+        if on:
+            fill = QColor("#0a84ff") if self.isEnabled() else QColor("#6c9fd1")
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(fill)
+            painter.drawRect(QRect(2, 3, 40, 14))
+        else:
+            painter.setPen(QPen(outline, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRect(3, 4, 38, 12))
+        knob_x = 32 if on else 0
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(track))
-        painter.drawRoundedRect(QRectF(0, 1, 38, 20), 10, 10)
-        knob_x = 19.0 if self.isChecked() else 2.0
-        painter.setBrush(QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#c9c9c9"), 0.5))
-        painter.drawEllipse(QRectF(knob_x, 2, 18, 18))
+        painter.setBrush(outline if self.isEnabled() else QColor("#9a9a9a"))
+        painter.drawRect(QRect(knob_x, 0, 12, 20))
 
-IMAGE_NAME_FILTER = "图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff)"
+#: 文件对话框过滤器：存文案键，ResourcePathPicker 建控件时经 maybe_t 翻译（调用方也可以直接传现成的过滤器文字）
+IMAGE_NAME_FILTER = "settings.ui.filter_images"
 
-AUDIO_NAME_FILTER = "音频文件 (*.wav *.mp3 *.ogg *.flac *.m4a)"
+AUDIO_NAME_FILTER = "settings.ui.filter_audio"
 
 class ClickSoundPackPicker(QWidget):
     """点击音效包选择器（内置默认/小黄鸭/自定义单文件/自定义文件夹）。"""
@@ -188,10 +351,10 @@ class ClickSoundPackPicker(QWidget):
     def __init__(self, pack: dict | None = None, parent=None):
         super().__init__(parent)
         self.mode_select = ModernSelect(self, width=170)
-        self.mode_select.addItem("默认包", "builtin:default")
-        self.mode_select.addItem("小黄鸭包", "builtin:duck")
-        self.mode_select.addItem("自定义单文件", "file")
-        self.mode_select.addItem("自定义文件夹（随机）", "folder")
+        self.mode_select.addItem(t("settings.ui.default_pack"), "builtin:default")
+        self.mode_select.addItem(t("settings.ui.rubber_duck_pack"), "builtin:duck")
+        self.mode_select.addItem(t("settings.ui.custom_single_file"), "file")
+        self.mode_select.addItem(t("settings.ui.custom_folder_random"), "folder")
 
         self.file_picker = ResourcePathPicker("", name_filter=AUDIO_NAME_FILTER, parent=self)
         self.folder_picker = ResourcePathPicker("", directory=True, parent=self)
@@ -414,15 +577,15 @@ class ImagePreviewDrawer(QFrame):
         super().__init__(parent)
         self.setObjectName("imagePreviewDrawer")
         self.setProperty("surface", "drawer")
-        self.title_label = QLabel("图片预览", self)
+        self.title_label = QLabel(t("settings.ui.image_preview"), self)
         self.title_label.setObjectName("imagePreviewTitle")
-        self.count_label = QLabel("0 张图片", self)
+        self.count_label = QLabel(t("settings.ui.x_0_images"), self)
         self.count_label.setObjectName("imagePreviewCount")
-        self.close_button = QPushButton(self)
+        self.close_button = TiltButton(self)
         self.close_button.setObjectName("imagePreviewClose")
         self.close_button.setFixedSize(28, 28)
         self.close_button.setIcon(vector_widget_icon(self, "exit", 14))
-        self.close_button.setAccessibleName("关闭图片预览")
+        self.close_button.setAccessibleName(t("settings.ui.close_image_preview"))
         self.close_button.clicked.connect(self.hide)
         header = QHBoxLayout()
         header.addWidget(self.title_label)
@@ -439,7 +602,7 @@ class ImagePreviewDrawer(QFrame):
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.flow = MasonryFlow(column_count=3)
         self.scroll.setWidget(self.flow)
-        self.empty_label = QLabel("这个目录中没有可预览的图片", self)
+        self.empty_label = QLabel(t("settings.ui.no_images_preview_folder"), self)
         self.empty_label.setObjectName("imagePreviewEmpty")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root = QVBoxLayout(self)
@@ -501,7 +664,7 @@ class ImagePreviewDrawer(QFrame):
                 paths = []
         self.path_label.setText(str(directory))
         self.path_label.setToolTip(str(directory))
-        self.count_label.setText(f"{len(paths)} 张图片")
+        self.count_label.setText(t("settings.ui.v_images", v=len(paths)))
         self.flow.set_paths(paths)
         self.scroll.setVisible(bool(paths))
         self.empty_label.setVisible(not paths)
@@ -521,24 +684,24 @@ class ResourcePathPicker(QWidget):
     ):
         super().__init__(parent)
         self.directory = bool(directory)
-        self.name_filter = name_filter
+        self.name_filter = maybe_t(name_filter)   # 传的是文案键就在这里翻好（建控件时界面语言已定）
         # 选择对话框标题：默认沿用图片语义（既有调用方不变），非图片用途可覆盖
         # （例如「音乐播放器程序」选 .exe 时不该写「选择图片」）。
         self.dialog_title = str(
-            dialog_title or ("选择图片目录" if self.directory else "选择图片")
+            dialog_title or (t("settings.ui.choose_image_folder") if self.directory else t("settings.ui.choose_image"))
         )
         self.edit = QLineEdit(self)
         self.edit.setMinimumWidth(250)
         self.edit.setText(str(value))
-        self.button = QPushButton("选择…", self)
-        self.button.setFixedWidth(66)
+        self.button = TiltButton(t("settings.ui.choose"), self)
+        self.button.setMinimumWidth(66)   # 最小宽度：英文「Choose…」比中文长，定宽会被截
         self.button.clicked.connect(self.choose)
         path_row = QHBoxLayout()
         path_row.setContentsMargins(0, 0, 0, 0)
         path_row.setSpacing(6)
         path_row.addWidget(self.edit, 1)
         self.preview_button = (
-            QPushButton("预览", self) if self.directory and image_preview else None
+            TiltButton(t("settings.ui.preview"), self) if self.directory and image_preview else None
         )
         if self.preview_button is not None:
             self.preview_button.setIcon(vector_widget_icon(self, "screen", 14))
@@ -582,7 +745,7 @@ class ColorSwatchButton(QAbstractButton):
         self._color = QColor(value)
         self.setFixedSize(36, 32)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("选择颜色")
+        self.setToolTip(t("settings.ui.choose_color"))
 
     def color(self) -> QColor:
         return QColor(self._color)
@@ -622,7 +785,7 @@ class ColorPicker(QWidget):
 
     def choose(self) -> None:
         initial = QColor(self.text())
-        color = QColorDialog.getColor(initial if initial.isValid() else QColor("#ffffff"), self, "选择颜色")
+        color = QColorDialog.getColor(initial if initial.isValid() else QColor("#ffffff"), self, t("settings.ui.choose_color"))
         if color.isValid():
             self.edit.setText(color.name(QColor.NameFormat.HexRgb))
 
@@ -631,15 +794,21 @@ class ColorPicker(QWidget):
         if color.isValid():
             self.button.setColor(color)
 
-def _draw_chevron(widget, center_y: float, *, down: bool) -> None:
-    painter = QPainter(widget)
+def _draw_chevron(widget, center_y: float, *, down: bool, painter: QPainter | None = None,
+                  center_x: float | None = None, size: float = 2.6) -> None:
+    """控件右缘的小箭头。给了 ``painter`` 就画在它上面（沿用它的变换，磁贴倾斜时箭头一起倾斜）。"""
+    own = painter is None
+    if own:
+        painter = QPainter(widget)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     color = QColor("#a8adb4" if _widget_dark(widget) else "#62676d") if widget.isEnabled() else QColor("#aeb2b7")
     painter.setPen(QPen(color, 1.35, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    center_x = widget.width() - 10.0
-    offset = 1.8 if down else -1.8
-    painter.drawLine(QPointF(center_x - 2.6, center_y - offset), QPointF(center_x, center_y + offset))
-    painter.drawLine(QPointF(center_x, center_y + offset), QPointF(center_x + 2.6, center_y - offset))
+    center_x = widget.width() - 10.0 if center_x is None else center_x
+    offset = size * 0.7 if down else -size * 0.7
+    painter.drawLine(QPointF(center_x - size, center_y - offset), QPointF(center_x, center_y + offset))
+    painter.drawLine(QPointF(center_x, center_y + offset), QPointF(center_x + size, center_y - offset))
+    if own:
+        painter.end()
 
 SETTINGS_POPUP_OBJECT_NAME = "SettingsPopup"
 
@@ -648,14 +817,14 @@ QMenu#SettingsPopup {
     background: #ffffff;
     color: #202020;
     border: 1px solid #d8d8d8;
-    border-radius: 10px;
+    border-radius: 0;
     padding: 6px;
     font-size: 13px;
 }
 QMenu#SettingsPopup::item {
     min-height: 22px;
     padding: 4px 28px 4px 12px;
-    border-radius: 7px;
+    border-radius: 0;
 }
 QMenu#SettingsPopup::item:selected { background: #eeeeee; }
 QMenu#SettingsPopup::indicator { width: 0; height: 0; }
@@ -730,7 +899,7 @@ class SettingsPopupMenu(QMenu):
             painter.drawLine(QPointF(x - 4, y), QPointF(x - 1, y + 3))
             painter.drawLine(QPointF(x - 1, y + 3), QPointF(x + 5, y - 5))
 
-class SettingsMenuButton(QPushButton):
+class SettingsMenuButton(TiltButton):
     """Command-menu trigger with the same anchor and chevron as ModernSelect."""
 
     def __init__(self, text: str, parent=None):
@@ -752,9 +921,8 @@ class SettingsMenuButton(QPushButton):
         self._popup_menu.setMinimumWidth(self.width())
         self._popup_menu.popup(self.mapToGlobal(QPoint(0, self.height() + 4)))
 
-    def paintEvent(self, event) -> None:  # noqa: N802
-        super().paintEvent(event)
-        _draw_chevron(self, self.height() / 2.0, down=True)
+    def _paint_overlay(self, painter: QPainter) -> None:
+        _draw_chevron(self, self.height() / 2.0, down=True, painter=painter)
 
 class ModernSelect(QAbstractButton):
     """Custom-painted selector with a Modern-style popover, not a QComboBox."""
@@ -889,8 +1057,9 @@ class ModernSelect(QAbstractButton):
         hover_border = "#56565f" if dark else "#aeb6c0"
         border = "#0a84ff" if self.hasFocus() else (hover_border if self._hovered else border_idle)
         painter.setBrush(QColor(bg))
-        painter.setPen(QPen(QColor(border), 1.5 if self.hasFocus() else 1.0))
-        painter.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1.0, self.height() - 1.0), 8, 8)
+        painter.setPen(QPen(QColor(border), 2.0 if self.hasFocus() else 1.0))
+        inset = 1.0 if self.hasFocus() else 0.5
+        painter.drawRect(QRectF(inset, inset, self.width() - 2 * inset, self.height() - 2 * inset))   # 方角：Metro
         painter.setPen(QColor(fg))
         painter.drawText(QRectF(10, 0, self.width() - 34, self.height()), Qt.AlignmentFlag.AlignVCenter, self.currentText())
         painter.end()
@@ -1162,8 +1331,10 @@ class SettingsCard(QFrame):
                 self.separators[index - 1].setVisible(not row.isHidden() and visible_before)
             visible_before = visible_before or not row.isHidden()
 
-class SettingsDisclosureHeader(QPushButton):
-    """QSS-owned one-level disclosure without platform-native tool chrome."""
+class SettingsDisclosureHeader(TiltButton):
+    """QSS-owned one-level disclosure without platform-native tool chrome.
+
+    一块会倾斜的磁贴：标题靠左，右缘一个箭头（收起时朝右、展开时朝下），箭头和磁贴一起倾斜。"""
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
@@ -1173,22 +1344,23 @@ class SettingsDisclosureHeader(QPushButton):
         self.setChecked(False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName(f"展开{title}")
-        self.chevron = QLabel("›", self)
-        self.chevron.setObjectName("disclosureChevron")
-        self.chevron.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.chevron.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.toggled.connect(self._sync_chevron)
+        self.setAccessibleName(t("settings.ui.expand_title", title=title))
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
-        return QSize(240, 42)
+        return QSize(240, 44)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
-        super().resizeEvent(event)
-        self.chevron.setGeometry(max(0, self.width() - 36), 0, 28, self.height())
-
-    def _sync_chevron(self, expanded: bool) -> None:
-        self.chevron.setText("⌄" if expanded else "›")
+    def _paint_overlay(self, painter: QPainter) -> None:
+        center_y = self.height() / 2.0
+        if self.isChecked():
+            _draw_chevron(self, center_y, down=True, painter=painter, center_x=self.width() - 20.0, size=4.0)
+        else:
+            # 收起：箭头朝右（把「朝下」的两笔转 90°）
+            painter.save()
+            painter.translate(self.width() - 20.0, center_y)
+            painter.rotate(-90)
+            painter.translate(-(self.width() - 20.0), -center_y)
+            _draw_chevron(self, center_y, down=True, painter=painter, center_x=self.width() - 20.0, size=4.0)
+            painter.restore()
 
 class SettingsSection(QWidget):
     def __init__(self, title: str, rows: list[SettingRow], parent=None, *, advanced: bool = False):
@@ -1223,7 +1395,7 @@ class SettingsSection(QWidget):
         self.card.setVisible(expanded)
         if self.toggle is not None:
             self.toggle.setAccessibleName(
-                f"{'收起' if expanded else '展开'}{self.toggle.text()}"
+                f"{t("settings.ui.collapse") if expanded else t("settings.ui.expand")}{self.toggle.text()}"
             )
             self.toggle.update()
 class CollapsibleGroup(QWidget):
@@ -1272,68 +1444,89 @@ class CollapsibleGroup(QWidget):
         self._sync_accessible_name()
 
     def _sync_accessible_name(self) -> None:
-        state = "收起" if self.toggle.isChecked() else "展开"
+        state = t("settings.ui.collapse") if self.toggle.isChecked() else t("settings.ui.expand")
         self.toggle.setAccessibleName(f"{state}{self.toggle.text()}")
 
 
-class _CurrentPageStack(QStackedWidget):
-    """Do not let a hidden tab impose its minimum width on the active task."""
+class _AccordionPages:
+    """``SettingsTabContainer.stack`` 的替身：手风琴没有 QStackedWidget，但既有用例与脚本按
+    ``stack.currentWidget()`` / ``widget(i)`` / ``count()`` / ``currentIndex()`` 取页面。"""
 
-    def sizeHint(self) -> QSize:  # noqa: N802
-        current = self.currentWidget()
-        return current.sizeHint() if current is not None else QSize()
+    def __init__(self, owner: "SettingsTabContainer") -> None:
+        self._owner = owner
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
-        current = self.currentWidget()
-        if current is None:
-            return QSize()
-        hint = current.minimumSizeHint()
-        return QSize(0, hint.height())
+    def count(self) -> int:
+        return len(self._owner._pages)
+
+    def widget(self, index: int) -> QWidget | None:
+        pages = self._owner._pages
+        return pages[index] if 0 <= index < len(pages) else None
+
+    def currentIndex(self) -> int:  # noqa: N802
+        return self._owner._current
+
+    def currentWidget(self) -> QWidget | None:  # noqa: N802
+        return self.widget(self._owner._current)
+
 
 class SettingsTabContainer(QWidget):
-    """Keyboard-accessible in-page tabs for peer tasks within one domain."""
+    """同一能力域里几个同级任务的**上下折叠**容器（Windows Phone 式的手风琴）。
+
+    2026-10-14 起不再是左右的分段标签：每个任务一块会倾斜的磁贴表头（``SettingsDisclosureHeader``），
+    点开哪块就展开它的那一页、其余收起（一次只开一页，``currentKey`` 就是开着的那页）。类名与
+    ``addTab`` / ``keys`` / ``labels`` / ``currentKey`` / ``setCurrentKey`` / ``key_for_descendant`` /
+    ``activate_for_descendant`` / ``stack`` 这些口径保持不变，搜索深链与既有用例照旧。
+
+    收起的页只是 ``hide``（对象与取值都在，``isVisibleTo`` 为 False）；隐藏的控件不参与布局尺寸，
+    所以它们的最小宽度不会压在开着的那页上。
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("settingsTaskTabs")
         self._keys: list[str] = []
         self._labels: list[str] = []
-        self._buttons: list[QPushButton] = []
-        self.tab_bar = QWidget(self)
-        self.tab_bar.setObjectName("settingsTaskTabBar")
-        self.tab_bar.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        self.tab_layout = QHBoxLayout(self.tab_bar)
-        self.tab_layout.setContentsMargins(3, 3, 3, 3)
-        self.tab_layout.setSpacing(2)
-        self.tab_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.stack = _CurrentPageStack(self)
-        self.stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-        layout.addWidget(self.tab_bar)
-        layout.addWidget(self.stack)
+        self._buttons: list[SettingsDisclosureHeader] = []
+        self._pages: list[QWidget] = []
+        self._current = -1
+        self.stack = _AccordionPages(self)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(6)
 
     def addTab(self, key: str, label: str, page: QWidget) -> None:  # noqa: N802
         key = str(key)
-        button = QPushButton(str(label), self.tab_bar)
-        button.setObjectName("settingsTaskTab")
-        button.setProperty("navigationStyle", "plugin")
-        button.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        button.setCheckable(True)
-        button.setAutoExclusive(True)
-        button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        button.setAccessibleName(f"切换到{label}")
+        header = SettingsDisclosureHeader(str(label), self)       # objectName 仍是 advancedSectionToggle：共用磁贴样式
+        header.setProperty("navigationStyle", "accordion")
+        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        header.setAccessibleName(t("settings.ui.expand_label", label=label))
         index = len(self._keys)
-        button.clicked.connect(lambda _checked=False, index=index: self.setCurrentIndex(index))
+        # 按 toggled 而不是 clicked：程序里 setChecked(True)（截图脚本「全部展开」）也会切到那一页
+        header.toggled.connect(lambda checked, index=index: self._on_header_toggled(index, checked))
+        page.setParent(self)
+        page.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._keys.append(key)
         self._labels.append(str(label))
-        self._buttons.append(button)
-        self.tab_layout.addWidget(button)
-        self.stack.addWidget(page)
+        self._buttons.append(header)
+        self._pages.append(page)
+        self._layout.addWidget(header)
+        self._layout.addWidget(page)
+        if index:
+            self._layout.addSpacing(8)       # 下一块磁贴和上一页之间留一口气
+        page.setVisible(False)
         if index == 0:
-            button.setChecked(True)
-            self.stack.setCurrentIndex(0)
+            self.setCurrentIndex(0)
+
+    def _on_header_toggled(self, index: int, checked: bool) -> None:
+        # 一次只开一页：点已经开着的那块不收（否则整页空着、currentKey 也没了意义）
+        if checked:
+            if index != self._current:
+                self.setCurrentIndex(index)
+        elif index == self._current:
+            self._buttons[index].setChecked(True)
+
+    def headers(self) -> tuple[SettingsDisclosureHeader, ...]:
+        return tuple(self._buttons)
 
     def keys(self) -> tuple[str, ...]:
         return tuple(self._keys)
@@ -1342,16 +1535,19 @@ class SettingsTabContainer(QWidget):
         return tuple(self._labels)
 
     def currentKey(self) -> str:  # noqa: N802
-        index = self.stack.currentIndex()
-        return self._keys[index] if 0 <= index < len(self._keys) else ""
+        return self._keys[self._current] if 0 <= self._current < len(self._keys) else ""
 
     def setCurrentIndex(self, index: int) -> None:  # noqa: N802
-        if not 0 <= index < self.stack.count():
+        if not 0 <= index < len(self._pages):
             return
-        self.stack.setCurrentIndex(index)
-        self._buttons[index].setChecked(True)
-        self.stack.updateGeometry()
-        self.stack.currentWidget().updateGeometry()
+        self._current = index
+        for position, (header, page) in enumerate(zip(self._buttons, self._pages)):
+            expanded = position == index
+            header.setChecked(expanded)
+            header.setAccessibleName(f"{t("settings.ui.collapse") if expanded else t("settings.ui.expand")}{self._labels[position]}")
+            page.setVisible(expanded)
+            header.update()
+        self._pages[index].updateGeometry()
         self.updateGeometry()
 
     def setCurrentKey(self, key: str) -> None:  # noqa: N802
@@ -1360,7 +1556,7 @@ class SettingsTabContainer(QWidget):
 
     def key_for_descendant(self, widget: QWidget) -> str:
         for index, key in enumerate(self._keys):
-            if self.stack.widget(index).isAncestorOf(widget) or self.stack.widget(index) is widget:
+            if self._pages[index].isAncestorOf(widget) or self._pages[index] is widget:
                 return key
         return ""
 
@@ -1391,6 +1587,14 @@ def _line_edit(text: str = "", *, password: bool = False, width: int = 240) -> Q
     if password:
         edit.setEchoMode(QLineEdit.EchoMode.Password)
     return edit
+
+def _quick_launch_display_name(app: dict) -> str:
+    """列表里显示的名字：默认浏览器那一项若还是内置的中文名，按界面语言显示（配置里存的名字不动）。"""
+    name = str(app.get("name") or "")
+    if app.get("kind") == "default_browser" and name in ("", "默认浏览器"):
+        return t("settings.ui.default_browser")
+    return name
+
 
 class QuickLaunchItemRow(QWidget):
     """Two-line quick-launch row; the owning list keeps selection and drag."""
@@ -1432,21 +1636,21 @@ class QuickLaunchEditor(QWidget):
         self.list.setSpacing(2)
         self.list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.list.viewport().installEventFilter(self)
-        self.count_label = QLabel("0 个快捷项", self)
+        self.count_label = QLabel(t("settings.ui.x_0_shortcuts"), self)
         self.count_label.setObjectName("quickLaunchCount")
-        self.empty_label = QLabel("还没有快捷启动项，可从“添加”开始。", self)
+        self.empty_label = QLabel(t("settings.ui.no_quick_launch_items_yet"), self)
         self.empty_label.setObjectName("quickLaunchEmpty")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setFixedHeight(64)
-        self.add_button = SettingsMenuButton("添加", self)
+        self.add_button = SettingsMenuButton(t("settings.ui.add"), self)
         self.add_button.setIcon(vector_widget_icon(self, "add", 15))
         self.add_menu = configure_settings_action_popup(SettingsPopupMenu(self.add_button))
-        self.choose_application_action = self.add_menu.addAction("选择应用…")
-        self.add_default_action = self.add_menu.addAction("添加默认浏览器")
+        self.choose_application_action = self.add_menu.addAction(t("settings.ui.choose_app"))
+        self.add_default_action = self.add_menu.addAction(t("settings.ui.add_default_browser"))
         self.choose_application_action.triggered.connect(self._choose_application)
         self.add_default_action.triggered.connect(self._add_default_browser)
         self.add_button.setPopupMenu(self.add_menu)
-        self.remove_button = QPushButton("移除所选", self)
+        self.remove_button = TiltButton(t("settings.ui.remove_selected"), self)
         self.remove_button.setIcon(vector_widget_icon(self, "remove", 15))
         self.remove_button.clicked.connect(self._remove_checked)
 
@@ -1471,7 +1675,7 @@ class QuickLaunchEditor(QWidget):
         app = dict(app)
         if app.get("kind") == "default_browser":
             icon = vector_widget_icon(self, "web", 22)
-            app = {"name": str(app.get("name") or "默认浏览器"), "path": "", "kind": "default_browser"}
+            app = {"name": str(app.get("name") or t("settings.ui.default_browser")), "path": "", "kind": "default_browser"}
         else:
             path = str(app.get("path") or "")
             if not path:
@@ -1486,11 +1690,11 @@ class QuickLaunchEditor(QWidget):
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
         item.setCheckState(Qt.CheckState.Unchecked)
         item.setData(Qt.ItemDataRole.UserRole, app)
-        item.setToolTip(app["path"] or "使用系统默认浏览器")
+        item.setToolTip(app["path"] or t("settings.ui.use_system_default_browser"))
         item.setSizeHint(QSize(0, 52))
         self.list.addItem(item)
-        detail = "系统默认浏览器" if app["kind"] == "default_browser" else app["path"]
-        self.list.setItemWidget(item, QuickLaunchItemRow(app["name"], detail, self.list))
+        detail = t("settings.ui.system_default_browser") if app["kind"] == "default_browser" else app["path"]
+        self.list.setItemWidget(item, QuickLaunchItemRow(_quick_launch_display_name(app), detail, self.list))
         self._sync_content_height()
 
     def apps(self) -> list[dict]:
@@ -1499,9 +1703,9 @@ class QuickLaunchEditor(QWidget):
     def _choose_application(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择需要快捷启动的应用",
+            t("settings.ui.choose_app_quick_launch"),
             "/Applications" if os.path.isdir("/Applications") else "",
-            "应用程序 (*.app);;所有文件 (*)",
+            t("settings.ui.applications_app_all_files"),
         )
         if path:
             self.add_app({"name": Path(path).stem, "path": path, "kind": "application"})
@@ -1518,7 +1722,7 @@ class QuickLaunchEditor(QWidget):
 
     def _sync_content_height(self) -> None:
         count = self.list.count()
-        self.count_label.setText(f"{count} 个快捷项")
+        self.count_label.setText(t("settings.ui.count_shortcuts", count=count))
         self.empty_label.setVisible(count == 0)
         self.list.setVisible(count > 0)
         if count:

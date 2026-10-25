@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -235,6 +236,25 @@ def test_menu_actions_are_routed(app_shell):
     assert app_shell.island._history_panel._rows == []
 
 
+def test_pinning_from_the_menu_keeps_that_chat_on_top(app_shell):
+    """右键「置顶」：那一行一直排最前，行数据带 ``pinned``；「取消置顶」后按时间归位。"""
+    _live(app_shell, cwd="C:\\work\\api")
+    app_shell.service.store._clock = lambda: time.time() + 120
+    _live(app_shell, SID_B, cwd="C:\\work\\web")
+    rows = app_shell.island._history_panel._rows
+    assert [r["key"] for r in rows] == [("claude", SID_B), ("claude", SID_A)]
+    assert all(r["pinned"] is False for r in rows)
+
+    app_shell.island.history_action.emit("pin", ("claude", SID_A))
+    rows = app_shell.island._history_panel._rows
+    assert [(r["key"], r["pinned"]) for r in rows] == [(("claude", SID_A), True), (("claude", SID_B), False)]
+    assert app_shell.recorder.ran == [], "置顶是列表自己的事，不走恢复 / 打开那些动作"
+
+    app_shell.island.history_action.emit("unpin", ("claude", SID_A))
+    rows = app_shell.island._history_panel._rows
+    assert [(r["key"], r["pinned"]) for r in rows] == [(("claude", SID_B), False), (("claude", SID_A), False)]
+
+
 def test_a_row_that_vanished_meanwhile_is_ignored(app_shell):
     app_shell.island.history_activated.emit(("claude", "gone"))
     app_shell.island.history_action.emit("copy_path", ("claude", "gone"))
@@ -398,3 +418,19 @@ def test_facade_persists_the_row_count_and_refreshes_the_island(overlay_shell):
     SpriteMenuFacade(overlay_shell).set_session_history_rows(8)
     assert overlay_shell._config.get("agent_link")["session_history_rows"] == 8
     assert seen == [1]
+
+
+def test_rows_from_the_app_say_where_each_conversation_lives():
+    """岛上每行的图标靠这个字段：VS Code / 本机终端 / WSL 终端 / 脚本。"""
+    from pet.claude_session_history import HistoryEntry
+
+    def host(**over):
+        return HistoryEntry(**{"agent": "claude", "session_id": "x", **over}).host
+
+    assert host(entrypoint="claude-vscode") == "vscode"
+    assert host(agent="claude_wsl", entrypoint="claude-vscode") == "vscode", "WSL 里的 VS Code 仍是 VS Code"
+    assert host(entrypoint="cli") == "terminal"
+    assert host(agent="claude_wsl", entrypoint="cli") == "wsl"
+    assert host(agent="claude_wsl") == "wsl"
+    assert host(entrypoint="sdk-cli") == "script"
+    assert host() == ""

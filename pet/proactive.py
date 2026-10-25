@@ -25,6 +25,7 @@ from .proactive_limiter import (
     effective_proactive_config,
 )
 from .proactive_memory import ProactiveMemory
+from .i18n import t
 
 __all__ = [
     "DEFAULT_PROACTIVE_CONFIG",
@@ -197,7 +198,7 @@ def should_watch(
     mouse_through: bool,
     allow_when_mouse_through: bool,
 ) -> bool:
-    """综合判断桌宠当前窗口状态是否允许执行识屏观察。
+    """综合判断肥鱼当前窗口状态是否允许执行识屏观察。
 
     - visible 为 False 或 interacting 为 True 时不允许；
     - mouse_through 为 True 时，取决于 allow_when_mouse_through 是否为 True。
@@ -337,7 +338,7 @@ class ProactiveScreenWatcher:
             self._timer.stop()
             return
 
-        # G1 桌宠守卫
+        # G1 肥鱼守卫
         visible = getattr(self.win, "isVisible", lambda: True)()
         interacting = (
             getattr(self.win, "_dragging", False)
@@ -527,7 +528,7 @@ class ProactiveScreenWatcher:
             if callable(hold):
                 hold(30.0)
             if eff.get("pre_cue", True) and hasattr(self.win, "show_bubble"):
-                self.win.show_bubble("让我看看……", duration_ms=2500)
+                self.win.show_bubble(t("proactive.ui.let_me_see"), duration_ms=2500)
 
             # 纯内存 JPEG bytes（严禁写临时文件）；worker 线程已完成编码，
             # 直接调用（测试）传入 PIL Image 时在此兼容编码
@@ -606,7 +607,7 @@ class ProactiveScreenWatcher:
         current_act: str = "",
         gen: int = -1,
     ) -> None:
-        """后台线程：发起大模型视觉请求，处理重试/熔断，并通过桥接信号在桌宠冒泡。"""
+        """后台线程：发起大模型视觉请求，处理重试/熔断，并通过桥接信号在肥鱼冒泡。"""
         from . import catalog, vision
 
         pet_name = self.cfg.character_display_name(

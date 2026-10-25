@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""issue #111 手工验收：向运行中的桌宠投递 Windows 会话结束消息并核对结果。
+"""issue #111 手工验收：向运行中的肥鱼投递 Windows 会话结束消息并核对结果。
 
 用途：不需要真的注销/关机就能验证「收到会话结束通知 → 停止派生 ffmpeg」的
 行为（真机最终验收仍建议真的注销一次，见 docs/ISSUE-111-*.md §5）。
 
-用法（Windows，桌宠已在运行）：
+用法（Windows，肥鱼已在运行）：
 
-    python scripts/verify_session_end_shutdown.py            # 自动找桌宠窗口
+    python scripts/verify_session_end_shutdown.py            # 自动找肥鱼窗口
     python scripts/verify_session_end_shutdown.py --hwnd 0x1234
     python scripts/verify_session_end_shutdown.py --message end_session
 
 做法：
-1. 定位桌宠顶层窗口（进程可执行名/窗口标题匹配）；
+1. 定位肥鱼顶层窗口（进程可执行名/窗口标题匹配）；
 2. 记录当前 ffmpeg 子进程集合与日志文件大小；
 3. ``PostMessageW(hwnd, WM_QUERYENDSESSION|WM_ENDSESSION, 0, 0)``
    —— 与系统关机时投递的消息同号同形（不 veto 关机语义，只是观测点触发）；
@@ -37,7 +37,7 @@ WM_QUERYENDSESSION = 0x0011
 WM_ENDSESSION = 0x0016
 MESSAGES = {"query_end_session": WM_QUERYENDSESSION, "end_session": WM_ENDSESSION}
 
-WINDOW_TITLE_HINTS = ("dsh-pet", "dsd-pet", "桌宠", "宠物", "pet")
+WINDOW_TITLE_HINTS = ("dsh-pet", "dsd-pet", "肥鱼", "宠物", "pet")
 PROCESS_NAME_HINTS = ("dsh-pet",)
 
 
@@ -47,9 +47,9 @@ def _require_windows() -> None:
 
 
 def _pet_windows(only_exe: str = "") -> list:
-    """枚举顶层窗口，返回候选桌宠窗口 [(hwnd, title, pid, exe)]。
+    """枚举顶层窗口，返回候选肥鱼窗口 [(hwnd, title, pid, exe)]。
 
-    匹配分两档，避免误伤同类程序（本机可能装着别的桌宠应用，实测就踩过）：
+    匹配分两档，避免误伤同类程序（本机可能装着别的肥鱼应用，实测就踩过）：
     1. 进程可执行名命中 ``dsh-pet*``（本变体产物名，最可靠）；
     2. 否则退到标题提示词——此时脚本**不自动使用**，必须由 ``--hwnd`` 明确指定。
     """
@@ -120,7 +120,7 @@ def main() -> int:
     _require_windows()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hwnd", type=lambda v: int(v, 0), default=None,
-                        help="目标窗口句柄（默认自动定位桌宠窗口）")
+                        help="目标窗口句柄（默认自动定位肥鱼窗口）")
     parser.add_argument("--exe", default="", help="限定进程可执行名（子串匹配）")
     parser.add_argument("--message", choices=sorted(MESSAGES), default="query_end_session")
     parser.add_argument("--settle", type=float, default=8.0,
@@ -131,13 +131,13 @@ def main() -> int:
     if hwnd is None:
         candidates = _pet_windows(args.exe)
         if not candidates:
-            print("没找到候选窗口。请确认桌宠正在运行，或用 --hwnd/--exe 指定。")
+            print("没找到候选窗口。请确认肥鱼正在运行，或用 --hwnd/--exe 指定。")
             print("可用 Get-CimInstance Win32_Process 找到 pid，再用 Spy++ 定位窗口。")
             return 2
         print("候选窗口：")
         for h, title, pid, exe in candidates:
             print(f"  hwnd={h:#x} pid={pid} exe={exe!r} title={title!r}")
-        # 只在「进程名明确是 dsh-pet」时才自动选用，避免把消息投给别的桌宠程序
+        # 只在「进程名明确是 dsh-pet」时才自动选用，避免把消息投给别的肥鱼程序
         confident = [c for c in candidates
                      if any(h in c[3].lower() for h in PROCESS_NAME_HINTS)]
         if not confident:

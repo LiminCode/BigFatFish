@@ -246,16 +246,22 @@ def test_dialogue_key_params_match_runtime_call_sites():
     assert "dsh.writeback.failed" not in DIALOGUE_KEY_PARAMS, "回写链已删，其文案键不得残留"
 
 
-def test_dialogue_template_export_is_blank_without_current_phrases(qapp, tmp_path):
-    """导出 = 纯字段参考模板：不携带当前已配置的台词（phrases 一律留空）。"""
+def test_dialogue_template_export_carries_the_lines_on_screen(qapp, tmp_path):
+    """导出 = 字段参考模板 + 当前显示的台词（用户 2026-10-18：内置模式不能是黑箱，导出要能当备份）。"""
+    from pet.persona_phrases import builtin_phrases
+
     cfg = Config(tmp_path / "appdata")
     dialog = ModernSettingsDialog(cfg, include_ai=False)
     try:
-        dialog.dialogue_phrase_edits["start"].setPlainText("当前已配置的台词不应出现在导出里")
+        assert dialog.dialogue_mode_select.currentData() == "legacy"
         data = dialog._current_dialogue_template()
-        assert all(not v for v in data["phrases"].values())
-        assert all(not e["phrases"] for e in data["entries"])
-        assert data["mode"] == dialog.dialogue_mode_select.currentData()
+        assert data["phrases"]["done.success"] == builtin_phrases("legacy")["done.success"], "内置模式导出那套内置台词"
+        assert data["mode"] == "legacy"
+        dialog.dialogue_mode_select.setCurrentData("custom")
+        dialog.dialogue_phrase_edits["start"].setPlainText("我的开场白")
+        data = dialog._current_dialogue_template()
+        assert data["phrases"]["start"] == ["我的开场白"] and data["phrases"]["done.success"] == []
+        assert next(e for e in data["entries"] if e["key"] == "start")["phrases"] == ["我的开场白"]
     finally:
         dialog.deleteLater()
 
@@ -484,8 +490,8 @@ def test_export_dialogue_template_mentions_agents_separator(qapp, tmp_path):
     dialog = ModernSettingsDialog(cfg, include_ai=False)
     try:
         data = dialog._current_dialogue_template()
-        # 导出仍是纯字段参考模板：phrases 留空；含 agents 专属配置脚手架
-        assert all(not v for v in data["phrases"].values())
+        # 顶层 phrases 是当前显示的那套（默认模式 = 内置默认台词，2026-10-18 起不再留空）；含 agents 专属配置脚手架
+        assert any(v for v in data["phrases"].values())
         text = json_mod.dumps(data, ensure_ascii=False)
         assert "persona-phrases/v1" in text
         agents = data.get("agents", {})
