@@ -7,6 +7,7 @@ import mimetypes
 import re
 import tempfile
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from .geometry import best_position_near_pet
+from .lifecycle import release_window_when_idle
 from .markdown_view import markdown_to_html
 from .models import ChatMessage
 from .pet_link import PetChatLink
@@ -806,7 +808,8 @@ class ChatComposer(QFrame):
         self.notice.emit(message)
         if getattr(self, "hint", None) is not None:
             self.hint.setText(message)
-            QTimer.singleShot(5000, lambda: self.hint.setText(t("chat.window.messages_are_saved_character_local")))
+            # 带上下文对象：hint 销毁（聊天窗关闭即销毁）时定时器自动取消，不再回调到已删控件
+            QTimer.singleShot(5000, self.hint, lambda: self.hint.setText(t("chat.window.messages_are_saved_character_local")))
 
     def _refresh_attachments(self) -> None:
         while self.attachment_layout.count():
@@ -943,7 +946,12 @@ class ChatWindow(QDialog):
         self._resize_edges: set[str] = set()
         self._resize_global_start: QPoint | None = None
         self._resize_start_geometry: QRect | None = None
+        # 关闭即销毁（见 lifecycle.release_window_when_idle，上游 833b053d）。**不挂
+        # WA_DeleteOnClose**：Qt 那一条会在 close() 里无条件 deleteLater，可能赶在在飞
+        # worker 退出之前把窗口（连同 worker 的宿主对象）删掉；销毁时机必须由 lifecycle
+        # 判定，所以这里只留生命周期标记。
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        self._release_scheduled = False
         # 无边框圆角窗：窗口自身透明（QSS #chat-window 背景同步置 transparent），
         # 只显示圆角的 phone-shell，去掉窗外一圈方形背景（浅色系统白框/深色系统黑框）
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -2029,7 +2037,13 @@ class ChatWindow(QDialog):
         if image_payloads:
             messages[-1]["content"] = [{"type": "text", "text": text}, *image_payloads]
         self._last_user_payload = messages[-1].get("content") if image_payloads else None
-        self._active_request_id = self.service.send(messages, config)
+        # request id 必须先落到本窗在途状态再 send：`started` 是在 send() 内**同步**发出的，
+        # 若沿用 `_active_request_id = send(...)` 的写法，`_started` 拿到的 id 与此刻的
+        # _active_request_id 必然不等，首行过滤恒命中 → 不进忙态、按钮不变停止、肥鱼不切思考态
+        # （上游 ed78e6e8 F6）。
+        request_id = uuid.uuid4().hex
+        self._active_request_id = request_id
+        self.service.send(messages, config, request_id=request_id)
         self._bottom()
 
     def _focus_chat(self) -> None:
@@ -2379,10 +2393,30 @@ class ChatWindow(QDialog):
         if not event.spontaneous():
             self._bottom(always=True)
 
-    def closeEvent(self, event) -> None:
-        """关闭=隐藏并复用窗口：停止生成、解除肥鱼位置监听，避免泄漏。"""
+    def done(self, result: int) -> None:
+        """所有收口路径（X / Esc / reject）统一「收尾 + 收起即销毁」（上游 833b053d + cee01e0e）。
+
+        Esc 走 ``reject() → done()``，**不经过 closeEvent**——收尾（落库未排空的回复、停止生成、
+        解除肥鱼位置监听）必须和销毁一样挂在这个公共出口上，只写 closeEvent 会让 Esc 留下指向
+        已销毁窗口的监听器。``WA_DeleteOnClose`` 只覆盖 ``close()``，所以销毁也排在这里。
+        """
+        # 模型已完成、打字机仍在排空时关窗：worker 已回收，service.stop() 既不取消任何东西
+        # 也不会补发 stopped 信号，而定时器一停 _pending_finish_text 就再没有落库机会——回复
+        # 丢失、重开后按钮仍卡在「停止」。故先按完成路径落库并复位（_complete_finished 内含
+        # _reset），再走原有关窗流程（上游 ed78e6e8 X3）。
+        if self._pending_finish_text is not None:
+            self._complete_finished(self._pending_finish_text)
         self._typewriter_timer.stop()
         self.service.stop()
         self.set_pet_window(None)
-        self.hide()
-        event.ignore()
+        super().done(result)
+        release_window_when_idle(self, self.service)
+
+    def closeEvent(self, event) -> None:
+        """收尾与销毁统一在 ``done()``（X 与 Esc 的公共出口），这里只转发。
+
+        ``super().closeEvent`` 在窗口可见时走 ``reject()`` → ``done()``。**不要先 hide 再调
+        super**——QDialog 的 closeEvent 只在 ``isVisible()`` 时 reject，先隐藏就既不发 finished
+        也不走销毁，槽位会留下死对象。
+        """
+        super().closeEvent(event)
