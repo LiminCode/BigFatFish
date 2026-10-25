@@ -32,7 +32,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Qt, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from . import autostart as autostart_mod
@@ -1968,6 +1968,7 @@ class AppShell:
         if self._shared is not None:
             self._shared.start()
         self._install_macos_dock_menu()
+        self._start_activity_tracker()
         self._sync_dynamic_island()
         self.instance._apply_spawn_offset()
         self._apply_balance_timer()
@@ -2249,6 +2250,12 @@ class AppShell:
         # 退出标记（R2 第五缺口）：在途自动拉起 worker 凭它中止或补偿收口——
         # 否则「退出时登记表为空 → worker 随后 spawn 登记」会留下永远无人收的进程。
         self._quitting = True
+        tracker = getattr(self, "_activity_tracker", None)
+        if tracker is not None:
+            try:
+                tracker.stop()          # 停表并把还没落盘的几分钟写下去（几 KB）
+            except Exception:  # noqa: BLE001 - 收口不许被它打断
+                logging.exception("退出时保存活动记录失败")
         # 窗级收口：逐窗保存位置、停本窗预热与 Agent、提交本窗会话
         for inst in self._instances:
             win = inst.win
@@ -2537,6 +2544,8 @@ class AppShell:
             self.island.briefing_requested.connect(self._open_work_briefing_from_island)
             # 「个人助理」小人形（有没有由 _push_island_personal_state 定）
             self.island.personal_requested.connect(self._open_personal_from_island)
+            # 点信息槽里的「今日用量」数字：近 7 天仪表盘（弹在岛的上方）
+            self.island.usage_dashboard_requested.connect(self._toggle_usage_dashboard)
             # 「通知」铃铛与卡片里的通知框（有没有由 _sync_notification_center 定）
             self.island.notifications_requested.connect(self._on_island_notifications_opened)
             self.island.notification_activated.connect(self._on_island_notification_activated)
@@ -3131,6 +3140,34 @@ class AppShell:
             return
         controller = getattr(self, "_work_briefing", None)
         island.set_briefing_state(controller.island_state if controller is not None else "hidden")
+
+    # ------------------------------------------------------------------ 近 7 天仪表盘
+    def _start_activity_tracker(self) -> None:
+        """记下哪几分钟在用电脑（仪表盘的上下班 / 专注时间）。只在 Windows 上：别的平台探测不到。"""
+        if sys.platform != "win32" or getattr(self, "_activity_tracker", None) is not None:
+            return
+        try:
+            from .activity_tracker import ActivityTracker
+
+            self._activity_tracker = ActivityTracker(self.config.dir, parent=self.app)
+            self._activity_tracker.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("活动记录接线失败")
+            self._activity_tracker = None
+
+    def _toggle_usage_dashboard(self) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        dashboard = getattr(self, "_usage_dashboard", None)
+        if dashboard is None:
+            from .usage_dashboard import UsageDashboard
+
+            tracker = lambda: getattr(getattr(self, "_activity_tracker", None), "log", None)  # noqa: E731
+            dashboard = self._usage_dashboard = UsageDashboard(self.config, activity=tracker, parent=self.app)
+        anchor = island.geometry()
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        dashboard.toggle(anchor, screen.availableGeometry() if screen is not None else anchor)
 
     def _open_work_briefing_from_island(self) -> None:
         controller = getattr(self, "_work_briefing", None)

@@ -264,6 +264,7 @@ class DynamicIsland(QWidget):
     history_toggled = Signal(bool)
     briefing_requested = Signal()  # 点了胶囊最右边的「工作简报」按钮
     personal_requested = Signal()  # 点了「个人助理」按钮（简报图标右边的小人形）
+    usage_dashboard_requested = Signal()  # 点了信息槽里的「今日用量」数字（近 7 天仪表盘）
     # 「通知」：点了胶囊上的铃铛（卡片已展开并把通知框打开）/ 点了一条 / 右键菜单选了一项 / 折叠或展开了
     notifications_requested = Signal()
     notification_activated = Signal(object)
@@ -618,6 +619,22 @@ class DynamicIsland(QWidget):
     def _personal_hit(self, pos) -> bool:
         return self._button_hit(self.personal_button_rect(), pos)
 
+    def usage_rect(self) -> QRectF | None:
+        """信息槽「今日用量」数字的可点区域（左右各延 4px，整条胶囊高度）；信息槽不显示用量时返回 None。"""
+        icon, name, info, _status = self._visible_parts()
+        if not info or self._info_mode() != "usage_today":
+            return None
+        fm = self.fontMetrics()
+        x = _CAPSULE_INSET + 13.0                          # 排法与 _content_cache 逐项一致
+        if icon:
+            x += 26 + 8
+        if name:
+            x += fm.horizontalAdvance(self._character_name()) + 8
+        return QRectF(x - 4, 0, fm.horizontalAdvance(self._info_text()) + 8, _CAPSULE_HEIGHT)
+
+    def _usage_hit(self, pos) -> bool:
+        return self._button_hit(self.usage_rect(), pos)
+
     def event(self, event) -> bool:  # noqa: N802
         # 悬停在简报 / 个人助理 / 通知按钮上时说出它是什么；别处仍是整条胶囊的那条提示（API 体检结论）
         if event.type() == QEvent.Type.ToolTip:
@@ -645,7 +662,7 @@ class DynamicIsland(QWidget):
         """悬停提示：API 体检结论；信息槽显示用量时再加一行用量明细。"""
         lines = [self._api_detail]
         if self._info_mode() == "usage_today":
-            lines.append(self._usage_detail)
+            lines += [self._usage_detail, t("island.usage.dashboard_hint")]
         self.setToolTip("\n".join(line for line in lines if line))
 
     def set_session_counts(self, counts) -> None:
@@ -1909,6 +1926,8 @@ class DynamicIsland(QWidget):
                 self.personal_requested.emit()
             elif self._notification_hit(event.position()):
                 self._on_bell_clicked()
+            elif self._usage_hit(event.position()):
+                self.usage_dashboard_requested.emit()
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
             else:
