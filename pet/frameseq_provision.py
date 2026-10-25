@@ -661,7 +661,21 @@ def _complete_meta(out_dir: Path | str, *, sha: str | None = None) -> dict | Non
     frames = meta.get("frames")
     if type(frames) is not int or frames < 1:
         return None
-    return meta if frames_on_disk(path) == frames else None
+    if frames_on_disk(path) != frames or not frame_ends_present(path, frames):
+        return None
+    return meta
+
+
+def frame_ends_present(gen_dir: Path | str, frames: int) -> bool:
+    """首尾两帧（``f_0001`` 与 ``f_<frames>``）都在磁盘上。
+
+    只数个数会放过「缺头 / 缺尾」的目录：2026-10-24 实机上 CLI 转换与桌宠后台供给撞车，
+    半成品目录的前 16 帧被清掉，收尾按磁盘个数写了 ``meta.frames``，目录个数自洽，
+    但 ``_FramePaths`` 按编号现推的 ``f_0002.webp`` 根本不存在——预取永远拿不到帧，
+    用户看到的是连点鱼「卡住没反应」。两次 ``stat`` 的代价与 ``frames_on_disk`` 同级。
+    """
+    path = Path(gen_dir)
+    return (path / "f_0001.webp").is_file() and (path / f"f_{int(frames):04d}.webp").is_file()
 
 
 def is_complete(out_dir: Path | str, *, sha: str | None = None) -> bool:
@@ -2156,6 +2170,10 @@ def convert_clip(webm: Path | str, out_dir: Path | str, *, force: bool = False,
     if frames <= 0:
         _discard(tmp_dir)
         return False, "ffmpeg 未产出任何帧"
+    if not frame_ends_present(tmp_dir, frames):
+        # 个数对但编号不从 1 开始 / 不到 frames：半成品被别的进程动过（见 frame_ends_present）
+        _discard(tmp_dir)
+        return False, f"帧编号不连续（{frames} 帧但首帧或末帧缺失），丢弃本轮产物"
     try:
         _write_meta(tmp_dir, source, sha=digest, fps=fps, frames=frames)
     except OSError as exc:                   # 盘满/只读：不掀整轮

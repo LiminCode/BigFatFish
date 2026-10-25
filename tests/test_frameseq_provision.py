@@ -2930,3 +2930,34 @@ def test_upgrade_round_reprovisions_when_only_legacy_tier_generation_exists(
             fp.clip_out_dir(webm, videos, frameseq)
     finally:
         lib.shutdown()
+
+
+def test_generation_with_a_hole_at_the_start_is_not_complete(tmp_path):
+    """帧文件必须从 f_0001 连续编到 f_<frames>：只数个数会放过「缺头」的目录。
+
+    2026-10-24 实机：CLI 转换与桌宠后台供给撞在一起，桌宠把半成品目录里的前 16 帧清掉，
+    CLI 随后按「磁盘上的帧数」写了 meta.frames=225，目录看起来自洽（225 == 225），
+    但 ``_FramePaths[1]`` 推出的 ``f_0002.webp`` 根本不存在——预取永远拿不到帧，连点
+    鱼就「卡住没反应」。采纳闸门与转换收尾都要把首尾两帧的存在当硬条件。
+    """
+    videos, frameseq = _make_pack(tmp_path, {"click": ["a.webm"]})
+    webm = videos / "click" / "a.webm"
+    gen = _stamped(webm, videos, frameseq, frames=FRAME_COUNT)
+    assert fp.current_generation(webm, videos, frameseq) == gen
+
+    # 缺头：删掉前两帧、meta 改成剩余个数——个数自洽，但编号不从 1 开始
+    for i in (1, 2):
+        (gen / f"f_{i:04d}.webp").unlink()
+    meta = json.loads((gen / "meta.json").read_text(encoding="utf-8"))
+    meta["frames"] = FRAME_COUNT - 2
+    (gen / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert fp.frames_on_disk(gen) == FRAME_COUNT - 2, "个数确实自洽——这正是闸门以前放过它的原因"
+    assert fp.is_complete(gen) is False
+    assert fp.current_generation(webm, videos, frameseq) is None
+
+    # 缺尾同理：首帧在、末帧不在
+    gen2 = _stamped(webm, videos, frameseq, frames=FRAME_COUNT)
+    (gen2 / f"f_{FRAME_COUNT:04d}.webp").unlink()
+    (gen2 / "f_9999.webp").write_bytes(b"webp")       # 个数补回去
+    assert fp.frames_on_disk(gen2) == FRAME_COUNT
+    assert fp.is_complete(gen2) is False
