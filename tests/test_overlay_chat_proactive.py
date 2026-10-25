@@ -391,8 +391,8 @@ def test_quick_chat_enter_sends_through_existing_chat_service(tmp_path):
         quick.input.returnPressed.emit()
         assert len(stub.sent) == 1
         messages, _settings = stub.sent[0]
-        assert [m.get("content") for m in messages if m.get("role") == "user"] == [
-            "主人今天也要加油"]
+        sent_user = [m.get("content") for m in messages if m.get("role") == "user"]
+        assert len(sent_user) == 1 and sent_user[0].endswith("] 主人今天也要加油"), sent_user   # 本轮消息带时间标记
     finally:
         shell._close_quick_chat()
         shell._delete_runtime_marker()
