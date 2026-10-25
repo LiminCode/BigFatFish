@@ -274,6 +274,15 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
         painter.setBrush(QBrush(color))
         painter.drawEllipse(QPointF(11.2, 8.0), 1.15, 1.15)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "briefing":
+        # 简报与笔记：一页纸 + 三行字 + 右上角一颗星（三级优先级的星），单色描边
+        painter.drawRoundedRect(QRectF(2.5, 1.8, 11.0, 12.4), 1.6, 1.6)
+        for y in (5.6, 8.2, 10.8):
+            painter.drawLine(QPointF(5.0, y), QPointF(11.0 if y > 6 else 8.4, y))
+        star = QPainterPath(QPointF(11.4, 2.6))
+        for point in ((12.0, 4.0), (13.5, 4.1), (12.4, 5.1), (12.8, 6.6), (11.4, 5.8), (10.0, 6.6), (10.4, 5.1), (9.3, 4.1), (10.8, 4.0), (11.4, 2.6)):
+            star.lineTo(QPointF(*point))
+        painter.drawPath(star)
     elif name == "automation":
         painter.drawLine(QPointF(4.0, 4.0), QPointF(11.8, 7.8))
         painter.drawLine(QPointF(4.0, 12.0), QPointF(11.8, 8.2))

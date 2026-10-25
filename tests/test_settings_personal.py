@@ -57,7 +57,7 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
                              model="claude-haiku-5-5", effort="low")
     try:
         for row_id in ("personal_flow", "personal_enabled", "personal_repo_dir", "personal_time", "personal_model", "personal_effort"):
-            assert _row_page(dialog, row_id) == "自动化与联动", row_id
+            assert _row_page(dialog, row_id) == "简报与笔记", row_id
         assert dialog.personal_enabled_check.isChecked()
         assert dialog.personal_repo_edit.text() == r"D:\vault\AI-Base"
         assert dialog.personal_time_select.currentData() == "07:30"

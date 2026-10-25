@@ -25,8 +25,8 @@ from pet.config import Config
 
 app = QApplication.instance() or QApplication([])
 CJK = re.compile(r"[一-鿿]")
-EN_DOMAINS = ["General", "Fish", "Interaction", "Menu", "Desktop widgets", "AI and chat", "Automation", "Voice", "File recognition"]
-ZH_DOMAINS = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "自动化与联动", "语音", "文件识别"]
+EN_DOMAINS = ["General", "Fish", "Interaction", "Menu", "Desktop widgets", "AI and chat", "Briefings & notes", "Automation", "Voice", "File recognition"]
+ZH_DOMAINS = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
 
 
 @pytest.fixture(autouse=True)

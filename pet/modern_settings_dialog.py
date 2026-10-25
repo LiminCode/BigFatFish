@@ -1771,16 +1771,23 @@ class ModernSettingsDialog(QDialog):
         automation_layout.insertWidget(0, agent_box)
         automation_layout.insertWidget(1, SettingsSection(t("settings.dlg.vs_code_workspaces"), settings_vscode.workspace_rows(self), automation))
         automation_layout.insertWidget(2, SettingsSection(t("settings.dlg.notification_center"), settings_notifications.notification_rows(self), automation))
-        automation_layout.insertWidget(3, SettingsSection(t("settings.dlg.slack_watch"), settings_slack_watch.slack_watch_rows(self), automation))
-        automation_layout.insertWidget(4, SettingsSection(settings_work_briefing.section_title(),
-                                                          settings_work_briefing.work_briefing_rows(self), automation))
-        automation_layout.insertWidget(5, settings_work_briefing.flow_section(self))
-        automation_layout.insertWidget(6, SettingsSection(settings_work_notes.section_title(),
-                                                          settings_work_notes.work_notes_rows(self), automation))
-        automation_layout.insertWidget(7, settings_work_notes.flow_section(self))
-        automation_layout.insertWidget(8, SettingsSection(settings_personal.section_title(),
-                                                          settings_personal.personal_rows(self), automation))
-        automation_layout.insertWidget(9, settings_personal.flow_section(self))
+
+        # 「简报与笔记」域（2026-10-24 用户要求放到第一层）：定时让 WSL 里的 Claude Code 替你读、写的东西
+        # ——工作简报 / Slack 关注 / 工作笔记 / 个人助理（各带「这个功能怎么运作」）。
+        briefing = page_content([])
+        briefing_layout = briefing.layout()
+        for index, widget in enumerate((
+            settings_help.help_section(briefing, "briefing_page_help", t("settings.dlg.briefing_page_help"),
+                                       t("settings.dlg.briefing_page_help_hint"), t("settings.dlg.briefing_page_help_body")),
+            SettingsSection(settings_work_briefing.section_title(), settings_work_briefing.work_briefing_rows(self), briefing),
+            settings_work_briefing.flow_section(self),
+            SettingsSection(t("settings.dlg.slack_watch"), settings_slack_watch.slack_watch_rows(self), briefing),
+            SettingsSection(settings_work_notes.section_title(), settings_work_notes.work_notes_rows(self), briefing),
+            settings_work_notes.flow_section(self),
+            SettingsSection(settings_personal.section_title(), settings_personal.personal_rows(self), briefing),
+            settings_personal.flow_section(self),
+        )):
+            briefing_layout.insertWidget(index, widget)
 
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
@@ -1814,6 +1821,7 @@ class ModernSettingsDialog(QDialog):
             "菜单": menu,
             "桌面组件": desktop_components,
             "AI 与对话": ai_sections,
+            "简报与笔记": briefing,
             "自动化与联动": automation,
             "语音": voice,
             "文件识别": file_interpret,

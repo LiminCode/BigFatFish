@@ -58,7 +58,7 @@ def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeyp
     try:
         for row_id in ("work_briefing_flow", "work_briefing_enabled", "work_briefing_weekdays", "work_briefing_time",
                        "work_briefing_model", *(f"work_briefing_source_{s}" for s in wb.SOURCES)):
-            assert _page_of(dialog, row_id) == "自动化与联动", row_id
+            assert _page_of(dialog, row_id) == "简报与笔记", row_id
         assert dialog.work_briefing_enabled_check.isChecked() and not dialog.work_briefing_weekdays_check.isChecked()
         assert dialog.work_briefing_time_select.currentData() == "08:30"
         assert dialog.work_briefing_model_select.currentData() == "haiku"
@@ -119,7 +119,7 @@ def test_effort_prompt_and_priority_rows_exist_and_show_the_builtin_prompt(tmp_p
                              sources={**wb.DEFAULT_SOURCES, "email": True})
     try:
         for row_id in ("work_briefing_effort", "work_briefing_prompt", "work_briefing_priority_rules"):
-            assert _page_of(dialog, row_id) == "自动化与联动", row_id
+            assert _page_of(dialog, row_id) == "简报与笔记", row_id
         assert dialog.work_briefing_effort_select.currentData() == "medium"
         # 没改过：编辑框里是按当前来源开关拼出的内置模板（含邮件那一段），「恢复内置」置灰
         shown = dialog.work_briefing_prompt_edit.toPlainText()
@@ -173,5 +173,41 @@ def test_an_edited_prompt_is_shown_on_reopen_and_the_english_page_edits_the_engl
         swb.save_work_briefing_settings(dialog)
         saved = config.get(wb.CONFIG_KEY)
         assert saved["prompt_en"] == "my template {now}" and saved["prompt_zh"] == "改过的中文模板 {now}"
+    finally:
+        _close(dialog)
+
+
+# ---------------------------------------------------------------- 「简报与笔记」一级域（2026-10-24）
+
+def _section_titles(page) -> list[str]:
+    from pet.settings_widgets import SettingsSection
+
+    return [s.title for s in page.findChildren(SettingsSection) if s.title]
+
+
+def test_the_ai_assisted_sections_have_their_own_page_in_order(tmp_path, monkeypatch):
+    """用户 2026-10-24：简报这些「定时让 AI 读、AI 协助记」的功能放到第一层，别埋在自动化与联动里。"""
+    config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
+        # 紧挨在「自动化与联动」前面（本夹具 include_ai=False，没有「AI 与对话」页）
+        assert labels.index("简报与笔记") == labels.index("自动化与联动") - 1
+        titles = _section_titles(dialog.pages.widget(labels.index("简报与笔记")))
+        assert titles[:1] == ["这一页是什么"]
+        wanted = ("工作简报", "Slack 关注", "工作笔记", "个人助理")
+        assert [x for x in titles if x in wanted] == list(wanted)
+        automation = _section_titles(dialog.pages.widget(labels.index("自动化与联动")))
+        assert not any(x in wanted for x in automation), "搬走之后旧页不该再有"
+        assert dialog.select_page("简报与笔记") and dialog.sidebar.currentItem().text() == "简报与笔记"
+    finally:
+        _close(dialog)
+
+
+def test_the_page_speaks_english(tmp_path, monkeypatch):
+    config, dialog = _dialog(tmp_path, monkeypatch, language="en")
+    try:
+        labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
+        assert "Briefings & notes" in labels
+        assert dialog.select_page("简报与笔记") and dialog.sidebar.currentItem().text() == "Briefings & notes"
     finally:
         _close(dialog)

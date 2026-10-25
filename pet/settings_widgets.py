@@ -97,6 +97,7 @@ SETTINGS_DOMAIN_NAV = (
     ("菜单", "application"),
     ("桌面组件", "island"),
     ("AI 与对话", "chat"),
+    ("简报与笔记", "briefing"),   # 2026-10-24：定时让 AI 读、AI 协助记的功能（简报 / Slack 关注 / 笔记 / 个人助理）
     ("自动化与联动", "automation"),
     ("语音", "sound"),
     ("文件识别", "file"),
@@ -111,6 +112,7 @@ SETTINGS_DOMAIN_KEYS = {
     "菜单": "settings.domain.menu",
     "桌面组件": "settings.domain.desktop",
     "AI 与对话": "settings.domain.ai",
+    "简报与笔记": "settings.domain.briefing",
     "自动化与联动": "settings.domain.automation",
     "语音": "settings.domain.voice",
     "文件识别": "settings.domain.file",
@@ -1371,6 +1373,7 @@ class SettingsSection(QWidget):
         super().__init__(parent)
         self.advanced = advanced
         self.rows = list(rows)
+        self.title = title   # 节标题（测试与页面组织按它认；显示在普通标签或折叠头上）
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
