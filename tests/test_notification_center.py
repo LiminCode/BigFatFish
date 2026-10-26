@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 
@@ -20,12 +21,24 @@ def _notice(uid: int, created: float = 100.0, *, app: str = "Slack", app_id: str
 # ---------------------------------------------------------------- 配置
 
 def test_normalize_fills_defaults_and_clamps():
-    assert nc.normalize(None) == {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": ["slack"]}
+    assert nc.normalize(None) == {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": ["slack"],
+                                  "toast": nc.TOAST_DEFAULTS}
     assert nc.normalize("junk") == nc.normalize({})
     out = nc.normalize({"enabled": "false", "poll_seconds": 0, "keep": 10_000, "apps": " Slack ,Teams,, slack"})
-    assert out == {"enabled": False, "poll_seconds": 2, "keep": 200, "apps": ["slack", "teams"]}
+    assert out == {"enabled": False, "poll_seconds": 2, "keep": 200, "apps": ["slack", "teams"],
+                   "toast": nc.TOAST_DEFAULTS}
     assert nc.normalize({"apps": []})["apps"] == ["slack"], "清空应用名就退回默认，别变成什么都认"
     assert nc.normalize({"poll_seconds": "abc", "enabled": 1})["poll_seconds"] == 3
+
+
+def test_toast_settings_are_normalised_inside_notifications():
+    assert nc.TOAST_DEFAULTS["enabled"] is False, "实验功能默认关：开了会和系统横幅各弹一遍"
+    out = nc.normalize({"toast": {"enabled": "yes", "corner": "bottom_left", "screen": " DELL G3223Q ",
+                                  "seconds": 999, "max_visible": 0}})["toast"]
+    assert out == {"enabled": True, "corner": "bottom_left", "screen": "DELL G3223Q",
+                   "seconds": nc.TOAST_SECONDS_RANGE[1], "max_visible": nc.TOAST_MAX_RANGE[0]}
+    assert nc.normalize({"toast": {"corner": "middle", "screen": ""}})["toast"] == nc.TOAST_DEFAULTS
+    assert nc.normalize({"toast": "junk"})["toast"] == nc.TOAST_DEFAULTS
 
 
 def test_matches_app_looks_at_name_and_aumid_case_insensitively():
@@ -119,6 +132,87 @@ def test_activate_reports_gone_or_failed():
         raise RuntimeError("UIA down")
 
     assert nc.activate(_notice(1), team_id="", invoke=explode, open_url=lambda u: None) == "opened_app", "UIA 炸了也走退路"
+
+
+# ---------------------------------------------------------------- launch（通知自己的启动参数）
+
+_SLACK_TOAST = ('<toast launch="slack://channel?id=C1&amp;message=1.2&amp;team=T1" activationType="protocol">'
+                '<visual><binding template="ToastGeneric"><text>#general</text></binding></visual></toast>')
+
+
+def test_parse_launch_reads_the_toast_root_attributes():
+    assert nc.parse_launch(_SLACK_TOAST) == ("protocol", "slack://channel?id=C1&message=1.2&team=T1")
+    assert nc.parse_launch('<toast launch="action=open&amp;id=5"><visual/></toast>') == ("foreground", "action=open&id=5")
+    assert nc.parse_launch(b"<toast/>") == ("foreground", "")
+    assert nc.parse_launch("not xml") == ("", "")
+
+
+@pytest.mark.parametrize("uri, ok", [
+    ("slack://channel?id=C1&team=T1", True),
+    ("msteams:/l/message/1", True),
+    ("https://example.com/x", True),
+    ("file:///C:/Windows/notepad.exe", False),
+    (r"C:\Windows\notepad.exe", False),
+    ("action=open&id=5", False),
+    ("", False),
+])
+def test_only_real_uri_schemes_are_launched(uri, ok):
+    assert nc.launchable_uri(uri) is ok
+
+
+def _make_db(folder, rows):
+    folder.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(folder / "wpndatabase.db")
+    db.execute("CREATE TABLE Notification (Id INTEGER, Type TEXT, Payload BLOB)")
+    db.executemany("INSERT INTO Notification VALUES (?, 'toast', ?)", rows)
+    db.commit()
+    db.close()
+
+
+def test_launch_targets_reads_a_copy_of_the_database(tmp_path):
+    source = tmp_path / "Notifications"
+    _make_db(source, [(11, _SLACK_TOAST.encode("utf-8")), (12, b"<toast/>")])
+    found = nc.launch_targets([11, 12, 13], source_dir=str(source))
+    assert found == {11: ("protocol", "slack://channel?id=C1&message=1.2&team=T1"), 12: ("foreground", "")}
+    assert nc.launch_targets([11], source_dir=str(tmp_path / "missing")) == {}
+    assert nc.launch_targets([], source_dir=str(source)) == {}
+
+
+def test_with_launch_fills_only_notices_that_lack_it():
+    calls = []
+
+    def lookup(uids):
+        calls.append(sorted(uids))
+        return {1: ("protocol", "slack://channel?id=C1")}
+
+    ready = nc.replace(_notice(2), launch="slack://x", activation="protocol")
+    out = nc.with_launch([_notice(1), ready, _notice(3)], lookup)
+    assert calls == [[1, 3]], "已经有的不再查"
+    assert (out[0].activation, out[0].launch) == ("protocol", "slack://channel?id=C1")
+    assert out[1] is ready and out[2].launch == "" and out[2].activation == "none"
+    assert nc.with_launch([ready], lookup) == [ready] and calls == [[1, 3]], "全都有就不碰数据库"
+
+
+def test_activate_opens_a_protocol_launch_directly_even_when_gone_from_the_center():
+    opened, invoked, removed = [], [], []
+    notice = nc.replace(_notice(5, in_center=False), launch="slack://channel?id=C1&team=T1", activation="protocol")
+    result = nc.activate(notice, team_id="T1", invoke=lambda n: invoked.append(n) or True, open_url=opened.append,
+                         remove=removed.append)
+    assert result == "launched"
+    assert opened == ["slack://channel?id=C1&team=T1"] and invoked == [], "不开通知中心"
+    assert removed == [], "已经不在通知中心里了"
+    assert nc.activate(nc.replace(notice, in_center=True), team_id="T1", invoke=lambda n: True,
+                       open_url=opened.append, remove=removed.append) == "launched"
+    assert removed == [5], "像系统一样，点过的从通知中心拿掉"
+
+
+def test_activate_without_a_usable_launch_keeps_the_old_path():
+    opened = []
+    foreground = nc.replace(_notice(5), launch="action=open", activation="foreground")
+    assert nc.activate(foreground, team_id="T1", invoke=lambda n: True, open_url=opened.append) == "activated"
+    unsafe = nc.replace(_notice(6), launch="file:///C:/x.exe", activation="protocol")
+    assert nc.activate(unsafe, team_id="T1", invoke=lambda n: True, open_url=opened.append) == "activated"
+    assert opened == []
 
 
 def test_center_probe_uses_title_and_a_whitespace_normalised_body_prefix():

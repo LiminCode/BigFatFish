@@ -147,3 +147,36 @@ def test_unavailable_platform_means_never_enabled(tmp_path, monkeypatch):
     service = NotificationService(Config(tmp_path), read=lambda *a, **k: ([], {}), spawn=lambda target: target())
     service.start()
     assert not service.enabled and not service._timer.isActive()
+
+
+def test_arrived_reports_new_notices_oldest_first_but_not_the_startup_backlog(tmp_path, monkeypatch):
+    monkeypatch.setattr(nc, "available", lambda: True)
+    center = FakeCenter()
+    center.items = [_notice(1, 10), _notice(2, 20)]          # 启动前就在通知中心里的
+    service = NotificationService(Config(tmp_path), read=center.read, activate=center.activate,
+                                  remove=center.remove, spawn=lambda target: target())
+    arrived = []
+    service.arrived.connect(lambda notices: arrived.append([n.uid for n in notices]))
+    service.apply_settings()
+    assert arrived == [] and service.unread_count == 2, "积压的照样进岛，但不弹"
+    center.items = [_notice(1, 10), _notice(2, 20), _notice(4, 40), _notice(3, 30)]
+    service.poll()
+    assert arrived == [[3, 4]], "旧的先弹，最新的最后弹（落在最靠角的位置）"
+    service.poll()
+    assert arrived == [[3, 4]], "没新的不发"
+    service.stop()
+
+
+def test_arrived_baseline_resets_when_turned_off_and_on(world):
+    config, center, service, events = world
+    arrived = []
+    service.arrived.connect(lambda notices: arrived.append([n.uid for n in notices]))
+    center.items = [_notice(1, 10)]
+    service.poll()
+    assert arrived == [[1]]
+    config.set(nc.CONFIG_KEY, {**nc.normalize(None), "enabled": False})
+    service.apply_settings()
+    center.items = [_notice(1, 10), _notice(2, 20)]
+    config.set(nc.CONFIG_KEY, nc.normalize(None))
+    service.apply_settings()
+    assert arrived == [[1]], "重新打开时通知中心里已有的算积压"

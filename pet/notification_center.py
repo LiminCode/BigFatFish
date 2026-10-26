@@ -12,11 +12,17 @@
   的进程订阅不了变更事件（实测报「Element not found」），所以只能隔几秒读一次。
 - **合并**（``merge``，纯函数）：这次读到的是通知中心里**现有**的；用户在 Windows 那边划掉的、
   我们这边跳过的会从里面消失，但卡片里还留着（``in_center=False``），只是跳不回原消息了。
-- **跳**（``activate``）：按名字的 ``slack://channel`` 深链接只认频道 id，给名字不跳还把 Slack
-  弄成报错页（2026-10-14 实测）。可行的是：打开通知中心（``ms-actioncenter:``），用 UI 自动化找到
-  那条通知并 Invoke——Windows 把激活交给 Slack，Slack 带着自己的参数跳到那条消息（实测 0.3 秒
-  找到、跳转成功，Slack 窗口标题换成那个频道）。通知中心里已经没有它了就退一步：
-  ``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
+- **启动参数**（``launch_targets``，2026-10-26）：通知自己点开时用的参数（toast XML 根上的
+  ``launch`` / ``activationType``）监听接口不给，但 Windows 的通知数据库
+  （``%LOCALAPPDATA%\\Microsoft\\Windows\\Notifications\\wpndatabase.db``）里有，而且数据库的
+  ``Notification.Id`` 就是监听接口给的 id（实测 22/22 对上）。数据库被系统服务开着、一直在写：
+  只把三个文件复制到临时目录查副本（约 20 ms），只读、查完删掉；只在有新通知的那一轮查一次，
+  结果记在 ``Notice`` 上，通知中心里没了也还能跳。Slack 的是 ``activationType="protocol"``、
+  ``launch="slack://channel?id=…&message=…&team=…"``：直接打开就跳到那条消息。
+- **跳**（``activate``）：有协议型的启动参数就直接打开它（不弹通知中心），再像系统一样把那条
+  从通知中心拿掉。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
+  （``ms-actioncenter:``），用 UI 自动化找到那条通知并 Invoke（实测 0.3 秒）。通知中心里也没有了
+  就再退一步：``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
 
 本模块不碰 Qt。所有 Windows 调用都设计成在工作线程里跑（WinRT 走 ``asyncio.run``，UIA 的 COM
 在线程里自己初始化）；缺包、非 Windows、没权限时读出来是空列表，不抛。
@@ -29,8 +35,12 @@ import json
 import logging
 import os
 import re
+import shutil
+import sqlite3
 import sys
+import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable
 
@@ -41,7 +51,20 @@ POLL_RANGE = (2, 60)            # 秒
 KEEP_RANGE = (5, 200)           # 卡片里最多留几条
 DEFAULT_APPS = ("slack",)
 ALL_APPS = "*"                  # apps 里写它 = 所有应用
-DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS)}
+#: 我们自己弹的通知（``notification_toast``）：哪个角、哪块屏、留几秒、最多同时几条
+TOAST_CORNERS = ("top_right", "top_left", "bottom_right", "bottom_left")
+TOAST_SCREEN_PRIMARY = "primary"
+TOAST_SCREEN_CURSOR = "cursor"
+TOAST_SECONDS_RANGE = (2, 60)
+TOAST_MAX_RANGE = (1, 10)
+TOAST_DEFAULTS = {"enabled": False, "corner": "top_right", "screen": TOAST_SCREEN_PRIMARY, "seconds": 6,
+                  "max_visible": 5}
+DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS), "toast": TOAST_DEFAULTS}
+
+_DB_DIR = r"%LOCALAPPDATA%\Microsoft\Windows\Notifications"
+_DB_NAME = "wpndatabase.db"
+_SCHEME_RE = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]+):", re.I)
+_UNSAFE_SCHEMES = {"file", "javascript", "vbscript", "data"}
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
 _SLACK_STATE_FILES = (
@@ -63,6 +86,26 @@ def _clamp(value, default: int, bounds: tuple[int, int]) -> int:
     return max(bounds[0], min(bounds[1], number))
 
 
+def _flag(value, default: bool) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return default if value is None else bool(value)
+
+
+def normalize_toast(raw) -> dict:
+    """``notifications.toast``：缺的补默认、脏的夹回去。``screen`` 是 ``primary`` / ``cursor`` / 屏幕名。"""
+    data = dict(raw) if isinstance(raw, dict) else {}
+    corner = str(data.get("corner") or "").strip()
+    screen = str(data.get("screen") or "").strip()
+    return {
+        "enabled": _flag(data.get("enabled"), TOAST_DEFAULTS["enabled"]),
+        "corner": corner if corner in TOAST_CORNERS else TOAST_DEFAULTS["corner"],
+        "screen": screen or TOAST_DEFAULTS["screen"],
+        "seconds": _clamp(data.get("seconds"), TOAST_DEFAULTS["seconds"], TOAST_SECONDS_RANGE),
+        "max_visible": _clamp(data.get("max_visible"), TOAST_DEFAULTS["max_visible"], TOAST_MAX_RANGE),
+    }
+
+
 def normalize(raw) -> dict:
     """配置里的 ``notifications``：缺的补默认、脏的夹回去。``apps`` 是应用名片段（小写、去空）。"""
     data = dict(raw) if isinstance(raw, dict) else {}
@@ -80,6 +123,7 @@ def normalize(raw) -> dict:
         "poll_seconds": _clamp(data.get("poll_seconds"), DEFAULTS["poll_seconds"], POLL_RANGE),
         "keep": _clamp(data.get("keep"), DEFAULTS["keep"], KEEP_RANGE),
         "apps": cleaned or list(DEFAULT_APPS),
+        "toast": normalize_toast(data.get("toast")),
     }
 
 
@@ -101,6 +145,13 @@ class Notice:
     body: str                # Slack：「发送人: 消息」或消息本身
     created: float           # epoch 秒
     in_center: bool = True   # 还在 Windows 通知中心里（能从那里激活）
+    launch: str = ""         # 通知自己的启动参数（数据库里读的；Slack 是 slack://channel?… 深链接）
+    activation: str = ""     # 启动参数的类型：protocol / foreground / background；"none" = 查过没有；"" = 还没查
+
+    @property
+    def launchable(self) -> bool:
+        """能不经通知中心直接跳（协议型的启动参数，且是正常的 URI）。"""
+        return self.activation == "protocol" and launchable_uri(self.launch)
 
     @property
     def kind(self) -> str:
@@ -140,6 +191,76 @@ def merge(known: Iterable[Notice], fresh: Iterable[Notice], *, keep: int,
     merged.sort(key=lambda n: (n.created, n.uid), reverse=True)
     new_uids = [n.uid for n in fresh_by_uid.values() if n.uid not in known_uids]
     return merged[:max(1, int(keep))], new_uids
+
+
+# ---------------------------------------------------------------- 启动参数（通知数据库的副本）
+def parse_launch(payload) -> tuple[str, str]:
+    """toast XML 根上的 (``activationType``, ``launch``)；类型缺省是 ``foreground``。解析不了返回 ("", "")。"""
+    if isinstance(payload, (bytes, bytearray)):
+        payload = bytes(payload).decode("utf-8", "replace")
+    try:
+        root = ET.fromstring(str(payload or ""))
+    except ET.ParseError:
+        return "", ""
+    return str(root.get("activationType") or "foreground"), str(root.get("launch") or "")
+
+
+def launchable_uri(uri: str) -> bool:
+    """能交给系统直接打开的启动参数：有正经的协议名（至少两个字母，排除 ``C:\\…`` 这种盘符路径），
+    且不是 file / 脚本类。"""
+    match = _SCHEME_RE.match(str(uri or ""))
+    return bool(match) and match.group("scheme").lower() not in _UNSAFE_SCHEMES
+
+
+def launch_targets(uids: Iterable[int], *, source_dir: str = _DB_DIR) -> dict[int, tuple[str, str]]:
+    """这些通知 id 的 (activationType, launch)。数据库被系统服务开着：复制到临时目录查副本，查完删掉。
+
+    查不到的 id 不在结果里；数据库不在 / 读坏了返回 ``{}``。在工作线程里调用。
+    """
+    wanted = sorted({int(uid) for uid in uids})
+    folder = os.path.expandvars(source_dir)
+    if not wanted or not os.path.isfile(os.path.join(folder, _DB_NAME)):
+        return {}
+    found: dict[int, tuple[str, str]] = {}
+    with tempfile.TemporaryDirectory(prefix="bff-wpn-") as scratch:
+        try:
+            for suffix in ("", "-wal", "-shm"):
+                source = os.path.join(folder, _DB_NAME + suffix)
+                if os.path.isfile(source):
+                    shutil.copyfile(source, os.path.join(scratch, _DB_NAME + suffix))
+            db = sqlite3.connect(os.path.join(scratch, _DB_NAME))
+            try:
+                marks = ",".join("?" * len(wanted))
+                rows = db.execute(f"SELECT Id, Payload FROM Notification WHERE Id IN ({marks})", wanted).fetchall()
+            finally:
+                db.close()
+        except (OSError, sqlite3.Error):
+            log.debug("通知中心：读通知数据库副本失败", exc_info=True)
+            return {}
+    for uid, payload in rows:
+        kind, launch = parse_launch(payload)
+        if kind:
+            found[int(uid)] = (kind, launch)
+    return found
+
+
+def with_launch(notices: list[Notice], lookup: Callable[[list[int]], dict] = launch_targets) -> list[Notice]:
+    """给还没查过启动参数的那几条补上（一次查一批）；查不到的记成 ``none``，以后不再查。"""
+    missing = [n.uid for n in notices if not n.activation]
+    if not missing:
+        return notices
+    try:
+        found = lookup(missing)
+    except Exception:  # noqa: BLE001 - 查不到就当没有，跳转走老路
+        log.debug("通知中心：查启动参数失败", exc_info=True)
+        found = {}
+    out = []
+    for notice in notices:
+        if not notice.activation:
+            kind, launch = found.get(notice.uid, ("none", ""))
+            notice = replace(notice, activation=kind or "none", launch=launch)
+        out.append(notice)
+    return out
 
 
 # ---------------------------------------------------------------- 读（WinRT）
@@ -248,15 +369,16 @@ def read_toasts(fragments: Iterable[str], *, want_logos: Iterable[str] = (),
     """通知中心里现有的、应用名匹配的 toast，以及 ``want_logos`` 里那些应用的图标字节。
 
     ``known`` 是上一轮的结果：同一 id 直接复用，不再逐条取应用信息（一条约 10 ms，列表本身
-    才几十毫秒）。在工作线程里调用（里面是 ``asyncio.run``）。不可用 / 没权限 / 出错都返回 ``([], {})``。
+    才几十毫秒），启动参数也只给新来的查一次（``with_launch``）。在工作线程里调用（里面是 ``asyncio.run``）。不可用 / 没权限 / 出错都返回 ``([], {})``。
     """
     if _import_winrt() is None:
         return [], {}
     try:
-        return asyncio.run(_read_async(tuple(fragments), set(want_logos), {n.uid: n for n in known}))
+        notices, logos = asyncio.run(_read_async(tuple(fragments), set(want_logos), {n.uid: n for n in known}))
     except Exception:  # noqa: BLE001 - 读失败这一轮算空，下一轮再来
         log.debug("通知中心：读取失败", exc_info=True)
         return [], {}
+    return with_launch(notices), logos
 
 
 def remove_from_center(uid: int) -> bool:
@@ -343,11 +465,22 @@ def _invoke_in_center(notice: Notice, *, wait_s: float = _CENTER_WAIT_S) -> bool
 
 
 def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[Notice], bool] | None = None,
-             open_url: Callable[[str], None] | None = None) -> str:
-    """跳到这条通知对应的消息。返回：``activated``（经通知中心交给了应用）/ ``opened_app``
-    （通知中心里没有了，改为打开应用）/ ``gone``（没有了、也不知道怎么打开）/ ``failed``。"""
+             open_url: Callable[[str], None] | None = None, remove: Callable[[int], object] | None = None) -> str:
+    """跳到这条通知对应的消息。返回：``launched``（直接打开了通知自己的启动参数）/ ``activated``
+    （经通知中心交给了应用）/ ``opened_app``（通知中心里没有了，改为打开应用）/ ``gone``（没有了、
+    也不知道怎么打开）/ ``failed``。"""
     invoke = invoke or _invoke_in_center
     open_url = open_url or os.startfile
+    remove = remove or remove_from_center
+    if notice.launchable:
+        try:
+            open_url(notice.launch)
+        except OSError:
+            log.debug("通知中心：打开启动参数失败", exc_info=True)
+        else:
+            if notice.in_center:
+                remove(notice.uid)          # 系统点开一条也会把它从通知中心拿掉
+            return "launched"
     if notice.in_center:
         try:
             if invoke(notice):

@@ -28,16 +28,17 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
+from . import notification_center as nc
 from .settings_theme_qss import METRO_TOKENS
 from .settings_widgets import _system_dark, tilt_transform
 
-CORNERS = ("top_right", "top_left", "bottom_right", "bottom_left")
-SCREEN_PRIMARY = "primary"
-SCREEN_CURSOR = "cursor"
+CORNERS = nc.TOAST_CORNERS
+SCREEN_PRIMARY = nc.TOAST_SCREEN_PRIMARY
+SCREEN_CURSOR = nc.TOAST_SCREEN_CURSOR
 THEMES = ("system", "light", "dark")
-SECONDS_RANGE = (2, 60)
-MAX_VISIBLE_RANGE = (1, 10)
-DEFAULTS = {"corner": "top_right", "screen": SCREEN_PRIMARY, "seconds": 6, "max_visible": 5, "theme": "system"}
+SECONDS_RANGE = nc.TOAST_SECONDS_RANGE
+MAX_VISIBLE_RANGE = nc.TOAST_MAX_RANGE
+DEFAULTS = {**nc.TOAST_DEFAULTS, "theme": "system"}
 
 CARD_WIDTH = 360
 MARGIN = 16              # 离屏幕可用区边缘
@@ -61,27 +62,11 @@ _FONTS = ["Segoe UI", "Microsoft YaHei UI", "PingFang SC", "sans-serif"]
 
 
 # ---------------------------------------------------------------- 配置
-def _clamp(value, default: int, bounds: tuple[int, int]) -> int:
-    try:
-        number = int(float(value))
-    except (TypeError, ValueError):
-        number = default
-    return max(bounds[0], min(bounds[1], number))
-
-
 def normalize(raw) -> dict:
-    """弹窗设置：缺的补默认、脏的夹回去。``screen`` 是 ``primary`` / ``cursor`` / 屏幕名。"""
+    """弹窗设置：``notifications.toast`` 的规则（``notification_center.normalize_toast``）+ 明暗主题。"""
     data = dict(raw) if isinstance(raw, dict) else {}
-    corner = str(data.get("corner") or "").strip()
-    screen = str(data.get("screen") or "").strip()
     theme = str(data.get("theme") or "").strip()
-    return {
-        "corner": corner if corner in CORNERS else DEFAULTS["corner"],
-        "screen": screen or DEFAULTS["screen"],
-        "seconds": _clamp(data.get("seconds"), DEFAULTS["seconds"], SECONDS_RANGE),
-        "max_visible": _clamp(data.get("max_visible"), DEFAULTS["max_visible"], MAX_VISIBLE_RANGE),
-        "theme": theme if theme in THEMES else DEFAULTS["theme"],
-    }
+    return {**nc.normalize_toast(data), "theme": theme if theme in THEMES else DEFAULTS["theme"]}
 
 
 # ---------------------------------------------------------------- 摆放（纯函数）
