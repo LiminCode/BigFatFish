@@ -86,6 +86,7 @@ def notification_rows(dialog) -> list[SettingRow]:
     seconds = BrowserSpinBox(dialog)
     seconds.setRange(*nc.TOAST_SECONDS_RANGE)
     seconds.setSuffix(t("settings.notifications.s"))
+    seconds.setSpecialValueText(t("settings.notifications.toast_stay"))     # 0 = 一直留着
     seconds.setValue(toast["seconds"])
     dialog.notifications_toast_seconds_spin = seconds
 

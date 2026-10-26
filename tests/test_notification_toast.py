@@ -27,10 +27,18 @@ def _notice(uid: int, **over) -> nc.Notice:
     return nc.Notice(**base)
 
 
+def _slack(uid: int, channel: str = "C1", title: str = "#general", **over) -> nc.Notice:
+    base = dict(uid=uid, app="Slack", app_id="Slack!App", title=title, body=f"Ann: message {uid}",
+                created=1_700_000_000.0 + uid, launch=f"slack://channel?id={channel}&message={uid}.0&team=T1",
+                activation="protocol")
+    base.update(over)
+    return nc.Notice(**base)
+
+
 # ---------------------------------------------------------------- 配置
 def test_normalize_fills_defaults_and_clamps():
     assert nt.normalize(None) == nt.DEFAULTS
-    out = nt.normalize({"corner": "nowhere", "screen": "  ", "seconds": 999, "max_visible": 0, "theme": "x"})
+    out = nt.normalize({"corner": "nowhere", "screen": "  ", "seconds": 99999, "max_visible": 0, "theme": "x"})
     assert out == {**nt.DEFAULTS, "seconds": nt.SECONDS_RANGE[1], "max_visible": nt.MAX_VISIBLE_RANGE[0]}
     kept = nt.normalize({"corner": "bottom_left", "screen": r"\\.\DISPLAY2", "seconds": "8", "theme": "dark"})
     assert (kept["corner"], kept["screen"], kept["seconds"], kept["theme"]) == ("bottom_left", r"\\.\DISPLAY2", 8, "dark")
@@ -174,3 +182,74 @@ def test_same_uid_is_not_shown_twice(stack):
     stack.push(_notice(1))
     stack.push(_notice(1))
     assert len(stack.visible_cards()) == 1
+
+
+# ---------------------------------------------------------------- 同一来源叠成一张（Slack 按频道）
+def _uids(card):
+    return [n.uid for n in card.notices]
+
+
+def test_same_slack_channel_stacks_into_one_card_and_moves_back_to_the_corner(stack):
+    stack.push(_slack(1))
+    single = stack.visible_cards()[0].height()
+    stack.push(_slack(2))
+    cards = stack.visible_cards()
+    assert len(cards) == 1 and _uids(cards[0]) == [2, 1], "同一频道：一张卡，最新的在上"
+    assert cards[0].height() > single
+    stack.push(_slack(3, channel="C2", title="#random"))
+    assert [_uids(c) for c in stack.visible_cards()] == [[3], [2, 1]]
+    stack.push(_slack(4))
+    cards = stack.visible_cards()
+    assert [_uids(c) for c in cards] == [[4, 2, 1], [3]], "这个频道又来了：整张卡回到最靠角的位置"
+    expected = nt.stack_positions(_area(stack), "top_right", nt.CARD_WIDTH, [c.height() for c in cards])
+    assert [c.pos() for c in cards] == expected
+
+
+def test_group_card_shows_three_rows_and_counts_the_rest(stack):
+    for uid in range(1, 6):
+        stack.push(_slack(uid))
+    card = stack.visible_cards()[0]
+    assert card.row_count() == 3 and card.more_count() == 2
+
+
+def test_other_apps_are_not_grouped(stack):
+    stack.push(_notice(1))
+    stack.push(_notice(2))
+    assert [_uids(c) for c in stack.visible_cards()] == [[2], [1]]
+
+
+def test_clicking_a_row_jumps_to_that_message_elsewhere_to_the_latest(stack):
+    activated = []
+    stack.activated.connect(lambda notice: activated.append(notice.uid))
+    for uid in (1, 2, 3):
+        stack.push(_slack(uid))
+    card = stack.visible_cards()[0]
+    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=card.row_rect(1).center())
+    app.processEvents()
+    assert activated == [2]
+    for uid in (4, 5):
+        stack.push(_slack(uid, channel="C9"))
+    card = stack.visible_cards()[0]
+    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=QPoint(nt.CARD_WIDTH // 2, 20))
+    app.processEvents()
+    assert activated == [2, 5], "点标题那一块：最新一条"
+
+
+def test_a_new_message_in_the_group_restarts_the_countdown(stack):
+    stack.push(_slack(1))
+    card = stack.visible_cards()[0]
+    card.set_hovered(True)
+    card._remaining_ms = 1500
+    card.set_hovered(False)
+    stack.push(_slack(2))
+    assert card.timer_active() and card._timer.interval() == 5000
+
+
+def test_zero_seconds_means_stay_until_dismissed(stack):
+    stack.apply_settings({"seconds": 0})
+    stack.push(_notice(1))
+    card = stack.visible_cards()[0]
+    assert not card.timer_active()
+    card.set_hovered(True)
+    card.set_hovered(False)
+    assert not card.timer_active(), "一直留着，直到关掉"

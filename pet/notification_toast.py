@@ -11,6 +11,11 @@
   方磁贴放应用图标（没有图标就写应用名首字），右边小字大写的应用名 + 时间、标题、两行正文。
   进场像 WP 的 toast 一样绕着靠屏幕边的那条边翻下来；悬停朝光标倾斜（``tilt_transform``）、
   停止倒计时；往屏幕边划走就关掉；点一下发 ``activated``（跳回原应用由调用方做）。
+- **同一来源叠成一张**（``notification_center.source_key``：Slack 按频道，别的应用暂不归组）：卡片变成
+  「对话卡」——标题是频道名，下面列最近 3 条「发送人: 消息」，更早的写「还有 N 条」，卡片底下露出
+  两层纸边表示是一摞。这个频道再来新消息：卡片更新内容、挪回最靠角的位置、重新倒计时。点某一行跳到
+  那条，点别处跳到最新一条；关掉 / 划走是整组。
+- **停留**：``seconds`` 秒后自己走；0 = 一直留着，直到用户关掉。
 - 每张卡片是一个独立的置顶、不抢焦点的无边框窗口，画在一张缓存的位图上再按动画变换贴出来。
 
 纯函数 ``stack_positions`` / ``resolve_screen`` / ``normalize`` 不碰窗口，测试直接用。
@@ -29,6 +34,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from . import notification_center as nc
+from .i18n import t
 from .settings_theme_qss import METRO_TOKENS
 from .settings_widgets import _system_dark, tilt_transform
 
@@ -50,6 +56,10 @@ _CLOSE = 24
 _TEXT_LEFT = _PAD + _TILE + _PAD
 _TEXT_WIDTH = CARD_WIDTH - _TEXT_LEFT - _PAD - _CLOSE // 2
 _BODY_LINES = 2
+_ROW_H = 19              # 正文 / 对话卡每行的高
+_GROUP_ROWS = 3          # 对话卡最多列几条
+_LAYER = 4               # 对话卡底下每层纸边露出多少
+_MAX_GROUP = 30          # 一组最多记这么多条
 _ENTER_MS = 280
 _LEAVE_MS = 200
 _MOVE_MS = 180
@@ -131,10 +141,19 @@ def wrap_lines(text: str, font: QFont, width: int, max_lines: int) -> list[str]:
     return lines
 
 
-def card_height(notice) -> int:
-    """一张卡片多高：标题一行，正文最多两行。"""
-    body = len(wrap_lines(getattr(notice, "body", ""), _font(13), _TEXT_WIDTH, _BODY_LINES))
-    return max(_PAD + _TILE + _PAD, _PAD + 16 + 4 + 22 + body * 19 + _PAD)
+def card_height(notices) -> int:
+    """一张卡片多高。一条：标题一行 + 正文最多两行。一组：标题 + 最多三行 + 「还有 N 条」+ 底下的纸边。"""
+    notices = list(notices) if isinstance(notices, (list, tuple)) else [notices]
+    if len(notices) <= 1:
+        body = len(wrap_lines(getattr(notices[0], "body", "") if notices else "", _font(13), _TEXT_WIDTH,
+                              _BODY_LINES))
+        return max(_PAD + _TILE + _PAD, _PAD + 16 + 4 + 22 + body * _ROW_H + _PAD)
+    rows = min(_GROUP_ROWS, len(notices)) + (1 if len(notices) > _GROUP_ROWS else 0)
+    return _PAD + 16 + 4 + 22 + rows * _ROW_H + _PAD + _layers(len(notices)) * _LAYER
+
+
+def _layers(count: int) -> int:
+    return min(2, max(0, count - 1))
 
 
 def _font(px: int, weight: QFont.Weight = QFont.Weight.Normal, spacing: float = 0.0) -> QFont:
@@ -154,17 +173,17 @@ def _tokens(theme: str) -> dict:
 
 # ---------------------------------------------------------------- 一张卡片
 class ToastCard(QWidget):
-    """一条通知。``clicked`` 点了正文；``leaving(reason)`` 开始退场（叠放管理器这时就让出位置）；
-    ``finished`` 退场动画走完（之后删掉）。"""
+    """一条通知，或同一来源的一组（``notices``，最新的在前）。``clicked(notice)`` 点了哪一条；
+    ``leaving_started(reason)`` 开始退场（叠放管理器这时就让出位置）；``finished`` 退场动画走完（之后删掉）。"""
 
-    clicked = Signal()
+    clicked = Signal(object)
     leaving_started = Signal(str)
     finished = Signal()
 
-    def __init__(self, notice, *, logo: bytes = b"", corner: str = "top_right", theme: str = "system",
+    def __init__(self, notices, *, logo: bytes = b"", corner: str = "top_right", theme: str = "system",
                  seconds: int = DEFAULTS["seconds"], animate: bool = True) -> None:
         super().__init__(None)
-        self.notice = notice
+        self.notices = list(notices) if isinstance(notices, (list, tuple)) else [notices]
         self._corner = corner
         self._animate = animate
         self._tokens = _tokens(theme)
@@ -193,14 +212,48 @@ class ToastCard(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(CARD_WIDTH, card_height(notice))
+        self.setFixedSize(CARD_WIDTH, card_height(self.notices))
+
+    @property
+    def notice(self):
+        """最新的一条。"""
+        return self.notices[0]
+
+    def set_notices(self, notices) -> None:
+        """这一组又来了新的：换内容、改高度、重新倒计时。"""
+        self.notices = list(notices)
+        self._cache = None
+        self.setFixedSize(CARD_WIDTH, card_height(self.notices))
+        self._remaining_ms = self._duration_ms
+        self._timer.stop()
+        if self.isVisible():
+            self.start_timer()
+        self.update()
 
     def close_rect(self) -> QRect:
         return QRect(CARD_WIDTH - _PAD // 2 - _CLOSE, _PAD // 2, _CLOSE, _CLOSE)
 
+    def row_count(self) -> int:
+        """对话卡列出来的行数（一条通知的卡片没有行）。"""
+        return min(_GROUP_ROWS, len(self.notices)) if len(self.notices) > 1 else 0
+
+    def more_count(self) -> int:
+        return max(0, len(self.notices) - _GROUP_ROWS) if len(self.notices) > 1 else 0
+
+    def row_rect(self, index: int) -> QRect:
+        return QRect(_TEXT_LEFT, _PAD + 42 + index * _ROW_H, _TEXT_WIDTH, _ROW_H)
+
+    def notice_at(self, pos: QPoint):
+        """点在哪一行就是那一条；别处是最新一条。"""
+        for index in range(self.row_count()):
+            if self.row_rect(index).contains(pos):
+                return self.notices[index]
+        return self.notice
+
     # ------------------------------------------------------------ 计时
     def start_timer(self) -> None:
-        if not self._hovered and not self._leaving:
+        """倒计时（剩下的时间）；``seconds`` 为 0 时一直留着，不倒计时。"""
+        if self._duration_ms > 0 and not self._hovered and not self._leaving:
             self._timer.start(max(1, self._remaining_ms))
 
     def timer_active(self) -> bool:
@@ -349,7 +402,7 @@ class ToastCard(QWidget):
             if self.close_rect().contains(pos):
                 self.dismiss("closed")
             else:
-                self.clicked.emit()
+                self.clicked.emit(self.notice_at(pos))
         else:
             self._drag_dx = 0          # 没划够：弹回原位
             self.update()
@@ -368,11 +421,34 @@ class ToastCard(QWidget):
         p = QPainter(pixmap)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
                          | QPainter.RenderHint.SmoothPixmapTransform)
-        rect = QRectF(0, 0, self.width(), self.height())
+        layers = _layers(len(self.notices)) if len(self.notices) > 1 else 0
+        face_h = self.height() - layers * _LAYER
+        for k in range(layers, 0, -1):            # 远的先画：一层比一层窄、往下错开
+            edge = QRectF(8 * k, face_h - _LAYER + k * _LAYER, self.width() - 16 * k, _LAYER)
+            p.fillRect(edge, QColor(tok["tile_hover"]))
+            p.setPen(QPen(QColor(tok["field_border"]), 1))
+            p.drawRect(edge.adjusted(0.5, -0.5, -0.5, -0.5))
+        rect = QRectF(0, 0, self.width(), face_h)
         p.fillRect(rect, QColor(tok["tile"]))
         p.setPen(QPen(QColor(tok["field_border"]), 1))      # 无阴影：浅色桌面上靠一圈细边分开
         p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
-        # 应用磁贴
+        self._paint_tile(p, dpr)
+        self._paint_header(p)
+        if len(self.notices) > 1:
+            self._paint_rows(p)
+        else:
+            p.setFont(_font(13))
+            p.setPen(QColor(tok["text"]))
+            for index, line in enumerate(wrap_lines(self.notice.body, _font(13), _TEXT_WIDTH, _BODY_LINES)):
+                p.drawText(QRectF(_TEXT_LEFT, _PAD + 42 + index * _ROW_H, _TEXT_WIDTH, _ROW_H),
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
+        p.end()
+        self._cache = pixmap
+        return pixmap
+
+    def _paint_tile(self, p: QPainter, dpr: float) -> None:
+        """左边强调色的应用磁贴：应用图标，没有就写应用名首字。"""
+        tok = self._tokens
         tile = QRectF(_PAD, _PAD, _TILE, _TILE)
         p.fillRect(tile, QColor(tok["accent"]))
         if not self._logo.isNull():
@@ -386,17 +462,21 @@ class ToastCard(QWidget):
             p.setPen(QColor(tok["selected_text"]))
             p.setFont(_font(20, QFont.Weight.Light))
             p.drawText(tile, Qt.AlignmentFlag.AlignCenter, (self.notice.app or "?").strip()[:1].upper())
-        # 文字
-        left, width = _TEXT_LEFT, _TEXT_WIDTH
+
+    def _paint_header(self, p: QPainter) -> None:
+        """小字大写的应用名 · 时间（· 一组几条），下面一行标题（Slack：频道名）。"""
+        tok, left, width = self._tokens, _TEXT_LEFT, _TEXT_WIDTH
         header = _font(11, QFont.Weight.DemiBold, 1.0)
         p.setFont(header)
         p.setPen(QColor(tok["muted"]))
         when = dt.datetime.fromtimestamp(self.notice.created).strftime("%H:%M") if self.notice.created else ""
-        when_w = QFontMetrics(header).horizontalAdvance(when) + 8
+        tail = "  ·  ".join(x for x in (when, t("notices.toast.count", n=len(self.notices))
+                                        if len(self.notices) > 1 else "") if x)
+        tail_w = QFontMetrics(header).horizontalAdvance(tail) + 8
         app_name = QFontMetrics(header).elidedText((self.notice.app or "").upper(), Qt.TextElideMode.ElideRight,
-                                                   width - when_w)
+                                                   width - tail_w)
         p.drawText(QRectF(left, _PAD, width, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                   f"{app_name}  ·  {when}" if when else app_name)
+                   f"{app_name}  ·  {tail}" if tail else app_name)
         title_font = _font(15, QFont.Weight.DemiBold)
         p.setFont(title_font)
         p.setPen(QColor(tok["title"]))
@@ -404,14 +484,33 @@ class ToastCard(QWidget):
                                                     Qt.TextElideMode.ElideRight, width)
         p.drawText(QRectF(left, _PAD + 20, width, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    title)
-        p.setFont(_font(13))
-        p.setPen(QColor(tok["text"]))
-        for index, line in enumerate(wrap_lines(self.notice.body, _font(13), width, _BODY_LINES)):
-            p.drawText(QRectF(left, _PAD + 42 + index * 19, width, 19),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
-        p.end()
-        self._cache = pixmap
-        return pixmap
+
+    def _paint_rows(self, p: QPainter) -> None:
+        """对话卡：每条一行「发送人: 消息」（发送人加粗），超出的写「还有 N 条」。"""
+        tok = self._tokens
+        bold, plain = _font(13, QFont.Weight.DemiBold), _font(13)
+        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        for index in range(self.row_count()):
+            notice = self.notices[index]
+            rect = QRectF(self.row_rect(index))
+            sender, message = nc.split_body(notice.body)
+            x = rect.left()
+            if sender:
+                label = QFontMetrics(bold).elidedText(sender + ": ", Qt.TextElideMode.ElideRight,
+                                                      int(rect.width() * 0.45))
+                p.setFont(bold)
+                p.setPen(QColor(tok["title"]))
+                p.drawText(QRectF(x, rect.top(), rect.width(), rect.height()), align, label)
+                x += QFontMetrics(bold).horizontalAdvance(label)
+            p.setFont(plain)
+            p.setPen(QColor(tok["text"]))
+            text = QFontMetrics(plain).elidedText(" ".join(message.split()), Qt.TextElideMode.ElideRight,
+                                                  int(rect.right() - x))
+            p.drawText(QRectF(x, rect.top(), rect.right() - x, rect.height()), align, text)
+        if self.more_count():
+            p.setFont(_font(12))
+            p.setPen(QColor(tok["muted"]))
+            p.drawText(QRectF(self.row_rect(self.row_count())), align, t("notices.toast.more", n=self.more_count()))
 
     def _transform(self) -> QTransform:
         w, h = self.width(), self.height()
@@ -454,7 +553,7 @@ class ToastStack(QObject):
     """管一摞卡片：摆位、排队、补位、换角换屏。
 
     ``activated(notice)`` 用户点了某条（调用方负责跳回原应用）；``dismissed(notice, reason)``
-    一条走了：``activated`` / ``closed`` / ``swiped`` / ``expired`` / ``cleared``。
+    一张走了（一组的话是最新那条）：``activated`` / ``closed`` / ``swiped`` / ``expired`` / ``cleared``。
     """
 
     activated = Signal(object)
@@ -498,14 +597,27 @@ class ToastStack(QObject):
         return sum(1 for e in self._entries if e.card is None or not e.card.isVisible())
 
     def push(self, notice, logo: bytes = b"") -> bool:
-        """弹一条；同一 ``uid`` 只弹一次。返回是否收下。最新的总是马上弹出来，放不下的是最旧的。"""
+        """弹一条；同一 ``uid`` 只弹一次。返回是否收下。最新的总是马上弹出来，放不下的是最旧的。
+
+        和在场（或排队）的某张同一来源（``source_key``）：并进那张，那张挪到最前。
+        """
         uid = getattr(notice, "uid", id(notice))
         if uid in self._seen:
             return False
         self._seen.add(uid)
         if not self._entries:
             self._screen = None          # 「光标所在的屏」按一摞开始时算
-        self._entries.insert(0, _Entry(notice, logo))
+        key = nc.source_key(notice) if isinstance(notice, nc.Notice) else ""
+        entry = next((e for e in self._entries if key and e.key == key), None)
+        if entry is None:
+            entry = _Entry(key, notice, logo)
+        else:
+            self._entries.remove(entry)
+            entry.notices = [notice] + entry.notices[:_MAX_GROUP - 1]
+            entry.logo = logo or entry.logo
+            if entry.card is not None:
+                entry.card.set_notices(entry.notices)
+        self._entries.insert(0, entry)
         del self._entries[_MAX_PENDING:]
         self._reflow()
         return True
@@ -523,9 +635,9 @@ class ToastStack(QObject):
     # ------------------------------------------------------------ 摆
     def _make_card(self, entry: "_Entry") -> ToastCard:
         s = self._settings
-        card = ToastCard(entry.notice, logo=entry.logo, corner=s["corner"], theme=s["theme"],
+        card = ToastCard(entry.notices, logo=entry.logo, corner=s["corner"], theme=s["theme"],
                          seconds=s["seconds"], animate=self._animate)
-        card.clicked.connect(lambda c=card: self._on_clicked(c))
+        card.clicked.connect(lambda notice, c=card: self._on_clicked(c, notice))
         card.leaving_started.connect(lambda reason, c=card: self._on_leaving(c, reason))
         card.finished.connect(card.deleteLater)
         return card
@@ -537,7 +649,7 @@ class ToastStack(QObject):
             return
         head = self._entries[:self._settings["max_visible"]]
         positions = stack_positions(screen.availableGeometry(), self._settings["corner"], CARD_WIDTH,
-                                    [card_height(e.notice) for e in head])
+                                    [card_height(e.notices) for e in head])
         for entry, pos in zip(head, positions):
             if entry.card is None:
                 entry.card = self._make_card(entry)
@@ -549,10 +661,10 @@ class ToastStack(QObject):
             if entry.card is not None and entry.card.isVisible():
                 entry.card.park()
 
-    def _on_clicked(self, card: ToastCard) -> None:
+    def _on_clicked(self, card: ToastCard, notice) -> None:
         if card.leaving():
             return
-        self.activated.emit(card.notice)
+        self.activated.emit(notice)
         card.dismiss("activated")
 
     def _on_leaving(self, card: ToastCard, reason: str) -> None:
@@ -563,9 +675,12 @@ class ToastStack(QObject):
 
 
 class _Entry:
-    __slots__ = ("notice", "logo", "card")
+    """一张卡片的内容：来源键（空 = 不归组）、这一组的通知（最新的在前）、应用图标、卡片（排队时没有）。"""
 
-    def __init__(self, notice, logo: bytes) -> None:
-        self.notice = notice
+    __slots__ = ("key", "notices", "logo", "card")
+
+    def __init__(self, key: str, notice, logo: bytes) -> None:
+        self.key = key
+        self.notices = [notice]
         self.logo = logo
         self.card: ToastCard | None = None

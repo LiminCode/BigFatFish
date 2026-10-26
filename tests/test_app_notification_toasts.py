@@ -84,7 +84,8 @@ def test_click_goes_through_the_service_and_turning_off_clears(tmp_path):
     stack = shell._notification_toasts
     stack._animate = False
     shell._on_notifications_arrived([_notice(7)])
-    stack.visible_cards()[0].clicked.emit()
+    card = stack.visible_cards()[0]
+    card.clicked.emit(card.notice)
     assert shell._notifications.activated == [7]
     shell._on_notifications_arrived([_notice(8)])
     shell.config.set(nc.CONFIG_KEY, nc.normalize(None))     # 弹窗关掉

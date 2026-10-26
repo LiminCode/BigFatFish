@@ -43,6 +43,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable
+from urllib.parse import parse_qs, urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ ALL_APPS = "*"                  # apps 里写它 = 所有应用
 TOAST_CORNERS = ("top_right", "top_left", "bottom_right", "bottom_left")
 TOAST_SCREEN_PRIMARY = "primary"
 TOAST_SCREEN_CURSOR = "cursor"
-TOAST_SECONDS_RANGE = (2, 60)
+TOAST_SECONDS_RANGE = (0, 3600)       # 0 = 一直留着，直到用户关掉
 TOAST_MAX_RANGE = (1, 10)
 TOAST_DEFAULTS = {"enabled": False, "corner": "top_right", "screen": TOAST_SCREEN_PRIMARY, "seconds": 6,
                   "max_visible": 5}
@@ -149,6 +150,11 @@ class Notice:
     activation: str = ""     # 启动参数的类型：protocol / foreground / background；"none" = 查过没有；"" = 还没查
 
     @property
+    def source(self) -> str:
+        """同一来源归一组用的键（``source_key``）；空 = 不归组。"""
+        return source_key(self)
+
+    @property
     def launchable(self) -> bool:
         """能不经通知中心直接跳（协议型的启动参数，且是正常的 URI）。"""
         return self.activation == "protocol" and launchable_uri(self.launch)
@@ -164,6 +170,20 @@ class Notice:
     @property
     def message(self) -> str:
         return split_body(self.body)[1]
+
+
+def source_key(notice: Notice) -> str:
+    """通知按「来源」归组用的键。来源不是应用：Slack 按工作区 + 频道（私聊也是一个频道），
+    键取深链接里的 ``team`` / ``id``，没有深链接时退回频道名（通知标题）。别的应用暂不归组（返回空）；
+    要给别的应用加规则就加在这里。"""
+    if notice.kind != "slack":
+        return ""
+    query = parse_qs(urlsplit(notice.launch).query) if notice.launch else {}
+    channel = (query.get("id") or [""])[0]
+    if channel:
+        return f"slack:{(query.get('team') or [''])[0]}:{channel}"
+    title = " ".join(str(notice.title or "").split())
+    return f"slack:{title}" if title else ""
 
 
 def split_body(body: str) -> tuple[str, str]:

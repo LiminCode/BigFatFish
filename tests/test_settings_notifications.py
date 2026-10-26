@@ -93,3 +93,9 @@ def test_toast_controls_follow_the_toggle(make_dialog):
     assert not any(c.isEnabled() for c in controls), "弹窗关着时这几项置灰"
     dialog.notifications_toast_check.setChecked(True)
     assert all(c.isEnabled() for c in controls)
+
+
+def test_seconds_can_be_zero_meaning_stay(make_dialog):
+    spin = make_dialog().notifications_toast_seconds_spin
+    assert spin.minimum() == 0 and spin.maximum() == nc.TOAST_SECONDS_RANGE[1]
+    assert spin.specialValueText(), "0 显示成「一直留着」"

@@ -34,11 +34,29 @@ def test_normalize_fills_defaults_and_clamps():
 def test_toast_settings_are_normalised_inside_notifications():
     assert nc.TOAST_DEFAULTS["enabled"] is False, "实验功能默认关：开了会和系统横幅各弹一遍"
     out = nc.normalize({"toast": {"enabled": "yes", "corner": "bottom_left", "screen": " DELL G3223Q ",
-                                  "seconds": 999, "max_visible": 0}})["toast"]
+                                  "seconds": 99999, "max_visible": 0}})["toast"]
     assert out == {"enabled": True, "corner": "bottom_left", "screen": "DELL G3223Q",
                    "seconds": nc.TOAST_SECONDS_RANGE[1], "max_visible": nc.TOAST_MAX_RANGE[0]}
     assert nc.normalize({"toast": {"corner": "middle", "screen": ""}})["toast"] == nc.TOAST_DEFAULTS
     assert nc.normalize({"toast": "junk"})["toast"] == nc.TOAST_DEFAULTS
+
+
+def test_toast_seconds_allow_zero_for_stay_until_dismissed():
+    assert nc.TOAST_SECONDS_RANGE[0] == 0 and nc.TOAST_SECONDS_RANGE[1] >= 600
+    assert nc.normalize_toast({"seconds": 0})["seconds"] == 0
+    assert nc.normalize_toast({"seconds": -5})["seconds"] == 0
+
+
+@pytest.mark.parametrize("notice, key", [
+    (nc.Notice(uid=1, app="Slack", app_id="91750D7E.Slack_x!Slack", title="#general", body="Ann: hi", created=1,
+               launch="slack://channel?id=C123&message=1.2&team=T9&origin=x", activation="protocol"), "slack:T9:C123"),
+    (nc.Notice(uid=2, app="Slack", app_id="91750D7E.Slack_x!Slack", title="#general", body="Bo: yo", created=1),
+     "slack:#general"),
+    (nc.Notice(uid=3, app="Slack", app_id="x", title="", body="", created=1), ""),
+    (nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1), ""),
+])
+def test_source_key_groups_slack_by_channel_and_leaves_other_apps_alone(notice, key):
+    assert nc.source_key(notice) == key
 
 
 def test_matches_app_looks_at_name_and_aumid_case_insensitively():
