@@ -35,6 +35,12 @@ def test_matches_app_looks_at_name_and_aumid_case_insensitively():
     assert not nc.matches_app("Slack", "x", ("",)), "空片段不算匹配"
 
 
+def test_star_fragment_matches_every_app():
+    assert nc.matches_app("Windows PowerShell", "{1AC14E77}\\powershell.exe", ("*",))
+    assert nc.matches_app("", "", ("slack", "*"))
+    assert nc.normalize({"apps": ["*", "slack"]})["apps"] == ["*", "slack"]
+
+
 # ---------------------------------------------------------------- 数据
 
 def test_split_body_separates_sender_from_message():

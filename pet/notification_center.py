@@ -40,6 +40,7 @@ CONFIG_KEY = "notifications"
 POLL_RANGE = (2, 60)            # 秒
 KEEP_RANGE = (5, 200)           # 卡片里最多留几条
 DEFAULT_APPS = ("slack",)
+ALL_APPS = "*"                  # apps 里写它 = 所有应用
 DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS)}
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
@@ -83,9 +84,9 @@ def normalize(raw) -> dict:
 
 
 def matches_app(name: str, app_id: str, fragments: Iterable[str]) -> bool:
-    """应用名或 AUMID 里含任一片段（不分大小写）。"""
+    """应用名或 AUMID 里含任一片段（不分大小写）；片段 ``*`` 认所有应用。"""
     haystack = f"{name or ''}\n{app_id or ''}".lower()
-    return any(fragment and fragment in haystack for fragment in fragments)
+    return any(fragment == ALL_APPS or (fragment and fragment in haystack) for fragment in fragments)
 
 
 # ---------------------------------------------------------------- 数据
