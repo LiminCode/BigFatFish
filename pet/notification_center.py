@@ -60,12 +60,18 @@ TOAST_SECONDS_RANGE = (0, 3600)       # 0 = 一直留着，直到用户关掉
 TOAST_MAX_RANGE = (1, 10)
 TOAST_DEFAULTS = {"enabled": False, "corner": "top_right", "screen": TOAST_SCREEN_PRIMARY, "seconds": 6,
                   "max_visible": 5}
-DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS), "toast": TOAST_DEFAULTS}
+#: 同一来源的通知怎么叠（弹窗里并成一张）：每个应用一个选择。off = 每条单独；app = 整个应用叠成一张；
+#: Slack 的 channel = 按频道（私聊也是频道）；Chrome 的 site = 按发通知的网站。
+STACK_CHOICES = {"slack": ("off", "channel", "app"), "chrome": ("off", "site", "app")}
+STACK_DEFAULTS = {"slack": "channel", "chrome": "site"}
+DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS), "toast": TOAST_DEFAULTS,
+            "stack": STACK_DEFAULTS}
 
 _DB_DIR = r"%LOCALAPPDATA%\Microsoft\Windows\Notifications"
 _DB_NAME = "wpndatabase.db"
 _SCHEME_RE = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]+):", re.I)
 _UNSAFE_SCHEMES = {"file", "javascript", "vbscript", "data"}
+_URL_RE = re.compile(r"https?://(?P<host>[^/|#?\s]+)", re.I)
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
 _SLACK_STATE_FILES = (
@@ -107,6 +113,16 @@ def normalize_toast(raw) -> dict:
     }
 
 
+def normalize_stack(raw) -> dict:
+    """``notifications.stack``：每个应用怎么叠；不认识的值退回默认。"""
+    data = dict(raw) if isinstance(raw, dict) else {}
+    out = {}
+    for app, choices in STACK_CHOICES.items():
+        value = str(data.get(app) or "").strip()
+        out[app] = value if value in choices else STACK_DEFAULTS[app]
+    return out
+
+
 def normalize(raw) -> dict:
     """配置里的 ``notifications``：缺的补默认、脏的夹回去。``apps`` 是应用名片段（小写、去空）。"""
     data = dict(raw) if isinstance(raw, dict) else {}
@@ -125,6 +141,7 @@ def normalize(raw) -> dict:
         "keep": _clamp(data.get("keep"), DEFAULTS["keep"], KEEP_RANGE),
         "apps": cleaned or list(DEFAULT_APPS),
         "toast": normalize_toast(data.get("toast")),
+        "stack": normalize_stack(data.get("stack")),
     }
 
 
@@ -161,7 +178,11 @@ class Notice:
 
     @property
     def kind(self) -> str:
-        return "slack" if "slack" in f"{self.app}\n{self.app_id}".lower() else "other"
+        """``slack`` / ``chrome`` / ``other``（叠放规则、跳转退路按它分）。"""
+        haystack = f"{self.app}\n{self.app_id}".lower()
+        if "slack" in haystack:
+            return "slack"
+        return "chrome" if "chrome" in haystack else "other"
 
     @property
     def sender(self) -> str:
@@ -172,18 +193,34 @@ class Notice:
         return split_body(self.body)[1]
 
 
-def source_key(notice: Notice) -> str:
-    """通知按「来源」归组用的键。来源不是应用：Slack 按工作区 + 频道（私聊也是一个频道），
-    键取深链接里的 ``team`` / ``id``，没有深链接时退回频道名（通知标题）。别的应用暂不归组（返回空）；
-    要给别的应用加规则就加在这里。"""
-    if notice.kind != "slack":
+def source_key(notice: Notice, stack: dict | None = None) -> str:
+    """通知按「来源」归组用的键；空 = 不归组（自己一张卡）。怎么归由 ``stack``（``notifications.stack``）定：
+
+    - Slack ``channel``：工作区 + 频道（私聊也是一个频道），取深链接里的 ``team`` / ``id``；没有深链接时
+      退回频道名（通知标题），再没有就整个 Slack 一组。
+    - Chrome ``site``：发通知的网站。Chrome 的启动参数里带着来源网址（``…|https://mail.google.com/|…``），
+      取它的主机名；取不到就整个 Chrome 一组。
+    - ``app``：整个应用一组；``off``：不归组。别的应用暂不归组；要加规则就加在这里和 ``STACK_CHOICES``。
+    """
+    kind = notice.kind
+    if kind not in STACK_CHOICES:
         return ""
-    query = parse_qs(urlsplit(notice.launch).query) if notice.launch else {}
-    channel = (query.get("id") or [""])[0]
-    if channel:
-        return f"slack:{(query.get('team') or [''])[0]}:{channel}"
-    title = " ".join(str(notice.title or "").split())
-    return f"slack:{title}" if title else ""
+    mode = normalize_stack(stack)[kind]
+    if mode == "off":
+        return ""
+    if mode == "channel":
+        query = parse_qs(urlsplit(notice.launch).query) if notice.launch else {}
+        channel = (query.get("id") or [""])[0]
+        if channel:
+            return f"slack:{(query.get('team') or [''])[0]}:{channel}"
+        title = " ".join(str(notice.title or "").split())
+        if title:
+            return f"slack:{title}"
+    if mode == "site":
+        match = _URL_RE.search(notice.launch or "")
+        if match:
+            return f"chrome:{match.group('host').lower()}"
+    return kind
 
 
 def split_body(body: str) -> tuple[str, str]:

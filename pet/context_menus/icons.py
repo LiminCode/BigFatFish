@@ -283,6 +283,17 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
         for point in ((12.0, 4.0), (13.5, 4.1), (12.4, 5.1), (12.8, 6.6), (11.4, 5.8), (10.0, 6.6), (10.4, 5.1), (9.3, 4.1), (10.8, 4.0), (11.4, 2.6)):
             star.lineTo(QPointF(*point))
         painter.drawPath(star)
+    elif name == "bell":
+        # 通知：一只铃铛（钟体 + 底边 + 小铃舌），和灵动岛上的铃铛同一个样子
+        bell = QPainterPath(QPointF(3.0, 11.6))
+        bell.lineTo(QPointF(4.4, 9.8))
+        bell.lineTo(QPointF(4.4, 7.0))
+        bell.arcTo(QRectF(4.4, 2.4, 7.2, 9.2), 180, -180)
+        bell.lineTo(QPointF(11.6, 9.8))
+        bell.lineTo(QPointF(13.0, 11.6))
+        bell.closeSubpath()
+        painter.drawPath(bell)
+        painter.drawLine(QPointF(6.6, 13.6), QPointF(9.4, 13.6))
     elif name == "automation":
         painter.drawLine(QPointF(4.0, 4.0), QPointF(11.8, 7.8))
         painter.drawLine(QPointF(4.0, 12.0), QPointF(11.8, 8.2))

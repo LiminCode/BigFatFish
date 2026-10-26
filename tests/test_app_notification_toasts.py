@@ -92,3 +92,11 @@ def test_click_goes_through_the_service_and_turning_off_clears(tmp_path):
     shell._sync_notification_toasts()
     app.processEvents()
     assert stack.visible_cards() == []
+
+
+def test_stacking_choice_from_config_reaches_the_popups(tmp_path):
+    shell = _shell(tmp_path, toast_enabled=True)
+    config = nc.normalize(shell.config.get(nc.CONFIG_KEY))
+    shell.config.set(nc.CONFIG_KEY, {**config, "stack": {"slack": "off", "chrome": "app"}})
+    shell._sync_notification_toasts()
+    assert shell._notification_toasts.settings["stack"] == {"slack": "off", "chrome": "app"}

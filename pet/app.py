@@ -3238,12 +3238,13 @@ class AppShell:
     NOTIFICATION_TOAST_FRESH_S = 120
 
     def _sync_notification_toasts(self) -> None:
-        """自家弹窗（``notification_toast``）：设置里开着才建；角 / 屏 / 秒数 / 条数 / 明暗跟配置走。"""
+        """自家弹窗（``notification_toast``）：设置里开着才建；角 / 屏 / 秒数 / 条数 / 叠放 / 明暗跟配置走。"""
         from .notification_center import CONFIG_KEY, normalize
 
         service = getattr(self, "_notifications", None)
         stack = getattr(self, "_notification_toasts", None)
-        settings = normalize(self.config.get(CONFIG_KEY))["toast"]
+        full = normalize(self.config.get(CONFIG_KEY))
+        settings = full["toast"]
         if service is None or not service.enabled or not settings["enabled"]:
             if stack is not None:
                 stack.clear()
@@ -3255,7 +3256,7 @@ class AppShell:
             stack.activated.connect(self._on_notification_toast_activated)
             self._notification_toasts = stack
         theme = str((self.config.get("context_menu_appearance") or {}).get("theme") or "system")
-        stack.apply_settings({**settings, "theme": theme})
+        stack.apply_settings({**settings, "theme": theme, "stack": full["stack"]})
 
     def _on_notifications_arrived(self, notices) -> None:
         """刚到的通知弹出来（旧到新）。全屏游戏 / 演示时不弹（照样进岛里的列表）。"""

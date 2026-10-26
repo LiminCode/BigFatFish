@@ -1770,7 +1770,11 @@ class ModernSettingsDialog(QDialog):
         # 「消费统计」（DeepSeek 余额差）2026-10-13 下线：Claude 没有余额接口，用量看灵动岛的「今日用量」
         automation_layout.insertWidget(0, agent_box)
         automation_layout.insertWidget(1, SettingsSection(t("settings.dlg.vs_code_workspaces"), settings_vscode.workspace_rows(self), automation))
-        automation_layout.insertWidget(2, SettingsSection(t("settings.dlg.notification_center"), settings_notifications.notification_rows(self), automation))
+
+        # 「通知」域（2026-10-26 用户要求放到第一层）：读 Windows 通知中心 / 同一来源怎么叠 / 自家弹窗
+        notifications = page_content([])
+        for index, section in enumerate(settings_notifications.notification_sections(self, notifications)):
+            notifications.layout().insertWidget(index, section)
 
         # 「简报与笔记」域（2026-10-24 用户要求放到第一层）：定时让 WSL 里的 Claude Code 替你读、写的东西
         # ——工作简报 / Slack 关注 / 工作笔记 / 个人助理（各带「这个功能怎么运作」）。
@@ -1820,6 +1824,7 @@ class ModernSettingsDialog(QDialog):
             "互动": interaction,
             "菜单": menu,
             "桌面组件": desktop_components,
+            "通知": notifications,
             "AI 与对话": ai_sections,
             "简报与笔记": briefing,
             "自动化与联动": automation,

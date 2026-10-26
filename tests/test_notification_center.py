@@ -22,11 +22,11 @@ def _notice(uid: int, created: float = 100.0, *, app: str = "Slack", app_id: str
 
 def test_normalize_fills_defaults_and_clamps():
     assert nc.normalize(None) == {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": ["slack"],
-                                  "toast": nc.TOAST_DEFAULTS}
+                                  "toast": nc.TOAST_DEFAULTS, "stack": nc.STACK_DEFAULTS}
     assert nc.normalize("junk") == nc.normalize({})
     out = nc.normalize({"enabled": "false", "poll_seconds": 0, "keep": 10_000, "apps": " Slack ,Teams,, slack"})
     assert out == {"enabled": False, "poll_seconds": 2, "keep": 200, "apps": ["slack", "teams"],
-                   "toast": nc.TOAST_DEFAULTS}
+                   "toast": nc.TOAST_DEFAULTS, "stack": nc.STACK_DEFAULTS}
     assert nc.normalize({"apps": []})["apps"] == ["slack"], "清空应用名就退回默认，别变成什么都认"
     assert nc.normalize({"poll_seconds": "abc", "enabled": 1})["poll_seconds"] == 3
 
@@ -47,16 +47,44 @@ def test_toast_seconds_allow_zero_for_stay_until_dismissed():
     assert nc.normalize_toast({"seconds": -5})["seconds"] == 0
 
 
+_SLACK_C123 = nc.Notice(uid=1, app="Slack", app_id="91750D7E.Slack_x!Slack", title="#general", body="Ann: hi",
+                        created=1, launch="slack://channel?id=C123&message=1.2&team=T9&origin=x",
+                        activation="protocol")
+_CHROME_GMAIL = nc.Notice(uid=5, app="Google Chrome", app_id="Chrome", title="New mail", body="hi\nmail.google.com",
+                          created=1, launch="0|0|Default|0|https://mail.google.com/|p#https://mail.google.com#1",
+                          activation="foreground")
+_CHROME_BARE = nc.Notice(uid=6, app="Google Chrome", app_id="Chrome", title="x", body="y", created=1)
+
+
 @pytest.mark.parametrize("notice, key", [
-    (nc.Notice(uid=1, app="Slack", app_id="91750D7E.Slack_x!Slack", title="#general", body="Ann: hi", created=1,
-               launch="slack://channel?id=C123&message=1.2&team=T9&origin=x", activation="protocol"), "slack:T9:C123"),
+    (_SLACK_C123, "slack:T9:C123"),
     (nc.Notice(uid=2, app="Slack", app_id="91750D7E.Slack_x!Slack", title="#general", body="Bo: yo", created=1),
      "slack:#general"),
-    (nc.Notice(uid=3, app="Slack", app_id="x", title="", body="", created=1), ""),
+    (nc.Notice(uid=3, app="Slack", app_id="x", title="", body="", created=1), "slack"),
+    (_CHROME_GMAIL, "chrome:mail.google.com"),
+    (_CHROME_BARE, "chrome"),
     (nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1), ""),
 ])
-def test_source_key_groups_slack_by_channel_and_leaves_other_apps_alone(notice, key):
+def test_source_key_by_default_groups_slack_by_channel_and_chrome_by_site(notice, key):
     assert nc.source_key(notice) == key
+
+
+def test_stacking_choices_per_app():
+    assert nc.STACK_DEFAULTS == {"slack": "channel", "chrome": "site"}
+    assert nc.source_key(_SLACK_C123, {"slack": "app"}) == "slack", "整个 Slack 叠成一张"
+    assert nc.source_key(_SLACK_C123, {"slack": "off"}) == "", "每条单独"
+    assert nc.source_key(_CHROME_GMAIL, {"chrome": "app"}) == "chrome"
+    assert nc.source_key(_CHROME_GMAIL, {"chrome": "off"}) == ""
+    assert nc.normalize_stack({"slack": "weird", "chrome": "off"}) == {"slack": "channel", "chrome": "off"}
+    assert nc.normalize_stack("junk") == nc.STACK_DEFAULTS
+    assert set(nc.STACK_CHOICES) == {"slack", "chrome"}
+    assert nc.STACK_CHOICES["slack"] == ("off", "channel", "app")
+    assert nc.STACK_CHOICES["chrome"] == ("off", "site", "app")
+
+
+def test_chrome_is_its_own_kind():
+    assert _CHROME_GMAIL.kind == "chrome" and _SLACK_C123.kind == "slack"
+    assert nc.Notice(uid=9, app="Mail", app_id="x", title="", body="", created=1).kind == "other"
 
 
 def test_matches_app_looks_at_name_and_aumid_case_insensitively():

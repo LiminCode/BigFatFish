@@ -218,21 +218,72 @@ def test_other_apps_are_not_grouped(stack):
     assert [_uids(c) for c in stack.visible_cards()] == [[2], [1]]
 
 
-def test_clicking_a_row_jumps_to_that_message_elsewhere_to_the_latest(stack):
+def _click(card, pos):
+    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=pos)
+    app.processEvents()
+
+
+def test_clicking_a_stack_expands_it_instead_of_jumping(stack):
+    activated, dismissed = [], []
+    stack.activated.connect(lambda notice: activated.append(notice.uid))
+    stack.dismissed.connect(lambda notice, reason: dismissed.append(reason))
+    for uid in (1, 2, 3, 4, 5):
+        stack.push(_slack(uid))
+    card = stack.visible_cards()[0]
+    collapsed_h = card.height()
+    _click(card, card.row_rect(1).center())
+    assert activated == [] and dismissed == [], "点一摞：展开，不跳、不收"
+    assert card.expanded and card.height() > collapsed_h
+    assert card.row_count() == 5, "展开后每条一行"
+    assert not card.timer_active(), "展开着就一直留着"
+    expected = nt.stack_positions(_area(stack), "top_right", nt.CARD_WIDTH, [card.height()])
+    assert [card.pos()] == expected, "高度变了，位置跟着重排"
+
+
+def test_clicking_a_row_of_an_expanded_stack_jumps_to_that_one_and_keeps_the_rest(stack):
     activated = []
     stack.activated.connect(lambda notice: activated.append(notice.uid))
     for uid in (1, 2, 3):
         stack.push(_slack(uid))
     card = stack.visible_cards()[0]
-    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=card.row_rect(1).center())
-    app.processEvents()
+    _click(card, card.rect().center())
+    _click(card, card.row_rect(1).center())
     assert activated == [2]
-    for uid in (4, 5):
-        stack.push(_slack(uid, channel="C9"))
+    assert stack.visible_cards() == [card] and _uids(card) == [3, 1], "跳走的那条拿掉，其余留着"
+    assert card.expanded
+    _click(card, card.row_rect(0).center())
+    assert activated == [2, 3]
+    assert _uids(card) == [1] and not card.expanded, "只剩一条：变回普通卡片"
+    _click(card, card.rect().center())
+    assert activated == [2, 3, 1] and stack.visible_cards() == []
+
+
+def test_clicking_the_header_of_an_expanded_stack_collapses_it(stack):
+    for uid in (1, 2, 3):
+        stack.push(_slack(uid))
     card = stack.visible_cards()[0]
-    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=QPoint(nt.CARD_WIDTH // 2, 20))
-    app.processEvents()
-    assert activated == [2, 5], "点标题那一块：最新一条"
+    _click(card, card.rect().center())
+    assert card.expanded
+    _click(card, QPoint(nt.CARD_WIDTH // 2, 20))
+    assert not card.expanded and card.timer_active(), "收起后接着倒计时"
+
+
+def test_stacking_choice_comes_from_settings(stack):
+    stack.apply_settings({"stack": {"slack": "off"}})
+    stack.push(_slack(1))
+    stack.push(_slack(2))
+    assert [_uids(c) for c in stack.visible_cards()] == [[2], [1]], "Slack 设成「每条单独」"
+
+
+def test_chrome_notifications_stack_by_site(stack):
+    def chrome(uid, site):
+        return nc.Notice(uid=uid, app="Google Chrome", app_id="Chrome", title=f"t{uid}", body="b", created=uid,
+                         launch=f"0|0|Default|0|https://{site}/|x", activation="foreground")
+
+    stack.push(chrome(1, "mail.google.com"))
+    stack.push(chrome(2, "calendar.google.com"))
+    stack.push(chrome(3, "mail.google.com"))
+    assert [_uids(c) for c in stack.visible_cards()] == [[3, 1], [2]]
 
 
 def test_a_new_message_in_the_group_restarts_the_countdown(stack):

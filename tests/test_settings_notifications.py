@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""设置页「通知中心」一节里的自家弹窗选项：开关、哪个角、哪块屏、停留几秒、最多几条。
+"""设置页「通知」一级域：读取（开关 / 间隔 / 应用）、叠放（Slack / Chrome 各自怎么叠）、
+弹窗（开关、哪个角、哪块屏、停留几秒、最多几条）。
 
 从设置窗口这个公开入口建出来，改控件、保存，看配置。
 """
@@ -99,3 +100,35 @@ def test_seconds_can_be_zero_meaning_stay(make_dialog):
     spin = make_dialog().notifications_toast_seconds_spin
     assert spin.minimum() == 0 and spin.maximum() == nc.TOAST_SECONDS_RANGE[1]
     assert spin.specialValueText(), "0 显示成「一直留着」"
+
+
+def _page_of(dialog, row_key):
+    from pet.settings_widgets import SettingRow
+
+    row = dialog.findChild(SettingRow, f"settingRow_{row_key}")
+    for index in range(dialog.pages.count()):
+        page = dialog.pages.widget(index)
+        if row is not None and page.isAncestorOf(row):
+            return dialog.sidebar.item(index).text()
+    return None
+
+
+def test_notifications_have_their_own_first_level_page(make_dialog):
+    dialog = make_dialog()
+    labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
+    assert labels.index("通知") == labels.index("桌面组件") + 1
+    for key in ("notifications_enabled", "notifications_apps", "notifications_stack_slack",
+                "notifications_stack_chrome", "notifications_toast", "notifications_toast_corner"):
+        assert _page_of(dialog, key) == "通知", key
+    assert dialog.select_page("通知")
+
+
+def test_stacking_choices_round_trip(make_dialog):
+    dialog = make_dialog()
+    slack, chrome = dialog.notifications_stack_slack_select, dialog.notifications_stack_chrome_select
+    assert _datas(slack) == list(nc.STACK_CHOICES["slack"]) and slack.currentData() == "channel"
+    assert _datas(chrome) == list(nc.STACK_CHOICES["chrome"]) and chrome.currentData() == "site"
+    slack.setCurrentData("app")
+    chrome.setCurrentData("off")
+    settings_notifications.save_notification_settings(dialog)
+    assert nc.normalize(dialog.config.get(nc.CONFIG_KEY))["stack"] == {"slack": "app", "chrome": "off"}
