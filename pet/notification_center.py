@@ -20,7 +20,10 @@
   结果记在 ``Notice`` 上，通知中心里没了也还能跳。Slack 的是 ``activationType="protocol"``、
   ``launch="slack://channel?id=…&message=…&team=…"``：直接打开就跳到那条消息。
 - **跳**（``activate``）：有协议型的启动参数就直接打开它（不弹通知中心），再像系统一样把那条
-  从通知中心拿掉。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
+  从通知中心拿掉。Chrome 的通知是 ``activationType="foreground"``（走 Chrome 的 COM 激活组件
+  ``notification_helper.exe``），那个组件做的事就是用 ``chrome.exe --notification-launch-id=<launch>``
+  把点击交还给 Chrome，Chrome 再触发网页自己的「通知被点击」（Gmail 打开那封邮件）；我们照做
+  （2026-10-26：原来走通知中心 UIA，Gmail 的通知点了不跳）。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
   （``ms-actioncenter:``），用 UI 自动化找到那条通知并 Invoke（实测 0.3 秒）。通知中心里也没有了
   就再退一步：``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
 
@@ -37,6 +40,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -71,6 +75,14 @@ _DB_DIR = r"%LOCALAPPDATA%\Microsoft\Windows\Notifications"
 _DB_NAME = "wpndatabase.db"
 _SCHEME_RE = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]+):", re.I)
 _UNSAFE_SCHEMES = {"file", "javascript", "vbscript", "data"}
+#: Chrome 通知的启动参数：「组件|按钮|档案|…|无痕|来源网址|通知 id」，中间几段随版本变（155 版是
+#: ``1|0|Default|<档案名>|0|https://mail.google.com/|…``），只认「数字|数字|…|网址」
+_CHROME_LAUNCH_RE = re.compile(r"^\d+\|\d+\|(?:[^|]*\|){1,4}https?://")
+_CHROME_FALLBACKS = (
+    r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+    r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
+    r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+)
 _URL_RE = re.compile(r"https?://(?P<host>[^/|#?\s]+)", re.I)
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
@@ -173,8 +185,10 @@ class Notice:
 
     @property
     def launchable(self) -> bool:
-        """能不经通知中心直接跳（协议型的启动参数，且是正常的 URI）。"""
-        return self.activation == "protocol" and launchable_uri(self.launch)
+        """能不经通知中心直接跳：协议型的启动参数（正常的 URI），或 Chrome 自己的启动参数。"""
+        if self.activation == "protocol":
+            return launchable_uri(self.launch)
+        return self.kind == "chrome" and bool(_CHROME_LAUNCH_RE.match(self.launch or ""))
 
     @property
     def kind(self) -> str:
@@ -521,8 +535,39 @@ def _invoke_in_center(notice: Notice, *, wait_s: float = _CENTER_WAIT_S) -> bool
         comtypes.CoUninitialize()
 
 
+def _registry_app_path(name: str) -> str:
+    """``App Paths`` 里登记的程序路径（先当前用户、再本机）；没有返回空。"""
+    if sys.platform != "win32":
+        return ""
+    import winreg
+
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{name}") as key:
+                value = str(winreg.QueryValue(key, None) or "").strip().strip('"')
+        except OSError:
+            continue
+        if value:
+            return value
+    return ""
+
+
+def chrome_exe() -> str:
+    """本机 chrome.exe 的路径（App Paths 登记的，或常见安装位置）；找不到返回空。"""
+    for candidate in (_registry_app_path("chrome.exe"), *(os.path.expandvars(p) for p in _CHROME_FALLBACKS)):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+def _spawn_detached(argv: list[str]) -> None:
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(argv, close_fds=True, creationflags=flags)  # noqa: S603 - 参数列表，不经 shell
+
+
 def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[Notice], bool] | None = None,
-             open_url: Callable[[str], None] | None = None, remove: Callable[[int], object] | None = None) -> str:
+             open_url: Callable[[str], None] | None = None, remove: Callable[[int], object] | None = None,
+             spawn: Callable[[list[str]], None] | None = None, chrome_exe: str | None = None) -> str:
     """跳到这条通知对应的消息。返回：``launched``（直接打开了通知自己的启动参数）/ ``activated``
     （经通知中心交给了应用）/ ``opened_app``（通知中心里没有了，改为打开应用）/ ``gone``（没有了、
     也不知道怎么打开）/ ``failed``。"""
@@ -531,9 +576,15 @@ def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[No
     remove = remove or remove_from_center
     if notice.launchable:
         try:
-            open_url(notice.launch)
+            if notice.activation == "protocol":
+                open_url(notice.launch)
+            else:                           # Chrome：照它的激活组件那样把点击交还给 Chrome
+                exe = globals()["chrome_exe"]() if chrome_exe is None else chrome_exe
+                if not exe:
+                    raise FileNotFoundError("chrome.exe")
+                (spawn or _spawn_detached)([exe, f"--notification-launch-id={notice.launch}"])
         except OSError:
-            log.debug("通知中心：打开启动参数失败", exc_info=True)
+            log.debug("通知中心：直接打开失败，走通知中心", exc_info=True)
         else:
             if notice.in_center:
                 remove(notice.uid)          # 系统点开一条也会把它从通知中心拿掉

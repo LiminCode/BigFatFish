@@ -264,3 +264,52 @@ def test_activate_without_a_usable_launch_keeps_the_old_path():
 def test_center_probe_uses_title_and_a_whitespace_normalised_body_prefix():
     title, probe = nc._center_probe(_notice(1, title=" #ops ", body="Ann:  first\n\nline " + "x" * 80))
     assert title == "#ops" and probe == "Ann: first line " + "x" * 14 and len(probe) == nc._BODY_PROBE_CHARS
+
+
+# ---------------------------------------------------------------- Chrome：把点击交还给 Chrome
+_GMAIL_LAUNCH = "1|0|Default|0|https://mail.google.com/|p#https://mail.google.com/#4242"
+
+
+def _chrome(uid=7, launch=_GMAIL_LAUNCH, in_center=True):
+    return nc.Notice(uid=uid, app="Google Chrome", app_id="Chrome", title="New mail", body="hello", created=1,
+                     in_center=in_center, launch=launch, activation="foreground")
+
+
+@pytest.mark.parametrize("launch", [
+    "1|0|Default|0|https://mail.google.com/|p#https://mail.google.com/#4242",
+    "0|0|Default|Person|0|https://mail.google.com/|p#https://mail.google.com/#4242",    # Chrome 155 的实测形状
+])
+def test_chrome_launch_shapes_are_recognised(launch):
+    assert _chrome(launch=launch).launchable
+
+
+def test_chrome_notifications_are_handed_back_to_chrome_like_windows_does():
+    spawned, removed, invoked = [], [], []
+    result = nc.activate(_chrome(), team_id="", invoke=lambda n: invoked.append(n) or True,
+                         open_url=lambda u: None, remove=removed.append, spawn=spawned.append,
+                         chrome_exe=r"C:\Chrome\chrome.exe")
+    assert result == "launched"
+    assert spawned == [[r"C:\Chrome\chrome.exe", f"--notification-launch-id={_GMAIL_LAUNCH}"]]
+    assert invoked == [] and removed == [7], "不开通知中心；像系统一样把它从通知中心拿掉"
+    assert _chrome().launchable and _chrome(in_center=False).launchable, "不在通知中心里也能跳"
+
+
+@pytest.mark.parametrize("launch, exe", [
+    (_GMAIL_LAUNCH, ""),                         # 找不到 chrome.exe
+    ("action=open&id=5", r"C:\Chrome\chrome.exe"),   # 不是 Chrome 的启动参数格式
+])
+def test_chrome_without_a_usable_launch_or_exe_keeps_the_old_path(launch, exe):
+    spawned = []
+    result = nc.activate(_chrome(launch=launch), team_id="", invoke=lambda n: True, open_url=lambda u: None,
+                         remove=lambda u: None, spawn=spawned.append, chrome_exe=exe)
+    assert result == "activated" and spawned == []
+
+
+def test_chrome_exe_is_found_through_app_paths(monkeypatch, tmp_path):
+    exe = tmp_path / "chrome.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setattr(nc, "_registry_app_path", lambda name: str(exe))
+    assert nc.chrome_exe() == str(exe)
+    monkeypatch.setattr(nc, "_registry_app_path", lambda name: "")
+    monkeypatch.setattr(nc, "_CHROME_FALLBACKS", (str(tmp_path / "missing.exe"),))
+    assert nc.chrome_exe() == ""
