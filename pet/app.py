@@ -3266,12 +3266,16 @@ class AppShell:
             return
         from . import platform_win
 
-        if platform_win._fs_user_busy_state()[0] or platform_win.quiet_hours_profile():
+        quiet = "fullscreen" if platform_win._fs_user_busy_state()[0] else (
+            "do_not_disturb" if platform_win.quiet_hours_profile() else "")
+        if quiet:
+            logging.getLogger("big-fat-fish").info("通知弹窗：%s，%d 条不弹", quiet, len(notices))
             return
         now, logos = time.time(), service.logos
-        for notice in notices:
-            if now - notice.created <= self.NOTIFICATION_TOAST_FRESH_S:
-                stack.push(notice, logos.get(notice.app_id, b""))
+        fresh = [n for n in notices if now - n.created <= self.NOTIFICATION_TOAST_FRESH_S]
+        for notice in fresh:
+            stack.push(notice, logos.get(notice.app_id, b""))
+        logging.getLogger("big-fat-fish").info("通知弹窗：弹出 %d 条（太旧不弹 %d 条）", len(fresh), len(notices) - len(fresh))
 
     def _on_notification_toast_activated(self, notice) -> None:
         service = getattr(self, "_notifications", None)
