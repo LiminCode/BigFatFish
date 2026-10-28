@@ -943,7 +943,7 @@
   "settings.notifications.stack_app_slack": "整个 Slack 叠成一摞",
   "settings.notifications.stack_app_chrome": "整个 Chrome 叠成一摞",
   "settings.notifications.toast": "自己弹通知",
-  "settings.notifications.toast_hint": "新通知到了，用肥鱼自己的 Metro 卡片弹出来：几条同时叠在屏幕一角，悬停不消失，往屏幕边一划关掉，点一下跳到原消息。建议同时在 Windows「设置 → 系统 → 通知」里关掉这些应用的「显示通知横幅」，不然会弹两遍（通知照样进通知中心，这里照样读得到）。全屏游戏 / 演示时不弹。",
+  "settings.notifications.toast_hint": "新通知到了，用肥鱼自己的 Metro 卡片弹出来：几条同时叠在屏幕一角，悬停不消失，往屏幕边一划关掉，点一下跳到原消息。建议同时在 Windows「设置 → 系统 → 通知」里关掉这些应用的「显示通知横幅」，不然会弹两遍（通知照样进通知中心，这里照样读得到）。全屏游戏 / 演示时、开着 Windows「勿扰」时不弹（照样进岛里的列表）。",
   "settings.notifications.toast_corner": "弹在哪个角",
   "settings.notifications.toast_corner_hint": "最新的一条贴着这个角，旧的往远离角的方向排。",
   "settings.notifications.toast_screen": "弹在哪块屏",

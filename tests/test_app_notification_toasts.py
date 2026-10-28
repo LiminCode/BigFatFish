@@ -50,6 +50,7 @@ def _notice(uid, age_s=1.0):
 @pytest.fixture(autouse=True)
 def _not_fullscreen(monkeypatch):
     monkeypatch.setattr(platform_win, "_fs_user_busy_state", lambda: (False, 5))
+    monkeypatch.setattr(platform_win, "quiet_hours_profile", lambda: 0)
 
 
 def test_no_stack_while_the_setting_is_off(tmp_path):
@@ -72,6 +73,16 @@ def test_fresh_arrivals_pop_up_with_their_logo_and_old_ones_do_not(tmp_path):
 
 def test_fullscreen_suppresses_popups(tmp_path, monkeypatch):
     monkeypatch.setattr(platform_win, "_fs_user_busy_state", lambda: (True, 3))
+    shell = _shell(tmp_path, toast_enabled=True)
+    shell._sync_notification_toasts()
+    shell._on_notifications_arrived([_notice(1)])
+    assert shell._notification_toasts.visible_cards() == []
+
+
+@pytest.mark.parametrize("profile", [1, 2])
+def test_do_not_disturb_suppresses_popups(tmp_path, monkeypatch, profile):
+    """勿扰（Windows 11 开勿扰实测 = 1 仅优先；2 = 仅闹钟）：不弹，跟 Windows 自己的横幅一样安静。"""
+    monkeypatch.setattr(platform_win, "quiet_hours_profile", lambda: profile)
     shell = _shell(tmp_path, toast_enabled=True)
     shell._sync_notification_toasts()
     shell._on_notifications_arrived([_notice(1)])

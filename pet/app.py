@@ -3259,14 +3259,14 @@ class AppShell:
         stack.apply_settings({**settings, "theme": theme, "stack": full["stack"]})
 
     def _on_notifications_arrived(self, notices) -> None:
-        """刚到的通知弹出来（旧到新）。全屏游戏 / 演示时不弹（照样进岛里的列表）。"""
+        """刚到的通知弹出来（旧到新）。全屏游戏 / 演示时、开着勿扰时不弹（照样进岛里的列表）。"""
         stack = getattr(self, "_notification_toasts", None)
         service = getattr(self, "_notifications", None)
         if stack is None or service is None:
             return
-        from .platform_win import _fs_user_busy_state
+        from . import platform_win
 
-        if _fs_user_busy_state()[0]:
+        if platform_win._fs_user_busy_state()[0] or platform_win.quiet_hours_profile():
             return
         now, logos = time.time(), service.logos
         for notice in notices:

@@ -951,7 +951,7 @@
   "settings.notifications.stack_app_slack": "All of Slack in one stack",
   "settings.notifications.stack_app_chrome": "All of Chrome in one stack",
   "settings.notifications.toast": "Pop up notifications ourselves",
-  "settings.notifications.toast_hint": "New notifications pop up as Big Fat Fish's own Metro cards: several stack in one corner at once, they stay while hovered, swipe toward the screen edge to dismiss, click to jump to the message. Also turn off \"Show notification banners\" for those apps in Windows Settings → System → Notifications, or each one pops up twice (they still land in the notification center, where we read them). Nothing pops up during fullscreen games or presentations.",
+  "settings.notifications.toast_hint": "New notifications pop up as Big Fat Fish's own Metro cards: several stack in one corner at once, they stay while hovered, swipe toward the screen edge to dismiss, click to jump to the message. Also turn off \"Show notification banners\" for those apps in Windows Settings → System → Notifications, or each one pops up twice (they still land in the notification center, where we read them). Nothing pops up during fullscreen games or presentations, or while Windows Do Not Disturb is on (they still go to the island list).",
   "settings.notifications.toast_corner": "Corner",
   "settings.notifications.toast_corner_hint": "The newest one sits in this corner; older ones line up away from it.",
   "settings.notifications.toast_screen": "Screen",

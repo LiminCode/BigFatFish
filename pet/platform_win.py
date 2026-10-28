@@ -328,6 +328,33 @@ def _fs_user_busy_state() -> tuple[bool, int]:
         return False, -1
 
 
+#: WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED：当前勿扰档位（0 关 / 1 仅优先 / 2 仅闹钟）
+WNF_QUIET_HOURS = 0x0D83063EA3BF1C75
+
+
+def quiet_hours_profile() -> int:
+    """Windows「勿扰」（专注助手）当前档位：0 = 没开，1 = 仅优先通知，2 = 仅闹钟。
+
+    没有公开 API；Windows 自己的通知面板读的是这个 WNF 状态（NtQueryWnfStateData，ntdll 导出）。
+    实机（Win11 26300）开勿扰 = 1。读失败 / 非 Windows 一律当 0——宁可照常弹，也不吞通知。
+    单次调用几十微秒，可在任意线程调用。
+    """
+    if os.name != 'nt':
+        return 0
+    try:
+        name = ctypes.c_ulonglong(WNF_QUIET_HOURS)
+        stamp = wintypes.ULONG(0)
+        buf = (ctypes.c_ubyte * 16)()
+        size = wintypes.ULONG(ctypes.sizeof(buf))
+        status = ctypes.windll.ntdll.NtQueryWnfStateData(
+            ctypes.byref(name), None, None, ctypes.byref(stamp), buf, ctypes.byref(size))
+        if status != 0 or size.value < 4:
+            return 0
+        return int.from_bytes(bytes(buf[:4]), "little")
+    except Exception:
+        return 0
+
+
 def _fg_fullscreen_probe() -> tuple[bool, str]:
     """前台窗口全屏探测，返回 (是否全屏, 诊断描述)。
 
