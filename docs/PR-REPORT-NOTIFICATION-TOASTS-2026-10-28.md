@@ -166,7 +166,7 @@ sent 00:02:32.985 Toast test 3
 - **开关**：设置「通知 → 弹窗 → 自己弹通知」，默认关。关掉后清空在场卡片、不再建。
 - **配置**：`notifications` 下新增 `toast`（`enabled` / `corner` / `screen` / `seconds` / `max_visible`）与 `stack`（`slack` / `chrome`）两块；旧配置没有这些键时由 `notification_center.normalize` 填默认值，无需迁移；回退到旧版本时这两块被忽略。
 - **设置页**：新一级域「通知」（三个稳定分组，满足 `SETTINGS-CHANGE-GATES.md` 对一级域的要求）；原「自动化与联动 → 通知中心」一节移除，键不变。
-- **回滚**：`git revert` 这 8 个提交即可；运行时只在 `%TEMP%` 下留过临时库副本（每次读完即删），无其他落盘状态。
+- **回滚**：`git revert` 这 8 个提交，以及第九、十节的两个修正提交（`8f1a0177`、`258829ba`）即可；运行时只在 `%TEMP%` 下留过临时库副本（每次读完即删），无其他落盘状态。
 
 ## 九、第二轮修正：点 Chrome（Gmail）通知没反应（2026-10-28，`8f1a0177`）
 
@@ -187,4 +187,34 @@ sent 00:02:32.985 Toast test 3
 
 **性能**：每次点击多一次 `user32` 调用，只发生在用户点 Chrome 通知的时候；没有新线程、磁盘或网络。
 
-**实机**：桌宠已重启加载（pid 29436）。新日志能对上跳转：09:54 用户点了一条其他应用的通知，记为 `activated（other / foreground）`，走的是通知中心 UIA 路径。**Gmail 那条路还没有复测**：当时没有新的 Gmail 通知，等用户收到下一条再点。
+**实机**：桌宠已重启加载（pid 29436）。新日志能对上跳转：09:54 用户点了一条其他应用的通知，记为 `activated（other / foreground）`，走的是通知中心 UIA 路径。Gmail 那条路的复测见第十节：个人邮箱的通知根本没走到「交给 `chrome.exe`」这一步，真正的原因在第十节。
+
+## 十、第三轮修正：Chrome 扩展发的通知（2026-10-28，`258829ba`）
+
+**现象**：第九节修完后，用户点个人邮箱的通知（截图标题是邮箱地址，下面列几封邮件），还是没反应；公司账号还没试。
+
+**排查**（实机）：
+- 桌宠日志 `pet-29436.log`：12:07 的两次点击都记为 `通知跳转：gone（chrome / foreground）`。启动参数查到了，但没过 Chrome 格式检查（`launchable=False`）。程序于是去通知中心里找，那几条已经不在了，所以第九节放行前台权限的那段代码根本没走到。
+- 这几条（11:04–11:34）既不在通知中心，也不在通知库里了；同一库里 11:57 的 Slack 还在，排除了副本没拷全的可能，是发通知的一方自己撤掉了。
+- Chrome 的 `Local State`：`Default` 是个人账号（gmail.com），`Profile 1` 是公司账号（托管域）。个人账号早些时候发的 claude.ai、teamblind 网页通知，格式都能过检查。
+- 后台挂监视脚本，每 2 秒读一次 Chrome 通知，新来的就记下启动参数（邮箱打码）和 toast XML 结构：
+  - 12:16:35，公司账号的 Gmail 网页通知：`0|1|Profile 1|Chrome|0|https://mail.google.com/|n#…`，`launchable=True`。
+  - 12:19:43，**`launchable=False`** 的那种：`0|2|Profile 1|Chrome|0|chrome-extension://oeopbcgkkoapgobdbedcemjljbihmemj/|oeopbcgkkoapgobdbedcemjljbihmemj-7ea5…`，带「Mark as read / Delete」按钮，`scenario="reminder"`。这个扩展 id 是 Gmail 提醒扩展 Checker Plus，装在 `Profile 1` 里，同时盯着个人邮箱。
+- 结论：来源是 `chrome-extension://`，而格式检查只认 `https?://`。
+
+**修改**：
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/notification_center.py` | +5 / −4 | `_CHROME_LAUNCH_RE` 的来源也认 `chrome-extension://`（点击照样交还 `chrome.exe`，Chrome 转给扩展的点击处理）；按网站归组的 `_URL_RE` 同样认它，归组键取扩展 id；注释与 docstring 同步 |
+| `tests/test_notification_center.py` | +13 / −0 | 用实机抓到的启动参数：扩展通知能直接跳、按扩展归组（修前两例红：`assert False`、归组键是 `chrome`）；反例 `file://`、空串、`slack://` 不交给 Chrome |
+
+**性能**：只改了两个正则，单次匹配在 150 字符的真实启动参数上实测 `_CHROME_LAUNCH_RE.match` 0.38 µs、`_URL_RE.search` 0.76 µs（`timeit`，20 万次取均值，Python 3.13，本机）。只在弹卡 / 点击时算，没有新的系统调用、线程、磁盘或网络，内存不变。
+
+**实机**：桌宠用修复版重启（pid 41500）。用户点个人邮箱那条扩展通知，**跳到了邮件**；日志 `pet-41500.log`：
+
+```
+2026-10-28 12:23:46,428 INFO 通知跳转：launched（chrome / foreground）
+```
+
+第九节的前台权限放行在这次点击里也生效了（走的是同一个 `_spawn_detached`）。但这次没有做「不放行」的对照，所以不能单独证明前台权限是必需的；保留它的理由仍然是第九节的分析。
