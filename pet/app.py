@@ -3264,10 +3264,9 @@ class AppShell:
         service = getattr(self, "_notifications", None)
         if stack is None or service is None:
             return
-        from . import platform_win
+        from .platform_win import _fs_user_busy_state, quiet_hours_profile
 
-        quiet = "fullscreen" if platform_win._fs_user_busy_state()[0] else (
-            "do_not_disturb" if platform_win.quiet_hours_profile() else "")
+        quiet = "fullscreen" if _fs_user_busy_state()[0] else ("do_not_disturb" if quiet_hours_profile() else "")
         if quiet:
             logging.getLogger("big-fat-fish").info("通知弹窗：%s，%d 条不弹", quiet, len(notices))
             return
