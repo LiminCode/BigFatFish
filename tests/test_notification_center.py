@@ -294,6 +294,22 @@ def test_chrome_notifications_are_handed_back_to_chrome_like_windows_does():
     assert _chrome().launchable and _chrome(in_center=False).launchable, "不在通知中心里也能跳"
 
 
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="前台权限是 Windows 的规矩")
+def test_spawning_chrome_first_lets_it_take_the_foreground(monkeypatch):
+    """2026-10-28 实机：点 Gmail 卡片「什么都没发生」——Chrome 收到了交接，但没有前台权限，窗口出不来。
+    系统的激活组件启动 chrome.exe 时会给它前台权限（Chromium ``grant_foreground_privilege``）；
+    桌宠刚收到用户的点击、手里有这个权限，启动之前先放行。"""
+    import ctypes
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(ctypes.windll.user32, "AllowSetForegroundWindow",
+                        lambda pid: calls.append(("allow", pid)) or 1)
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: calls.append(("spawn", argv)))
+    nc._spawn_detached([r"C:\Chrome\chrome.exe", "--notification-launch-id=x"])
+    assert calls == [("allow", nc.ASFW_ANY), ("spawn", [r"C:\Chrome\chrome.exe", "--notification-launch-id=x"])]
+
+
 @pytest.mark.parametrize("launch, exe", [
     (_GMAIL_LAUNCH, ""),                         # 找不到 chrome.exe
     ("action=open&id=5", r"C:\Chrome\chrome.exe"),   # 不是 Chrome 的启动参数格式

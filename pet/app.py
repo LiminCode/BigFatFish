@@ -3339,6 +3339,7 @@ class AppShell:
                 self._push_island_notifications()
 
     def _on_notification_activation_done(self, notice, result: str) -> None:
+        logging.getLogger("big-fat-fish").info("通知跳转：%s（%s / %s）", result, notice.kind, notice.activation or "-")
         island = getattr(self, "island", None)
         if island is None or not shiboken6.isValid(island):
             return

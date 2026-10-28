@@ -560,7 +560,21 @@ def chrome_exe() -> str:
     return ""
 
 
+#: AllowSetForegroundWindow 的「任何进程」
+ASFW_ANY = 0xFFFFFFFF
+
+
 def _spawn_detached(argv: list[str]) -> None:
+    """起 chrome.exe 交还点击。先放行前台权限：系统的激活组件也是这样给 chrome.exe 的
+    （Chromium ``grant_foreground_privilege``），新起的那个再转给已在跑的 Chrome，网页的点击处理才能把窗口
+    拿到前台；不放行时 Chrome 收到了点击、窗口却出不来。桌宠刚收到用户的点击，手里有这个权限。"""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
+        except Exception:  # noqa: BLE001 - 放行失败照样起，只是可能到不了前台
+            log.debug("通知中心：放行前台权限失败", exc_info=True)
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen(argv, close_fds=True, creationflags=flags)  # noqa: S603 - 参数列表，不经 shell
 
