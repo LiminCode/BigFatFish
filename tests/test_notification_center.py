@@ -54,6 +54,12 @@ _CHROME_GMAIL = nc.Notice(uid=5, app="Google Chrome", app_id="Chrome", title="Ne
                           created=1, launch="0|0|Default|0|https://mail.google.com/|p#https://mail.google.com#1",
                           activation="foreground")
 _CHROME_BARE = nc.Notice(uid=6, app="Google Chrome", app_id="Chrome", title="x", body="y", created=1)
+#: 2026-10-28 实机：Gmail 提醒扩展（Checker Plus）发的通知，来源是扩展而不是网页
+_EXTENSION_ID = "oeopbcgkkoapgobdbedcemjljbihmemj"
+_EXTENSION_LAUNCH = (f"0|2|Profile 1|Chrome|0|chrome-extension://{_EXTENSION_ID}/|"
+                     f"{_EXTENSION_ID}-7ea5dac5-636f-4801-8ddc-23167dd25004")
+_CHROME_EXTENSION = nc.Notice(uid=8, app="Google Chrome", app_id="Chrome", title="x", body="y", created=1,
+                              launch=_EXTENSION_LAUNCH, activation="foreground")
 
 
 @pytest.mark.parametrize("notice, key", [
@@ -63,6 +69,7 @@ _CHROME_BARE = nc.Notice(uid=6, app="Google Chrome", app_id="Chrome", title="x",
     (nc.Notice(uid=3, app="Slack", app_id="x", title="", body="", created=1), "slack"),
     (_CHROME_GMAIL, "chrome:mail.google.com"),
     (_CHROME_BARE, "chrome"),
+    (_CHROME_EXTENSION, f"chrome:{_EXTENSION_ID}"),
     (nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1), ""),
 ])
 def test_source_key_by_default_groups_slack_by_channel_and_chrome_by_site(notice, key):
@@ -278,9 +285,15 @@ def _chrome(uid=7, launch=_GMAIL_LAUNCH, in_center=True):
 @pytest.mark.parametrize("launch", [
     "1|0|Default|0|https://mail.google.com/|p#https://mail.google.com/#4242",
     "0|0|Default|Person|0|https://mail.google.com/|p#https://mail.google.com/#4242",    # Chrome 155 的实测形状
+    _EXTENSION_LAUNCH,
 ])
 def test_chrome_launch_shapes_are_recognised(launch):
     assert _chrome(launch=launch).launchable
+
+
+@pytest.mark.parametrize("launch", ["", "0|0|Default|Chrome|0|file:///C:/x|1", "slack://open"])
+def test_other_launch_shapes_are_not_handed_to_chrome(launch):
+    assert not _chrome(launch=launch).launchable
 
 
 def test_chrome_notifications_are_handed_back_to_chrome_like_windows_does():

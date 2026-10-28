@@ -76,14 +76,15 @@ _DB_NAME = "wpndatabase.db"
 _SCHEME_RE = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]+):", re.I)
 _UNSAFE_SCHEMES = {"file", "javascript", "vbscript", "data"}
 #: Chrome 通知的启动参数：「组件|按钮|档案|…|无痕|来源网址|通知 id」，中间几段随版本变（155 版是
-#: ``1|0|Default|<档案名>|0|https://mail.google.com/|…``），只认「数字|数字|…|网址」
-_CHROME_LAUNCH_RE = re.compile(r"^\d+\|\d+\|(?:[^|]*\|){1,4}https?://")
+#: ``1|0|Default|<档案名>|0|https://mail.google.com/|…``），只认「数字|数字|…|来源」。来源是网页，或者扩展
+#: （``chrome-extension://<id>/``：Gmail 提醒扩展 Checker Plus 这类，2026-10-28 实机，个人邮箱的通知就是它发的）
+_CHROME_LAUNCH_RE = re.compile(r"^\d+\|\d+\|(?:[^|]*\|){1,4}(?:https?|chrome-extension)://")
 _CHROME_FALLBACKS = (
     r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
     r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
     r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
 )
-_URL_RE = re.compile(r"https?://(?P<host>[^/|#?\s]+)", re.I)
+_URL_RE = re.compile(r"(?:https?|chrome-extension)://(?P<host>[^/|#?\s]+)", re.I)
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
 _SLACK_STATE_FILES = (
@@ -213,7 +214,7 @@ def source_key(notice: Notice, stack: dict | None = None) -> str:
     - Slack ``channel``：工作区 + 频道（私聊也是一个频道），取深链接里的 ``team`` / ``id``；没有深链接时
       退回频道名（通知标题），再没有就整个 Slack 一组。
     - Chrome ``site``：发通知的网站。Chrome 的启动参数里带着来源网址（``…|https://mail.google.com/|…``），
-      取它的主机名；取不到就整个 Chrome 一组。
+      取它的主机名（扩展发的取扩展 id）；取不到就整个 Chrome 一组。
     - ``app``：整个应用一组；``off``：不归组。别的应用暂不归组；要加规则就加在这里和 ``STACK_CHOICES``。
     """
     kind = notice.kind
