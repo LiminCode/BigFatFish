@@ -835,7 +835,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
+    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected
 
     def owner(setting_id):
@@ -1206,7 +1206,7 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
+    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
@@ -1296,7 +1296,7 @@ def test_ai_settings_content_expands_to_the_shared_page_width(tmp_path, monkeypa
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     dialog.resize(1100, 760)
-    dialog.sidebar.setCurrentRow(5)
+    dialog.sidebar.setCurrentRow([name for name, _icon in settings_mod.SETTINGS_DOMAIN_NAV].index("AI 与对话"))
     dialog.show()
     app.processEvents()
 
@@ -1429,7 +1429,7 @@ def test_compact_ai_provider_controls_stay_inside_their_setting_row(tmp_path, mo
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     dialog.resize(720, 760)
-    dialog.sidebar.setCurrentRow(5)
+    dialog.sidebar.setCurrentRow([name for name, _icon in settings_mod.SETTINGS_DOMAIN_NAV].index("AI 与对话"))
     for control in (
         dialog.ai_page.provider_combo,
         dialog.ai_page.add_provider_btn,
@@ -1573,6 +1573,7 @@ def test_settings_domains_use_semantic_sidebar_icons():
         ("互动", "interaction"),
         ("菜单", "application"),
         ("桌面组件", "island"),
+        ("通知", "bell"),
         ("AI 与对话", "chat"),
         ("简报与笔记", "briefing"),
         ("自动化与联动", "automation"),

@@ -3223,6 +3223,7 @@ class AppShell:
                 service.changed.connect(self._push_island_notifications)
                 service.unread_changed.connect(self._push_island_notification_count)
                 service.activation_done.connect(self._on_notification_activation_done)
+                service.arrived.connect(self._on_notifications_arrived)
                 self._notifications = service
                 service.start()
             except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
@@ -3230,7 +3231,52 @@ class AppShell:
                 return
         else:
             service.apply_settings()
+        self._sync_notification_toasts()
         self._push_island_notifications()
+
+    #: 刚到的通知超过这么久就不弹了（读取失败几轮后一下子补上来的那批）
+    NOTIFICATION_TOAST_FRESH_S = 120
+
+    def _sync_notification_toasts(self) -> None:
+        """自家弹窗（``notification_toast``）：设置里开着才建；角 / 屏 / 秒数 / 条数 / 叠放 / 明暗跟配置走。"""
+        from .notification_center import CONFIG_KEY, normalize
+
+        service = getattr(self, "_notifications", None)
+        stack = getattr(self, "_notification_toasts", None)
+        full = normalize(self.config.get(CONFIG_KEY))
+        settings = full["toast"]
+        if service is None or not service.enabled or not settings["enabled"]:
+            if stack is not None:
+                stack.clear()
+            return
+        if stack is None:
+            from .notification_toast import ToastStack
+
+            stack = ToastStack(parent=self.app)
+            stack.activated.connect(self._on_notification_toast_activated)
+            self._notification_toasts = stack
+        theme = str((self.config.get("context_menu_appearance") or {}).get("theme") or "system")
+        stack.apply_settings({**settings, "theme": theme, "stack": full["stack"]})
+
+    def _on_notifications_arrived(self, notices) -> None:
+        """刚到的通知弹出来（旧到新）。全屏游戏 / 演示时不弹（照样进岛里的列表）。"""
+        stack = getattr(self, "_notification_toasts", None)
+        service = getattr(self, "_notifications", None)
+        if stack is None or service is None:
+            return
+        from .platform_win import _fs_user_busy_state
+
+        if _fs_user_busy_state()[0]:
+            return
+        now, logos = time.time(), service.logos
+        for notice in notices:
+            if now - notice.created <= self.NOTIFICATION_TOAST_FRESH_S:
+                stack.push(notice, logos.get(notice.app_id, b""))
+
+    def _on_notification_toast_activated(self, notice) -> None:
+        service = getattr(self, "_notifications", None)
+        if service is not None:
+            service.activate(notice.uid)
 
     def _push_island_notifications(self, *_args) -> None:
         island = getattr(self, "island", None)
@@ -3243,7 +3289,7 @@ class AppShell:
         rows = [
             {"key": n.uid, "title": n.title, "app": n.app, "app_id": n.app_id, "sender": n.sender,
              "message": n.message, "ago": ago_text(now - n.created), "unread": n.uid in unread,
-             "in_center": n.in_center}
+             "in_center": n.in_center or n.launchable}
             for n in service.notices] if enabled else []
         island.set_notifications(rows, is_open=service.ui_open, logos=service.logos, visible=enabled)
         self._push_island_notification_count()
@@ -3293,7 +3339,9 @@ class AppShell:
         island = getattr(self, "island", None)
         if island is None or not shiboken6.isValid(island):
             return
-        if result == "activated":
+        if result == "launched":
+            text = t("notices.status.launched", app=notice.app)
+        elif result == "activated":
             text = t("notices.status.activated", app=notice.app)
         elif result == "opened_app":
             text = t("notices.status.opened_app", app=notice.app)
