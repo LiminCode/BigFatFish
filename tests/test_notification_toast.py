@@ -117,6 +117,24 @@ def test_pushed_toasts_stack_from_the_chosen_corner(stack):
     assert all(c.isVisible() for c in cards)
 
 
+def test_cards_dropped_off_the_end_of_the_queue_are_deleted(stack):
+    """排队满了丢掉最旧的：它们藏着的卡片窗口也要删掉，不然「一直留着」时一天下来越积越多。"""
+    import shiboken6
+    from PySide6.QtCore import QEvent
+
+    stack.apply_settings({"seconds": 0})
+    cards = []
+    for uid in range(nt._MAX_PENDING + 10):
+        stack.push(_notice(uid))
+        cards.append(stack._entries[0].card)              # 最新的马上弹，都有卡片
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    kept = {id(e.card) for e in stack._entries if e.card is not None}
+    dropped = [c for c in cards if id(c) not in kept]
+    assert len(dropped) == 10
+    assert not any(shiboken6.isValid(c) for c in dropped), "丢掉的卡片窗口已删除"
+    assert len(stack.visible_cards()) == 3
+
+
 def test_more_than_max_visible_waits_and_shows_when_one_leaves(stack):
     for uid in (1, 2, 3, 4):
         stack.push(_notice(uid))

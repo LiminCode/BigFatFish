@@ -694,6 +694,9 @@ class ToastStack(QObject):
             if entry.card is not None:
                 entry.card.set_notices(entry.notices)
         self._entries.insert(0, entry)
+        for dropped in self._entries[_MAX_PENDING:]:
+            if dropped.card is not None:          # 弹过、被挤下去藏着的：窗口一起删
+                dropped.card.deleteLater()
         del self._entries[_MAX_PENDING:]
         self._reflow()
         return True
