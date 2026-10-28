@@ -167,3 +167,24 @@ sent 00:02:32.985 Toast test 3
 - **配置**：`notifications` 下新增 `toast`（`enabled` / `corner` / `screen` / `seconds` / `max_visible`）与 `stack`（`slack` / `chrome`）两块；旧配置没有这些键时由 `notification_center.normalize` 填默认值，无需迁移；回退到旧版本时这两块被忽略。
 - **设置页**：新一级域「通知」（三个稳定分组，满足 `SETTINGS-CHANGE-GATES.md` 对一级域的要求）；原「自动化与联动 → 通知中心」一节移除，键不变。
 - **回滚**：`git revert` 这 8 个提交即可；运行时只在 `%TEMP%` 下留过临时库副本（每次读完即删），无其他落盘状态。
+
+## 九、第二轮修正：点 Chrome（Gmail）通知没反应（2026-10-28，`8f1a0177`）
+
+**现象**：用户点弹窗里按网站叠起来的 Gmail 通知，什么都没发生。
+
+**排查**（实机）：
+- 这几条 Chrome 通知在通知库里都有启动参数，格式认得出（`launchable=True`，`source=chrome:mail.google.com`），所以走的是「交给 `chrome.exe`」这条路，不是解析失败。
+- 用同样的参数从后台进程起 `chrome.exe`：0.07 s 退出、返回 0（已转交给在跑的 Chrome），用户确认屏幕上**什么都没发生**。
+- 差别：系统的激活组件启动 `chrome.exe` 时会给它前台权限（Chromium `grant_foreground_privilege`），新起的进程再转给在跑的 Chrome，网页的点击处理才能把窗口拿到前台。我们没给。
+
+**修改**：
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/notification_center.py` | +15 / −0 | `_spawn_detached` 起进程前先 `AllowSetForegroundWindow(ASFW_ANY)`；桌宠刚收到用户点击，手里有这个权限；放行失败照样起 |
+| `pet/app.py` | +1 / −0 | 跳转结果记一行 INFO：`通知跳转：<结果>（<应用种类> / <激活方式>）` |
+| `tests/test_notification_center.py` | +15 / −0 | 起进程之前先放行前台权限（修前红：`AttributeError: ASFW_ANY`） |
+
+**性能**：每次点击多一次 `user32` 调用，只发生在用户点 Chrome 通知的时候；没有新线程、磁盘或网络。
+
+**实机**：桌宠已重启加载（pid 29436）。新日志能对上跳转：09:54 用户点了一条其他应用的通知，记为 `activated（other / foreground）`，走的是通知中心 UIA 路径。**Gmail 那条路还没有复测**：当时没有新的 Gmail 通知，等用户收到下一条再点。
