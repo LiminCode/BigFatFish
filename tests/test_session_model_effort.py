@@ -90,5 +90,5 @@ def test_the_card_shows_the_model_and_effort(shell):  # noqa: F811
     shell.session_actions.loader = loader
     shell._on_sprite_click(fish, "")
     card = shell.session_actions._card
-    assert _pump(lambda: card.tiles["model"].value.text() == "Opus 5.5")
-    assert card.tiles["effort"].value.text() == "high" and card.tiles["effort"].isVisibleTo(card)
+    assert _pump(lambda: card.meta["model"].value.text() == "Opus 5.5")
+    assert card.meta["effort"].value.text() == "high" and card.meta["effort"].isVisibleTo(card)

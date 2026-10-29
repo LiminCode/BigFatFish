@@ -41,7 +41,8 @@ _STATUS_MS = 4000
 _ICON_WARM_DELAY_MS = 2500
 LIVE_TEXT_KEY = "history.live"
 #: 从哪开的 → 图标名（``context_menus.icons``）
-HOST_ICONS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
+HOST_ICONS = {"vscode": "vscode", "desktop": "sparkle", "terminal": "terminal", "wsl": "ubuntu",
+              "script": "automation"}
 #: 右键菜单：(动作名, 文案)；None = 分隔线。第一项按行的置顶状态在 ``_PIN_ITEMS`` 里二选一
 _PIN_ITEMS = {False: ("pin", "history.menu.pin"), True: ("unpin", "history.menu.unpin")}
 _MENU = (None, ("terminal", "history.menu.terminal"), ("vscode", "history.menu.vscode"),

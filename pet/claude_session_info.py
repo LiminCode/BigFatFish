@@ -46,6 +46,23 @@ _HOST_SESSION_RE = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 ENTRY_TEXT = {ENTRY_VSCODE: "session_info.ui.entry_vscode", ENTRY_CLI: "session_info.ui.entry_cli",
               "sdk-cli": "session_info.ui.entry_sdk", ENTRY_DESKTOP: "session_info.ui.entry_desktop"}
 
+#: 从哪开的 → 图标种类（``host_icons`` 用它取那个程序自己的图标）
+
+
+def host_kind(entrypoint: str, wsl: bool) -> str:
+    """``vscode`` / ``desktop``（Claude 桌面版）/ ``terminal``（本机终端）/ ``wsl``（WSL 终端）/
+    ``script`` / 空（认不出）。WSL 里的 VS Code 仍是 VS Code。"""
+    if entrypoint == ENTRY_VSCODE:
+        return "vscode"
+    if entrypoint == ENTRY_DESKTOP:
+        return "desktop"
+    if entrypoint == "sdk-cli":
+        return "script"
+    if wsl:
+        return "wsl"
+    return "terminal" if entrypoint == ENTRY_CLI else ""
+
+
 #: Windows FILETIME（1601 起、100ns）→ Unix 秒
 _FILETIME_EPOCH_S = 11644473600
 
@@ -88,6 +105,11 @@ class SessionDetail:
         if self.is_wsl:
             return f"{where} · WSL" if where else "WSL"
         return where
+
+    @property
+    def host(self) -> str:
+        """从哪开的（图标种类，见 ``host_kind``）。"""
+        return host_kind(self.entrypoint, self.is_wsl)
 
     @property
     def resume_command(self) -> str:

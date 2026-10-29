@@ -498,6 +498,7 @@ class TestAgentLinkManager:
             "opencode": False,
             "custom_agents": [],
             "session_pets": True,
+            "session_card_text_size": 100,
             "session_pets_max": 6,
             "session_card_theme": "sea",
             "crown_models": ["fable"],

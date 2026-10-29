@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import catalog
-from .session_card_themes import DEFAULT_CARD_THEME, normalize_theme_id
+from .session_card_themes import DEFAULT_CARD_THEME, DEFAULT_TEXT_SIZE, normalize_text_size, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from . import i18n
 from .notification_center import normalize as normalize_notifications
@@ -270,6 +270,8 @@ def _default_agent_link_data() -> dict:
         "crown_models": ["fable"],
         # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
         "session_card_theme": DEFAULT_CARD_THEME,
+        # 详情卡文字大小（85 / 100 / 115 / 130，百分比）；不再跟气泡文字大小走
+        "session_card_text_size": DEFAULT_TEXT_SIZE,
         # 灵动岛「最近的对话」：记下每个会话在哪打开的（只存路径 / 标题，不存内容）；
         # 最多留几天（1~30）、几条（1~200）。见 pet/claude_session_history.py
         "session_history": True,
@@ -394,6 +396,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
     result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
+    result["session_card_text_size"] = normalize_text_size(result.get("session_card_text_size"))
     from .session_crown import normalize_tokens as _normalize_crown_tokens  # 惰性：它依赖会话详情模块
 
     result["crown_models"] = _normalize_crown_tokens(raw.get("crown_models", result.get("crown_models")))

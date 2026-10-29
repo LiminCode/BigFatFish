@@ -25,7 +25,7 @@ from pet import claude_session_jump as sj
 from pet import session_card_themes as themes
 from pet.claude_session_jump import OpenWorkspace
 from pet.config import Config
-from pet.session_pet_ui import SessionDetailCard, app_caption, context_text, phase_line, workspace_text
+from pet.session_pet_ui import SessionDetailCard, context_text, phase_line, workspace_text
 from tests.test_session_pet_details import SID, _pump, _session, shell  # noqa: F401 - shell 是 fixture
 
 app = QApplication.instance() or QApplication([])
@@ -175,8 +175,9 @@ def _card(tmp_path, theme_id="sea") -> SessionDetailCard:
 
 
 def _full_detail(**over) -> si.SessionDetail:
-    detail = _vscode(title="修登录", phase="working", model="claude-opus-5-5", effort="high",
-                     last_prompt="为什么登录会跳两次？", git_branch="fix/login", context_tokens=137_365, **over)
+    detail = _vscode(**{"title": "修登录", "phase": "working", "model": "claude-opus-5-5", "effort": "high",
+                        "last_prompt": "为什么登录会跳两次？", "git_branch": "fix/login",
+                        "context_tokens": 137_365, **over})
     detail.extra["workspace"] = {"label": "shop", "multi_root": True, "folders": 3, "target": "C:/code/shop"}
     return detail
 
@@ -185,13 +186,13 @@ def test_the_card_lays_everything_out_as_tiles_and_rows(tmp_path):
     card = _card(tmp_path)
     try:
         card.show_detail(_full_detail(), 1000.0, now=1000.0 + 200)
-        assert card.app_label.text() == "CLAUDE CODE · VS CODE 插件"
-        assert card.title_label.text() == "修登录" and card.status_label.text() == "工作中"
-        assert [card.tiles[k].value.text() for k in ("model", "effort", "time")] == ["Opus 5.5", "high", "3 分钟"]
+        assert card.app_label.text() == "VS Code 插件" and card.host_tile.isVisibleTo(card)
+        assert card.title_label.text() == "修登录" and card.status_label.full_text == "工作中"
+        assert [card.meta[k].value.text() for k in ("model", "effort", "time")] == ["Opus 5.5", "high", "3 分钟"]
         assert card.context_value.text() == "137k / 1M · 14%" and card.context_bar.ratio == pytest.approx(0.137365)
-        assert card.workspace_row.text.text() == "shop" and card.workspace_row.sub.text() == "多文件夹工作区 · 3 个文件夹"
-        assert card.folder_row.text.text() == r"C:\code\shop\web" and card.branch_row.text.text() == "fix/login"
-        for widget in (*card.tiles.values(), card.context_box, card.context_bar, card.workspace_row):
+        assert card.workspace_row.text.full_text == "shop" and card.workspace_row.sub.text() == "多文件夹工作区 · 3 个文件夹"
+        assert card.folder_row.text.full_text == r"C:\code\shop\web" and card.branch_row.text.full_text == "fix/login"
+        for widget in (*card.meta.values(), card.context_box, card.context_bar, card.workspace_row):
             assert widget.isVisibleTo(card)
     finally:
         card.close()
@@ -203,12 +204,12 @@ def test_what_was_not_read_is_left_out_instead_of_shown_empty(tmp_path):
     try:
         card.show_detail(si.SessionDetail(title="t", phase="resting", entrypoint="cli", cwd=r"C:\p",
                                           git_branch="HEAD", context_tokens=0), None)
-        assert not any(tile.isVisibleTo(card) for tile in card.tiles.values())
+        assert not any(chip.isVisibleTo(card) for chip in card.meta.values())
         assert not card.context_box.isVisibleTo(card)
         assert not card.workspace_row.isVisibleTo(card) and not card.branch_row.isVisibleTo(card)
         assert card.folder_row.isVisibleTo(card)
         card.show_detail(si.SessionDetail(title="t", model="mystery", effort="high", context_tokens=500), None)
-        assert card.tiles["model"].isVisibleTo(card) and card.tiles["effort"].isVisibleTo(card)
+        assert card.meta["model"].isVisibleTo(card) and card.meta["effort"].isVisibleTo(card)
         assert card.context_box.isVisibleTo(card) and not card.context_bar.isVisibleTo(card), "不知道窗口就不画比例"
     finally:
         card.close()
@@ -238,9 +239,8 @@ def test_metro_look_square_flat_and_an_accent_header(tmp_path, theme_id):
 def test_status_and_caption_wording():
     assert phase_line(si.SessionDetail(phase="waiting", tool="Bash")) == "在等你批准：Bash"
     assert phase_line(si.SessionDetail(phase="review")) == "等你回复"
-    assert app_caption(si.SessionDetail(entrypoint="claude-desktop")) == "CLAUDE CODE · CLAUDE 桌面版"
-    assert app_caption(si.SessionDetail(agent="claude_wsl", entrypoint="cli")) == "CLAUDE CODE · 终端 · WSL"
-    assert app_caption(si.SessionDetail()) == "CLAUDE CODE"
+    assert si.SessionDetail(entrypoint="claude-desktop").entry_text == "Claude 桌面版"
+    assert si.SessionDetail(agent="claude_wsl", entrypoint="cli").entry_text == "终端 · WSL"
 
 
 def test_clicking_a_vscode_session_fish_shows_its_workspace(shell):  # noqa: F811
@@ -255,7 +255,7 @@ def test_clicking_a_vscode_session_fish_shows_its_workspace(shell):  # noqa: F81
     actions.loader = loader
     shell._on_sprite_click(fish, "")
     card = actions._card
-    assert _pump(lambda: card.workspace_row.text.text() == "proj")
+    assert _pump(lambda: card.workspace_row.text.full_text == "proj")
     assert card.context_value.text() == "50k / 1M · 5%"
 
 
@@ -287,3 +287,177 @@ def test_the_new_shared_icons_draw_in_the_colour_asked_for():
             assert inked and all(c.red() > 200 and c.green() < 60 for c in inked), f"{name} 要用给的颜色画"
     finally:
         widget.deleteLater()
+
+
+# ---------------------------------------------------------------- 第二轮（2026-10-28 用户看了实机卡片）：
+# 字太大要能调；路径 / 分支用等宽字；模型那几项不重要、缩小；「在哪打开的」用那个程序的图标；
+# 最近的问题和按钮在实机上被截掉了一截。
+
+LONG_PROMPT = ("we need these: 1st, make them display more beautiful, can think of use icon, or use different "
+               "font or size or color, I have no specific requirement, do it according your aesthetic. also, "
+               "the model, effort, time, can do it more beautiful too, maybe can show the context limit")
+LONG_PATH = r"C:\Users\me\Github\BigFatFish\.claude\worktrees\desktop-work-buddy-features-f7813f"
+
+
+def _sized_card(tmp_path, size):
+    config = Config(tmp_path)
+    config.set("agent_link", {**config.get("agent_link"), "session_card_text_size": size})
+    return SessionDetailCard(config)
+
+
+def test_text_size_is_its_own_setting_with_four_steps(tmp_path):
+    config = Config(tmp_path)
+    assert config.get("agent_link")["session_card_text_size"] == 100
+    config.set("agent_link", {**config.get("agent_link"), "session_card_text_size": 115})
+    config.save()
+    assert Config(tmp_path).get("agent_link")["session_card_text_size"] == 115
+    for bad in (999, "big", None):
+        config.set("agent_link", {**config.get("agent_link"), "session_card_text_size": bad})
+        config.save()
+        assert Config(tmp_path).get("agent_link")["session_card_text_size"] == 100
+    assert [size for size, _label in themes.text_size_choices()] == [85, 100, 115, 130]
+
+
+def test_the_card_follows_its_text_size_not_the_bubble_scale(tmp_path):
+    config = Config(tmp_path)
+    config.set("bubble_text_scale", 200)
+    card = SessionDetailCard(config)
+    try:
+        assert card.scale == 1.0, "气泡字再大，详情卡也按自己那一项"
+        assert card.font().pixelSize() == 13
+    finally:
+        card.deleteLater()
+    small, large = _sized_card(tmp_path / "s", 85), _sized_card(tmp_path / "l", 130)
+    try:
+        assert small.font().pixelSize() < 13 < large.font().pixelSize()
+        assert small.width() < large.width()
+    finally:
+        small.deleteLater()
+        large.deleteLater()
+
+
+def test_both_menus_offer_the_text_size_and_reopening_uses_the_new_one(shell):  # noqa: F811
+    from tests.test_session_card_themes import _find
+
+    fish = _session(shell)
+    actions = shell.session_actions
+    actions.loader = lambda detail: detail
+    actions.show_card(fish)
+    first = actions._card
+    assert first.scale == 1.0
+    for menu in (shell._build_menu_for(fish), shell._build_menu_for(shell.sprite)):
+        large = _find(menu, "大")
+        assert large is not None and large.isCheckable() and not large.isChecked()
+    _find(shell._build_menu_for(fish), "大").trigger()
+    assert shell._config.get("agent_link")["session_card_text_size"] == 115
+    actions.show_card(fish)
+    assert actions._card is not first and actions._card.scale == 1.15
+
+
+def test_path_and_branch_use_a_monospace_font_and_elide_in_the_middle(tmp_path):
+    card = _card(tmp_path)
+    try:
+        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch="claude/desktop-work-buddy-features-f7813f"), None)
+        card.show()
+        app.processEvents()
+        folder = card.folder_row.text
+        assert folder.objectName() == "session-card-mono"
+        assert card.branch_row.text.objectName() == "session-card-mono"
+        assert folder.text() != LONG_PATH and "…" in folder.text(), "放不下省中间"
+        assert folder.text().startswith("C:") and folder.text().endswith("f7813f"), "两头保留"
+        assert folder.toolTip() == LONG_PATH and folder.full_text == LONG_PATH
+        assert folder.mapTo(card, folder.rect().topRight()).x() < card.width(), "路径不撑宽卡片"
+    finally:
+        card.close()
+        card.deleteLater()
+
+
+def test_secondary_facts_are_small_and_quiet(tmp_path):
+    card = _card(tmp_path)
+    try:
+        card.show_detail(_full_detail(), 1000.0, now=1200.0)
+        card.show()
+        app.processEvents()
+        chip = card.meta["model"]
+        assert chip.value.font().pixelSize() < card.prompt_label.font().pixelSize(), "比正文小"
+        assert chip.value.font().pixelSize() < card.title_label.font().pixelSize()
+        assert chip.icon.width() <= card._px(12)
+        assert chip.toolTip() == "模型: Opus 5.5" and chip.accessibleName() == "模型: Opus 5.5"
+    finally:
+        card.close()
+        card.deleteLater()
+
+
+@pytest.mark.parametrize(("entrypoint", "agent", "host"), [
+    ("claude-desktop", "claude", "desktop"), ("claude-vscode", "claude", "vscode"),
+    ("claude-vscode", "claude_wsl", "vscode"), ("cli", "claude", "terminal"), ("cli", "claude_wsl", "wsl"),
+    ("sdk-cli", "claude", "script"), ("", "claude", ""),
+])
+def test_where_it_was_opened_picks_the_apps_icon(entrypoint, agent, host):
+    from pet.claude_session_history import HistoryEntry
+
+    assert si.SessionDetail(agent=agent, entrypoint=entrypoint).host == host
+    assert HistoryEntry(agent=agent, session_id="x", entrypoint=entrypoint).host == host, "岛上的历史列表同一套"
+
+
+def test_the_header_shows_the_apps_own_icon(tmp_path, monkeypatch):
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+
+    from pet import host_icons
+
+    host_icons.clear_cache()
+    asked = []
+    red = QPixmap(32, 32)
+    red.fill(QColor("#ff0000"))
+    monkeypatch.setattr(host_icons, "host_executable", lambda kind: (asked.append(kind), f"C:/{kind}.exe")[1])
+    monkeypatch.setattr(host_icons, "_shell_icon", lambda path: QIcon(red))
+    card = _card(tmp_path)
+    try:
+        card.show_detail(si.SessionDetail(entrypoint="claude-desktop", title="t"), None)
+        assert asked == ["desktop"] and card.host_tile.isVisibleTo(card)
+        image = card.host_tile.pixmap().toImage()
+        assert image.pixelColor(image.width() // 2, image.height() // 2).name() == "#ff0000"
+        assert card.app_label.text() == "Claude 桌面版"
+    finally:
+        card.close()
+        card.deleteLater()
+        host_icons.clear_cache()
+
+
+def test_the_desktop_app_is_found_through_the_package_registry(monkeypatch):
+    from pet import host_icons
+
+    root = r"C:\Apps\Claude_4.29.0.0_x64__pzs8sxrjxfjjc"
+    monkeypatch.setattr(host_icons.sys, "platform", "win32")
+    monkeypatch.setattr(host_icons, "_desktop_package_roots", lambda: [root])
+    found = host_icons.host_executable("desktop", exists=lambda path: path.startswith(root))
+    assert found == root + r"\app\claude.exe"
+    assert host_icons.FALLBACK_GLYPHS["desktop"] == "sparkle", "装没装都有个记号"
+
+
+def test_a_long_question_shows_whole_lines_and_nothing_is_cut_off(tmp_path):
+    """实机截图：英文的长问题只露出两行半，按钮上的字也被截掉（「Jump to cha」）。"""
+    from PySide6.QtGui import QFontMetrics
+
+    from pet import i18n
+
+    previous = i18n.current_language()
+    config = Config(tmp_path)              # 读配置会把界面语言设回配置里的那个：之后再切英文
+    i18n.set_language("en")
+    card = SessionDetailCard(config)
+    try:
+        card.show_detail(_full_detail(last_prompt=LONG_PROMPT, cwd=LONG_PATH), None)
+        card.show()
+        app.processEvents()
+        prompt = card.prompt_label
+        lines = prompt.text().split("\n")
+        assert len(lines) == 4 and lines[-1].endswith("…") and prompt.toolTip() == LONG_PROMPT
+        assert prompt.height() >= 4 * QFontMetrics(prompt.font()).lineSpacing(), "四行都要露出来"
+        for button in (card.jump_btn, card.folder_btn, card.copy_btn):
+            assert button.width() >= button.sizeHint().width(), "按钮上的字不能被截"
+            assert button.mapTo(card, button.rect().topRight()).x() < card.width()
+        assert card.copy_btn.toolTip() == "Copy resume command" and card.copy_btn.accessibleName()
+    finally:
+        card.close()
+        card.deleteLater()
+        i18n.set_language(previous)

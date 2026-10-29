@@ -58,6 +58,48 @@ def bubble_font_family() -> str:
     return _FALLBACK_FAMILY.get(sys.platform, "")
 
 
+#: 会话详情卡（2026-10-28 起 Metro 风格，不再用等线）：微软雅黑 UI 是 Windows Phone / Metro 那一代
+#: 的中文界面字体，西文字形照着 Segoe UI 配。同样只点一个族、只看文件在不在。
+_METRO_FAMILY = {"win32": ("Microsoft YaHei UI", "msyh.ttc"), "darwin": ("PingFang SC", "")}
+_METRO_LIGHT_FAMILY = {"win32": ("Microsoft YaHei UI Light", "msyhl.ttc")}
+#: 路径、分支用的等宽字：用户点名 Ubuntu Mono；没装就用系统自带的
+_MONO_FAMILIES = {"win32": (("Ubuntu Mono", "UbuntuMono*.ttf"), ("Consolas", "consola.ttf")),
+                  "darwin": (("Menlo", ""),)}
+
+
+def _font_file_installed(pattern: str) -> bool:
+    if not pattern:
+        return True                       # macOS 自带的：不查文件
+    if sys.platform != "win32":
+        return False
+    for directory in _windows_font_dirs():
+        try:
+            if any(directory.glob(pattern)):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+@functools.lru_cache(maxsize=2)
+def metro_font_family(light: bool = False) -> str:
+    """会话详情卡（Metro）的字体族；``light`` 要细体（标题）。空串 = 不点名。"""
+    table = _METRO_LIGHT_FAMILY if light else _METRO_FAMILY
+    family, pattern = table.get(sys.platform, ("", ""))
+    if family and _font_file_installed(pattern):
+        return family
+    return metro_font_family(False) if light else bubble_font_family()
+
+
+@functools.lru_cache(maxsize=1)
+def mono_font_family() -> str:
+    """等宽字的字体族（只给一个）；都没装返回空串。"""
+    for family, pattern in _MONO_FAMILIES.get(sys.platform, ()):
+        if _font_file_installed(pattern):
+            return family
+    return ""
+
+
 def font_css() -> str:
     """样式表片段（``font-family: "…"; `` 或空串），拼在 ``font-size`` 旁边用。"""
     family = bubble_font_family()

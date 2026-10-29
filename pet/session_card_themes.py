@@ -82,6 +82,28 @@ def theme_choices() -> list[tuple[str, str]]:
     return [(theme_id, t(f"menu.card_theme.{theme_id}")) for theme_id in CARD_THEMES]
 
 
+#: 详情卡文字大小（百分比，100 = 标准）。2026-10-28 起和气泡文字大小脱钩：原来跟着气泡放大，
+#: 再乘 1.25，用户嫌大；现在单独一项，四档里选。
+TEXT_SIZE_KEY = "session_card_text_size"        # 也存在 agent_link 这个配置字典里
+TEXT_SIZES = (85, 100, 115, 130)
+DEFAULT_TEXT_SIZE = 100
+_TEXT_SIZE_NAMES = {85: "small", 100: "standard", 115: "large", 130: "larger"}
+
+
+def normalize_text_size(value) -> int:
+    """四档之一；别的值（手改配置、旧版本没有这一项）回到标准。"""
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_TEXT_SIZE
+    return size if size in TEXT_SIZES else DEFAULT_TEXT_SIZE
+
+
+def text_size_choices() -> list[tuple[int, str]]:
+    """``[(百分比, 名字), …]``，给菜单用。"""
+    return [(size, t(f"menu.card_text_size.{_TEXT_SIZE_NAMES[size]}")) for size in TEXT_SIZES]
+
+
 def _luminance(color: str) -> float:
     value = color.lstrip("#")
     channels = []

@@ -650,6 +650,15 @@ class SpriteMenuFacade:
         self.cfg.set("agent_link", ag_data)
         self._save()
 
+    def set_session_card_text_size(self, size: int) -> None:
+        """会话小鱼详情卡的文字大小：落盘；下次打开详情卡时生效。"""
+        from .session_card_themes import TEXT_SIZE_KEY, normalize_text_size
+
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data[TEXT_SIZE_KEY] = normalize_text_size(size)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+
     # ---- 工作简报（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
     def _work_briefing(self):
         return getattr(self._shell, "work_briefing", None)

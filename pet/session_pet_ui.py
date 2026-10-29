@@ -23,7 +23,7 @@ from typing import Any
 
 import shiboken6
 from PySide6.QtCore import QEvent, QObject, QPointF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -37,15 +37,15 @@ from PySide6.QtWidgets import (
 
 from . import claude_hooks, claude_session_info, claude_session_jump, session_card_themes
 from .claude_session_info import SessionDetail
+from . import ui_fonts
 from .i18n import t
 from .note_meta_bar import meta_icon, short_count
+from .notification_toast import wrap_lines
 from .settings_widgets import TiltButton
 from .context_menus.icons import vector_widget_icon
 
 log = logging.getLogger(__name__)
 
-#: 详情卡相对系统默认字号 / 尺寸的放大倍数（再乘「气泡文字大小」设置）
-CARD_BASE_SCALE = 1.25
 _WAIT_TEXT = "menu.session.waiting_for_you"   # 文案键，用时 t()
 
 
@@ -121,12 +121,6 @@ def workspace_text(detail: SessionDetail) -> tuple[str, str, str]:
             t("session_card.workspace_tip", target=str(workspace.get("target") or workspace["label"])))
 
 
-def app_caption(detail: SessionDetail) -> str:
-    """卡片页头的小字：「CLAUDE CODE · VS CODE 插件」（Metro 的应用名那一行，全大写）。"""
-    entry = detail.entry_text
-    return ("Claude Code · " + entry if entry else "Claude Code").upper()
-
-
 def _configured_theme_id(config) -> str:
     """配置里选的详情卡配色方案（``agent_link.session_card_theme``）。"""
     try:
@@ -137,12 +131,18 @@ def _configured_theme_id(config) -> str:
     return session_card_themes.normalize_theme_id(value)
 
 
-def _card_scale(config) -> float:
+def _configured_text_size(config) -> int:
+    """配置里选的详情卡文字大小（``agent_link.session_card_text_size``，百分比）。"""
     try:
-        percent = float(config.get("bubble_text_scale", 100) or 100)
-    except (AttributeError, TypeError, ValueError):
-        percent = 100.0
-    return max(1.0, min(4.0, CARD_BASE_SCALE * percent / 100.0))
+        agent_cfg = config.get("agent_link", {}) or {}
+    except (AttributeError, TypeError):
+        agent_cfg = {}
+    value = agent_cfg.get(session_card_themes.TEXT_SIZE_KEY) if isinstance(agent_cfg, dict) else None
+    return session_card_themes.normalize_text_size(value)
+
+
+def _card_scale(config) -> float:
+    return _configured_text_size(config) / 100.0
 
 
 # ---------------------------------------------------------------- 图标（矢量线条，不用 emoji 字体）
@@ -198,73 +198,117 @@ def phase_badge(phase: str, background: str, foreground: str, size: int, dpr: fl
     return pixmap
 
 
-#: 和简报窗口 / 设置页一样的 Metro 字体：西文 Segoe UI，中文雅黑；标题用它们的细体
-_FONTS = ["Segoe UI", "SF Pro Text", ".AppleSystemUIFont", "PingFang SC", "Microsoft YaHei UI", "sans-serif"]
-_LIGHT_STACK = ('"Segoe UI Light", "Microsoft YaHei UI Light", "Segoe UI", "SF Pro Display", '
-                '"PingFang SC", "Microsoft YaHei UI", sans-serif')
-#: 磁贴的顺序与图标
-TILE_KEYS = ("model", "effort", "time")
+def _family_css(family: str) -> str:
+    return f'font-family: "{family}"; ' if family else ""
 
 
-class _MetricTile(QFrame):
-    """一块数字磁贴：图标 + 小字标题，下面一行值（模型 / 思考强度 / 持续时长）。"""
+#: 次要信息那一行的顺序（模型 / 思考强度 / 持续）
+META_KEYS = ("model", "effort", "time")
+#: 标题、最近的问题、跳转结果最多显示几行（超出的在末尾省略，悬停看全文）
+TITLE_LINES, PROMPT_LINES, RESULT_LINES = 2, 4, 2
+
+
+class _Lines(QLabel):
+    """按宽度折成最多 ``max_lines`` 行、末尾省略的文字；全文放悬停提示。
+
+    不用 QLabel 自己的 wordWrap：顶层窗口 ``adjustSize`` 时它报的高度不跟宽度走，长文字会被
+    截掉一半（2026-10-28 实机截图：英文的最近一问只露出两行半）。这里折好行再按行数定高。"""
+
+    def __init__(self, max_lines: int, parent=None) -> None:
+        super().__init__(parent)
+        self.max_lines = max_lines
+        self.full_text = ""
+        self.setTextFormat(Qt.TextFormat.PlainText)
+
+    def set_full_text(self, text: str, width: int) -> None:
+        self.full_text = str(text or "")
+        width = max(20, width)
+        lines = wrap_lines(self.full_text, self.font(), width, self.max_lines)
+        self.setText("\n".join(lines))
+        cut = len(wrap_lines(self.full_text, self.font(), width, self.max_lines + 1)) > self.max_lines
+        self.setToolTip(self.full_text if cut else "")
+
+
+class _Elided(QLabel):
+    """单行文字，放不下就省略（路径省中间——两头的盘符和最后一层目录最有用）；全文在悬停提示里。"""
+
+    def __init__(self, mode: Qt.TextElideMode, parent=None) -> None:
+        super().__init__(parent)
+        self.mode = mode
+        self.full_text = ""
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setMinimumWidth(1)
+
+    def set_full_text(self, text: str) -> None:
+        self.full_text = str(text or "")
+        self._elide()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        shown = QFontMetrics(self.font()).elidedText(self.full_text, self.mode, max(1, self.width()))
+        if shown != self.text():
+            self.setText(shown)
+        self.setToolTip(self.full_text if shown != self.full_text else "")
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        hint = super().sizeHint()
+        return QSize(min(hint.width(), QFontMetrics(self.font()).horizontalAdvance(self.full_text) + 2),
+                     hint.height())
+
+
+class _MetaChip(QWidget):
+    """次要信息里的一项：小图标 + 值（模型 / 思考强度 / 持续）。标题只在悬停提示和无障碍名字里。"""
 
     def __init__(self, key: str, px, parent=None) -> None:
         super().__init__(parent)
         self.key = key
-        self.setObjectName("session-card-tile")
+        self.caption = t(f"session_card.caption.{key}")
         self.icon = QLabel(self)
-        self.icon.setFixedSize(px(13), px(13))
-        self.caption = QLabel(t(f"session_card.caption.{key}").upper(), self)
-        self.caption.setObjectName("session-card-tile-caption")
+        self.icon.setFixedSize(px(11), px(11))
         self.value = QLabel("", self)
-        self.value.setObjectName("session-card-tile-value")
+        self.value.setObjectName("session-card-meta")
         self.value.setTextFormat(Qt.TextFormat.PlainText)        # 模型名是外来内容
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(px(5))
-        top.addWidget(self.icon)
-        top.addWidget(self.caption)
-        top.addStretch(1)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(px(10), px(8), px(10), px(9))
-        layout.setSpacing(px(3))
-        layout.addLayout(top)
-        layout.addWidget(self.value)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(px(4))
+        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.value, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_value(self, text: str) -> None:
         self.value.setText(text)
-        self.setAccessibleName(f"{self.caption.text()}: {text}")
+        self.setToolTip(f"{self.caption}: {text}")
+        self.setAccessibleName(f"{self.caption}: {text}")
         self.setVisible(bool(text))
 
 
 class _InfoRow(QWidget):
-    """一行「图标 + 文字 + 灰色补充」：工作区、文件夹、分支。"""
+    """一行「图标 + 文字 + 灰色补充」：工作区、文件夹、分支。文字单行，放不下就省略。"""
 
-    def __init__(self, key: str, px, parent=None) -> None:
+    def __init__(self, key: str, px, *, mono: bool = False, parent=None) -> None:
         super().__init__(parent)
         self.key = key
         self.icon = QLabel(self)
         self.icon.setFixedSize(px(14), px(14))
-        self.text = QLabel("", self)
-        self.text.setObjectName("session-card-info")
-        self.text.setTextFormat(Qt.TextFormat.PlainText)
-        self.text.setWordWrap(True)
-        self.text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.text = _Elided(Qt.TextElideMode.ElideMiddle, self)
+        self.text.setObjectName("session-card-mono" if mono else "session-card-info")
         self.sub = QLabel("", self)
         self.sub.setObjectName("session-card-info-sub")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(px(8))
-        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(self.text, 1)
-        layout.addWidget(self.sub, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.text, 1, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.sub, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_text(self, text: str, sub: str = "", tip: str = "") -> None:
-        self.text.setText(text)
+        self.text.set_full_text(text)
         self.sub.setText(sub)
         self.sub.setVisible(bool(sub))
         self.setToolTip(tip)
+        self.setAccessibleName(f"{tip}: {text}" if tip else text)
         self.setVisible(bool(text))
 
 
@@ -299,10 +343,16 @@ class _ContextBar(QWidget):
 class SessionDetailCard(QFrame):
     """锚在会话小鱼头顶的详情卡（Windows Phone / Metro 风格）；失去焦点即收起。
 
-    方角、平铺、无阴影：页头一条强调色的带子，小字大写的「CLAUDE CODE · 从哪打开的」+ 大而轻的
-    标题；下面是状态磁贴、三块数字磁贴（模型 / 思考强度 / 持续）、上下文平条、最近的问题、
-    带图标的工作区 / 文件夹 / 分支几行，最后一排会朝光标倾斜的方按钮。颜色全部取自
-    ``session_card_themes`` 里选的方案：页头和主按钮用方案的强调色（``accent``），磁贴用按钮底色。
+    方角、平铺、无阴影。从上到下按重要程度排：
+
+    - 页头一条强调色的带子：**在哪打开的**（那个程序自己的图标，放在一块白色小方磁贴上，
+      旁边写「Claude 桌面版」「VS Code 插件」「终端 · WSL」）+ 大而轻的**标题**；
+    - 状态（阶段小磁贴 + 阶段名），下面一行灰色小字的次要信息：模型、思考强度、持续多久；
+    - 上下文用量（数字 + 平条）；**最近的问题**；
+    - **工作区 / 目录 / 分支**几行，目录和分支用等宽字、放不下省中间；
+    - 一个强调色的「跳到对话」主按钮，旁边两个方形图标按钮（打开文件夹、复制恢复命令）。
+
+    颜色全部取自 ``session_card_themes`` 里选的方案；字号由「详情卡文字大小」那一项决定。
     """
 
     jump_requested = Signal()
@@ -319,15 +369,23 @@ class SessionDetailCard(QFrame):
         self._theme_id = ""
         self._theme = session_card_themes.card_theme(None)
         self._phase = ""
+        self._host = ""
         self._anchor = None
         self._deactivate_check_pending = False
         self.key: tuple[str, str] | None = None
+        # 字体都只点一个族（ui_fonts 的约束：给 Qt 一串族名，它会把整个字体库映射进进程）：
+        # 正文微软雅黑 UI（Metro 那一代的中文界面字），标题它的细体，路径 / 分支等宽字
         font = QFont()
-        font.setFamilies(_FONTS)
+        if ui_fonts.metro_font_family():
+            font.setFamily(ui_fonts.metro_font_family())
         font.setPixelSize(self._px(13))
         self.setFont(font)                 # 子控件都继承它；样式表只改个别几处的字号和粗细
         self._build()
         self.apply_theme(_configured_theme_id(config))
+
+    @property
+    def scale(self) -> float:
+        return self._scale
 
     def _px(self, value: float) -> int:
         return int(round(value * self._scale))
@@ -336,10 +394,14 @@ class SessionDetailCard(QFrame):
         screen = self.screen() or QGuiApplication.primaryScreen()
         return max(float(self.devicePixelRatioF() or 1.0), float(screen.devicePixelRatio()) if screen else 1.0)
 
+    def _text_width(self) -> int:
+        """正文区的宽度（卡片宽 − 1px 边 × 2 − 左右内边距）。"""
+        return self.width() - 2 - 2 * self._px(16)
+
     # ------------------------------------------------------------ 搭界面
     def _build(self) -> None:
         px = self._px
-        width = px(360)
+        width = px(340)
         screen = QGuiApplication.primaryScreen()
         if screen is not None:
             width = min(width, max(240, screen.availableGeometry().width() - 16))
@@ -352,27 +414,30 @@ class SessionDetailCard(QFrame):
         self.header = QFrame(self)
         self.header.setObjectName("session-card-header")
         head = QVBoxLayout(self.header)
-        head.setContentsMargins(px(16), px(8), px(6), px(14))
-        head.setSpacing(px(2))
+        head.setContentsMargins(px(16), px(10), px(6), px(12))
+        head.setSpacing(px(6))
         top = QHBoxLayout()
-        top.setSpacing(px(6))
-        self.app_label = QLabel("CLAUDE CODE", self.header)
+        top.setSpacing(px(8))
+        self.host_tile = QLabel(self.header)
+        self.host_tile.setObjectName("session-card-host")
+        self.host_tile.setFixedSize(px(22), px(22))
+        self.host_tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top.addWidget(self.host_tile, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.app_label = QLabel("", self.header)
         self.app_label.setObjectName("session-card-app")
+        self.app_label.setTextFormat(Qt.TextFormat.PlainText)
         top.addWidget(self.app_label, 1, Qt.AlignmentFlag.AlignVCenter)
         self.close_btn = QPushButton("", self.header)
         self.close_btn.setObjectName("session-card-close")
-        self.close_btn.setFixedSize(px(28), px(28))
+        self.close_btn.setFixedSize(px(26), px(26))
         self.close_btn.setToolTip(t("session_card.close"))
         self.close_btn.setAccessibleName(t("session_card.close"))
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.clicked.connect(self.close)
         top.addWidget(self.close_btn, 0, Qt.AlignmentFlag.AlignTop)
         head.addLayout(top)
-        self.title_label = QLabel("", self.header)
+        self.title_label = _Lines(TITLE_LINES, self.header)
         self.title_label.setObjectName("session-card-title")
-        self.title_label.setWordWrap(True)
-        self.title_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.title_label.setContentsMargins(0, 0, px(10), 0)
         head.addWidget(self.title_label)
         outer.addWidget(self.header)
 
@@ -383,28 +448,30 @@ class SessionDetailCard(QFrame):
         layout.setSpacing(px(10))
         outer.addWidget(body)
 
-        status = QHBoxLayout()
-        status.setSpacing(px(8))
+        status = QVBoxLayout()
+        status.setSpacing(px(4))
+        phase = QHBoxLayout()
+        phase.setSpacing(px(8))
         self.status_icon = QLabel(body)
-        self.status_icon.setFixedSize(px(18), px(18))
-        status.addWidget(self.status_icon, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.status_label = QLabel("", body)
+        self.status_icon.setFixedSize(px(16), px(16))
+        phase.addWidget(self.status_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.status_label = _Elided(Qt.TextElideMode.ElideRight, body)
         self.status_label.setObjectName("session-card-status")
-        self.status_label.setWordWrap(True)
-        status.addWidget(self.status_label, 1)
+        phase.addWidget(self.status_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        status.addLayout(phase)
+        meta = QHBoxLayout()
+        meta.setSpacing(px(12))
+        self.meta = {key: _MetaChip(key, px, body) for key in META_KEYS}
+        for key in META_KEYS:
+            meta.addWidget(self.meta[key])
+        meta.addStretch(1)
+        status.addLayout(meta)
         layout.addLayout(status)
-
-        tiles = QHBoxLayout()
-        tiles.setSpacing(px(4))
-        self.tiles = {key: _MetricTile(key, px, body) for key in TILE_KEYS}
-        for key in TILE_KEYS:
-            tiles.addWidget(self.tiles[key], 1)
-        layout.addLayout(tiles)
 
         self.context_box = QWidget(body)
         context = QVBoxLayout(self.context_box)
         context.setContentsMargins(0, 0, 0, 0)
-        context.setSpacing(px(5))
+        context.setSpacing(px(4))
         row = QHBoxLayout()
         self.context_caption = QLabel(t("session_card.caption.context").upper(), self.context_box)
         self.context_caption.setObjectName("session-card-caption")
@@ -414,7 +481,7 @@ class SessionDetailCard(QFrame):
         row.addStretch(1)
         row.addWidget(self.context_value)
         context.addLayout(row)
-        self.context_bar = _ContextBar(max(4, px(5)), self.context_box)
+        self.context_bar = _ContextBar(max(3, px(4)), self.context_box)
         context.addWidget(self.context_bar)
         layout.addWidget(self.context_box)
 
@@ -423,19 +490,17 @@ class SessionDetailCard(QFrame):
         self.prompt_caption = QLabel(t("menu.session.latest_question").upper(), body)
         self.prompt_caption.setObjectName("session-card-caption")
         prompt.addWidget(self.prompt_caption)
-        self.prompt_label = QLabel("", body)
+        self.prompt_label = _Lines(PROMPT_LINES, body)
         self.prompt_label.setObjectName("session-card-prompt")
-        self.prompt_label.setWordWrap(True)
-        self.prompt_label.setTextFormat(Qt.TextFormat.PlainText)
         self.prompt_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         prompt.addWidget(self.prompt_label)
         layout.addLayout(prompt)
 
         places = QVBoxLayout()
         places.setSpacing(px(5))
-        self.workspace_row = _InfoRow("workspace", px, body)
-        self.folder_row = _InfoRow("folder", px, body)
-        self.branch_row = _InfoRow("branch", px, body)
+        self.workspace_row = _InfoRow("workspace", px, parent=body)
+        self.folder_row = _InfoRow("folder", px, mono=True, parent=body)
+        self.branch_row = _InfoRow("branch", px, mono=True, parent=body)
         for info in (self.workspace_row, self.folder_row, self.branch_row):
             places.addWidget(info)
         layout.addLayout(places)
@@ -444,23 +509,32 @@ class SessionDetailCard(QFrame):
         buttons.setSpacing(px(4))
         self.jump_btn = TiltButton(t("menu.session.jump_chat"), body)
         self.jump_btn.setObjectName("session-card-primary")
-        self.folder_btn = TiltButton(t("menu.session.open_folder"), body)
-        self.copy_btn = TiltButton(t("menu.session.copy_resume_command"), body)
+        self.folder_btn = TiltButton("", body)
+        self.copy_btn = TiltButton("", body)
+        for button, tip in ((self.folder_btn, t("menu.session.open_folder")),
+                            (self.copy_btn, t("menu.session.copy_resume_command"))):
+            # 次要动作：方形图标按钮（Metro 应用栏那样），文字在悬停提示和无障碍名字里
+            button.setObjectName("session-card-icon-button")
+            button.setToolTip(tip)
+            button.setFixedSize(px(32), px(32))
         self.jump_btn.clicked.connect(self.jump_requested.emit)
         self.folder_btn.clicked.connect(self.folder_requested.emit)
         self.copy_btn.clicked.connect(self.copy_requested.emit)
+        self.jump_btn.setAccessibleName(self.jump_btn.text())
+        self.jump_btn.setText(" " + self.jump_btn.text())   # 图标和字之间留一点缝（样式表调不了这个间距）
+        self.jump_btn.setMinimumHeight(px(32))
+        self.folder_btn.setAccessibleName(t("menu.session.open_folder"))
+        self.copy_btn.setAccessibleName(t("menu.session.copy_resume_command"))
         for button in (self.jump_btn, self.folder_btn, self.copy_btn):
-            button.setAccessibleName(button.text())
-            button.setText(" " + button.text())          # 图标和字之间留一点缝（样式表调不了这个间距）
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setIconSize(QSize(px(14), px(14)))
-            buttons.addWidget(button)
-        buttons.addStretch(1)
+        buttons.addWidget(self.jump_btn, 1)
+        buttons.addWidget(self.folder_btn)
+        buttons.addWidget(self.copy_btn)
         layout.addLayout(buttons)
 
-        self.result_label = QLabel("", body)
+        self.result_label = _Lines(RESULT_LINES, body)
         self.result_label.setObjectName("session-card-result")
-        self.result_label.setWordWrap(True)
         self.result_label.setVisible(False)
         layout.addWidget(self.result_label)
 
@@ -469,7 +543,7 @@ class SessionDetailCard(QFrame):
         """换配色方案（``session_card_themes`` 里的 id）；与当前相同则什么都不做。
 
         颜色全部取自方案本身：页头、主按钮、状态磁贴、上下文平条用强调色（``accent`` /
-        ``accent_text``），数字磁贴与普通按钮用按钮底（``button`` / ``button_text``）——这几对的
+        ``accent_text``），图标按钮用按钮底（``button`` / ``button_text``）——这几对的
         对比度由测试逐项把关。"""
         theme_id = session_card_themes.normalize_theme_id(theme_id)
         if theme_id == self._theme_id:
@@ -480,24 +554,23 @@ class SessionDetailCard(QFrame):
             QLabel {{ background: transparent; color: {c["text"]}; border: none; }}
             QFrame#session-card-header {{ background: {c["accent"]}; border: none; }}
             QFrame#session-card-header QLabel {{ color: {c["accent_text"]}; }}
-            QLabel#session-card-app {{ font-size: {px(10.5)}px; font-weight: 600; letter-spacing: 1px; }}
-            QLabel#session-card-title {{ font-family: {_LIGHT_STACK}; font-size: {px(21)}px; font-weight: 300; }}
-            QLabel#session-card-status {{ font-size: {px(14)}px; font-weight: 600; }}
+            QLabel#session-card-host {{ background: #ffffff; }}
+            QLabel#session-card-app {{ font-size: {px(12.5)}px; font-weight: 600; }}
+            QLabel#session-card-title {{ {_family_css(ui_fonts.metro_font_family(light=True))}font-size: {px(19)}px; }}
+            QLabel#session-card-status {{ font-size: {px(13.5)}px; font-weight: 600; }}
+            QLabel#session-card-meta {{ color: {c["muted"]}; font-size: {px(11.5)}px; }}
             QLabel#session-card-caption {{
-                color: {c["muted"]}; font-size: {px(10.5)}px; font-weight: 600; letter-spacing: 1px;
+                color: {c["muted"]}; font-size: {px(10)}px; font-weight: 600; letter-spacing: 1px;
             }}
             QLabel#session-card-context, QLabel#session-card-info-sub, QLabel#session-card-result {{
-                color: {c["muted"]}; font-size: {px(12)}px;
+                color: {c["muted"]}; font-size: {px(11.5)}px;
             }}
             QLabel#session-card-info {{ font-size: {px(12.5)}px; }}
-            QFrame#session-card-tile {{ background: {c["button"]}; border: none; }}
-            QFrame#session-card-tile QLabel {{ color: {c["button_text"]}; }}
-            QLabel#session-card-tile-caption {{ font-size: {px(10)}px; font-weight: 600; letter-spacing: 1px; }}
-            QLabel#session-card-tile-value {{ font-size: {px(16)}px; }}
+            QLabel#session-card-mono {{ {_family_css(ui_fonts.mono_font_family())}font-size: {px(13.5)}px; }}
             QPushButton {{
                 background: {c["button"]}; color: {c["button_text"]};
                 border: 2px solid transparent; border-radius: 0;
-                padding: {px(4)}px {px(10)}px; min-height: {px(22)}px;
+                padding: {px(3)}px {px(10)}px;
             }}
             QPushButton:hover {{ border-color: {c["hover"]}; }}
             QPushButton:focus {{ border-color: {c["accent"]}; }}
@@ -506,7 +579,8 @@ class SessionDetailCard(QFrame):
             QPushButton#session-card-primary:hover, QPushButton#session-card-primary:focus {{
                 border-color: {c["text"]};
             }}
-            QPushButton#session-card-close {{ background: transparent; padding: 0; min-height: 0; }}
+            QPushButton#session-card-icon-button {{ padding: 0; }}
+            QPushButton#session-card-close {{ background: transparent; padding: 0; }}
             QPushButton#session-card-close:hover {{ border-color: {c["accent_text"]}; }}
         """)
         self.context_bar.set_colors(c["button"], c["accent"])
@@ -515,8 +589,8 @@ class SessionDetailCard(QFrame):
 
     def _paint_icons(self) -> None:
         c = self._theme
-        for tile in self.tiles.values():
-            tile.icon.setPixmap(card_icon(tile.icon, tile.key, c["button_text"], self._px(13)))
+        for chip in self.meta.values():
+            chip.icon.setPixmap(card_icon(chip.icon, chip.key, c["muted"], self._px(11)))
         for info in (self.workspace_row, self.folder_row, self.branch_row):
             info.icon.setPixmap(card_icon(info.icon, info.key, c["muted"], self._px(14)))
         icon_px = self._px(14)
@@ -528,24 +602,40 @@ class SessionDetailCard(QFrame):
             button.setIcon(icon)
         self.close_btn.setIcon(QIcon(card_icon(self.close_btn, "close", c["accent_text"], icon_px)))
         self.close_btn.setIconSize(QSize(icon_px, icon_px))
-        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(18), self._dpr()))
+        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(16), self._dpr()))
+
+    def _paint_host(self) -> None:
+        """页头左边那块白色小磁贴：这个会话所在程序自己的图标（取不到就是单色记号）。"""
+        from .host_icons import host_icon
+
+        size = self._px(16)
+        icon = host_icon(self.host_tile, self._host, size) if self._host else QIcon()
+        self.host_tile.setPixmap(icon.pixmap(QSize(size, size)) if not icon.isNull() else QPixmap())
+        self.host_tile.setVisible(not icon.isNull())
 
     # ------------------------------------------------------------ 内容
     def show_detail(self, detail: SessionDetail, since: float | None, *,
                     loading: bool = False, now: float | None = None) -> None:
-        self.app_label.setText(app_caption(detail))
-        self.title_label.setText(claude_hooks.session_label(detail.agent, {
-            "title": detail.title, "project": detail.project, "sessionId": detail.session_id}))
+        width = self._text_width()
+        where = detail.entry_text
+        self.app_label.setText(where or "Claude Code")
+        self.app_label.setToolTip(t("session_card.caption.where") + ": " + (where or "Claude Code"))
+        if detail.host != self._host or self.host_tile.pixmap().isNull():
+            self._host = detail.host
+            self._paint_host()
+        self.title_label.set_full_text(claude_hooks.session_label(detail.agent, {
+            "title": detail.title, "project": detail.project, "sessionId": detail.session_id}),
+            width + self._px(10))
         self._phase = detail.phase
-        self.status_label.setText(phase_line(detail))
+        self.status_label.set_full_text(phase_line(detail))
         c = self._theme
-        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(18), self._dpr()))
-        self.status_icon.setVisible(bool(self.status_label.text()))
+        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(16), self._dpr()))
+        self.status_icon.setVisible(bool(self.status_label.full_text))
 
         model = claude_session_info.model_label(detail.model)
-        self.tiles["model"].set_value(model)
-        self.tiles["effort"].set_value(detail.effort if model else "")
-        self.tiles["time"].set_value(elapsed_text((now or time.time()) - since) if since else "")
+        self.meta["model"].set_value(model)
+        self.meta["effort"].set_value(detail.effort if model else "")
+        self.meta["time"].set_value(elapsed_text((now or time.time()) - since) if since else "")
 
         text, ratio, tip = context_text(detail)
         self.context_value.setText(text)
@@ -561,7 +651,7 @@ class SessionDetailCard(QFrame):
             prompt = t("menu.session.loading")
         else:
             prompt = t("menu.session.couldn_t_read")
-        self.prompt_label.setText(prompt)
+        self.prompt_label.set_full_text(prompt, width)
 
         self.workspace_row.set_text(*workspace_text(detail))
         self.folder_row.set_text(detail.cwd, "", t("session_card.folder_tip"))
@@ -573,7 +663,7 @@ class SessionDetailCard(QFrame):
         self._reposition()
 
     def show_result(self, message: str) -> None:
-        self.result_label.setText(message)
+        self.result_label.set_full_text(message, self._text_width())
         self.result_label.setVisible(bool(message))
         self.adjustSize()
         self._reposition()
@@ -711,6 +801,9 @@ class SessionPetActions(QObject):
         return True
 
     def _ensure_card(self) -> SessionDetailCard:
+        if (self._card is not None and shiboken6.isValid(self._card)
+                and self._card.scale != _card_scale(self._shell._config)):
+            self.close()                # 菜单里改了文字大小：卡片按新字号重搭
         if self._card is None or not shiboken6.isValid(self._card):
             card = SessionDetailCard(self._shell._config)
             card.jump_requested.connect(lambda: self._card_action(self.jump_key))
@@ -916,6 +1009,13 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
         item.setCheckable(True)
         item.setChecked(theme_id == current_theme)
         item.triggered.connect(lambda _checked=False, t=theme_id: facade.set_session_card_theme(t))
+    size_menu = add_submenu(settings, t("menu.session.detail_card_text_size"))
+    current_size = _configured_text_size(facade.cfg)
+    for size, label in session_card_themes.text_size_choices():
+        item = size_menu.addAction(label)
+        item.setCheckable(True)
+        item.setChecked(size == current_size)
+        item.triggered.connect(lambda _checked=False, n=size: facade.set_session_card_text_size(n))
     install_modern_check_indicators(menu)
     install_responsive_menu_style(menu)
     return menu
