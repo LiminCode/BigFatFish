@@ -22,7 +22,7 @@ import time
 from typing import Any
 
 import shiboken6
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,6 +40,7 @@ from .claude_session_info import SessionDetail
 from .i18n import t
 from .note_meta_bar import meta_icon, short_count
 from .settings_widgets import TiltButton
+from .context_menus.icons import vector_widget_icon
 
 log = logging.getLogger(__name__)
 
@@ -144,54 +145,19 @@ def _card_scale(config) -> float:
     return max(1.0, min(4.0, CARD_BASE_SCALE * percent / 100.0))
 
 
-# ---------------------------------------------------------------- 图标（自己画，不用 emoji 字体）
-def card_icon(name: str, color: str, size: int, dpr: float = 1.0) -> QPixmap:
-    """详情卡用的线条小图标（16 单位的画布）。模型 / effort / 时长沿用笔记信息栏那一套。"""
+# ---------------------------------------------------------------- 图标（矢量线条，不用 emoji 字体）
+#: 卡片上的东西 → 共用矢量图标库（``context_menus/icons.py``）里的语义名字
+_SHARED_ICONS = {"workspace": "vscode", "folder": "folder", "branch": "branch", "jump": "jump",
+                 "copy": "copy", "close": "remove"}
+
+
+def card_icon(widget, name: str, color: str, size: int) -> QPixmap:
+    """详情卡用的单色线条小图标。模型 / effort / 时长沿用笔记信息栏那一套（``meta_icon``），
+    其余取共用图标库，颜色用配色方案里的。"""
+    dpr = float(widget.devicePixelRatioF() or 1.0)
     if name in ("model", "effort", "time"):
         return meta_icon(name, color, size, dpr)
-    pixmap = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
-    pixmap.setDevicePixelRatio(dpr)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.scale(size / 16.0, size / 16.0)
-    painter.setPen(QPen(QColor(color), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
-                        Qt.PenJoinStyle.RoundJoin))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    line = painter.drawLine
-    if name == "folder":
-        path = QPainterPath(QPointF(1.8, 4.0))
-        for x, y in ((6.0, 4.0), (7.6, 5.8), (14.2, 5.8), (14.2, 12.8), (1.8, 12.8)):
-            path.lineTo(x, y)
-        path.closeSubpath()
-        painter.drawPath(path)
-    elif name == "branch":                    # 主干 + 一条分出去的枝
-        painter.drawEllipse(QPointF(5, 3.4), 1.6, 1.6)
-        painter.drawEllipse(QPointF(5, 12.6), 1.6, 1.6)
-        painter.drawEllipse(QPointF(11, 5.4), 1.6, 1.6)
-        line(QPointF(5, 5.0), QPointF(5, 11.0))
-        path = QPainterPath(QPointF(11, 7.0))
-        path.cubicTo(QPointF(11, 9.6), QPointF(5, 8.6), QPointF(5, 11.0))
-        painter.drawPath(path)
-    elif name == "workspace":                 # 编辑器窗口：标题栏 + 侧栏
-        painter.drawRect(QRectF(1.8, 2.6, 12.4, 10.8))
-        line(QPointF(1.8, 5.4), QPointF(14.2, 5.4))
-        line(QPointF(6.0, 5.4), QPointF(6.0, 13.4))
-    elif name == "jump":                      # 向右的箭头
-        line(QPointF(2.4, 8), QPointF(13.2, 8))
-        line(QPointF(9.0, 3.8), QPointF(13.2, 8))
-        line(QPointF(9.0, 12.2), QPointF(13.2, 8))
-    elif name == "copy":                      # 两张叠着的纸
-        painter.drawRect(QRectF(5.4, 5.4, 8.4, 8.4))
-        path = QPainterPath(QPointF(2.4, 10.4))
-        path.lineTo(2.4, 2.4)
-        path.lineTo(10.4, 2.4)
-        painter.drawPath(path)
-    elif name == "close":
-        line(QPointF(3.6, 3.6), QPointF(12.4, 12.4))
-        line(QPointF(12.4, 3.6), QPointF(3.6, 12.4))
-    painter.end()
-    return pixmap
+    return vector_widget_icon(widget, _SHARED_ICONS[name], size, color).pixmap(QSize(size, size))
 
 
 def phase_badge(phase: str, background: str, foreground: str, size: int, dpr: float = 1.0) -> QPixmap:
@@ -534,9 +500,12 @@ class SessionDetailCard(QFrame):
                 padding: {px(4)}px {px(10)}px; min-height: {px(22)}px;
             }}
             QPushButton:hover {{ border-color: {c["hover"]}; }}
+            QPushButton:focus {{ border-color: {c["accent"]}; }}
             QPushButton:disabled {{ color: {c["disabled_text"]}; }}
             QPushButton#session-card-primary {{ background: {c["accent"]}; color: {c["accent_text"]}; }}
-            QPushButton#session-card-primary:hover {{ border-color: {c["text"]}; }}
+            QPushButton#session-card-primary:hover, QPushButton#session-card-primary:focus {{
+                border-color: {c["text"]};
+            }}
             QPushButton#session-card-close {{ background: transparent; padding: 0; min-height: 0; }}
             QPushButton#session-card-close:hover {{ border-color: {c["accent_text"]}; }}
         """)
@@ -545,22 +514,21 @@ class SessionDetailCard(QFrame):
         self.update()
 
     def _paint_icons(self) -> None:
-        c, dpr = self._theme, self._dpr()
-        small = self._px(13)
+        c = self._theme
         for tile in self.tiles.values():
-            tile.icon.setPixmap(card_icon(tile.key, c["button_text"], small, dpr))
+            tile.icon.setPixmap(card_icon(tile.icon, tile.key, c["button_text"], self._px(13)))
         for info in (self.workspace_row, self.folder_row, self.branch_row):
-            info.icon.setPixmap(card_icon(info.key, c["muted"], self._px(14), dpr))
+            info.icon.setPixmap(card_icon(info.icon, info.key, c["muted"], self._px(14)))
         icon_px = self._px(14)
         for button, name, color in ((self.jump_btn, "jump", c["accent_text"]),
                                     (self.folder_btn, "folder", c["button_text"]),
                                     (self.copy_btn, "copy", c["button_text"])):
-            icon = QIcon(card_icon(name, color, icon_px, dpr))
-            icon.addPixmap(card_icon(name, c["disabled_text"], icon_px, dpr), QIcon.Mode.Disabled)
+            icon = QIcon(card_icon(button, name, color, icon_px))
+            icon.addPixmap(card_icon(button, name, c["disabled_text"], icon_px), QIcon.Mode.Disabled)
             button.setIcon(icon)
-        self.close_btn.setIcon(QIcon(card_icon("close", c["accent_text"], icon_px, dpr)))
+        self.close_btn.setIcon(QIcon(card_icon(self.close_btn, "close", c["accent_text"], icon_px)))
         self.close_btn.setIconSize(QSize(icon_px, icon_px))
-        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(18), dpr))
+        self.status_icon.setPixmap(phase_badge(self._phase, c["accent"], c["accent_text"], self._px(18), self._dpr()))
 
     # ------------------------------------------------------------ 内容
     def show_detail(self, detail: SessionDetail, since: float | None, *,

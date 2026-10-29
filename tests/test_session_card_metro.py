@@ -267,3 +267,23 @@ def test_the_production_loader_adds_the_workspace(monkeypatch):
     monkeypatch.setattr(sj, "attach_workspace", lambda detail: (calls.append("workspace"), detail)[1])
     session_pet_ui.load_detail(si.SessionDetail())
     assert calls == ["load", "workspace"]
+
+
+# ---------------------------------------------------------------- 共用图标库
+
+def test_the_new_shared_icons_draw_in_the_colour_asked_for():
+    """详情卡的图标走共用矢量图标库；新加的三个名字不能落到「认不出 → 画个圆」的兜底。"""
+    from PySide6.QtWidgets import QWidget
+
+    from pet.context_menus.icons import vector_widget_icon
+
+    widget = QWidget()
+    try:
+        fallback = vector_widget_icon(widget, "no-such-icon", 16, "#ff0000").pixmap(16, 16).toImage()
+        for name in ("folder", "branch", "jump"):
+            image = vector_widget_icon(widget, name, 16, "#ff0000").pixmap(16, 16).toImage()
+            assert image != fallback, name
+            inked = [image.pixelColor(x, y) for x in range(16) for y in range(16) if image.pixelColor(x, y).alpha() > 200]
+            assert inked and all(c.red() > 200 and c.green() < 60 for c in inked), f"{name} 要用给的颜色画"
+    finally:
+        widget.deleteLater()

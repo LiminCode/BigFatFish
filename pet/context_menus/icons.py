@@ -105,7 +105,7 @@ def small_icon_size(menu: QMenu) -> int:
     return max(12, int(menu.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize, None, menu)))
 
 
-def _new_icon_canvas(widget, requested_size: int | None = None):
+def _new_icon_canvas(widget, requested_size: int | None = None, ink: str | None = None):
     size = requested_size or small_icon_size(widget)
     dpr = widget.devicePixelRatioF() or 1.0
     pixmap = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
@@ -115,19 +115,22 @@ def _new_icon_canvas(widget, requested_size: int | None = None):
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.scale(size / 16.0, size / 16.0)
     style, dark = _icon_theme(widget)
-    color = (
-        QColor("#d6d6d6" if dark else "#595959")
-        if style == "modern"
-        else widget.palette().color(widget.foregroundRole())
-    )
+    if ink:
+        color = QColor(ink)        # 调用方自己有配色（会话详情卡的配色方案）
+    else:
+        color = (
+            QColor("#d6d6d6" if dark else "#595959")
+            if style == "modern"
+            else widget.palette().color(widget.foregroundRole())
+        )
     painter.setPen(QPen(color, 1.35, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.setBrush(Qt.BrushStyle.NoBrush)
     return pixmap, painter, color
 
 
-def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
-    """Draw a crisp 16-unit semantic icon using the current menu palette."""
-    pixmap, painter, color = _new_icon_canvas(menu, size)
+def vector_menu_icon(menu: QMenu, name: str, size: int | None = None, ink: str | None = None) -> QIcon:
+    """Draw a crisp 16-unit semantic icon using the current menu palette (or ``ink`` when given)."""
+    pixmap, painter, color = _new_icon_canvas(menu, size, ink)
     path = QPainterPath()
 
     if name == "search":
@@ -353,6 +356,23 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None) -> QIcon:
         ])
         painter.drawPolygon(pencil)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "folder":
+        path.moveTo(1.8, 4.0); path.lineTo(6.0, 4.0); path.lineTo(7.6, 5.8); path.lineTo(14.2, 5.8)
+        path.lineTo(14.2, 12.8); path.lineTo(1.8, 12.8); path.closeSubpath()
+        painter.drawPath(path)
+    elif name == "branch":
+        # Git 分支：主干 + 一条分出去的枝
+        painter.drawEllipse(QPointF(5.0, 3.4), 1.6, 1.6)
+        painter.drawEllipse(QPointF(5.0, 12.6), 1.6, 1.6)
+        painter.drawEllipse(QPointF(11.0, 5.4), 1.6, 1.6)
+        painter.drawLine(QPointF(5.0, 5.0), QPointF(5.0, 11.0))
+        path.moveTo(11.0, 7.0); path.cubicTo(11.0, 9.6, 5.0, 8.6, 5.0, 11.0)
+        painter.drawPath(path)
+    elif name == "jump":
+        # 向右的箭头：跳过去
+        painter.drawLine(QPointF(2.4, 8.0), QPointF(13.2, 8.0))
+        path.moveTo(9.0, 3.8); path.lineTo(13.2, 8.0); path.lineTo(9.0, 12.2)
+        painter.drawPath(path)
     elif name == "copy":
         painter.drawRoundedRect(QRectF(5.0, 3.0, 8.0, 9.0), 1.3, 1.3)
         painter.drawRoundedRect(QRectF(2.5, 5.5, 8.0, 8.0), 1.3, 1.3)
@@ -419,9 +439,9 @@ def badged_menu_icon(menu: QMenu, name: str, badge: str = OPEN_BADGE_COLOR, size
     return QIcon(base)
 
 
-def vector_widget_icon(widget, name: str, size: int = 18) -> QIcon:
+def vector_widget_icon(widget, name: str, size: int = 18, ink: str | None = None) -> QIcon:
     """Render the same icon language for sidebar and form widgets."""
-    return vector_menu_icon(widget, name, size)
+    return vector_menu_icon(widget, name, size, ink)
 
 
 def pet_avatar_menu_icon(menu: QMenu, pet) -> QIcon:
