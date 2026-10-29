@@ -166,7 +166,7 @@ sent 00:02:32.985 Toast test 3
 - **开关**：设置「通知 → 弹窗 → 自己弹通知」，默认关。关掉后清空在场卡片、不再建。
 - **配置**：`notifications` 下新增 `toast`（`enabled` / `corner` / `screen` / `seconds` / `max_visible`）与 `stack`（`slack` / `chrome`）两块；旧配置没有这些键时由 `notification_center.normalize` 填默认值，无需迁移；回退到旧版本时这两块被忽略。
 - **设置页**：新一级域「通知」（三个稳定分组，满足 `SETTINGS-CHANGE-GATES.md` 对一级域的要求）；原「自动化与联动 → 通知中心」一节移除，键不变。
-- **回滚**：`git revert` 这 8 个提交，以及第九、十节的两个修正提交（`8f1a0177`、`258829ba`）即可；运行时只在 `%TEMP%` 下留过临时库副本（每次读完即删），无其他落盘状态。
+- **回滚**：`git revert` 这 8 个提交，以及第九到十一节的三个修正提交（`8f1a0177`、`258829ba`、`e9fc9fa7`）即可；运行时只在 `%TEMP%` 下留过临时库副本（每次读完即删），无其他落盘状态。
 
 ## 九、第二轮修正：点 Chrome（Gmail）通知没反应（2026-10-28，`8f1a0177`）
 
@@ -217,4 +217,31 @@ sent 00:02:32.985 Toast test 3
 2026-10-28 12:23:46,428 INFO 通知跳转：launched（chrome / foreground）
 ```
 
-第九节的前台权限放行在这次点击里也生效了（走的是同一个 `_spawn_detached`）。但这次没有做「不放行」的对照，所以不能单独证明前台权限是必需的；保留它的理由仍然是第九节的分析。
+第九节的前台权限放行在这次点击里也执行了（走的是同一个 `_spawn_detached`）。但这次没有做「不放行」的对照，所以不能单独证明前台权限是必需的；保留它的理由仍然是第九节的分析。
+
+## 十一、第四轮：点 Claude 的通知跳到那个会话（2026-10-28，`e9fc9fa7`）
+
+**现象**：点 Claude 桌面版发的通知，弹出来的是 Windows 通知中心：程序在里面找原通知、再替用户点它。用户要的是直接跳到 Claude，最好跳到那个会话。
+
+**排查**（实机）：
+- 通知库副本里 Claude（`Claude_pzs8sxrjxfjjc!Claude`）的 toast：根上**没有 `launch`**，点击走的是它进程里的回调，所以 `launchable=False`，只能退回通知中心 UIA。
+- 会话 id 在库的 `Group` / `Tag` 两列里：本地 Code 会话是 `session-local_<uuid>` / `idle-local_<uuid>`，云端会话是 `session-session_01…`；「Claude needs…」这类汇总提醒是 `Notifications` / `hub-awaiting-<uuid>`，不带会话。
+- Claude 4.29 的包注册了 `claude:` 协议。在它的 `app.asar` 里，深链接处理器对会话 id 的校验是 `/^local_[A-Za-z0-9-]{1,64}$/` 和 `/^(cse|session)_[A-Za-z0-9_-]+$/`。跳转列表里有「Sessions Waiting for You」= `claude://code/needs-input`。
+- 应用自己给每个会话的外链是 `claude://claude.ai/epitaxy/<会话 id>`（会话元数据里的 `link` 字段），选它而不是从代码里扒出来的 `code/continue?session=`：后者只认本地会话，`code/needs-input?session=` 在「等你处理」之外的会话上会退到第一个等待中的会话，可能跳错。
+
+**修改**：
+
+| 文件 | 增删 | 改动 |
+|---|---|---|
+| `pet/notification_center.py` | +40 / −7 | `Notice.kind` 认 `claude`；`claude_session_link(tag, group)` 从 Group / Tag 里取会话 id（形状照 Claude 自己的校验）拼成外链；`launch_targets` 多读 `Tag`、`Group` 两列，toast 自己没有 `launch` 时用会话外链（`protocol`）；`activate` 对没有会话 id 的 Claude 通知打开 `claude://code/needs-input`、像系统一样从通知中心拿掉，不再走 UIA；模块说明同步 |
+| `tests/test_notification_center.py` | +55 / −2 | 夹具库补上真库的 `Tag` / `"Group"` 列；本地 / 云端 / 只有 Tag 都拼出外链，没有会话、不像 id 的不拼；toast 自带 `launch` 的不被覆盖；带会话的直接打开不开通知中心；不带会话的交给 needs-input（修前五例红：没拼出链接、`kind` 是 `other`、`CLAUDE_WAITING_URL` 不存在） |
+
+**性能**：`launch_targets` 原有的 SQL 多取两列文本，仍是新通知那一轮查一次。`claude_session_link` 实测命中 0.85 µs、不命中 1.35 µs（`timeit`，20 万次取均值，本机 Python 3.13），每条新通知最多一次。点击时是一次 `ShellExecute`，替换掉了原来的「打开通知中心 + UIA 查找」（第五节实测约 0.3 s）。没有新线程、磁盘或网络，内存不变。
+
+**实机**：用真实通知库跑 `read_toasts(["claude"])`：带会话的 5 条都拼出了外链（4 条本地、1 条云端），没有会话 id 的那条汇总提醒（49727）保持 `foreground`，会走 needs-input。桌宠用修复版重启（pid 3608）后，用户点了一条 Claude 通知，**跳到了那个会话**，没有出现通知中心；日志 `pet-3608.log`：
+
+```
+2026-10-28 18:00:34,749 INFO 通知跳转：launched（claude / protocol）
+```
+
+没有会话 id 的汇总提醒走 needs-input 这条路，还没在实机上点过。

@@ -238,12 +238,12 @@ _CLAUDE_TOAST = b'<toast><header id="session-x" title="t" arguments=""/><visual/
 
 
 @pytest.mark.parametrize("tag, group, launch", [
-    ("idle-local_b317ace3-a3a1-4b8d-964b-730530d145aa", "session-local_b317ace3-a3a1-4b8d-964b-730530d145aa",
-     "claude://claude.ai/epitaxy/local_b317ace3-a3a1-4b8d-964b-730530d145aa"),
-    ("idle-session_01NQa3UD5tZn4DGrcLsudx7H", "session-session_01NQa3UD5tZn4DGrcLsudx7H",
-     "claude://claude.ai/epitaxy/session_01NQa3UD5tZn4DGrcLsudx7H"),
+    ("idle-local_0a1b2c3d-1111-4222-8333-444455556666", "session-local_0a1b2c3d-1111-4222-8333-444455556666",
+     "claude://claude.ai/epitaxy/local_0a1b2c3d-1111-4222-8333-444455556666"),
+    ("idle-session_01AbCdEfGhJkMnPqRsTuVwXy", "session-session_01AbCdEfGhJkMnPqRsTuVwXy",
+     "claude://claude.ai/epitaxy/session_01AbCdEfGhJkMnPqRsTuVwXy"),
     ("idle-local_abc", "", "claude://claude.ai/epitaxy/local_abc"),          # 只有 Tag 也认
-    ("hub-awaiting-2f343638-1c40-4077-8977-5e0c81f250bc", "Notifications", ""),   # 没有会话 id
+    ("hub-awaiting-77777777-8888-4999-aaaa-bbbbccccdddd", "Notifications", ""),   # 没有会话 id
     ("x", "session-local_a/../b", ""),                                        # 不像 id 的不拼
 ])
 def test_launch_targets_turns_a_claude_session_id_into_its_link(tmp_path, tag, group, launch):
