@@ -526,3 +526,36 @@ def test_tooltips_on_the_card_are_at_least_body_size(tmp_path):
         QToolTip.hideText()
         card.close()
         card.deleteLater()
+
+
+
+def test_hovering_or_clicking_the_row_icon_shows_the_whole_value(tmp_path):
+    """第五轮（2026-10-28）：只想看一眼完整路径时，不用拖滚动条——移到前面的图标上（或点一下）就显示。"""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QEnterEvent, QMouseEvent
+    from PySide6.QtWidgets import QToolTip
+
+    card = _card(tmp_path)
+    try:
+        branch = "claude/desktop-work-buddy-features-f7813f"
+        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch=branch), None)
+        card.show()
+        app.processEvents()
+        for row, full in ((card.folder_row, LONG_PATH), (card.branch_row, branch)):
+            icon = row.icon
+            spot = QPointF(3, 3)
+            app.sendEvent(icon, QEnterEvent(spot, spot, QPointF(icon.mapToGlobal(QPoint(3, 3)))))
+            assert QToolTip.isVisible() and QToolTip.text() == full, "移上来就是整个值"
+            app.sendEvent(icon, QEvent(QEvent.Type.Leave))
+            assert _pump(lambda: not QToolTip.isVisible(), 5.0), "移开就收"
+            press = QMouseEvent(QEvent.Type.MouseButtonPress, spot, QPointF(icon.mapToGlobal(QPoint(3, 3))),
+                                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+            app.sendEvent(icon, press)
+            assert QToolTip.isVisible() and QToolTip.text() == full, "点一下也显示"
+            QToolTip.hideText()
+            assert _pump(lambda: not QToolTip.isVisible(), 5.0)
+        assert card.folder_row.icon.cursor().shape() == Qt.CursorShape.PointingHandCursor, "看得出能点"
+    finally:
+        QToolTip.hideText()
+        card.close()
+        card.deleteLater()

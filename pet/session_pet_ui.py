@@ -373,6 +373,34 @@ class _SideScroll(QScrollArea):
         event.accept()
 
 
+class _RevealIcon(QLabel):
+    """目录 / 分支前面的图标：光标移上来（或点一下）就贴着它显示整个值，移开收起。
+
+    2026-10-28 用户要的：只想看一眼完整路径时，不用去拖滚动条。"""
+
+    def __init__(self, row: "_ValueRow") -> None:
+        super().__init__(row)
+        self._row = row
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def reveal(self) -> None:
+        value = self._row.text.text()
+        if value:
+            QToolTip.showText(self.mapToGlobal(self.rect().bottomLeft()), value, self)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        super().enterEvent(event)
+        self.reveal()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        super().leaveEvent(event)
+        QToolTip.hideText()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self.reveal()
+        event.accept()
+
+
 class _ValueRow(QWidget):
     """路径 / 分支那一行：图标 + 可左右滑动的全文 + 复制按钮。
 
@@ -385,7 +413,7 @@ class _ValueRow(QWidget):
         super().__init__(parent)
         self.key = key
         self._bar = max(3, px(4))
-        self.icon = QLabel(self)
+        self.icon = _RevealIcon(self)
         self.icon.setFixedSize(px(14), px(14))
         self.scroll = _SideScroll(self)
         self.scroll.setObjectName("session-card-scroll")
@@ -417,7 +445,7 @@ class _ValueRow(QWidget):
         self.scroll.setFixedHeight(self.text.height() + self._bar + 1)
         self.scroll.stick_to_end = True
         self.scroll._follow_end()
-        self.icon.setToolTip(tip)
+        self.icon.setAccessibleName(tip)                   # 悬停显示的是值本身（_RevealIcon）
         self.setAccessibleName(f"{tip}: {text}" if tip else text)
         self.setVisible(bool(text))
 
