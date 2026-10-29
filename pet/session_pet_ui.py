@@ -47,6 +47,8 @@ from .context_menus.icons import vector_widget_icon
 log = logging.getLogger(__name__)
 
 _WAIT_TEXT = "menu.session.waiting_for_you"   # 文案键，用时 t()
+#: 启动后多久预热详情卡的来源图标（比岛上那次晚一点，岛取过的同尺寸图标就直接命中缓存）
+_ICON_WARM_DELAY_MS = 4000
 
 
 def elapsed_text(seconds: float) -> str:
@@ -748,6 +750,20 @@ class SessionPetActions(QObject):
         self.loader = load_detail
         self.jumper = claude_session_jump.jump
         self.opener = _open_path
+        QTimer.singleShot(_ICON_WARM_DELAY_MS, self, self._warm_host_icons)
+
+    def _warm_host_icons(self) -> None:
+        """详情卡页头那块程序图标第一次要外壳解包（Claude 桌面版的实测 360 ms）：启动稳定后按
+        详情卡的尺寸先取好，别卡第一次点小鱼。岛上已经按同样尺寸取过的不再取。"""
+        from .host_icons import warm
+
+        probe = QWidget()
+        try:
+            warm(probe, int(round(16 * _card_scale(self._shell._config))))
+        except Exception:  # noqa: BLE001 - 预热失败没关系，用到时再取
+            log.debug("预热来源图标失败", exc_info=True)
+        finally:
+            probe.deleteLater()
 
     # ------------------------------------------------------------ 取数
     def detail_of(self, sprite) -> SessionDetail | None:

@@ -461,3 +461,14 @@ def test_a_long_question_shows_whole_lines_and_nothing_is_cut_off(tmp_path):
         card.close()
         card.deleteLater()
         i18n.set_language(previous)
+
+
+def test_host_icons_are_warmed_at_the_cards_size(shell, monkeypatch):  # noqa: F811
+    """桌面版的图标第一次从外壳取要 360 ms：启动稳定后按详情卡的尺寸先取好。"""
+    from pet import host_icons
+
+    sizes = []
+    monkeypatch.setattr(host_icons, "warm", lambda widget, size, **_kw: sizes.append(size) or 0)
+    shell._config.set("agent_link", {**shell._config.get("agent_link"), "session_card_text_size": 130})
+    shell.session_actions._warm_host_icons()
+    assert sizes == [21], "16 px × 130%"
