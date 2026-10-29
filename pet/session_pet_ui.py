@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QScrollArea,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -151,7 +152,7 @@ def _card_scale(config) -> float:
 # ---------------------------------------------------------------- 图标（矢量线条，不用 emoji 字体）
 #: 卡片上的东西 → 共用矢量图标库（``context_menus/icons.py``）里的语义名字
 _SHARED_ICONS = {"workspace": "vscode", "folder": "folder", "branch": "branch", "jump": "jump",
-                 "copy": "copy", "close": "remove"}
+                 "copy": "copy", "resume": "terminal", "close": "remove"}
 
 
 def card_icon(widget, name: str, color: str, size: int) -> QPixmap:
@@ -327,6 +328,105 @@ class _InfoRow(QWidget):
         self.setToolTip(tip)
         self.setAccessibleName(f"{tip}: {text}" if tip else text)
         self.setVisible(bool(text))
+
+
+class _ValueLabel(QLabel):
+    """路径 / 分支的全文（等宽、可拖选）。``full_text`` 与省略的那几行同名，调用方不用分。"""
+
+    @property
+    def full_text(self) -> str:
+        return self.text()
+
+
+class _SideScroll(QScrollArea):
+    """只能左右滑的一行：滚轮上下滚也当左右滑；一换内容先停在最右端（最后一层目录 / 分支名最能
+    认出是哪个），用户自己滑过之后就不再拽回去。"""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.stick_to_end = True
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setWidgetResizable(False)
+        self.viewport().setAutoFillBackground(False)
+        bar = self.horizontalScrollBar()
+        bar.actionTriggered.connect(self._released)          # 拖滚动条 / 点滚动条
+        bar.rangeChanged.connect(self._follow_end)
+
+    def _released(self, _action=None) -> None:
+        self.stick_to_end = False
+
+    def _follow_end(self, _low=0, high=0) -> None:
+        if self.stick_to_end:
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().maximum())
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        delta = event.angleDelta()
+        step = delta.x() or delta.y()
+        bar = self.horizontalScrollBar()
+        if bar.maximum() <= 0 or not step:
+            event.ignore()
+            return
+        self.stick_to_end = False
+        bar.setValue(bar.value() - step // 2)                # 一格 120 → 滑 60 px
+        event.accept()
+
+
+class _ValueRow(QWidget):
+    """路径 / 分支那一行：图标 + 可左右滑动的全文 + 复制按钮。
+
+    2026-10-28 用户看实机后要的：省略了看不全、也没法复制。现在放不下不省略，用滚轮或底下那根细
+    滚动条左右滑；字可以拖选；右边的按钮直接复制整个值（``copied`` 发出行的种类，卡片说一句）。"""
+
+    copied = Signal(str)
+
+    def __init__(self, key: str, px, parent=None) -> None:
+        super().__init__(parent)
+        self.key = key
+        self._bar = max(3, px(4))
+        self.icon = QLabel(self)
+        self.icon.setFixedSize(px(14), px(14))
+        self.scroll = _SideScroll(self)
+        self.scroll.setObjectName("session-card-scroll")
+        self.text = _ValueLabel(self.scroll)
+        self.text.setObjectName("session-card-mono")
+        self.text.setTextFormat(Qt.TextFormat.PlainText)
+        self.text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.scroll.setWidget(self.text)
+        self.copy_btn = QPushButton("", self)
+        self.copy_btn.setObjectName("session-card-copy")
+        self.copy_btn.setFixedSize(px(26), px(26))
+        self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.setToolTip(t(f"session_card.copy_{key}"))
+        self.copy_btn.setAccessibleName(t(f"session_card.copy_{key}"))
+        self.copy_btn.clicked.connect(self._copy)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(px(8))
+        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.scroll, 1, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.copy_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+    def set_text(self, text: str, sub: str = "", tip: str = "") -> None:
+        del sub
+        self.text.setText(text)
+        self.text.ensurePolished()
+        self.text.adjustSize()
+        # 留出滚动条的高度：滚动条出不出现，这一行都不跳
+        self.scroll.setFixedHeight(self.text.height() + self._bar + 1)
+        self.scroll.stick_to_end = True
+        self.scroll._follow_end()
+        self.icon.setToolTip(tip)
+        self.setAccessibleName(f"{tip}: {text}" if tip else text)
+        self.setVisible(bool(text))
+
+    def overflows(self) -> bool:
+        return self.scroll.horizontalScrollBar().maximum() > 0
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.text.text())
+        self.copied.emit(self.key)
 
 
 class _ContextBar(QWidget):
@@ -515,14 +615,20 @@ class SessionDetailCard(QFrame):
         prompt.addWidget(self.prompt_label)
         layout.addLayout(prompt)
 
-        places = QVBoxLayout()
-        places.setSpacing(px(5))
         self.workspace_row = _InfoRow("workspace", px, parent=body)
-        self.folder_row = _InfoRow("folder", px, mono=True, parent=body)
-        self.branch_row = _InfoRow("branch", px, mono=True, parent=body)
-        for info in (self.workspace_row, self.folder_row, self.branch_row):
-            places.addWidget(info)
-        layout.addLayout(places)
+        layout.addWidget(self.workspace_row)
+        # 目录和分支放在同一块磁贴里：每行可左右滑、可拖选、右边一个复制按钮
+        self.places = QFrame(body)
+        self.places.setObjectName("session-card-places")
+        places = QVBoxLayout(self.places)
+        places.setContentsMargins(px(10), px(7), px(4), px(5))
+        places.setSpacing(px(2))
+        self.folder_row = _ValueRow("folder", px, self.places)
+        self.branch_row = _ValueRow("branch", px, self.places)
+        for row in (self.folder_row, self.branch_row):
+            row.copied.connect(self._said_copied)
+            places.addWidget(row)
+        layout.addWidget(self.places)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(px(4))
@@ -586,6 +692,24 @@ class SessionDetailCard(QFrame):
             }}
             QLabel#session-card-info {{ font-size: {px(12.5)}px; }}
             QLabel#session-card-mono {{ {_family_css(ui_fonts.mono_font_family())}font-size: {px(13.5)}px; }}
+            QFrame#session-card-places {{ background: {c["button"]}; border: none; }}
+            QFrame#session-card-places QLabel {{ color: {c["button_text"]}; }}
+            QScrollArea#session-card-scroll {{ background: transparent; border: none; }}
+            QScrollArea#session-card-scroll QScrollBar:horizontal {{
+                height: {max(3, px(4))}px; background: transparent; border: none; margin: 0;
+            }}
+            QScrollArea#session-card-scroll QScrollBar::handle:horizontal {{
+                background: {c["muted"]}; min-width: {px(24)}px; border: none;
+            }}
+            QScrollArea#session-card-scroll QScrollBar::handle:horizontal:hover {{ background: {c["accent"]}; }}
+            QScrollArea#session-card-scroll QScrollBar::add-line:horizontal,
+            QScrollArea#session-card-scroll QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+            QScrollArea#session-card-scroll QScrollBar::add-page:horizontal,
+            QScrollArea#session-card-scroll QScrollBar::sub-page:horizontal {{ background: none; }}
+            QToolTip {{
+                font-size: {px(13)}px; color: {c["text"]}; background: {c["background"]};
+                border: 1px solid {c["border"]}; padding: {px(4)}px {px(6)}px;
+            }}
             QPushButton {{
                 background: {c["button"]}; color: {c["button_text"]};
                 border: 2px solid transparent; border-radius: 0;
@@ -601,6 +725,7 @@ class SessionDetailCard(QFrame):
             QPushButton#session-card-icon-button {{ padding: 0; }}
             QPushButton#session-card-close {{ background: transparent; padding: 0; }}
             QPushButton#session-card-close:hover {{ border-color: {c["accent_text"]}; }}
+            QPushButton#session-card-copy {{ background: transparent; padding: 0; }}
         """)
         self.context_bar.set_colors(c["button"], c["accent"])
         self._paint_icons()
@@ -610,12 +735,15 @@ class SessionDetailCard(QFrame):
         c = self._theme
         for chip in self.meta.values():
             chip.icon.setPixmap(card_icon(chip.icon, chip.key, c["muted"], self._px(11)))
-        for info in (self.workspace_row, self.folder_row, self.branch_row):
-            info.icon.setPixmap(card_icon(info.icon, info.key, c["muted"], self._px(14)))
+        self.workspace_row.icon.setPixmap(card_icon(self.workspace_row.icon, "workspace", c["muted"], self._px(14)))
+        for row in (self.folder_row, self.branch_row):
+            row.icon.setPixmap(card_icon(row.icon, row.key, c["button_text"], self._px(14)))
+            row.copy_btn.setIcon(QIcon(card_icon(row.copy_btn, "copy", c["button_text"], self._px(13))))
+            row.copy_btn.setIconSize(QSize(self._px(13), self._px(13)))
         icon_px = self._px(14)
         for button, name, color in ((self.jump_btn, "jump", c["accent_text"]),
                                     (self.folder_btn, "folder", c["button_text"]),
-                                    (self.copy_btn, "copy", c["button_text"])):
+                                    (self.copy_btn, "resume", c["button_text"])):
             icon = QIcon(card_icon(button, name, color, icon_px))
             icon.addPixmap(card_icon(button, name, c["disabled_text"], icon_px), QIcon.Mode.Disabled)
             button.setIcon(icon)
@@ -676,10 +804,14 @@ class SessionDetailCard(QFrame):
         self.folder_row.set_text(detail.cwd, "", t("session_card.folder_tip"))
         branch = detail.git_branch if detail.git_branch != "HEAD" else ""
         self.branch_row.set_text(branch, "", t("session_card.branch_tip"))
+        self.places.setVisible(bool(detail.cwd or branch))
         self.setAccessibleDescription(where_line(detail))
         self.folder_btn.setEnabled(bool(detail.cwd))
         self.adjustSize()
         self._reposition()
+
+    def _said_copied(self, key: str) -> None:
+        self.show_result(t(f"session_card.copied_{key}"))
 
     def show_result(self, message: str) -> None:
         self.result_label.set_full_text(message, self._text_width())

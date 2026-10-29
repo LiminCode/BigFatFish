@@ -355,24 +355,6 @@ def test_both_menus_offer_the_text_size_and_reopening_uses_the_new_one(shell):  
     assert actions._card is not first and actions._card.scale == 1.15
 
 
-def test_path_and_branch_use_a_monospace_font_and_elide_in_the_middle(tmp_path):
-    card = _card(tmp_path)
-    try:
-        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch="claude/desktop-work-buddy-features-f7813f"), None)
-        card.show()
-        app.processEvents()
-        folder = card.folder_row.text
-        assert folder.objectName() == "session-card-mono"
-        assert card.branch_row.text.objectName() == "session-card-mono"
-        assert folder.text() != LONG_PATH and "…" in folder.text(), "放不下省中间"
-        assert folder.text().startswith("C:") and folder.text().endswith("f7813f"), "两头保留"
-        assert folder.toolTip() == LONG_PATH and folder.full_text == LONG_PATH
-        assert folder.mapTo(card, folder.rect().topRight()).x() < card.width(), "路径不撑宽卡片"
-    finally:
-        card.close()
-        card.deleteLater()
-
-
 def test_secondary_facts_are_small_and_quiet(tmp_path):
     card = _card(tmp_path)
     try:
@@ -475,8 +457,50 @@ def test_host_icons_are_warmed_at_the_cards_size(shell, monkeypatch):  # noqa: F
     assert sizes == [21], "16 px × 130%"
 
 
-def test_hovering_an_elided_path_shows_the_whole_value_right_away(tmp_path):
-    """第三轮（2026-10-28 实机）：路径和分支省略了没关系，但光标移上去要马上看到全文。"""
+def test_path_and_branch_share_one_tile_scroll_sideways_and_copy(tmp_path):
+    """第四轮（2026-10-28 实机）：省略了看不全、也没法复制。现在两行放在一块磁贴里，放不下就
+    左右滑（先停在最右端），字可以拖选，右边的按钮复制整个值。"""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QGuiApplication, QWheelEvent
+
+    card = _card(tmp_path)
+    try:
+        branch = "claude/desktop-work-buddy-features-f7813f"
+        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch=branch), None)
+        card.show()
+        app.processEvents()
+        folder = card.folder_row
+        assert folder.parent() is card.places and card.branch_row.parent() is card.places, "同一块磁贴"
+        assert folder.text.objectName() == "session-card-mono" and card.branch_row.text.objectName() == "session-card-mono"
+        assert folder.text.text() == LONG_PATH, "不省略，全文都在"
+        assert folder.text.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse, "能拖选"
+        bar = folder.scroll.horizontalScrollBar()
+        assert folder.overflows() and bar.value() == bar.maximum(), "先停在最右端：最后一层目录最有用"
+        spot = QPointF(10, 5)
+        wheel = QWheelEvent(spot, QPointF(folder.scroll.mapToGlobal(QPoint(10, 5))), QPoint(), QPoint(0, 120),
+                            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase,
+                            False)
+        app.sendEvent(folder.scroll.viewport(), wheel)
+        assert bar.value() < bar.maximum(), "滚轮上下滚也当左右滑"
+        folder.copy_btn.click()
+        assert QGuiApplication.clipboard().text() == LONG_PATH
+        assert card.result_label.text() == "路径已复制" and card.result_label.isVisibleTo(card)
+        card.branch_row.copy_btn.click()
+        assert QGuiApplication.clipboard().text() == branch and card.result_label.text() == "分支名已复制"
+        assert folder.copy_btn.toolTip() == "复制路径" and folder.copy_btn.accessibleName() == "复制路径"
+
+        card.show_detail(_full_detail(cwd=r"C:\p", git_branch="main"), None)
+        app.processEvents()
+        assert not card.folder_row.overflows(), "短的不出滚动条"
+        card.show_detail(_full_detail(cwd="", git_branch=""), None)
+        assert not card.places.isVisibleTo(card), "两行都没有就整块不显示"
+    finally:
+        card.close()
+        card.deleteLater()
+
+
+def test_tooltips_on_the_card_are_at_least_body_size(tmp_path):
+    """第四轮：悬停提示的字比正文小，用户嫌看不清。"""
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QEnterEvent
     from PySide6.QtWidgets import QToolTip
@@ -484,20 +508,20 @@ def test_hovering_an_elided_path_shows_the_whole_value_right_away(tmp_path):
     card = _card(tmp_path)
     try:
         assert card.testAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips), "卡片不在前台也要能弹"
-        branch = "claude/desktop-work-buddy-features-f7813f"
-        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch=branch), None)
+        long_name = "a-really-long-workspace-name-" * 4
+        detail = _full_detail()
+        detail.extra["workspace"] = {"label": long_name, "folders": 1, "target": "C:/x"}
+        card.show_detail(detail, None)
         card.show()
         app.processEvents()
-        for label, full in ((card.folder_row.text, LONG_PATH), (card.branch_row.text, branch)):
-            assert label.is_elided()
-            spot = QPointF(4, 4)
-            app.sendEvent(label, QEnterEvent(spot, spot, QPointF(label.mapToGlobal(spot.toPoint()))))
-            assert QToolTip.isVisible() and QToolTip.text() == full, "不用等，一移上来就是全文"
-            app.sendEvent(label, QEvent(QEvent.Type.Leave))
-            assert _pump(lambda: not QToolTip.isVisible(), 5.0)
-        card.show_detail(_full_detail(cwd=r"C:\p", git_branch="main"), None)
-        app.processEvents()
-        assert not card.folder_row.text.is_elided() and card.folder_row.text.toolTip() == "", "没省略就不弹"
+        label = card.workspace_row.text
+        assert label.is_elided()
+        spot = QPointF(4, 4)
+        app.sendEvent(label, QEnterEvent(spot, spot, QPointF(label.mapToGlobal(spot.toPoint()))))
+        assert QToolTip.isVisible() and QToolTip.text() == long_name, "省略了的一移上来就是全文"
+        tip = next(w for w in QApplication.topLevelWidgets() if w.objectName() == "qtooltip_label" and w.isVisible())
+        tip.ensurePolished()
+        assert tip.font().pixelSize() >= card.font().pixelSize(), "提示的字不比正文小"
     finally:
         QToolTip.hideText()
         card.close()
