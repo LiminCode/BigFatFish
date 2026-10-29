@@ -150,6 +150,7 @@
 **测试**：
 - 详情卡、配色、会话、跳转、图标、字体、文案、配置相关的测试都通过；
 - ruff 通过，`git diff --check` 通过；
-- 全量（`9c04ba36`，本机 14 分 28 秒）：5859 通过、14 跳过、8 失败。
+- **最终全量**（`03983cb4`，本机 12 分 04 秒）：5863 通过、14 跳过、5 失败，只剩下面这 5 条基线失败。
+- 中途一次全量（`9c04ba36`，14 分 28 秒）：5859 通过、14 跳过、8 失败。
   - 3 条是 `test_sprite_menu_parity`：主肥鱼菜单多了「详情卡文字大小」，没登记进 overlay 独有条目。`331bc658` 补上后，菜单相关 145 例通过。
   - 其余 5 条是基线失败，在基线 `11ebdd6e` 上同样失败：`test_image_directory_picker_opens_right_drawer_with_three_column_masonry`、`test_catalog_animation_count_guard_survives_optimize`、`test_festival_id_guard_survives_optimize`、`test_real_second_process_refused_on_overlay_topology`、`test_capture_window_rect_coordinates_and_clamping`。
