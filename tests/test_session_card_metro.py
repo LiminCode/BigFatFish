@@ -18,6 +18,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 from pet import claude_session_info as si
@@ -472,3 +473,32 @@ def test_host_icons_are_warmed_at_the_cards_size(shell, monkeypatch):  # noqa: F
     shell._config.set("agent_link", {**shell._config.get("agent_link"), "session_card_text_size": 130})
     shell.session_actions._warm_host_icons()
     assert sizes == [21], "16 px × 130%"
+
+
+def test_hovering_an_elided_path_shows_the_whole_value_right_away(tmp_path):
+    """第三轮（2026-10-28 实机）：路径和分支省略了没关系，但光标移上去要马上看到全文。"""
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QEnterEvent
+    from PySide6.QtWidgets import QToolTip
+
+    card = _card(tmp_path)
+    try:
+        assert card.testAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips), "卡片不在前台也要能弹"
+        branch = "claude/desktop-work-buddy-features-f7813f"
+        card.show_detail(_full_detail(cwd=LONG_PATH, git_branch=branch), None)
+        card.show()
+        app.processEvents()
+        for label, full in ((card.folder_row.text, LONG_PATH), (card.branch_row.text, branch)):
+            assert label.is_elided()
+            spot = QPointF(4, 4)
+            app.sendEvent(label, QEnterEvent(spot, spot, QPointF(label.mapToGlobal(spot.toPoint()))))
+            assert QToolTip.isVisible() and QToolTip.text() == full, "不用等，一移上来就是全文"
+            app.sendEvent(label, QEvent(QEvent.Type.Leave))
+            assert _pump(lambda: not QToolTip.isVisible(), 5.0)
+        card.show_detail(_full_detail(cwd=r"C:\p", git_branch="main"), None)
+        app.processEvents()
+        assert not card.folder_row.text.is_elided() and card.folder_row.text.toolTip() == "", "没省略就不弹"
+    finally:
+        QToolTip.hideText()
+        card.close()
+        card.deleteLater()

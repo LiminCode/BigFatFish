@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -255,6 +256,20 @@ class _Elided(QLabel):
             self.setText(shown)
         self.setToolTip(self.full_text if shown != self.full_text else "")
 
+    def is_elided(self) -> bool:
+        return bool(self.full_text) and self.text() != self.full_text
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        # 省略了就一移上来立刻贴着这一行显示全文（Qt 自己的悬停提示要停 0.7 秒，用户以为没有）
+        super().enterEvent(event)
+        if self.is_elided():
+            QToolTip.showText(self.mapToGlobal(self.rect().bottomLeft()), self.full_text, self)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        super().leaveEvent(event)
+        if self.is_elided():
+            QToolTip.hideText()
+
     def sizeHint(self) -> QSize:  # noqa: N802
         hint = super().sizeHint()
         return QSize(min(hint.width(), QFontMetrics(self.font()).horizontalAdvance(self.full_text) + 2),
@@ -367,6 +382,8 @@ class SessionDetailCard(QFrame):
         self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                             | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.NoDropShadowWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # 卡片不在前台时（刚弹出、焦点还在别的程序上）Qt 默认不弹悬停提示：路径 / 分支的全文靠它
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self._scale = _card_scale(config)
         self._theme_id = ""
         self._theme = session_card_themes.card_theme(None)
