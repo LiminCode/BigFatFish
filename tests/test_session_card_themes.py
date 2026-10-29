@@ -53,6 +53,8 @@ def test_every_theme_is_readable(theme_id):
     assert contrast(t["border"], t["background"]) >= 2, "卡片的边"
     assert contrast(t["disabled_text"], t["button"]) < contrast(t["button_text"], t["button"]), \
         "禁用的按钮要看得出是禁用的"
+    assert contrast(t["accent_text"], t["accent"]) >= 7, "页头、主按钮、状态磁贴上的字"
+    assert contrast(t["accent"], t["background"]) >= 1.5, "页头那条强调色要从卡片底上分出来"
 
 
 def test_unknown_ids_fall_back_to_the_default():
@@ -90,11 +92,12 @@ def _card(tmp_path, theme_id=None, bubble_style="breath_bubble") -> SessionDetai
 
 
 def _painted(card: SessionDetailCard) -> tuple[QColor, QColor]:
-    """卡片实际画出来的（卡片底色, 按钮底色）。"""
+    """卡片实际画出来的（卡片底色, 普通按钮底色）。"""
     image = card.grab().toImage()
-    button = card.jump_btn.geometry()
+    button = card.folder_btn
+    corner = button.mapTo(card, button.rect().topRight())
     background = image.pixelColor(card._px(10), card.height() // 2)
-    return background, image.pixelColor(button.left() + card._px(4), button.center().y())
+    return background, image.pixelColor(corner.x() - card._px(4), corner.y() + card._px(4))
 
 
 @pytest.mark.parametrize("theme_id", THEME_IDS)

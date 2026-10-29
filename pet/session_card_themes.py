@@ -9,6 +9,10 @@
 悬停态都明确写出来，不再从别处推导。用户只在几个命名好的方案里选，不开放自定义颜色
 ——自定义就又回到「能配出看不清的组合」。``tests/test_session_card_themes.py`` 对每个
 方案逐项验对比度，新增或改动方案时过不了那里就别合。
+
+``accent`` / ``accent_text``：详情卡改成 Metro 风格后（2026-10-28），页头那条带子、主按钮、状态
+磁贴、上下文平条用的强调色。每个方案一个饱和的深色配白字——「深夜墨蓝」的悬停色是浅灰，
+拿它当页头会在深色卡片上顶一块白板，所以单独给。
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ CARD_THEMES: dict[str, dict[str, str]] = {
         "text": "#12363d", "muted": "#47666c",
         "button": "#d3ecef", "button_border": "#7fb9c1", "button_text": "#0b3c45",
         "hover": "#0e5968", "hover_text": "#ffffff", "disabled_text": "#8aa3a8",
+        "accent": "#0e5968", "accent_text": "#ffffff",
     },
     "cream": {
         "label": "奶油暖黄",
@@ -30,6 +35,7 @@ CARD_THEMES: dict[str, dict[str, str]] = {
         "text": "#3a3020", "muted": "#6f6247",
         "button": "#f8e7b9", "button_border": "#d9a63c", "button_text": "#3a3020",
         "hover": "#5a4a22", "hover_text": "#fffaf0", "disabled_text": "#b3a684",
+        "accent": "#7a4f0e", "accent_text": "#ffffff",
     },
     "paper": {
         "label": "素白纸张",
@@ -37,6 +43,7 @@ CARD_THEMES: dict[str, dict[str, str]] = {
         "text": "#1f2430", "muted": "#5b6472",
         "button": "#e9edf3", "button_border": "#aeb8c6", "button_text": "#1f2430",
         "hover": "#1f2430", "hover_text": "#ffffff", "disabled_text": "#a3abb7",
+        "accent": "#0b4f96", "accent_text": "#ffffff",
     },
     "night": {
         "label": "深夜墨蓝",
@@ -44,6 +51,7 @@ CARD_THEMES: dict[str, dict[str, str]] = {
         "text": "#f2f4f8", "muted": "#aab3c5",
         "button": "#343d53", "button_border": "#6a7798", "button_text": "#f2f4f8",
         "hover": "#e6eaf2", "hover_text": "#1f2430", "disabled_text": "#6d778c",
+        "accent": "#2a5699", "accent_text": "#ffffff",
     },
     "sakura": {
         "label": "樱花粉",
@@ -51,6 +59,7 @@ CARD_THEMES: dict[str, dict[str, str]] = {
         "text": "#4a2530", "muted": "#7a5560",
         "button": "#fbdbe3", "button_border": "#dc8aa2", "button_text": "#4a2530",
         "hover": "#8a3350", "hover_text": "#ffffff", "disabled_text": "#c2a1aa",
+        "accent": "#9c2f55", "accent_text": "#ffffff",
     },
 }
 DEFAULT_CARD_THEME = "sea"

@@ -5,7 +5,7 @@
 用户点开详情 / 要跳转时，这里再去读两处 Claude Code 自己的文件：
 
 - **transcript**（hook 给的 ``transcript_path``）尾部：``last-prompt`` 条目（最近一次
-  提问）、``gitBranch``、``entrypoint``；
+  提问）、``gitBranch``、``entrypoint``，以及最近一轮的 ``usage``（上下文用了多少）；
 - **运行中会话清单** ``~/.claude/sessions/<pid>.json``：进程号、入口（``cli`` /
   ``claude-vscode`` / ``claude-desktop`` / ``sdk-cli``）、启动时间；桌面版起的还有
   ``hostSessionId``（桌面版那边的会话 id）。
@@ -44,7 +44,7 @@ ENTRY_DESKTOP = "claude-desktop"
 _HOST_SESSION_RE = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 #: 入口 → 给人看的说法的文案键（不认识的原样显示；显示时 t()，跟界面语言）
 ENTRY_TEXT = {ENTRY_VSCODE: "session_info.ui.entry_vscode", ENTRY_CLI: "session_info.ui.entry_cli",
-              "sdk-cli": "session_info.ui.entry_sdk"}
+              "sdk-cli": "session_info.ui.entry_sdk", ENTRY_DESKTOP: "session_info.ui.entry_desktop"}
 
 #: Windows FILETIME（1601 起、100ns）→ Unix 秒
 _FILETIME_EPOCH_S = 11644473600
@@ -73,6 +73,7 @@ class SessionDetail:
     distro: str = ""                   # WSL 发行版名（仅 WSL 通道）
     model: str = ""                    # 最近一轮实际用的模型 id（会话记录 assistant.message.model）
     effort: str = ""                   # 最近一轮的 effort（perTurnEffort，没有就会话级的 effort）
+    context_tokens: int = 0            # 最近一轮送进模型的上下文有多少 token（0 = 不知道）
     extra: dict = field(default_factory=dict)
 
     @property
@@ -105,7 +106,8 @@ def from_session(agent: str, info: dict) -> SessionDetail:
 
 # ---------------------------------------------------------------- 解析
 def parse_transcript_tail(text: str) -> dict:
-    """从 transcript 尾部取 ``last_prompt / title / git_branch / entrypoint / version / cwd``。
+    """从 transcript 尾部取 ``last_prompt / title / git_branch / entrypoint / version / cwd``，
+    以及 ``model / effort / context_tokens``。
 
     逐行当 JSON 解析，从后往前、每个字段取最靠后的一次出现；解析不了的行（被截断的
     第一行、格式变了的行）直接跳过。
@@ -114,7 +116,7 @@ def parse_transcript_tail(text: str) -> dict:
     # custom_title 也在必须找齐的名单里：没改过名的会话永远找不到它，于是整段尾部都会
     # 扫完——这是有意的，否则找齐其它字段提前收工时，可能还没扫到更靠前的那条改名记录。
     wanted = {"last_prompt", "title", "custom_title", "git_branch", "entrypoint", "version", "cwd",
-              "model", "effort"}
+              "model", "effort", "context_tokens"}
     for line in reversed(text.splitlines()):
         if not line.startswith("{"):
             continue
@@ -138,6 +140,14 @@ def parse_transcript_tail(text: str) -> dict:
             message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
             found.setdefault("model", _clean(message.get("model") or entry.get("requestedModel"), 60))
             found.setdefault("effort", _clean(entry.get("perTurnEffort") or entry.get("effort"), 20))
+            used = context_used(message.get("usage"))
+            if used:
+                found.setdefault("context_tokens", used)
+        elif kind == "system" and entry.get("subtype") == "compact_boundary":
+            # 压缩之后、下一轮回复之前：上下文就是压缩后剩下的那些
+            meta = entry.get("compactMetadata") if isinstance(entry.get("compactMetadata"), dict) else {}
+            if isinstance(meta.get("postTokens"), int) and meta["postTokens"] > 0:
+                found.setdefault("context_tokens", meta["postTokens"])
         for key, source in (("git_branch", "gitBranch"), ("entrypoint", "entrypoint"),
                             ("version", "version"), ("cwd", "cwd")):
             value = entry.get(source)
@@ -148,6 +158,32 @@ def parse_transcript_tail(text: str) -> dict:
     if found.get("custom_title"):
         found["title"] = found["custom_title"]      # 调用方只认 title：用户改的名字优先
     return {key: value for key, value in found.items() if value}
+
+
+def context_used(usage) -> int:
+    """一轮回复的 ``usage`` → 这一轮送进模型的上下文总量（没缓存的 + 写缓存的 + 读缓存的）。"""
+    if not isinstance(usage, dict):
+        return 0
+    total = 0
+    for key in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int) and value > 0:
+            total += value
+    return total
+
+
+#: 上下文窗口：这几代模型都是 1M（Claude API 文档的模型表，2026-10）；更早的 Claude 是 200K，
+#: 其中 Sonnet 4 / 4.5 开了 1M 测试版时模型名后面带 ``[1m]``。
+_WINDOW_1M_RE = re.compile(r"^claude-(?:(?:fable|mythos|sonnet|haiku|opus)-[5-9]|opus-4-[6-9]|sonnet-4-[6-9])(?:-|$)")
+_CLAUDE_RE = re.compile(r"^claude-")
+
+
+def context_window(model_id: str) -> int:
+    """模型的上下文窗口（token）；认不出的模型返回 0（界面就只写用了多少，不画比例）。"""
+    text = str(model_id or "").strip().lower()
+    if text.endswith("[1m]") or _WINDOW_1M_RE.match(text):
+        return 1_000_000
+    return 200_000 if _CLAUDE_RE.match(text) else 0
 
 
 _MODEL_ID_RE = re.compile(r"^claude-(?P<name>[a-z]+)-(?P<major>\d+)-(?P<minor>\d+)(?:-|$)")
@@ -223,6 +259,7 @@ def apply_transcript(detail: SessionDetail, parsed: dict) -> None:
     detail.git_branch = parsed.get("git_branch", "")
     detail.model = parsed.get("model", "")
     detail.effort = parsed.get("effort", "")
+    detail.context_tokens = int(parsed.get("context_tokens") or 0)
     detail.entrypoint = detail.entrypoint or parsed.get("entrypoint", "")
     detail.version = detail.version or parsed.get("version", "")
     if parsed.get("custom_title"):

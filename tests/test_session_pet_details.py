@@ -429,10 +429,13 @@ def test_clicking_a_session_fish_opens_its_detail_card(shell):
     card = actions._card
     assert card is not None and card.isVisible() and card.key == ("claude", "A")
     assert card.title_label.text() == "修登录"
-    assert card.status_label.text().startswith("工作中 · 已")
+    assert card.status_label.text() == "工作中", "状态行只写阶段；时长在自己的磁贴里"
+    assert card.tiles["time"].value.text() == "刚刚"
     assert card.prompt_label.text() == "读取中…"
     assert _pump(lambda: card.prompt_label.text() == "为什么登录会跳两次？")
-    assert card.where_label.text() == r"VS Code 插件 · C:\code\proj · 分支 fix/login"
+    assert card.app_label.text() == "CLAUDE CODE · VS CODE 插件"
+    assert card.folder_row.text.text() == r"C:\code\proj" and card.branch_row.text.text() == "fix/login"
+    assert card.accessibleDescription() == r"VS Code 插件 · C:\code\proj · 分支 fix/login"
 
 
 def test_clicking_the_main_fish_does_not_open_a_session_card(shell):
@@ -463,13 +466,13 @@ def test_jumping_to_a_finished_session_marks_it_as_seen(shell):
     actions.jumper = lambda detail, wsl_env=None: JumpResult(True, "已跳到 VS Code 里的这个对话")
     actions.show_card(fish)
     card = actions._card
-    assert card.status_label.text().startswith("等你回复 · 已")
+    assert card.status_label.text() == "等你回复"
     assert fish.caption == "修登录 · 等你回复"
 
     card.jump_btn.click()
 
     assert fish.caption == "修登录 · 休息中"
-    assert card.status_label.text().startswith("休息中 · 已"), "开着的卡片跟着换"
+    assert card.status_label.text() == "休息中", "开着的卡片跟着换"
     assert _pump(lambda: card.result_label.text() == "已跳到 VS Code 里的这个对话")
 
 
