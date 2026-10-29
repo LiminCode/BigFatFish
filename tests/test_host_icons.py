@@ -110,9 +110,9 @@ def test_warming_fetches_every_kind_once_so_the_first_expand_does_not_pay():
     calls = []
     provider = lambda path: (calls.append(path), _red_square())[1]  # noqa: E731
     fetched = host_icons.warm(widget, 16, executable=lambda kind: f"C:\\x\\{kind}.exe", provider=provider)
-    assert fetched == 4 and len(calls) == 4
+    assert fetched == 5 and len(calls) == 5
     host_icons.host_icon(widget, "vscode", 16, executable=lambda kind: "C:\\x\\vscode.exe", provider=provider)
-    assert len(calls) == 4, "预热过了：之后不再问外壳"
+    assert len(calls) == 5, "预热过了：之后不再问外壳"
     assert host_icons.warm(widget, 16, provider=provider) == 0
 
 

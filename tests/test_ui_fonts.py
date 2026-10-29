@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""肥鱼身上的文字统一用等线：气泡、对话气泡、会话详情卡、头顶的常驻标签。
+"""肥鱼身上的文字统一用等线：气泡、对话气泡、头顶的常驻标签。
+
+会话详情卡 2026-10-28 起是 Metro 风格，改用微软雅黑 UI（标题用它的细体，路径 / 分支用等宽字），
+同样只点一个族。
 
 纪律：offscreen；字体装没装只看文件（不调 QFontDatabase，见 pet/ui_fonts.py 的说明），
 所以用例靠改环境变量造「装了 / 没装」，不依赖本机真的有什么字体。
@@ -85,23 +88,60 @@ def test_speech_bubble_text_and_its_buttons_use_the_bubble_font(family):
         bubble.deleteLater()
 
 
-def test_chat_bubble_and_session_card_use_the_bubble_font(family, tmp_path):
+def test_chat_bubble_uses_the_bubble_font(family, tmp_path):
     from pet.quick_chat import QuickChatBubble
-    from pet.session_pet_ui import SessionDetailCard
 
     config = Config(tmp_path)
     chat = QuickChatBubble(config)
-    card = SessionDetailCard(config)
     try:
-        for widget in (chat, chat.input, chat.output, chat.send_btn,
-                       card, card.title_label, card.prompt_label, card.jump_btn):
+        for widget in (chat, chat.input, chat.output, chat.send_btn):
             assert widget.font().family() == family
         assert chat.input.font().pointSizeF() == pytest.approx(app.font().pointSizeF() * 1.25), \
             "只换字体族，放大倍数不变"
     finally:
-        for widget in (chat, card):
-            widget.close()
-            widget.deleteLater()
+        chat.close()
+        chat.deleteLater()
+
+
+@pytest.fixture
+def metro_fonts(monkeypatch):
+    """把 Metro 字体钉成 Windows 上的那几个（不管这台机器是什么平台、装没装）。"""
+    for cached in (ui_fonts.metro_font_family, ui_fonts.mono_font_family):
+        cached.cache_clear()
+    monkeypatch.setattr(ui_fonts.sys, "platform", "win32")
+    monkeypatch.setattr(ui_fonts, "_font_file_installed", lambda pattern: True)
+    yield
+    for cached in (ui_fonts.metro_font_family, ui_fonts.mono_font_family):
+        cached.cache_clear()
+
+
+def test_session_card_uses_single_metro_families(metro_fonts, tmp_path):
+    from pet.session_pet_ui import SessionDetailCard
+
+    card = SessionDetailCard(Config(tmp_path))
+    try:
+        card.ensurePolished()
+        for widget in (card, card.prompt_label, card.jump_btn):
+            widget.ensurePolished()
+            assert widget.font().family() == "Microsoft YaHei UI"
+        sheet = card.styleSheet()
+        assert 'font-family: "Microsoft YaHei UI Light"' in sheet, "标题用细体"
+        assert 'font-family: "Ubuntu Mono"' in sheet, "路径 / 分支用等宽字"
+        assert all("," not in line.split("font-family:")[1].split(";")[0]
+                   for line in sheet.splitlines() if "font-family:" in line), "只点一个族"
+    finally:
+        card.close()
+        card.deleteLater()
+
+
+def test_mono_falls_back_to_what_is_installed(monkeypatch):
+    ui_fonts.mono_font_family.cache_clear()
+    monkeypatch.setattr(ui_fonts.sys, "platform", "win32")
+    monkeypatch.setattr(ui_fonts, "_font_file_installed", lambda pattern: pattern == "consola.ttf")
+    try:
+        assert ui_fonts.mono_font_family() == "Consolas"
+    finally:
+        ui_fonts.mono_font_family.cache_clear()
 
 
 def test_fish_caption_uses_the_same_family_as_the_bubbles():

@@ -436,6 +436,39 @@ def owning_workspace(workspaces: list[OpenWorkspace], cwd: str, *, wsl: bool) ->
     return owners[0] if len(owners) == 1 else None
 
 
+def session_workspace(detail: SessionDetail, known: list[OpenWorkspace],
+                      mentions: Callable[[str, str], int] = _state_mentions) -> OpenWorkspace | None:
+    """VS Code 插件里的会话开在哪个工作区（窗口）里；认不出唯一一个就返回 None。
+
+    和跳转同一套线索：VS Code 自己记着这个会话开在哪个窗口里最准；没有就按目录找包含它的
+    窗口，几个都包含时再用进程启动目录筛。"""
+    wsl = detail.is_wsl
+    recorded = [w for w in session_windows(known, detail.session_id, mentions) if w.wsl == wsl]
+    if len(recorded) == 1:
+        return recorded[0]
+    owners = narrow_by_start(owning_workspaces(known, detail.cwd, wsl=wsl),
+                             str(detail.extra.get("start_cwd") or ""), wsl=wsl)
+    return owners[0] if len(owners) == 1 else None
+
+
+def attach_workspace(detail: SessionDetail,
+                     workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces) -> SessionDetail:
+    """给 VS Code 插件里的会话记上它所在的工作区（``extra["workspace"]``）；别的入口不动。
+
+    阻塞（读 VS Code 的几个小文件），在读详情的后台线程里调。读坏了只是少一行，不报错。"""
+    if detail.entrypoint != ENTRY_VSCODE:
+        return detail
+    try:
+        owner = session_workspace(detail, list(workspaces()))
+    except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
+        log.debug("读取 VS Code 的窗口记录失败", exc_info=True)
+        return detail
+    if owner is not None:
+        detail.extra["workspace"] = {"label": owner.label, "target": owner.target,
+                                     "multi_root": owner.multi_root, "folders": len(owner.roots)}
+    return detail
+
+
 def find_host_window(chain: list[tuple[int, str]], windows: list[Window], cwd: str,
                      hints: tuple[str, ...] = ()) -> Window | None:
     """本机终端会话的宿主窗口：进程链（自己 → 父 → …）里第一个有可见窗口的祖先。

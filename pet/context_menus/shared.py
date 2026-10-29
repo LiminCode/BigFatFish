@@ -484,6 +484,20 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(theme_id == current_theme)
                 theme_group.addAction(choice)
                 connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
+        set_card_size = getattr(pet, "set_session_card_text_size", None)
+        if callable(set_card_size):
+            from ..session_card_themes import TEXT_SIZE_KEY, normalize_text_size, text_size_choices
+
+            size_menu = add_submenu(sub, t("menu.shared.detail_card_text_size"), None)
+            current_size = normalize_text_size(agent_cfg.get(TEXT_SIZE_KEY))
+            size_group = QActionGroup(size_menu)
+            size_group.setExclusive(True)
+            for size, label in text_size_choices():
+                choice = size_menu.addAction(label)
+                choice.setCheckable(True)
+                choice.setChecked(size == current_size)
+                size_group.addAction(choice)
+                connect_action(choice, lambda size=size: set_card_size(size))
         crown_choices = getattr(pet, "crown_model_choices", None)
         toggle_crown = getattr(pet, "toggle_crown_model", None)
         if callable(crown_choices) and callable(toggle_crown):

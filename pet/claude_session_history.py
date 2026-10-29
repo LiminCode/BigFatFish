@@ -142,14 +142,9 @@ class HistoryEntry:
 
     @property
     def host(self) -> str:
-        """在哪开的，给列表挑图标：``vscode`` / ``terminal``（本机）/ ``wsl``（WSL 终端）/ ``script`` / 空。"""
-        if self.entrypoint == ENTRY_VSCODE:
-            return "vscode"
-        if self.entrypoint == "sdk-cli":
-            return "script"
-        if self.is_wsl:
-            return "wsl"
-        return "terminal" if self.entrypoint == ENTRY_CLI else ""
+        """在哪开的，给列表挑图标：``vscode`` / ``desktop``（Claude 桌面版）/ ``terminal``（本机）/
+        ``wsl``（WSL 终端）/ ``script`` / 空。规则和会话详情卡同一份（``claude_session_info.host_kind``）。"""
+        return claude_session_info.host_kind(self.entrypoint, self.is_wsl)
 
     @property
     def resume_command(self) -> str:

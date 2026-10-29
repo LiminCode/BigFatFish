@@ -2,6 +2,8 @@
 """会话「从哪开的」的图标：优先用本机装着的那个程序自己的图标，没有就用手绘的单色记号。
 
 - ``vscode`` → VS Code 的 ``Code.exe``（用户目录安装 / 系统安装 / ``code`` 命令所在处）
+- ``desktop`` → Claude 桌面版的 ``claude.exe``：商店版装在 ``WindowsApps`` 下（那个目录列不出来，
+  安装位置从注册表的应用包仓库里查），老的独立安装版在 ``%LOCALAPPDATA%`` 下的 ``AnthropicClaude`` 里
 - ``terminal`` → PowerShell（7 的 ``pwsh.exe``，没有就系统自带的 ``powershell.exe``）
 - ``wsl`` → ``wsl.exe``（企鹅）
 - ``script`` → 没有对应程序，直接用手绘记号
@@ -22,7 +24,12 @@ from typing import Callable
 from PySide6.QtGui import QIcon
 
 #: 手绘记号（``context_menus.icons`` 里的名字）
-FALLBACK_GLYPHS = {"vscode": "vscode", "terminal": "terminal", "wsl": "ubuntu", "script": "automation"}
+FALLBACK_GLYPHS = {"vscode": "vscode", "desktop": "sparkle", "terminal": "terminal", "wsl": "ubuntu",
+                   "script": "automation"}
+#: 商店版 Claude 桌面版的包名前缀与发布者后缀（``Claude_<版本>_x64__pzs8sxrjxfjjc``）
+_DESKTOP_PACKAGE = ("Claude_", "__pzs8sxrjxfjjc")
+_PACKAGE_REPOSITORY = (r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion"
+                       r"\AppModel\Repository\Packages")
 _CACHE: dict[tuple[str, int, float], QIcon] = {}
 
 
@@ -41,12 +48,45 @@ def _candidates(kind: str) -> list[str]:
         found += [os.path.join(_env("LOCALAPPDATA"), "Programs", "Microsoft VS Code", "Code.exe"),
                   os.path.join(_env("ProgramFiles"), "Microsoft VS Code", "Code.exe")]
         return found
+    if kind == "desktop":
+        found = [os.path.join(root, "app", "claude.exe") for root in _desktop_package_roots()]
+        return found + [os.path.join(_env("LOCALAPPDATA"), "AnthropicClaude", "claude.exe")]
     if kind == "terminal":
         return [os.path.join(_env("ProgramFiles"), "PowerShell", "7", "pwsh.exe"),
                 os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")]
     if kind == "wsl":
         return [os.path.join(system_root, "System32", "wsl.exe")]
     return []
+
+
+def _desktop_package_roots() -> list[str]:
+    """商店版 Claude 桌面版装在哪（新版本在前）；读不到注册表就是空。"""
+    try:
+        import winreg
+    except ImportError:
+        return []
+    prefix, publisher = _DESKTOP_PACKAGE
+    roots: list[tuple[str, str]] = []
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _PACKAGE_REPOSITORY) as packages:
+            index = 0
+            while True:
+                try:
+                    name = winreg.EnumKey(packages, index)
+                except OSError:
+                    break
+                index += 1
+                if not (name.startswith(prefix) and name.endswith(publisher)):
+                    continue
+                try:
+                    with winreg.OpenKey(packages, name) as package:
+                        root, _kind = winreg.QueryValueEx(package, "PackageRootFolder")
+                except OSError:
+                    continue
+                roots.append((name, str(root)))
+    except OSError:
+        return []
+    return [root for _name, root in sorted(roots, reverse=True)]
 
 
 def host_executable(kind: str, *, exists: Callable[[str], bool] = os.path.isfile) -> str:
