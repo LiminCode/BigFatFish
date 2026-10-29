@@ -7,8 +7,13 @@
   ``vscode://anthropic.claude-code/open?session=<id>``——插件会聚焦那个会话的标签页
   （官方文档有这个链接；会话必须属于**当前聚焦窗口**的工作区，否则插件会新开一个
   空对话，所以窗口没调对就不发链接）。
-- **终端里的会话**：只能把承载它的终端窗口（Windows Terminal / VS Code 的内置终端）
-  调到前台。具体是哪个标签页选不了——那是终端程序自己的界面，外面够不着。
+- **Claude 桌面版（Code 标签页）里的会话**：运行清单的 ``hostSessionId`` 是桌面版那边的
+  会话 id，打开 ``claude://claude.ai/epitaxy/<id>``（应用自己给的外链）就切到那个对话。
+  没有这个 id 时退回下面终端那条路（顺着进程链调到桌面版窗口）。
+- **终端里的会话**：把承载它的终端窗口（Windows Terminal / VS Code 的内置终端）调到前台。
+  Windows Terminal 再用 UI 自动化选中这个对话的标签页：Claude Code 默认把终端标题设成对话
+  标题（前面带状态符号），按会话标题 / 会话名去认（``pick_tab``）；认不出就留给用户自己选。
+  别的终端和 VS Code 内置终端的标签页够不着。
 
 怎么找窗口：
 
@@ -38,6 +43,7 @@ import logging
 import ntpath
 import os
 import posixpath
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -48,7 +54,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable
 from urllib.parse import unquote, urlsplit
 
-from .claude_session_info import ENTRY_VSCODE, SessionDetail
+from .claude_session_info import ENTRY_DESKTOP, ENTRY_VSCODE, SessionDetail
 from .i18n import t
 
 log = logging.getLogger(__name__)
@@ -59,6 +65,8 @@ TERMINAL_PROCESSES = frozenset({"windowsterminal.exe", "wezterm-gui.exe", "alacr
                                 "conemu64.exe", "conemu.exe", "mintty.exe", "tabby.exe",
                                 "hyper.exe"})
 _URI = "vscode://anthropic.claude-code/open?session={session}"
+#: Claude 桌面版给每个会话的外链（会话元数据里的 link）：打开就切到那个对话
+_DESKTOP_URI = "claude://claude.ai/epitaxy/{session}"
 #: 窗口调到前台后等这么久再发链接：链接由「最后活跃的 VS Code 窗口」处理
 _URI_DELAY_S = 0.35
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
@@ -69,6 +77,10 @@ _WORKSPACE_SUFFIX = ".code-workspace"
 _STATE_KEYS = ("memento/workbench.parts.editor", "Anthropic.claude-code")
 #: 当前标签页的标题被截断成「前缀…」时，前缀至少这么长才拿来认对话
 _MIN_TAB_PREFIX = 8
+#: 终端标签页名里认对话用的线索至少这么长
+_MIN_TAB_HINT = 3
+#: Claude Code 设的终端标题前面的状态符号（空闲 ✳、干活时转圈的盲文点）和空白
+_TAB_STATUS_RE = re.compile(r"^\W+")
 
 
 @dataclass(frozen=True)
@@ -468,6 +480,53 @@ def find_wsl_terminal_window(windows: list[Window], detail: SessionDetail,
             or find_vscode_window(windows, detail.cwd, wsl=True, owner=owner))
 
 
+def pick_tab(names: list[str], hints: tuple[str, ...]) -> int | None:
+    """终端标签页里哪个是这个对话：去掉 Claude Code 加的状态符号后，名字等于线索的优先，
+    其次是含线索的；线索按给的顺序（会话标题、会话名）试。都对不上返回 None。"""
+    bare = [_TAB_STATUS_RE.sub("", str(name or "")).strip() for name in names]
+    usable = [h.strip() for h in hints if len(str(h or "").strip()) >= _MIN_TAB_HINT]
+    for hint in usable:
+        if hint in bare:
+            return bare.index(hint)
+    for hint in usable:
+        for index, name in enumerate(bare):
+            if hint in name:
+                return index
+    return None
+
+
+def select_terminal_tab(hwnd: int, hints: tuple[str, ...]) -> bool:
+    """在 Windows Terminal 窗口里选中这个对话的标签页（UI 自动化）。认不出 / 出错返回 False。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import comtypes
+        import comtypes.client
+    except ImportError:
+        return False
+    comtypes.CoInitialize()
+    try:
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        from comtypes.gen import UIAutomationClient as UIA
+
+        uia = comtypes.client.CreateObject(UIA.CUIAutomation, interface=UIA.IUIAutomation)
+        window = uia.ElementFromHandle(hwnd)
+        condition = uia.CreatePropertyCondition(UIA.UIA_ControlTypePropertyId, UIA.UIA_TabItemControlTypeId)
+        tabs = window.FindAll(UIA.TreeScope_Descendants, condition)
+        names = [str(tabs.GetElement(i).CurrentName or "") for i in range(tabs.Length)]
+        index = pick_tab(names, hints)
+        if index is None:
+            return False
+        tabs.GetElement(index).GetCurrentPattern(UIA.UIA_SelectionItemPatternId).QueryInterface(
+            UIA.IUIAutomationSelectionItemPattern).Select()
+        return True
+    except Exception:  # noqa: BLE001 - 选不了标签页只是退回「自己选」
+        log.debug("选中终端标签页失败", exc_info=True)
+        return False
+    finally:
+        comtypes.CoUninitialize()
+
+
 def session_uri(session_id: str) -> str:
     return _URI.format(session=session_id)
 
@@ -645,12 +704,16 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
          uri: Callable[[str], bool] = open_uri,
          vscode: Callable[..., bool] = open_in_vscode,
          workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces,
-         sleep: Callable[[float], None] = time.sleep) -> JumpResult:
+         sleep: Callable[[float], None] = time.sleep,
+         select_tab: Callable[[int, tuple[str, ...]], bool] = select_terminal_tab) -> JumpResult:
     """跳到这个会话；返回给用户看的一句话结果。阻塞几百毫秒，放后台线程里调。"""
     if sys.platform != "win32" and windows is list_windows:
         return JumpResult(False, t("session_jump.ui.jumping_session_only_works_windows"))
     if detail.alive is False:
         return JumpResult(False, t("session_jump.ui.session_process_gone_reopen_resume"))
+    host = str(detail.extra.get("host_session") or "")
+    if detail.entrypoint == ENTRY_DESKTOP and host and uri(_DESKTOP_URI.format(session=host)):
+        return JumpResult(True, t("session_jump.ui.jumped_conversation_claude_desktop"))
     all_windows = windows()
     try:
         known = list(workspaces())
@@ -660,7 +723,7 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
     if detail.entrypoint == ENTRY_VSCODE:
         return _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known)
     owner = owning_workspace(known, detail.cwd, wsl=detail.is_wsl)
-    return _jump_terminal(detail, all_windows, focus, chain, wsl_env or {}, owner)
+    return _jump_terminal(detail, all_windows, focus, chain, wsl_env or {}, owner, select_tab)
 
 
 def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known) -> JumpResult:
@@ -712,7 +775,8 @@ def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known) -> JumpR
     return JumpResult(True, t("session_jump.ui.jumped_conversation_vs_code"))
 
 
-def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None) -> JumpResult:
+def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None,
+                   select_tab: Callable[[int, tuple[str, ...]], bool] = select_terminal_tab) -> JumpResult:
     if detail.is_wsl:
         target = find_wsl_terminal_window(all_windows, detail, wsl_env, owner)
     else:
@@ -724,6 +788,10 @@ def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None) -> Ju
     if not focus(target.hwnd):
         return JumpResult(False, t("session_jump.ui.could_not_bring_terminal_window"))
     if target.process not in VSCODE_PROCESSES:
+        # Windows Terminal：按对话标题选中它的标签页（发行版名不当线索——会对上随便哪个 Ubuntu 标签页）
+        hints = tuple(h for h in (detail.title, detail.name) if h)
+        if target.process == "windowsterminal.exe" and hints and select_tab(target.hwnd, hints):
+            return JumpResult(True, t("session_jump.ui.switched_terminal_tab"))
         return JumpResult(True, t("session_jump.ui.switched_terminal_window_pick_tab"))
     if find_vscode_window([target], detail.cwd, wsl=detail.is_wsl, owner=owner) is None:
         # 终端的工作目录不是任何窗口的工作区：只能挑一个最近用过的 VS Code 窗口

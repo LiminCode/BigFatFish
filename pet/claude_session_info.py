@@ -7,7 +7,8 @@
 - **transcript**（hook 给的 ``transcript_path``）尾部：``last-prompt`` 条目（最近一次
   提问）、``gitBranch``、``entrypoint``；
 - **运行中会话清单** ``~/.claude/sessions/<pid>.json``：进程号、入口（``cli`` /
-  ``claude-vscode`` / ``sdk-cli``）、启动时间。
+  ``claude-vscode`` / ``claude-desktop`` / ``sdk-cli``）、启动时间；桌面版起的还有
+  ``hostSessionId``（桌面版那边的会话 id）。
 
 这两处都是 Claude Code 的**内部格式**（官方文档明说 transcript 的条目格式会随版本变，
 清单则完全没有文档），所以这里的每一步都按「读不到就留空」处理——调用方拿到的
@@ -38,6 +39,9 @@ PROMPT_MAX = 300
 
 ENTRY_VSCODE = "claude-vscode"
 ENTRY_CLI = "cli"
+ENTRY_DESKTOP = "claude-desktop"
+#: 运行清单里 ``hostSessionId`` 的形状（Claude 桌面版 4.29 自己校验本地会话 id 用的就是它）
+_HOST_SESSION_RE = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 #: 入口 → 给人看的说法的文案键（不认识的原样显示；显示时 t()，跟界面语言）
 ENTRY_TEXT = {ENTRY_VSCODE: "session_info.ui.entry_vscode", ENTRY_CLI: "session_info.ui.entry_cli",
               "sdk-cli": "session_info.ui.entry_sdk"}
@@ -206,6 +210,10 @@ def apply_registry(detail: SessionDetail, entry: dict | None) -> None:
     # 进程启动时所在的目录。会话中途 cd 走了之后 detail.cwd 跟着变，这个不变——
     # VS Code 插件把进程起在工作区的第一个文件夹里，跳转时靠它分辨窗口。
     detail.extra["start_cwd"] = str(entry.get("cwd") or "")
+    # Claude 桌面版起的会话：桌面版那边的会话 id（跳转时打开 claude://claude.ai/epitaxy/<id>）
+    host = str(entry.get("hostSessionId") or "")
+    if _HOST_SESSION_RE.match(host):
+        detail.extra["host_session"] = host
     if not detail.cwd:
         detail.cwd = str(entry.get("cwd") or "")
 
