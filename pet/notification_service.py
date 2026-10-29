@@ -3,9 +3,10 @@
 
 隔 ``poll_seconds`` 秒在 daemon 线程里读一次通知中心，结果经信号排队回到本对象所在的 GUI
 线程，在那里合并、算「哪些是新的」，再发 ``changed`` / ``unread_changed``。跳转也在工作线程里
-跑（打开通知中心、UIA 找、激活，最多等两秒），结果走 ``activation_done``。
+跑（有深链接就直接打开；没有才打开通知中心、UIA 找、激活，最多等两秒），结果走 ``activation_done``。
 
 「新的」= 出现之后用户还没打开过通知卡片；打开卡片（``mark_all_seen``）就全部算看过。
+「刚到的」（``arrived``，给自家弹窗用）= 这一轮新出现的；开始读之后的第一轮是积压，只进岛、不弹。
 用户在卡片里「移除」的记在 ``_hidden`` 里，之后再读到也不出现。折叠状态只记在内存里。
 """
 
@@ -28,9 +29,11 @@ def _spawn_thread(target: Callable[[], None]) -> None:
 
 
 class NotificationService(QObject):
-    """``changed(list[Notice])``（新到旧）/ ``unread_changed(int)`` / ``activation_done(Notice, str)``。"""
+    """``changed(list[Notice])``（新到旧）/ ``unread_changed(int)`` / ``activation_done(Notice, str)`` /
+    ``arrived(list[Notice])``（这一轮刚到的，旧到新）。"""
 
     changed = Signal(object)
+    arrived = Signal(object)
     unread_changed = Signal(int)
     activation_done = Signal(object, str)
     _done = Signal(int, object, object)          # worker → GUI：(轮次, notices, logos)
@@ -53,6 +56,7 @@ class NotificationService(QObject):
         self._unread: set[int] = set()
         self._hidden: set[int] = set()
         self._logos: dict[str, bytes] = {}
+        self._baselined = False                   # 第一轮读完之前，读到的都算积压（不发 arrived）
         self.ui_open = True                       # 卡片里的折叠框开着（只记在内存里）
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll)
@@ -123,6 +127,7 @@ class NotificationService(QObject):
         self._timer.stop()
         self._generation += 1
         self._busy = False
+        self._baselined = False
 
     # ---------------------------------------------------------------- 读
     def poll(self) -> bool:
@@ -167,6 +172,7 @@ class NotificationService(QObject):
             return
         merged, new_uids = nc.merge(self._notices, notices, keep=self.settings()["keep"], hidden=self._hidden)
         if merged == self._notices and not new_uids:
+            self._baselined = True
             return
         self._notices = merged
         if new_uids:
@@ -174,6 +180,10 @@ class NotificationService(QObject):
         self.changed.emit(self.notices)
         if new_uids:
             self.unread_changed.emit(self.unread_count)
+        backlog, self._baselined = not self._baselined, True
+        fresh = sorted((n for n in merged if n.uid in set(new_uids)), key=lambda n: (n.created, n.uid))
+        if fresh and not backlog:
+            self.arrived.emit(fresh)
 
     # ---------------------------------------------------------------- 用户动作
     def mark_all_seen(self) -> None:

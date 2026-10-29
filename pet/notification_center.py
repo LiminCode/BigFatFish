@@ -12,11 +12,22 @@
   的进程订阅不了变更事件（实测报「Element not found」），所以只能隔几秒读一次。
 - **合并**（``merge``，纯函数）：这次读到的是通知中心里**现有**的；用户在 Windows 那边划掉的、
   我们这边跳过的会从里面消失，但卡片里还留着（``in_center=False``），只是跳不回原消息了。
-- **跳**（``activate``）：按名字的 ``slack://channel`` 深链接只认频道 id，给名字不跳还把 Slack
-  弄成报错页（2026-10-14 实测）。可行的是：打开通知中心（``ms-actioncenter:``），用 UI 自动化找到
-  那条通知并 Invoke——Windows 把激活交给 Slack，Slack 带着自己的参数跳到那条消息（实测 0.3 秒
-  找到、跳转成功，Slack 窗口标题换成那个频道）。通知中心里已经没有它了就退一步：
-  ``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
+- **启动参数**（``launch_targets``，2026-10-26）：通知自己点开时用的参数（toast XML 根上的
+  ``launch`` / ``activationType``）监听接口不给，但 Windows 的通知数据库
+  （``%LOCALAPPDATA%\\Microsoft\\Windows\\Notifications\\wpndatabase.db``）里有，而且数据库的
+  ``Notification.Id`` 就是监听接口给的 id（实测 22/22 对上）。数据库被系统服务开着、一直在写：
+  只把三个文件复制到临时目录查副本（约 20 ms），只读、查完删掉；只在有新通知的那一轮查一次，
+  结果记在 ``Notice`` 上，通知中心里没了也还能跳。Slack 的是 ``activationType="protocol"``、
+  ``launch="slack://channel?id=…&message=…&team=…"``：直接打开就跳到那条消息。
+- **跳**（``activate``）：有协议型的启动参数就直接打开它（不弹通知中心），再像系统一样把那条
+  从通知中心拿掉。Chrome 的通知是 ``activationType="foreground"``（走 Chrome 的 COM 激活组件
+  ``notification_helper.exe``），那个组件做的事就是用 ``chrome.exe --notification-launch-id=<launch>``
+  把点击交还给 Chrome，Chrome 再触发网页自己的「通知被点击」（Gmail 打开那封邮件）；我们照做
+  （2026-10-26：原来走通知中心 UIA，Gmail 的通知点了不跳）。Claude 桌面版的通知没有启动参数，
+  但库里的 Group / Tag 带着会话 id，拼成 ``claude://claude.ai/epitaxy/<id>`` 直接打开那个会话；
+  没有会话 id 的交给 ``claude://code/needs-input``，都不经通知中心（2026-10-28）。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
+  （``ms-actioncenter:``），用 UI 自动化找到那条通知并 Invoke（实测 0.3 秒）。通知中心里也没有了
+  就再退一步：``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
 
 本模块不碰 Qt。所有 Windows 调用都设计成在工作线程里跑（WinRT 走 ``asyncio.run``，UIA 的 COM
 在线程里自己初始化）；缺包、非 Windows、没权限时读出来是空列表，不抛。
@@ -29,10 +40,16 @@ import json
 import logging
 import os
 import re
+import shutil
+import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable
+from urllib.parse import parse_qs, urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +57,43 @@ CONFIG_KEY = "notifications"
 POLL_RANGE = (2, 60)            # 秒
 KEEP_RANGE = (5, 200)           # 卡片里最多留几条
 DEFAULT_APPS = ("slack",)
-DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS)}
+ALL_APPS = "*"                  # apps 里写它 = 所有应用
+#: 我们自己弹的通知（``notification_toast``）：哪个角、哪块屏、留几秒、最多同时几条
+TOAST_CORNERS = ("top_right", "top_left", "bottom_right", "bottom_left")
+TOAST_SCREEN_PRIMARY = "primary"
+TOAST_SCREEN_CURSOR = "cursor"
+TOAST_SECONDS_RANGE = (0, 3600)       # 0 = 一直留着，直到用户关掉
+TOAST_MAX_RANGE = (1, 10)
+TOAST_DEFAULTS = {"enabled": False, "corner": "top_right", "screen": TOAST_SCREEN_PRIMARY, "seconds": 6,
+                  "max_visible": 5}
+#: 同一来源的通知怎么叠（弹窗里并成一张）：每个应用一个选择。off = 每条单独；app = 整个应用叠成一张；
+#: Slack 的 channel = 按频道（私聊也是频道）；Chrome 的 site = 按发通知的网站。
+STACK_CHOICES = {"slack": ("off", "channel", "app"), "chrome": ("off", "site", "app")}
+STACK_DEFAULTS = {"slack": "channel", "chrome": "site"}
+DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS), "toast": TOAST_DEFAULTS,
+            "stack": STACK_DEFAULTS}
+
+_DB_DIR = r"%LOCALAPPDATA%\Microsoft\Windows\Notifications"
+_DB_NAME = "wpndatabase.db"
+_SCHEME_RE = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]+):", re.I)
+_UNSAFE_SCHEMES = {"file", "javascript", "vbscript", "data"}
+#: Chrome 通知的启动参数：「组件|按钮|档案|…|无痕|来源网址|通知 id」，中间几段随版本变（155 版是
+#: ``1|0|Default|<档案名>|0|https://mail.google.com/|…``），只认「数字|数字|…|来源」。来源是网页，或者扩展
+#: （``chrome-extension://<id>/``：Gmail 提醒扩展 Checker Plus 这类，2026-10-28 实机，个人邮箱的通知就是它发的）
+_CHROME_LAUNCH_RE = re.compile(r"^\d+\|\d+\|(?:[^|]*\|){1,4}(?:https?|chrome-extension)://")
+_CHROME_FALLBACKS = (
+    r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+    r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
+    r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+)
+_URL_RE = re.compile(r"(?:https?|chrome-extension)://(?P<host>[^/|#?\s]+)", re.I)
+#: Claude 桌面版的通知没有 launch（点击走它进程里的回调），会话 id 在库里的 Group（``session-<id>``）/
+#: Tag（``idle-<id>``）里。本地 Code 会话是 ``local_…``，云端的是 ``session_…`` / ``cse_…``（Claude 4.29 自己
+#: 校验 id 用的就是这两种形状）。打开会话用应用自己给的外链 ``claude://claude.ai/epitaxy/<id>``。
+_CLAUDE_SESSION_RE = re.compile(r"(?:^|-)(?P<id>local_[A-Za-z0-9-]{1,64}|(?:cse|session)_[A-Za-z0-9_-]{1,64})$")
+CLAUDE_SESSION_URL = "claude://claude.ai/epitaxy/{id}"
+#: 没有会话 id 的 Claude 通知：交给它自己的「等你处理的会话」入口（跳转列表里的那一项）
+CLAUDE_WAITING_URL = "claude://code/needs-input"
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
 _SLACK_STATE_FILES = (
@@ -62,6 +115,36 @@ def _clamp(value, default: int, bounds: tuple[int, int]) -> int:
     return max(bounds[0], min(bounds[1], number))
 
 
+def _flag(value, default: bool) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return default if value is None else bool(value)
+
+
+def normalize_toast(raw) -> dict:
+    """``notifications.toast``：缺的补默认、脏的夹回去。``screen`` 是 ``primary`` / ``cursor`` / 屏幕名。"""
+    data = dict(raw) if isinstance(raw, dict) else {}
+    corner = str(data.get("corner") or "").strip()
+    screen = str(data.get("screen") or "").strip()
+    return {
+        "enabled": _flag(data.get("enabled"), TOAST_DEFAULTS["enabled"]),
+        "corner": corner if corner in TOAST_CORNERS else TOAST_DEFAULTS["corner"],
+        "screen": screen or TOAST_DEFAULTS["screen"],
+        "seconds": _clamp(data.get("seconds"), TOAST_DEFAULTS["seconds"], TOAST_SECONDS_RANGE),
+        "max_visible": _clamp(data.get("max_visible"), TOAST_DEFAULTS["max_visible"], TOAST_MAX_RANGE),
+    }
+
+
+def normalize_stack(raw) -> dict:
+    """``notifications.stack``：每个应用怎么叠；不认识的值退回默认。"""
+    data = dict(raw) if isinstance(raw, dict) else {}
+    out = {}
+    for app, choices in STACK_CHOICES.items():
+        value = str(data.get(app) or "").strip()
+        out[app] = value if value in choices else STACK_DEFAULTS[app]
+    return out
+
+
 def normalize(raw) -> dict:
     """配置里的 ``notifications``：缺的补默认、脏的夹回去。``apps`` 是应用名片段（小写、去空）。"""
     data = dict(raw) if isinstance(raw, dict) else {}
@@ -79,13 +162,15 @@ def normalize(raw) -> dict:
         "poll_seconds": _clamp(data.get("poll_seconds"), DEFAULTS["poll_seconds"], POLL_RANGE),
         "keep": _clamp(data.get("keep"), DEFAULTS["keep"], KEEP_RANGE),
         "apps": cleaned or list(DEFAULT_APPS),
+        "toast": normalize_toast(data.get("toast")),
+        "stack": normalize_stack(data.get("stack")),
     }
 
 
 def matches_app(name: str, app_id: str, fragments: Iterable[str]) -> bool:
-    """应用名或 AUMID 里含任一片段（不分大小写）。"""
+    """应用名或 AUMID 里含任一片段（不分大小写）；片段 ``*`` 认所有应用。"""
     haystack = f"{name or ''}\n{app_id or ''}".lower()
-    return any(fragment and fragment in haystack for fragment in fragments)
+    return any(fragment == ALL_APPS or (fragment and fragment in haystack) for fragment in fragments)
 
 
 # ---------------------------------------------------------------- 数据
@@ -100,10 +185,30 @@ class Notice:
     body: str                # Slack：「发送人: 消息」或消息本身
     created: float           # epoch 秒
     in_center: bool = True   # 还在 Windows 通知中心里（能从那里激活）
+    launch: str = ""         # 通知自己的启动参数（数据库里读的；Slack 是 slack://channel?… 深链接）
+    activation: str = ""     # 启动参数的类型：protocol / foreground / background；"none" = 查过没有；"" = 还没查
+
+    @property
+    def source(self) -> str:
+        """同一来源归一组用的键（``source_key``）；空 = 不归组。"""
+        return source_key(self)
+
+    @property
+    def launchable(self) -> bool:
+        """能不经通知中心直接跳：协议型的启动参数（正常的 URI），或 Chrome 自己的启动参数。"""
+        if self.activation == "protocol":
+            return launchable_uri(self.launch)
+        return self.kind == "chrome" and bool(_CHROME_LAUNCH_RE.match(self.launch or ""))
 
     @property
     def kind(self) -> str:
-        return "slack" if "slack" in f"{self.app}\n{self.app_id}".lower() else "other"
+        """``slack`` / ``chrome`` / ``claude`` / ``other``（叠放规则、跳转退路按它分）。"""
+        haystack = f"{self.app}\n{self.app_id}".lower()
+        if "slack" in haystack:
+            return "slack"
+        if "chrome" in haystack:
+            return "chrome"
+        return "claude" if "claude" in haystack else "other"
 
     @property
     def sender(self) -> str:
@@ -112,6 +217,36 @@ class Notice:
     @property
     def message(self) -> str:
         return split_body(self.body)[1]
+
+
+def source_key(notice: Notice, stack: dict | None = None) -> str:
+    """通知按「来源」归组用的键；空 = 不归组（自己一张卡）。怎么归由 ``stack``（``notifications.stack``）定：
+
+    - Slack ``channel``：工作区 + 频道（私聊也是一个频道），取深链接里的 ``team`` / ``id``；没有深链接时
+      退回频道名（通知标题），再没有就整个 Slack 一组。
+    - Chrome ``site``：发通知的网站。Chrome 的启动参数里带着来源网址（``…|https://mail.google.com/|…``），
+      取它的主机名（扩展发的取扩展 id）；取不到就整个 Chrome 一组。
+    - ``app``：整个应用一组；``off``：不归组。别的应用暂不归组；要加规则就加在这里和 ``STACK_CHOICES``。
+    """
+    kind = notice.kind
+    if kind not in STACK_CHOICES:
+        return ""
+    mode = normalize_stack(stack)[kind]
+    if mode == "off":
+        return ""
+    if mode == "channel":
+        query = parse_qs(urlsplit(notice.launch).query) if notice.launch else {}
+        channel = (query.get("id") or [""])[0]
+        if channel:
+            return f"slack:{(query.get('team') or [''])[0]}:{channel}"
+        title = " ".join(str(notice.title or "").split())
+        if title:
+            return f"slack:{title}"
+    if mode == "site":
+        match = _URL_RE.search(notice.launch or "")
+        if match:
+            return f"chrome:{match.group('host').lower()}"
+    return kind
 
 
 def split_body(body: str) -> tuple[str, str]:
@@ -139,6 +274,90 @@ def merge(known: Iterable[Notice], fresh: Iterable[Notice], *, keep: int,
     merged.sort(key=lambda n: (n.created, n.uid), reverse=True)
     new_uids = [n.uid for n in fresh_by_uid.values() if n.uid not in known_uids]
     return merged[:max(1, int(keep))], new_uids
+
+
+# ---------------------------------------------------------------- 启动参数（通知数据库的副本）
+def parse_launch(payload) -> tuple[str, str]:
+    """toast XML 根上的 (``activationType``, ``launch``)；类型缺省是 ``foreground``。解析不了返回 ("", "")。"""
+    if isinstance(payload, (bytes, bytearray)):
+        payload = bytes(payload).decode("utf-8", "replace")
+    try:
+        root = ET.fromstring(str(payload or ""))
+    except ET.ParseError:
+        return "", ""
+    return str(root.get("activationType") or "foreground"), str(root.get("launch") or "")
+
+
+def claude_session_link(tag: str, group: str) -> str:
+    """Claude 通知的 Group / Tag 里带的会话 id 拼成打开那个会话的链接；没有返回空。"""
+    for value in (group, tag):
+        match = _CLAUDE_SESSION_RE.search(str(value or ""))
+        if match:
+            return CLAUDE_SESSION_URL.format(id=match.group("id"))
+    return ""
+
+
+def launchable_uri(uri: str) -> bool:
+    """能交给系统直接打开的启动参数：有正经的协议名（至少两个字母，排除 ``C:\\…`` 这种盘符路径），
+    且不是 file / 脚本类。"""
+    match = _SCHEME_RE.match(str(uri or ""))
+    return bool(match) and match.group("scheme").lower() not in _UNSAFE_SCHEMES
+
+
+def launch_targets(uids: Iterable[int], *, source_dir: str = _DB_DIR) -> dict[int, tuple[str, str]]:
+    """这些通知 id 的 (activationType, launch)。数据库被系统服务开着：复制到临时目录查副本，查完删掉。
+
+    查不到的 id 不在结果里；数据库不在 / 读坏了返回 ``{}``。在工作线程里调用。
+    """
+    wanted = sorted({int(uid) for uid in uids})
+    folder = os.path.expandvars(source_dir)
+    if not wanted or not os.path.isfile(os.path.join(folder, _DB_NAME)):
+        return {}
+    found: dict[int, tuple[str, str]] = {}
+    with tempfile.TemporaryDirectory(prefix="bff-wpn-") as scratch:
+        try:
+            for suffix in ("", "-wal", "-shm"):
+                source = os.path.join(folder, _DB_NAME + suffix)
+                if os.path.isfile(source):
+                    shutil.copyfile(source, os.path.join(scratch, _DB_NAME + suffix))
+            db = sqlite3.connect(os.path.join(scratch, _DB_NAME))
+            try:
+                marks = ",".join("?" * len(wanted))
+                rows = db.execute(f'SELECT Id, Payload, Tag, "Group" FROM Notification WHERE Id IN ({marks})',
+                                  wanted).fetchall()
+            finally:
+                db.close()
+        except (OSError, sqlite3.Error):
+            log.debug("通知中心：读通知数据库副本失败", exc_info=True)
+            return {}
+    for uid, payload, tag, group in rows:
+        kind, launch = parse_launch(payload)
+        if kind and not launch:
+            session = claude_session_link(tag, group)
+            if session:
+                kind, launch = "protocol", session
+        if kind:
+            found[int(uid)] = (kind, launch)
+    return found
+
+
+def with_launch(notices: list[Notice], lookup: Callable[[list[int]], dict] = launch_targets) -> list[Notice]:
+    """给还没查过启动参数的那几条补上（一次查一批）；查不到的记成 ``none``，以后不再查。"""
+    missing = [n.uid for n in notices if not n.activation]
+    if not missing:
+        return notices
+    try:
+        found = lookup(missing)
+    except Exception:  # noqa: BLE001 - 查不到就当没有，跳转走老路
+        log.debug("通知中心：查启动参数失败", exc_info=True)
+        found = {}
+    out = []
+    for notice in notices:
+        if not notice.activation:
+            kind, launch = found.get(notice.uid, ("none", ""))
+            notice = replace(notice, activation=kind or "none", launch=launch)
+        out.append(notice)
+    return out
 
 
 # ---------------------------------------------------------------- 读（WinRT）
@@ -247,15 +466,16 @@ def read_toasts(fragments: Iterable[str], *, want_logos: Iterable[str] = (),
     """通知中心里现有的、应用名匹配的 toast，以及 ``want_logos`` 里那些应用的图标字节。
 
     ``known`` 是上一轮的结果：同一 id 直接复用，不再逐条取应用信息（一条约 10 ms，列表本身
-    才几十毫秒）。在工作线程里调用（里面是 ``asyncio.run``）。不可用 / 没权限 / 出错都返回 ``([], {})``。
+    才几十毫秒），启动参数也只给新来的查一次（``with_launch``）。在工作线程里调用（里面是 ``asyncio.run``）。不可用 / 没权限 / 出错都返回 ``([], {})``。
     """
     if _import_winrt() is None:
         return [], {}
     try:
-        return asyncio.run(_read_async(tuple(fragments), set(want_logos), {n.uid: n for n in known}))
+        notices, logos = asyncio.run(_read_async(tuple(fragments), set(want_logos), {n.uid: n for n in known}))
     except Exception:  # noqa: BLE001 - 读失败这一轮算空，下一轮再来
         log.debug("通知中心：读取失败", exc_info=True)
         return [], {}
+    return with_launch(notices), logos
 
 
 def remove_from_center(uid: int) -> bool:
@@ -341,12 +561,82 @@ def _invoke_in_center(notice: Notice, *, wait_s: float = _CENTER_WAIT_S) -> bool
         comtypes.CoUninitialize()
 
 
+def _registry_app_path(name: str) -> str:
+    """``App Paths`` 里登记的程序路径（先当前用户、再本机）；没有返回空。"""
+    if sys.platform != "win32":
+        return ""
+    import winreg
+
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{name}") as key:
+                value = str(winreg.QueryValue(key, None) or "").strip().strip('"')
+        except OSError:
+            continue
+        if value:
+            return value
+    return ""
+
+
+def chrome_exe() -> str:
+    """本机 chrome.exe 的路径（App Paths 登记的，或常见安装位置）；找不到返回空。"""
+    for candidate in (_registry_app_path("chrome.exe"), *(os.path.expandvars(p) for p in _CHROME_FALLBACKS)):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+#: AllowSetForegroundWindow 的「任何进程」
+ASFW_ANY = 0xFFFFFFFF
+
+
+def _spawn_detached(argv: list[str]) -> None:
+    """起 chrome.exe 交还点击。先放行前台权限：系统的激活组件也是这样给 chrome.exe 的
+    （Chromium ``grant_foreground_privilege``），新起的那个再转给已在跑的 Chrome，网页的点击处理才能把窗口
+    拿到前台；不放行时 Chrome 收到了点击、窗口却出不来。桌宠刚收到用户的点击，手里有这个权限。"""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
+        except Exception:  # noqa: BLE001 - 放行失败照样起，只是可能到不了前台
+            log.debug("通知中心：放行前台权限失败", exc_info=True)
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(argv, close_fds=True, creationflags=flags)  # noqa: S603 - 参数列表，不经 shell
+
+
 def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[Notice], bool] | None = None,
-             open_url: Callable[[str], None] | None = None) -> str:
-    """跳到这条通知对应的消息。返回：``activated``（经通知中心交给了应用）/ ``opened_app``
-    （通知中心里没有了，改为打开应用）/ ``gone``（没有了、也不知道怎么打开）/ ``failed``。"""
+             open_url: Callable[[str], None] | None = None, remove: Callable[[int], object] | None = None,
+             spawn: Callable[[list[str]], None] | None = None, chrome_exe: str | None = None) -> str:
+    """跳到这条通知对应的消息。返回：``launched``（直接打开了通知自己的启动参数，Claude 的是它的会话）/
+    ``activated``（经通知中心交给了应用；没带会话的 Claude 通知交给它的「等你处理」入口）/ ``opened_app``（通知中心里没有了，改为打开应用）/ ``gone``（没有了、
+    也不知道怎么打开）/ ``failed``。"""
     invoke = invoke or _invoke_in_center
     open_url = open_url or os.startfile
+    remove = remove or remove_from_center
+    if notice.launchable:
+        try:
+            if notice.activation == "protocol":
+                open_url(notice.launch)
+            else:                           # Chrome：照它的激活组件那样把点击交还给 Chrome
+                exe = globals()["chrome_exe"]() if chrome_exe is None else chrome_exe
+                if not exe:
+                    raise FileNotFoundError("chrome.exe")
+                (spawn or _spawn_detached)([exe, f"--notification-launch-id={notice.launch}"])
+        except OSError:
+            log.debug("通知中心：直接打开失败，走通知中心", exc_info=True)
+        else:
+            if notice.in_center:
+                remove(notice.uid)          # 系统点开一条也会把它从通知中心拿掉
+            return "launched"
+    if notice.kind == "claude":             # 没带会话的 Claude 通知：交给 Claude，不开通知中心
+        try:
+            open_url(CLAUDE_WAITING_URL)
+        except OSError:
+            return "failed"
+        if notice.in_center:
+            remove(notice.uid)
+        return "activated"
     if notice.in_center:
         try:
             if invoke(notice):

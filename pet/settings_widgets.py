@@ -96,6 +96,7 @@ SETTINGS_DOMAIN_NAV = (
     ("互动", "interaction"),
     ("菜单", "application"),
     ("桌面组件", "island"),
+    ("通知", "bell"),             # 2026-10-26：读 Windows 通知中心、叠放、自家弹窗（原在「自动化与联动」）
     ("AI 与对话", "chat"),
     ("简报与笔记", "briefing"),   # 2026-10-24：定时让 AI 读、AI 协助记的功能（简报 / Slack 关注 / 笔记 / 个人助理）
     ("自动化与联动", "automation"),
@@ -111,6 +112,7 @@ SETTINGS_DOMAIN_KEYS = {
     "互动": "settings.domain.interaction",
     "菜单": "settings.domain.menu",
     "桌面组件": "settings.domain.desktop",
+    "通知": "settings.domain.notifications",
     "AI 与对话": "settings.domain.ai",
     "简报与笔记": "settings.domain.briefing",
     "自动化与联动": "settings.domain.automation",
