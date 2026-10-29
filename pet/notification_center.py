@@ -23,7 +23,9 @@
   从通知中心拿掉。Chrome 的通知是 ``activationType="foreground"``（走 Chrome 的 COM 激活组件
   ``notification_helper.exe``），那个组件做的事就是用 ``chrome.exe --notification-launch-id=<launch>``
   把点击交还给 Chrome，Chrome 再触发网页自己的「通知被点击」（Gmail 打开那封邮件）；我们照做
-  （2026-10-26：原来走通知中心 UIA，Gmail 的通知点了不跳）。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
+  （2026-10-26：原来走通知中心 UIA，Gmail 的通知点了不跳）。Claude 桌面版的通知没有启动参数，
+  但库里的 Group / Tag 带着会话 id，拼成 ``claude://claude.ai/epitaxy/<id>`` 直接打开那个会话；
+  没有会话 id 的交给 ``claude://code/needs-input``，都不经通知中心（2026-10-28）。没有的（应用走 COM 激活，如 Teams）退回老办法：打开通知中心
   （``ms-actioncenter:``），用 UI 自动化找到那条通知并 Invoke（实测 0.3 秒）。通知中心里也没有了
   就再退一步：``slack://open?team=<id>`` 打开 Slack（team id 读 Slack 自己的 ``root-state.json``）。
 
@@ -85,6 +87,13 @@ _CHROME_FALLBACKS = (
     r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
 )
 _URL_RE = re.compile(r"(?:https?|chrome-extension)://(?P<host>[^/|#?\s]+)", re.I)
+#: Claude 桌面版的通知没有 launch（点击走它进程里的回调），会话 id 在库里的 Group（``session-<id>``）/
+#: Tag（``idle-<id>``）里。本地 Code 会话是 ``local_…``，云端的是 ``session_…`` / ``cse_…``（Claude 4.29 自己
+#: 校验 id 用的就是这两种形状）。打开会话用应用自己给的外链 ``claude://claude.ai/epitaxy/<id>``。
+_CLAUDE_SESSION_RE = re.compile(r"(?:^|-)(?P<id>local_[A-Za-z0-9-]{1,64}|(?:cse|session)_[A-Za-z0-9_-]{1,64})$")
+CLAUDE_SESSION_URL = "claude://claude.ai/epitaxy/{id}"
+#: 没有会话 id 的 Claude 通知：交给它自己的「等你处理的会话」入口（跳转列表里的那一项）
+CLAUDE_WAITING_URL = "claude://code/needs-input"
 
 #: Slack 两种安装方式的本地状态文件（里面有 workspace 的 id / 名字 / 域名）
 _SLACK_STATE_FILES = (
@@ -193,11 +202,13 @@ class Notice:
 
     @property
     def kind(self) -> str:
-        """``slack`` / ``chrome`` / ``other``（叠放规则、跳转退路按它分）。"""
+        """``slack`` / ``chrome`` / ``claude`` / ``other``（叠放规则、跳转退路按它分）。"""
         haystack = f"{self.app}\n{self.app_id}".lower()
         if "slack" in haystack:
             return "slack"
-        return "chrome" if "chrome" in haystack else "other"
+        if "chrome" in haystack:
+            return "chrome"
+        return "claude" if "claude" in haystack else "other"
 
     @property
     def sender(self) -> str:
@@ -277,6 +288,15 @@ def parse_launch(payload) -> tuple[str, str]:
     return str(root.get("activationType") or "foreground"), str(root.get("launch") or "")
 
 
+def claude_session_link(tag: str, group: str) -> str:
+    """Claude 通知的 Group / Tag 里带的会话 id 拼成打开那个会话的链接；没有返回空。"""
+    for value in (group, tag):
+        match = _CLAUDE_SESSION_RE.search(str(value or ""))
+        if match:
+            return CLAUDE_SESSION_URL.format(id=match.group("id"))
+    return ""
+
+
 def launchable_uri(uri: str) -> bool:
     """能交给系统直接打开的启动参数：有正经的协议名（至少两个字母，排除 ``C:\\…`` 这种盘符路径），
     且不是 file / 脚本类。"""
@@ -303,14 +323,19 @@ def launch_targets(uids: Iterable[int], *, source_dir: str = _DB_DIR) -> dict[in
             db = sqlite3.connect(os.path.join(scratch, _DB_NAME))
             try:
                 marks = ",".join("?" * len(wanted))
-                rows = db.execute(f"SELECT Id, Payload FROM Notification WHERE Id IN ({marks})", wanted).fetchall()
+                rows = db.execute(f'SELECT Id, Payload, Tag, "Group" FROM Notification WHERE Id IN ({marks})',
+                                  wanted).fetchall()
             finally:
                 db.close()
         except (OSError, sqlite3.Error):
             log.debug("通知中心：读通知数据库副本失败", exc_info=True)
             return {}
-    for uid, payload in rows:
+    for uid, payload, tag, group in rows:
         kind, launch = parse_launch(payload)
+        if kind and not launch:
+            session = claude_session_link(tag, group)
+            if session:
+                kind, launch = "protocol", session
         if kind:
             found[int(uid)] = (kind, launch)
     return found
@@ -583,8 +608,8 @@ def _spawn_detached(argv: list[str]) -> None:
 def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[Notice], bool] | None = None,
              open_url: Callable[[str], None] | None = None, remove: Callable[[int], object] | None = None,
              spawn: Callable[[list[str]], None] | None = None, chrome_exe: str | None = None) -> str:
-    """跳到这条通知对应的消息。返回：``launched``（直接打开了通知自己的启动参数）/ ``activated``
-    （经通知中心交给了应用）/ ``opened_app``（通知中心里没有了，改为打开应用）/ ``gone``（没有了、
+    """跳到这条通知对应的消息。返回：``launched``（直接打开了通知自己的启动参数，Claude 的是它的会话）/
+    ``activated``（经通知中心交给了应用；没带会话的 Claude 通知交给它的「等你处理」入口）/ ``opened_app``（通知中心里没有了，改为打开应用）/ ``gone``（没有了、
     也不知道怎么打开）/ ``failed``。"""
     invoke = invoke or _invoke_in_center
     open_url = open_url or os.startfile
@@ -604,6 +629,14 @@ def activate(notice: Notice, *, team_id: str | None = None, invoke: Callable[[No
             if notice.in_center:
                 remove(notice.uid)          # 系统点开一条也会把它从通知中心拿掉
             return "launched"
+    if notice.kind == "claude":             # 没带会话的 Claude 通知：交给 Claude，不开通知中心
+        try:
+            open_url(CLAUDE_WAITING_URL)
+        except OSError:
+            return "failed"
+        if notice.in_center:
+            remove(notice.uid)
+        return "activated"
     if notice.in_center:
         try:
             if invoke(notice):

@@ -214,10 +214,12 @@ def test_only_real_uri_schemes_are_launched(uri, ok):
 
 
 def _make_db(folder, rows):
+    """``rows``：(Id, Payload) 或 (Id, Payload, Tag, Group)，列名照真库。"""
     folder.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(folder / "wpndatabase.db")
-    db.execute("CREATE TABLE Notification (Id INTEGER, Type TEXT, Payload BLOB)")
-    db.executemany("INSERT INTO Notification VALUES (?, 'toast', ?)", rows)
+    db.execute('CREATE TABLE Notification (Id INTEGER, Type TEXT, Payload BLOB, Tag TEXT, "Group" TEXT)')
+    db.executemany("INSERT INTO Notification VALUES (?, 'toast', ?, ?, ?)",
+                   [(*row, "", "") if len(row) == 2 else row for row in rows])
     db.commit()
     db.close()
 
@@ -229,6 +231,57 @@ def test_launch_targets_reads_a_copy_of_the_database(tmp_path):
     assert found == {11: ("protocol", "slack://channel?id=C1&message=1.2&team=T1"), 12: ("foreground", "")}
     assert nc.launch_targets([11], source_dir=str(tmp_path / "missing")) == {}
     assert nc.launch_targets([], source_dir=str(source)) == {}
+
+
+# 2026-10-28 实机：Claude 桌面版的通知没有 launch，会话 id 在 Group / Tag 里
+_CLAUDE_TOAST = b'<toast><header id="session-x" title="t" arguments=""/><visual/></toast>'
+
+
+@pytest.mark.parametrize("tag, group, launch", [
+    ("idle-local_b317ace3-a3a1-4b8d-964b-730530d145aa", "session-local_b317ace3-a3a1-4b8d-964b-730530d145aa",
+     "claude://claude.ai/epitaxy/local_b317ace3-a3a1-4b8d-964b-730530d145aa"),
+    ("idle-session_01NQa3UD5tZn4DGrcLsudx7H", "session-session_01NQa3UD5tZn4DGrcLsudx7H",
+     "claude://claude.ai/epitaxy/session_01NQa3UD5tZn4DGrcLsudx7H"),
+    ("idle-local_abc", "", "claude://claude.ai/epitaxy/local_abc"),          # 只有 Tag 也认
+    ("hub-awaiting-2f343638-1c40-4077-8977-5e0c81f250bc", "Notifications", ""),   # 没有会话 id
+    ("x", "session-local_a/../b", ""),                                        # 不像 id 的不拼
+])
+def test_launch_targets_turns_a_claude_session_id_into_its_link(tmp_path, tag, group, launch):
+    source = tmp_path / "Notifications"
+    _make_db(source, [(21, _CLAUDE_TOAST, tag, group)])
+    assert nc.launch_targets([21], source_dir=str(source)) == {21: ("protocol", launch) if launch else ("foreground", "")}
+
+
+def test_a_toast_with_its_own_launch_keeps_it_even_with_a_session_like_group(tmp_path):
+    source = tmp_path / "Notifications"
+    _make_db(source, [(22, _SLACK_TOAST.encode("utf-8"), "idle-local_abc", "session-local_abc")])
+    assert nc.launch_targets([22], source_dir=str(source))[22] == ("protocol", "slack://channel?id=C1&message=1.2&team=T1")
+
+
+def _claude(uid=31, launch="", activation="foreground", in_center=True):
+    return nc.Notice(uid=uid, app="Claude", app_id="Claude_pzs8sxrjxfjjc!Claude", title="t", body="b", created=1,
+                     in_center=in_center, launch=launch, activation=activation)
+
+
+def test_claude_notifications_jump_to_their_session_without_the_notification_center():
+    assert _claude().kind == "claude"
+    link = "claude://claude.ai/epitaxy/local_abc"
+    opened, invoked, removed = [], [], []
+    result = nc.activate(_claude(launch=link, activation="protocol"), team_id="", invoke=invoked.append,
+                         open_url=opened.append, remove=removed.append)
+    assert result == "launched" and opened == [link] and invoked == [] and removed == [31]
+
+
+def test_claude_notifications_without_a_session_hand_over_to_claude_not_the_center():
+    """没有会话 id（如「Claude needs…」那种汇总提醒）：不开通知中心，交给 Claude 自己的「等你处理」入口。"""
+    opened, invoked, removed = [], [], []
+    result = nc.activate(_claude(), team_id="", invoke=lambda n: invoked.append(n) or True,
+                         open_url=opened.append, remove=removed.append)
+    assert result == "activated"
+    assert opened == [nc.CLAUDE_WAITING_URL] and invoked == [], "不开通知中心"
+    assert removed == [31], "像系统一样，点过的从通知中心拿掉"
+    assert nc.activate(_claude(in_center=False), team_id="", invoke=invoked.append, open_url=opened.append,
+                       remove=removed.append) == "activated" and removed == [31]
 
 
 def test_with_launch_fills_only_notices_that_lack_it():
