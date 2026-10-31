@@ -183,9 +183,10 @@ def test_window_shows_numbers_on_the_flow_tiles_and_lists_candidates(tmp_path):
     window = controller.window
     try:
         assert window.windowTitle() == "会话记忆蒸馏"
-        assert window.tabs.count() == 3 and [window.tabs.tabText(i) for i in range(3)] == ["流程", "候选", "统计"]
+        assert window.tabs.count() == 4 and [window.tabs.tabText(i) for i in range(4)] == ["流程", "候选", "提案", "统计"]
         assert window.diagram.value("store").startswith("今天 0 条 · 共 0 条")
-        assert window.diagram.value("distill") == "第二期" and not window.distill_btn.isEnabled()
+        assert window.diagram.value("distill") == "还没跑过" and window.distill_btn.isEnabled()
+        assert window.diagram.value("review") == "待审 0 · 已接受 0 · 已拒 0" and window.diagram.value("sink") == "全局 0 条 · 项目 0 条"
         assert window.list.count() == 0 and "还没有候选" in window.detail.toPlainText()
         window.refresh_btn.click()
         assert _pump(lambda: window.diagram.value("store").startswith("今天 2 条 · 共 2 条"))
@@ -268,8 +269,8 @@ def test_window_in_english(tmp_path):
     window = controller.window
     try:
         assert window.windowTitle() == "Session Memory Distill"
-        assert [window.tabs.tabText(i) for i in range(3)] == ["Flow", "Candidates", "Stats"]
-        assert window.diagram.value("distill") == "phase 2"
+        assert [window.tabs.tabText(i) for i in range(4)] == ["Flow", "Candidates", "Proposals", "Stats"]
+        assert window.diagram.value("distill") == "never"
         assert window.place_buttons[svc.PLACE_CANDIDATES].text() == "Raw candidate pool (local)"
     finally:
         window.close()
@@ -326,7 +327,7 @@ def test_settings_rows_round_trip(tmp_path):
     dialog.config = config
     rows = sd.distill_rows(dialog)
     assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
-        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "prompt")]
+        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt")]
     assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
     assert dialog.distill_keep_days_select.currentData() == 60
     assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"

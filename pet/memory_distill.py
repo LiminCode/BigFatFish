@@ -525,6 +525,7 @@ def normalize(value) -> dict:
         "effort": wb.normalize_effort(data.get("effort", wb.EFFORT)),
         "prompt_zh": wb.normalize_text(data.get("prompt_zh")),
         "prompt_en": wb.normalize_text(data.get("prompt_en")),
+        "mirror_to_vault": bool(data.get("mirror_to_vault", True)),      # 接受的条目镜像进 AI-Base（第二期）
     }
 
 
