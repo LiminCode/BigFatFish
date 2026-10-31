@@ -20,6 +20,8 @@ from PySide6.QtWidgets import QApplication
 
 from . import claude_hooks
 from . import memory_distill as md
+from . import memory_distill_run as run
+from . import memory_distill_sink as sink
 from . import personal_vault as pv
 from . import work_notes as wn
 
@@ -88,13 +90,19 @@ class MemoryDistillService(QObject):
     refreshed = Signal(int)
     changed = Signal()
     failed = Signal(str)
+    distilled = Signal(object, bool)         # RunResult, 手动?（第二期）
+    reviewed = Signal(str, object)           # 提案 id, Applied
+    synced = Signal(bool, str)               # 知识库镜像推送的结果
     _done = Signal(int, int, str, str)       # generation, added, error, wsl_dir（线程 → GUI）
+    _distill_done = Signal(int, object, bool)
+    _sync_done = Signal(int, bool, str)
 
     STARTUP_DELAY_MS = 40_000                # 比个人助理 / 工作笔记再晚一点，别和它们挤在启动那几秒
     REFRESH_INTERVAL_MS = 60 * 60 * 1000     # 每小时增量扫一次（实测无变化 11 ms、首扫 104 MB 0.9 s）
 
     def __init__(self, config, parent: QObject | None = None, *, spawn=_spawn_thread, roots=None,
-                 wsl_runner=claude_hooks.run_wsl, opener=_open_target, now=None) -> None:
+                 wsl_runner=claude_hooks.run_wsl, opener=_open_target, now=None, complete=None, provider=None,
+                 home: Path | None = None, token=None, git=pv.run_git) -> None:
         super().__init__(parent)
         self._config = config
         self._spawn = spawn
@@ -102,14 +110,26 @@ class MemoryDistillService(QObject):
         self._wsl_runner = wsl_runner
         self._open = opener
         self._now = now or dt.datetime.now
+        self._complete = complete                # None = anthropic_provider.complete（用时再导入）
+        self._provider = provider                # None = 「AI 对话」里的服务商（个人 key）
+        self._home = home                        # None = Path.home()
+        self._token = token or pv.github_token
+        self._git = git
         self._generation = 0
         self._busy = False
+        self._distilling = False
+        self._syncing = False
         self._wsl_dir: str | None = None     # None = 还没问过
         self.last_error = ""
         self.last_refresh_at = ""
+        self.last_run: run.RunResult | None = None
+        self.sync_state = ""                 # "" / pushing / pushed / failed
+        self.sync_error = ""
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.check)
         self._done.connect(self._on_done)
+        self._distill_done.connect(self._on_distill_done)
+        self._sync_done.connect(self._on_sync_done)
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.stop)
@@ -138,11 +158,16 @@ class MemoryDistillService(QObject):
         self._timer.stop()
         self._generation += 1
         self._busy = False
+        self._distilling = False
+        self._syncing = False
 
     def check(self) -> None:
-        """定时：开着才自动抽。"""
-        if self.settings()["enabled"]:
+        """定时：开着才自动抽；到了每日时刻就蒸馏一次。"""
+        settings = self.settings()
+        if settings["enabled"]:
             self.refresh_now()
+        if run.is_due(settings, self.distill_state(), self._now()):
+            self.distill_now(manual=False)
 
     # ---------------------------------------------------------- 抽取
     def refresh_now(self) -> bool:
@@ -198,7 +223,168 @@ class MemoryDistillService(QObject):
         stats["enabled"] = self.settings()["enabled"]
         stats["busy"] = self._busy
         stats["error"] = self.last_error
+        state = self.distill_state()
+        entries = self.entries().load()
+        stats["distill"] = {"busy": self._distilling, "last_run_at": state.get("last_run_at", ""),
+                            "last_error": state.get("last_error", ""), "last_result": state.get("last_result") or {},
+                            "attempts": int(state.get("attempts") or 0)}
+        stats["proposals"] = self.proposals().counts()
+        stats["entries"] = {"global": sum(1 for e in entries if not e.retired and e.scope == "global"),
+                            "project": sum(1 for e in entries if not e.retired and e.scope == "project"),
+                            "retired": sum(1 for e in entries if e.retired)}
+        stats["vault"] = {"state": self.sync_state, "error": self.sync_error, "dir": self.vault_dir()}
         return stats
+
+    # ---------------------------------------------------------- 蒸馏（第二期）
+    @property
+    def root(self) -> Path:
+        return md.store_root(self._config.dir)
+
+    def distill_state(self) -> dict:
+        return run.load_state(self.root)
+
+    def proposals(self) -> run.ProposalStore:
+        return run.ProposalStore(self.root)
+
+    def entries(self) -> sink.EntriesStore:
+        return sink.EntriesStore(self.root)
+
+    def vault_dir(self) -> str:
+        return pv.normalize(self._config.get(pv.CONFIG_KEY))["repo_dir"]
+
+    @property
+    def distilling(self) -> bool:
+        return self._distilling
+
+    def _resolve_provider(self):
+        if self._provider is not None:
+            return self._provider
+        from .personal_service import resolve_chat_provider
+
+        return resolve_chat_provider(self._config)
+
+    def _resolve_complete(self):
+        if self._complete is not None:
+            return self._complete
+        from .chat import anthropic_provider as ap
+
+        return ap.complete
+
+    def distill_now(self, manual: bool = True) -> bool:
+        """把上次之后的个人侧候选交给模型，提案进提案库。后台线程；忙着不叠加。"""
+        if self._distilling:
+            return False
+        now = self._now()
+        settings = self.settings()
+        state = self.distill_state()
+        try:
+            provider = self._resolve_provider()
+            complete = self._resolve_complete()
+        except Exception as exc:  # noqa: BLE001 - 没装聊天模块 / 没配 key
+            result = run.RunResult(error=str(exc) or type(exc).__name__, run_at=now.isoformat(timespec="seconds"))
+            run.save_state(self.root, {**run.mark_attempt(state, now), "last_error": result.error})
+            self.last_run = result
+            self.distilled.emit(result, manual)
+            self.changed.emit()
+            return False
+        self._distilling = True
+        self._generation += 1
+        generation = self._generation
+        rows = self.store.read_all()
+        store = self.proposals()
+        entries_text = "\n".join(f"- [{e.scope}{' ' + e.project if e.project else ''}] {e.title} — {e.how or e.why}"
+                                 for e in self.entries().active())
+        root, home = self.root, self._home
+
+        def work() -> None:
+            try:
+                result, new_state = run.run_once(now, settings, rows, state, provider, store=store, complete=complete,
+                                                 home=home, entries_text=entries_text)
+                run.save_state(root, new_state)
+            except Exception as exc:  # noqa: BLE001 - 不让线程静默死掉
+                log.exception("会话记忆蒸馏：蒸馏失败")
+                result = run.RunResult(error=f"{type(exc).__name__}: {exc}", run_at=now.isoformat(timespec="seconds"))
+            try:
+                self._distill_done.emit(generation, result, manual)
+            except RuntimeError:
+                pass
+
+        self.changed.emit()                  # 先让页面显示「正在总结」，再起线程（测试里线程是同步的）
+        self._spawn(work)
+        return True
+
+    def _on_distill_done(self, generation: int, result, manual: bool) -> None:
+        if generation != self._generation:
+            return
+        self._distilling = False
+        self.last_run = result
+        self.changed.emit()                  # 先重摆数字（会清状态行），再报这一次的结果
+        self.distilled.emit(result, manual)
+
+    def review(self, pid: str, status: str, *, title: str | None = None, why: str | None = None,
+               how: str | None = None) -> sink.Applied | None:
+        """用户审一条：接受就立刻落盘（文件写入很快，在 GUI 线程），镜像推送另起线程；拒 / 跳过只记状态。"""
+        store = self.proposals()
+        proposal = store.get(pid)
+        if proposal is None or status not in run.STATUSES:
+            return None
+        if title is not None and title.strip():
+            proposal.title = " ".join(title.split())
+        if why is not None:
+            proposal.why = why.strip()
+        if how is not None:
+            proposal.how = how.strip()
+        now = self._now()
+        proposal.status = status
+        proposal.reviewed_at = now.isoformat(timespec="seconds")
+        applied = None
+        if status == run.STATUS_ACCEPTED:
+            settings = self.settings()
+            applied = sink.apply_proposal(proposal, now, entries=self.entries(), home=self._home,
+                                          backup_dir=self.root / sink.BACKUP_DIR, vault_dir=self.vault_dir(),
+                                          mirror=bool(settings.get("mirror_to_vault", True)))
+            proposal.applied = applied.to_dict()
+            if applied.error:
+                proposal.status = run.STATUS_PENDING       # 没落成就还留在待审里
+        store.update(proposal)
+        if applied is not None and applied.vault_written:
+            self.sync_vault()
+        self.reviewed.emit(pid, applied)
+        self.changed.emit()
+        return applied
+
+    def sync_vault(self) -> bool:
+        """把知识库里那篇 commit + push（后台线程）。"""
+        if self._syncing:
+            return False
+        repo_dir = self.vault_dir()
+        if not repo_dir or not Path(repo_dir).is_dir():
+            return False
+        self._syncing = True
+        self.sync_state = "pushing"
+        self._generation += 1
+        generation = self._generation
+        now, git, token = self._now(), self._git, self._token
+
+        def work() -> None:
+            try:
+                ok, reason = sink.sync_vault(repo_dir, now, run_git=git, token=token() if callable(token) else str(token or ""))
+            except Exception as exc:  # noqa: BLE001
+                ok, reason = False, f"{type(exc).__name__}: {exc}"
+            try:
+                self._sync_done.emit(generation, ok, reason)
+            except RuntimeError:
+                pass
+
+        self._spawn(work)
+        return True
+
+    def _on_sync_done(self, generation: int, ok: bool, reason: str) -> None:
+        self._syncing = False
+        self.sync_state = "pushed" if ok else "failed"
+        self.sync_error = "" if ok else reason
+        self.synced.emit(ok, reason)
+        self.changed.emit()
 
     def recent(self, limit: int = 200) -> list[dict]:
         """最近的候选，按时间新的在前（日文件里的顺序是扫到的顺序，不是时间顺序）。"""

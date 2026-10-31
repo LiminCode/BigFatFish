@@ -16,17 +16,18 @@ from typing import Iterable
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea, QSplitter,
-                               QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QPlainTextEdit, QScrollArea, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from . import memory_distill as md
+from . import memory_distill_run as run
 from . import memory_distill_service as svc
 from .i18n import t
 from .settings_widgets import TiltButton
 from .work_briefing_ui import THEMES, briefing_tokens, resolve_dark, save_theme_preference, theme_preference
 
 STAGES = ("source", "extract", "store", "distill", "review", "sink")
-STAGE_PHASE = {"source": 1, "extract": 1, "store": 1, "distill": 2, "review": 2, "sink": 2}
+STAGE_PHASE = {"source": 1, "extract": 1, "store": 1, "distill": 2, "review": 2, "sink": 2}   # 第二期做完：都实装了，样式上不再区分
 #: 点格子打开什么
 STAGE_PLACE = {"source": svc.PLACE_TRANSCRIPTS, "store": svc.PLACE_CANDIDATES, "sink": svc.PLACE_GLOBAL_CLAUDE_MD}
 TILE_H = 96
@@ -66,6 +67,12 @@ QTextBrowser#briefingBody, QTextBrowser#notesDetail, QListWidget#notesList {{
     background: {tile}; color: {text}; border: 0; border-radius: 0; padding: 12px 14px; font-size: 13px;
 }}
 QSplitter#notesSplitter::handle {{ background: transparent; height: 8px; }}
+QLineEdit#notesInput, QPlainTextEdit#notesInput {{
+    background: {field}; color: {text}; border: 2px solid transparent; border-radius: 0; padding: 6px 8px; font-size: 13px;
+}}
+QLineEdit#notesInput:focus, QPlainTextEdit#notesInput:focus {{ border: 2px solid {accent}; }}
+QLabel#distillHead {{ color: {muted}; font-size: 12px; }}
+QLabel#distillEvidence {{ background: {tile}; color: {text}; padding: 8px 10px; font-size: 12px; }}
 QListWidget#notesList::item {{ padding: 8px 6px; border-radius: 0; }}
 QListWidget#notesList::item:selected {{ background: {selected}; color: {selected_text}; }}
 QListWidget#notesList::item:hover:!selected {{ background: {tile_hover}; }}
@@ -109,10 +116,54 @@ def stage_values(stats: dict) -> dict[str, str]:
         "store": t("distill.stage.store_value", today=today, total=total,
                    rules=int(by_tag.get(md.TAG_RULE, 0)) + int(by_tag.get(md.TAG_DECISION, 0))
                    + int(by_tag.get(md.TAG_CORRECTION, 0))),
-        "distill": t("distill.stage.phase2"),
-        "review": t("distill.stage.phase2"),
-        "sink": t("distill.stage.phase2"),
+        "distill": _distill_value(stats.get("distill") or {}),
+        "review": t("distill.stage.review_value", **{k: int((stats.get("proposals") or {}).get(k, 0))
+                                                   for k in ("pending", "accepted", "rejected")}),
+        "sink": _sink_value(stats),
     }
+
+
+def _distill_value(state: dict) -> str:
+    if state.get("busy"):
+        return t("distill.stage.distill_busy")
+    if state.get("last_error"):
+        return t("distill.stage.distill_error", error=str(state["last_error"])[:60])
+    if not state.get("last_run_at"):
+        return t("distill.never")
+    last = state.get("last_result") or {}
+    return t("distill.stage.distill_value", when=_when(str(state["last_run_at"])), n=int(last.get("proposals", 0)))
+
+
+def _sink_value(stats: dict) -> str:
+    entries = stats.get("entries") or {}
+    vault = stats.get("vault") or {}
+    text = t("distill.stage.sink_value", g=int(entries.get("global", 0)), p=int(entries.get("project", 0)))
+    if vault.get("state") == "pushing":
+        text += " · " + t("distill.vault.pushing")
+    elif vault.get("state") == "failed":
+        text += " · " + t("distill.vault.failed")
+    return text
+
+
+def run_line(stats: dict) -> str:
+    """提案页顶上那行：上次总结的模型 / 强度 / token / 秒 / 候选数 → 提案数，或失败原因。"""
+    state = stats.get("distill") or {}
+    if state.get("busy"):
+        return t("distill.run.busy")
+    if state.get("last_error"):
+        return t("distill.run.error", error=str(state["last_error"])[-160:])
+    if not state.get("last_run_at"):
+        return t("distill.run.never")
+    last = state.get("last_result") or {}
+    return t("distill.run.line", when=_when(str(state["last_run_at"]), "%Y-%m-%d %H:%M"), model=last.get("model") or "?",
+             effort=last.get("effort") or "?", tokens_in=f"{int(last.get('tokens_in', 0)):,}",
+             tokens_out=f"{int(last.get('tokens_out', 0)):,}", seconds=f"{float(last.get('seconds', 0)):.0f}",
+             candidates=int(last.get("candidates", 0)), proposals=int(last.get("proposals", 0)))
+
+
+def proposal_label(item: run.Proposal) -> str:
+    scope = t("distill.scope.global") if item.scope == "global" else md.posix_home_label(item.project) or t("distill.scope.project")
+    return f"{t(f'distill.action.{item.action}')} · {scope} · {item.title}"
 
 
 def side_text(row: dict, work_roots: Iterable[str]) -> str:
@@ -334,6 +385,7 @@ class MemoryDistillWindow(QWidget):
     distill_requested = Signal()
     settings_requested = Signal()
     place_requested = Signal(str)
+    review_requested = Signal(str, str, str, str, str)     # id, status, title, why, how
     theme_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None, *, theme: str = "system") -> None:
@@ -343,6 +395,7 @@ class MemoryDistillWindow(QWidget):
         self._theme = theme if theme in THEMES else "system"
         self._colors = briefing_tokens(resolve_dark(self._theme))
         self._rows: list[dict] = []
+        self._proposals: list[run.Proposal] = []
         self._work_roots: tuple[str, ...] = ()
         self.resize(700, 900)
         self.setMinimumSize(520, 480)
@@ -401,9 +454,8 @@ class MemoryDistillWindow(QWidget):
         self.refresh_btn.setAccessibleDescription(t("distill.button.refresh_hint"))
         self.refresh_btn.clicked.connect(self.refresh_requested)
         self.distill_btn = TiltButton(t("distill.button.distill"), self)
-        self.distill_btn.setEnabled(False)
-        self.distill_btn.setToolTip(t("distill.button.distill_phase2"))
-        self.distill_btn.setAccessibleDescription(t("distill.button.distill_phase2"))
+        self.distill_btn.setToolTip(t("distill.button.distill_hint"))
+        self.distill_btn.setAccessibleDescription(t("distill.button.distill_hint"))
         self.distill_btn.clicked.connect(self.distill_requested)
         self.settings_btn = TiltButton(t("distill.button.settings"), self)
         self.settings_btn.clicked.connect(self.settings_requested)
@@ -476,11 +528,83 @@ class MemoryDistillWindow(QWidget):
         stats.setContentsMargins(0, 8, 0, 0)
         stats.addWidget(self.stats_body, 1)
 
+        # ---- 提案页（第二期）：左边待审列表，右边可改的标题 / 为什么 / 怎么用 + 证据 + 接受 / 拒 / 跳过
+        self.run_label = QLabel("", self)
+        self.run_label.setObjectName("distillHead")
+        self.run_label.setWordWrap(True)
+        self.proposal_list = QListWidget(self)
+        self.proposal_list.setObjectName("notesList")
+        self.proposal_list.setAccessibleName(t("distill.tab.proposals"))
+        self.proposal_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.proposal_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.proposal_list.setWordWrap(False)
+        self.proposal_list.currentRowChanged.connect(self._show_proposal)
+        self.proposal_head = QLabel("", self)
+        self.proposal_head.setObjectName("distillHead")
+        self.proposal_head.setWordWrap(True)
+        self.title_edit = QLineEdit(self)
+        self.title_edit.setObjectName("notesInput")
+        self.title_edit.setAccessibleName(t("distill.proposal.title"))
+        self.why_edit = QPlainTextEdit(self)
+        self.why_edit.setObjectName("notesInput")
+        self.why_edit.setPlaceholderText(t("distill.proposal.why"))
+        self.why_edit.setAccessibleName(t("distill.proposal.why"))
+        self.why_edit.setFixedHeight(64)
+        self.how_edit = QPlainTextEdit(self)
+        self.how_edit.setObjectName("notesInput")
+        self.how_edit.setPlaceholderText(t("distill.proposal.how"))
+        self.how_edit.setAccessibleName(t("distill.proposal.how"))
+        self.how_edit.setFixedHeight(64)
+        self.evidence_label = QLabel("", self)
+        self.evidence_label.setObjectName("distillEvidence")
+        self.evidence_label.setWordWrap(True)
+        self.evidence_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.accept_btn = TiltButton(t("distill.button.accept"), self)
+        self.accept_btn.setAccessibleDescription(t("distill.button.accept_hint"))
+        self.accept_btn.clicked.connect(lambda: self._review(run.STATUS_ACCEPTED))
+        self.reject_btn = TiltButton(t("distill.button.reject"), self)
+        self.reject_btn.setAccessibleDescription(t("distill.button.reject_hint"))
+        self.reject_btn.clicked.connect(lambda: self._review(run.STATUS_REJECTED))
+        self.skip_btn = TiltButton(t("distill.button.skip"), self)
+        self.skip_btn.setAccessibleDescription(t("distill.button.skip_hint"))
+        self.skip_btn.clicked.connect(lambda: self._review(run.STATUS_SKIPPED))
+        self.review_status = QLabel("", self)
+        self.review_status.setObjectName("briefingStatus")
+        self.review_status.setWordWrap(True)
+        review_buttons = QHBoxLayout()
+        review_buttons.setSpacing(8)
+        review_buttons.addWidget(self.review_status, 1)
+        review_buttons.addWidget(self.accept_btn)
+        review_buttons.addWidget(self.reject_btn)
+        review_buttons.addWidget(self.skip_btn)
+        editor = QWidget(self)
+        form = QVBoxLayout(editor)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        form.addWidget(self.proposal_head)
+        form.addWidget(self.title_edit)
+        form.addWidget(self.why_edit)
+        form.addWidget(self.how_edit)
+        form.addWidget(self.evidence_label)
+        form.addLayout(review_buttons)
+        proposal_split = QSplitter(Qt.Orientation.Vertical, self)
+        proposal_split.setObjectName("notesSplitter")
+        proposal_split.addWidget(self.proposal_list)
+        proposal_split.addWidget(editor)
+        proposal_split.setSizes([300, 380])
+        proposals_page = QWidget(self)
+        prop = QVBoxLayout(proposals_page)
+        prop.setContentsMargins(0, 8, 0, 0)
+        prop.setSpacing(8)
+        prop.addWidget(self.run_label)
+        prop.addWidget(proposal_split, 1)
+
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("briefingTabs")
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(flow_page, t("distill.tab.flow"))
         self.tabs.addTab(candidates_page, t("distill.tab.candidates"))
+        self.tabs.addTab(proposals_page, t("distill.tab.proposals"))
         self.tabs.addTab(stats_page, t("distill.tab.stats"))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 16, 24, 16)
@@ -520,6 +644,8 @@ class MemoryDistillWindow(QWidget):
         self.stats_body.setHtml(stats_html(stats, self._colors))
         self.settings_label.setText(settings_html(settings, str(stats.get("root") or "")))
         self.sides_label.setText(sides_html(settings, stats))
+        self.run_label.setText(run_line(stats))
+        self.distill_btn.setEnabled(not (stats.get("distill") or {}).get("busy"))
         self.refresh_btn.setEnabled(not stats.get("busy"))
         if stats.get("error"):
             self.status_label.setText(t("distill.status.error", error=str(stats["error"])[-160:]))
@@ -569,7 +695,66 @@ class MemoryDistillWindow(QWidget):
         if 0 <= index < len(self._rows):
             self.detail.setHtml(detail_html(self._rows[index], self._colors, self._work_roots))
 
+    def show_proposals(self, items: list) -> None:
+        """待审的提案，新一轮的在前。"""
+        current = self.current_proposal_id()
+        self._proposals = list(items)
+        self.proposal_list.blockSignals(True)
+        self.proposal_list.clear()
+        for item in self._proposals:
+            self.proposal_list.addItem(QListWidgetItem(proposal_label(item)))
+        self.proposal_list.blockSignals(False)
+        index = next((i for i, p in enumerate(self._proposals) if p.id == current), 0)
+        if self._proposals:
+            self.proposal_list.setCurrentRow(index)
+            self._show_proposal(index)
+        else:
+            self._show_proposal(-1)
+        if self.tabs.count() > 2:
+            self.tabs.setTabText(2, t("distill.tab.proposals_n", n=len(self._proposals)) if self._proposals else t("distill.tab.proposals"))
+
+    def current_proposal_id(self) -> str:
+        index = self.proposal_list.currentRow()
+        return self._proposals[index].id if 0 <= index < len(self._proposals) else ""
+
+    def _show_proposal(self, index: int) -> None:
+        has = 0 <= index < len(self._proposals)
+        for widget in (self.title_edit, self.why_edit, self.how_edit, self.accept_btn, self.reject_btn, self.skip_btn):
+            widget.setEnabled(has)
+        if not has:
+            self.proposal_head.setText(t("distill.proposal.empty"))
+            self.title_edit.clear()
+            self.why_edit.clear()
+            self.how_edit.clear()
+            self.evidence_label.setText("")
+            return
+        item = self._proposals[index]
+        where = t("distill.scope.global") if item.scope == "global" else item.project or t("distill.scope.project")
+        self.proposal_head.setText(t("distill.proposal.head", action=t(f"distill.action.{item.action}"), where=where,
+                                     kind=item.type, when=_when(item.run_at or "", "%m-%d %H:%M"))
+                                   + (f"  ·  {t('distill.proposal.replaces', title=item.replaces)}" if item.replaces else ""))
+        self.title_edit.setText(item.title)
+        self.why_edit.setPlainText(item.why)
+        self.how_edit.setPlainText(item.how)
+        self.evidence_label.setText(t("distill.proposal.evidence") + "\n" + "\n".join(f"· {e}" for e in item.evidence)
+                                    if item.evidence else t("distill.proposal.no_evidence"))
+
+    def _review(self, status: str) -> None:
+        pid = self.current_proposal_id()
+        if pid:
+            self.review_requested.emit(pid, status, self.title_edit.text(), self.why_edit.toPlainText(),
+                                       self.how_edit.toPlainText())
+
+    def show_review_status(self, text: str) -> None:
+        self.review_status.setText(text)
+
     def _on_stage(self, stage: str) -> None:
+        if stage == "review":
+            self.tabs.setCurrentIndex(2)
+            return
+        if stage == "distill":
+            self.distill_requested.emit()
+            return
         key = STAGE_PLACE.get(stage)
         if key:
             self.place_requested.emit(key)
@@ -586,6 +771,9 @@ class MemoryDistillController(QObject):
         service.changed.connect(self._refresh_window)
         service.refreshed.connect(self._on_refreshed)
         service.failed.connect(self._on_failed)
+        service.distilled.connect(self._on_distilled)
+        service.reviewed.connect(self._on_reviewed)
+        service.synced.connect(self._on_synced)
 
     # ---------------------------------------------------------- 动作
     def refresh_now(self) -> None:
@@ -618,6 +806,8 @@ class MemoryDistillController(QObject):
             self.window.refresh_requested.connect(self.refresh_now)
             self.window.place_requested.connect(self.open_place)
             self.window.settings_requested.connect(self.open_settings)
+            self.window.distill_requested.connect(self.distill_now)
+            self.window.review_requested.connect(self.review)
         self._refresh_window()
         if tab:
             self.window.select_tab(tab)
@@ -632,6 +822,54 @@ class MemoryDistillController(QObject):
         self.window.show_stats(self.service.stats(), self.service.settings())
         self.window.show_places(self.service.places())
         self.window.show_candidates(self.service.recent())
+        self.window.show_proposals(self.service.proposals().pending())
+
+    def distill_now(self) -> None:
+        if self.service.distilling:
+            return
+        if self.window is not None:
+            self.window.show_status(t("distill.run.busy"))
+        self.service.distill_now(manual=True)
+
+    def review(self, pid: str, status: str, title: str, why: str, how: str) -> None:
+        self.service.review(pid, status, title=title, why=why, how=how)
+
+    def _on_distilled(self, result, manual: bool) -> None:
+        if result.ok:
+            text = t("distill.run.done", candidates=result.candidates, proposals=result.proposals, added=result.added)
+            if getattr(result, "truncated", False):
+                text += " " + t("distill.run.truncated")
+        else:
+            text = t("distill.run.error", error=result.error[-160:])
+        if self.window is not None:
+            self.window.show_status(text)
+            if manual and result.ok and result.added:
+                self.window.tabs.setCurrentIndex(2)
+        if not manual and result.ok and result.added:
+            self._bubble(t("distill.bubble.proposals", n=result.added), 9000)
+        elif not manual and not result.ok:
+            self._bubble(t("distill.run.error", error=result.error[-100:]), 6000)
+
+    def _on_reviewed(self, pid: str, applied) -> None:
+        if self.window is None:
+            return
+        if applied is None:
+            self.window.show_review_status(t("distill.review.noted"))
+        elif applied.error:
+            self.window.show_review_status(t("distill.review.failed", error=applied.error[-160:]))
+        else:
+            targets = []
+            if applied.claude_md:
+                targets.append(t("distill.review.to_claude_md"))
+            if applied.project_file:
+                targets.append(t("distill.review.removed" if applied.removed else "distill.review.to_project", path=applied.project_file))
+            if applied.vault_written:
+                targets.append(t("distill.review.to_vault"))
+            self.window.show_review_status(t("distill.review.applied", targets="、".join(targets) or "—"))
+
+    def _on_synced(self, ok: bool, reason: str) -> None:
+        if self.window is not None and not ok:
+            self.window.show_review_status(t("distill.vault.push_failed", error=reason[-160:]))
 
     def _on_refreshed(self, added: int) -> None:
         if self.window is not None:
