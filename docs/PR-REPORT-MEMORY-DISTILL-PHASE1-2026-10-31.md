@@ -136,7 +136,11 @@ Claude Code 会话记录 ──► 增量抽取（规则打标）──► 本�
 - 新用例在修之前都是红的（纯函数模块先写测试再写实现；页面的「整页滚动」用例对着第一版截图写、改前红）。
 - 聚焦：`tests/test_memory_distill.py` 42 个、`tests/test_memory_distill_ui.py` 15 个，加 i18n（键对齐 + 代码用键）、
   配置 schema、菜单对齐、设置页布局、简报 Metro、个人助理、工作笔记——212 个全过；`ruff check pet tests` 干净；`git diff --check` 干净。
-- 全量：待填（后台跑在 `8332c2e6` 的独立 worktree 上）。
+- 全量（`8332c2e6`，独立 worktree，PowerShell 启动，`QT_QPA_PLATFORM=offscreen`，`APPDATA` 指到临时目录）：
+  **5923 passed，14 skipped，4 failed，10 分 41 秒**。4 个失败都是本机既有的环境性基线（基线提交上同样失败）：
+  `test_image_directory_picker_opens_right_drawer_with_three_column_masonry`（路径超 260）、`test_festival_id_guard_survives_optimize`、
+  `test_real_second_process_refused_on_overlay_topology`（子进程输出 cp1252 解码）、`test_capture_window_rect_coordinates_and_clamping`
+  （多显示器负原点）。没有新失败。
 
 ## 七、已知限制与后续
 
