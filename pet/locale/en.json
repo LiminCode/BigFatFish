@@ -1923,5 +1923,6 @@
   "distill.review.removed": "removed project memory ({path})",
   "distill.review.to_vault": "AI-Base User/Claude Memory.md (pushing)",
   "distill.settings.mirror_label": "Mirror to vault",
-  "distill.settings.mirror_hint": "Accepted entries are also written to AI-Base's User/Claude Memory.md and pushed (using the personal assistant's repo folder and token)."
+  "distill.settings.mirror_hint": "Accepted entries are also written to AI-Base's User/Claude Memory.md and pushed (using the personal assistant's repo folder and token).",
+  "distill.run.truncated": "(the model hit its output limit; only the complete items were kept, the rest will come next run)"
 }

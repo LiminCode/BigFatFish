@@ -70,7 +70,7 @@ class _Fakes:
         self.prompts: list[str] = []
         self.git_calls: list[list[str]] = []
 
-    def complete(self, prompt, system, provider, *, model="", effort="", timeout=None):
+    def complete(self, prompt, system, provider, *, model="", effort="", timeout=None, max_tokens=0):
         self.prompts.append(prompt)
         if self.fail:
             raise RuntimeError("quota")

@@ -1915,5 +1915,6 @@
   "distill.review.removed": "删除项目 memory（{path}）",
   "distill.review.to_vault": "AI-Base 的 User/Claude Memory.md（推送中）",
   "distill.settings.mirror_label": "镜像进知识库",
-  "distill.settings.mirror_hint": "接受的条目同时写进 AI-Base 的 User/Claude Memory.md 并推送（用的是个人助理的仓库目录与 Token）。"
+  "distill.settings.mirror_hint": "接受的条目同时写进 AI-Base 的 User/Claude Memory.md 并推送（用的是个人助理的仓库目录与 Token）。",
+  "distill.run.truncated": "（模型输出到了上限，只抢救到前面这几条；下次总结会把剩下的补上）"
 }

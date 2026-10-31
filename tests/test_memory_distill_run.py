@@ -133,6 +133,16 @@ def test_parse_proposals_validates_items_and_maps_project_names_back_to_paths():
     assert noproj[0].scope == "global", "项目作用域没写项目就当全局"
 
 
+def test_truncated_output_salvages_the_complete_items():
+    """实机（2026-10-31）：high 强度把 16000 个输出 token 几乎全花在思考上，JSON 在第 6 项中间被截断。"""
+    cut = RAW.split("```json")[1].split("```")[0]
+    cut = cut[:cut.index('{"action": "retire"') + 30]          # 第三项写到一半
+    items = run.parse_proposals("```json" + cut)
+    assert [p.action for p in items] == ["add", "change"], "前两项完整，抢救回来"
+    assert run.parse_proposals("```json\n[\n  {\"action\": \"add\", \"sco") == [], "一项都没完整就是空"
+    assert run._json_array("[1, 2") == [1, 2] or run._json_array("[1, 2") is None
+
+
 def test_proposal_store_merges_tracks_status_and_dismissed(tmp_path):
     store = run.ProposalStore(tmp_path)
     items = run.parse_proposals(RAW, projects=[r"C:\Users\me\Github\Pet"])
@@ -155,8 +165,8 @@ def test_proposal_store_merges_tracks_status_and_dismissed(tmp_path):
 def _complete(text: str, *, fail: bool = False):
     calls: list[dict] = []
 
-    def fake(prompt, system, provider, *, model="", effort="", timeout=None):
-        calls.append({"prompt": prompt, "model": model, "effort": effort, "timeout": timeout})
+    def fake(prompt, system, provider, *, model="", effort="", timeout=None, max_tokens=0):
+        calls.append({"prompt": prompt, "model": model, "effort": effort, "timeout": timeout, "max_tokens": max_tokens})
         if fail:
             raise RuntimeError("no network")
         return SimpleNamespace(text=text, model=model or "m", input_tokens=1200, output_tokens=300)
@@ -179,6 +189,7 @@ def test_run_once_builds_the_prompt_calls_the_model_and_stores_proposals(tmp_pat
     assert result.model == "claude-haiku-5-5" and result.effort == "low" and result.tokens_in == 1200 and result.tokens_out == 300
     call = complete.calls[0]
     assert call["model"] == "claude-haiku-5-5" and call["effort"] == "low" and call["timeout"] == run.TIMEOUT_S
+    assert call["max_tokens"] == run.MAX_TOKENS
     assert "Claude: “用什么语言？” → 我: “以后用中文”" in call["prompt"] and "corp" not in call["prompt"]
     assert "### 现有记忆\n- x" in call["prompt"] and "- 别提这条" in call["prompt"], "现有记忆和「别再提」都在提示词里"
     assert "{candidates}" not in call["prompt"]

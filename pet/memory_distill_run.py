@@ -32,7 +32,8 @@ MAX_TEXT_PER_CANDIDATE = 600
 MAX_BEFORE_PER_CANDIDATE = 200
 MAX_MEMORY_FILE_CHARS = 4000          # 每个 MEMORY.md / CLAUDE.md 最多送这么多
 MAX_MEMORY_TOTAL_CHARS = 24000
-TIMEOUT_S = 180.0
+TIMEOUT_S = 300.0                     # 实测 150 条候选 + high 强度一次 196 s
+MAX_TOKENS = 32000                    # 实测默认 16000 几乎全花在思考上，正文被截断
 
 ACTIONS = ("add", "change", "retire")
 SCOPES = ("global", "project")
@@ -236,19 +237,40 @@ def proposal_id(action: str, scope: str, project: str, title: str) -> str:
 
 
 def _json_array(text: str):
-    """模型输出里的那个 JSON 数组：优先代码围栏里的，否则第一个 ``[`` 到最后一个 ``]``。"""
+    """模型输出里的那个 JSON 数组：优先代码围栏里的，否则第一个 ``[`` 起。输出被截断（max_tokens 到顶）时
+    抢救已经完整的那几项：从后往前找最后一个完整对象的 ``}``，补上 ``]``。"""
     body = str(text or "")
     fenced = _FENCE_RE.search(body)
     if fenced:
         body = fenced.group(1)
-    start, end = body.find("["), body.rfind("]")
-    if start < 0 or end <= start:
+    elif body.lstrip().startswith("```"):
+        body = body.lstrip()[3:]
+        body = body[4:] if body.lower().startswith("json") else body
+    start = body.find("[")
+    if start < 0:
         return None
-    try:
-        data = json.loads(body[start:end + 1])
-    except ValueError:
-        return None
-    return data if isinstance(data, list) else None
+    end = body.rfind("]")
+    if end > start:
+        try:
+            data = json.loads(body[start:end + 1])
+            return data if isinstance(data, list) else None
+        except ValueError:
+            pass
+    return _salvage(body[start:])
+
+
+def _salvage(body: str):
+    """``[ {...}, {...}, {截断`` → 逐个 ``}`` 往回试，直到补 ``]`` 能解析。"""
+    cut = len(body)
+    while True:
+        cut = body.rfind("}", 0, cut)
+        if cut <= 0:
+            return None
+        try:
+            data = json.loads(body[:cut + 1].rstrip().rstrip(",") + "]")
+        except ValueError:
+            continue
+        return data if isinstance(data, list) and data else None
 
 
 def parse_proposals(text: str, *, projects: Iterable[str] = (), run_at: str = "") -> list[Proposal]:
@@ -366,6 +388,7 @@ class RunResult:
     run_at: str = ""
     newest_candidate: str = ""
     raw_text: str = ""
+    truncated: bool = False       # 输出到了 max_tokens，只抢救到了前面几条
 
 
 def build_prompt(settings: dict, rows: list[dict], memory: str, dismissed: Iterable[str], language: str | None = None) -> str:
@@ -402,7 +425,7 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     prompt = build_prompt(settings, picked, memory, store.dismissed_titles())
     started = clock()
     try:
-        completion = complete(prompt, "", provider, model=model, effort=effort, timeout=TIMEOUT_S)
+        completion = complete(prompt, "", provider, model=model, effort=effort, timeout=TIMEOUT_S, max_tokens=MAX_TOKENS)
     except Exception as exc:  # noqa: BLE001 - ProviderError 和别的都折成失败原因
         result.seconds = round(clock() - started, 1)
         result.error = str(exc) or type(exc).__name__
@@ -416,6 +439,9 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     if _json_array(result.raw_text) is None:
         result.error = "模型没有按约定输出 JSON 数组"
         return result, {**new_state, "last_error": result.error}
+    stop = str(getattr(completion, "stop_reason", "") or "")
+    if stop == "max_tokens":
+        result.truncated = True
     result.proposals = len(proposals)
     result.added = store.add(proposals)
     result.ok = True

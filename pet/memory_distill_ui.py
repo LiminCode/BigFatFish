@@ -837,6 +837,8 @@ class MemoryDistillController(QObject):
     def _on_distilled(self, result, manual: bool) -> None:
         if result.ok:
             text = t("distill.run.done", candidates=result.candidates, proposals=result.proposals, added=result.added)
+            if getattr(result, "truncated", False):
+                text += " " + t("distill.run.truncated")
         else:
             text = t("distill.run.error", error=result.error[-160:])
         if self.window is not None:
