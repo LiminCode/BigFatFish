@@ -557,6 +557,9 @@ _PROMPTS = {
 现有记忆：
 {memory}
 
+之前被我拒掉的提案（别再提同样的）：
+{dismissed}
+
 请输出一份对现有记忆的变更提案，JSON 数组，每项：
 {"action": "add|change|retire", "scope": "global|project", "project": "", "type": "user|feedback|project",
  "title": "一句话", "why": "为什么", "how": "怎么用", "evidence": ["日期 项目：原话"], "replaces": "被改 / 作废的条目标题"}
@@ -577,6 +580,9 @@ Candidates:
 Existing memory:
 {memory}
 
+Proposals I rejected before (do not propose these again):
+{dismissed}
+
 Output a change proposal against the existing memory as a JSON array; each item:
 {"action": "add|change|retire", "scope": "global|project", "project": "", "type": "user|feedback|project",
  "title": "one sentence", "why": "why", "how": "how to apply", "evidence": ["date project: quote"], "replaces": "title of the entry changed / retired"}
@@ -592,7 +598,7 @@ Rules:
 
 def default_prompt_template(language: str | None = None) -> str:
     """内置提示词（按界面语言）；用户在设置里改过就用他的（``prompt_zh`` / ``prompt_en``）。占位符
-    ``{candidates}`` / ``{memory}`` 由第二期的 ``render_template`` 填。"""
+    ``{candidates}`` / ``{memory}`` / ``{dismissed}`` 由 ``memory_distill_run.build_prompt`` 填。"""
     return _PROMPTS[wb.prompt_language(language)]
 
 

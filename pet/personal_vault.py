@@ -191,13 +191,19 @@ def pull(repo_dir: str | Path, *, run: GitRunner = run_git, token: str = "") -> 
 
 def sync_inspiration(repo_dir: str | Path, now: dt.datetime, *, run: GitRunner = run_git,
                      token: str = "") -> tuple[bool, str]:
-    """add → 有变化才 commit → pull --rebase → push。返回 (成功?, 失败原因尾巴)。"""
-    code, out = run(repo_dir, ["add", "--", INSPIRATION_FILE])
+    """灵感文件：add → 有变化才 commit → pull --rebase → push。返回 (成功?, 失败原因尾巴)。"""
+    return sync_path(repo_dir, INSPIRATION_FILE, f"inspiration: {now:%Y-%m-%d %H:%M}", run=run, token=token)
+
+
+def sync_path(repo_dir: str | Path, rel_path: str, message: str, *, run: GitRunner = run_git,
+              token: str = "") -> tuple[bool, str]:
+    """仓库里的一个文件：add → 有变化才 commit → pull --rebase → push（灵感记录、会话记忆镜像共用）。"""
+    code, out = run(repo_dir, ["add", "--", rel_path])
     if code != 0:
         return False, out.strip()[-300:]
     code, out = run(repo_dir, ["diff", "--cached", "--quiet"])
     if code == 1:
-        code, out = run(repo_dir, ["commit", "-q", "-m", f"inspiration: {now:%Y-%m-%d %H:%M}"])
+        code, out = run(repo_dir, ["commit", "-q", "-m", message])
         if code != 0:
             return False, out.strip()[-300:]
     elif code != 0:
