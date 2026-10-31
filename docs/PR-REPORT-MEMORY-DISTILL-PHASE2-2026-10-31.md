@@ -109,10 +109,16 @@
    下面是原话依据，右下接受 / 拒绝 / 跳过。流程图第四格写「上次 10-31 01:14 · 5 条提案」，第五格「待审 5 · 已接受 0 · 已拒 0」。
 4. **桌宠重启**：`2026-10-31 01:18:14 acquired pid=22140`，主检出快进到 `2dfd517b`；新进程日志无接线错误。把第二次真跑的
    `proposals.json` / `distill-state.json` 复制进真实候选库目录（原来没有这两个文件），用户不用再等 4 分钟就能在实机上审。
-5. **用户审核**：用户 2026-10-31 在实机流程页「提案」页逐条看完 5 条（全局新增 2 · 项目修改 3），说「审完了，开 PR」。
-   截至开 PR 时 5 条状态仍为**待审**（未点接受 / 拒绝），所以「接受 → CLAUDE.md 受管块 / 项目 memory / 知识库推送」
-   这条落盘链路在实机上**尚未发生**（`entries.json`、`backups/` 还不存在、`~/.claude/CLAUDE.md` 还没有受管块），
-   目前只有 `tests/test_memory_distill_sink.py` 的 tmp 目录覆盖。第一次真实接受会在合并后由用户在页面上触发，结果补进下一期报告。
+5. **用户审核**：用户 2026-10-31 在实机流程页「提案」页逐条看完 5 条（全局新增 2 · 项目修改 3），说「审完了，开 PR」；
+   开 PR 时 5 条仍待审。随后 11:33 用户在页面上**接受了 1 条全局新增**，这是落盘链路第一次在实机上跑，逐项核对：
+   - `proposals.json`：该条 `status=accepted`，`applied={claude_md: True, project_file: '', vault_written: True, error: ''}`；
+     `entries.json` 新建，1 条 global 条目；`backups/CLAUDE.md.20261031-113341.bak` 新建（改前整文件）。
+   - `~/.claude/CLAUDE.md`：原文件 10 行 CRLF、无末尾换行；写后 16 行、CRLF 保持（16/16 行带 CR），
+     `diff --strip-trailing-cr 备份 现文件` 只有末尾追加的受管块（空行 + start 标记 + 标题 + 1 条 + 更新时间 + end 标记），块外原文一字未动。
+   - 知识库镜像：`AI-Base/User/Claude Memory.md` 新建 16 行，commit `bc78dfa claude memory: 2026-10-31 11:33`，
+     本地 HEAD == `origin/main`（已推送）。
+   - 桌宠进程日志（pid 22140）11:30 之后 0 条 error / traceback。
+   项目级「修改」3 条尚未接受，`distill-<id>.md` + `MEMORY.md` 索引这条分支实机还没跑过，仍只有测试覆盖。
 
 > 报告里不引用提案正文与候选原话（含用户项目名）；只给计数与类别。
 
