@@ -79,7 +79,7 @@
 
 | 路径 | 实测 | 说明 |
 |---|---|---|
-| 一次蒸馏（真模型，第一次：150 条候选） | 见「实机运行记录」 | 每天一次 + 手动；后台线程 |
+| 一次蒸馏（真模型，150 条候选 = 第一次的预算上限） | 输入 **38,972** token、输出 **20,773**（high 强度，大半是思考）、**239.8 s**；第一次（截断）195.6 s | 每天一次 + 手动；后台线程。之后每天几十条，会短得多 |
 | `memory_context`（真 home） | **0.6 ms** | 读 CLAUDE.md + 一个 MEMORY.md |
 | `apply_proposal`（三个落点都写） | 30 次：**p50 14.1 ms，最大 17.2 ms** | 在 GUI 线程；一次接受一条 |
 | `ProposalStore.counts` / `stats()` 新增部分 | **0.1 ms** / 读两个小 JSON | 每次刷新页面 |
@@ -100,9 +100,15 @@
 1. **第一次真跑**：150 条候选（预算上限；全历史第一次），`claude-sonnet-5`、effort high，输入 38,972 token、输出 16,000（到顶）、195.6 s。
    正文只有 3,673 字符、6 项写到第 6 项中间 → 整次按「没按约定输出 JSON」失败。前 5 项看过：都是真规则（跨项目默认中文解释、
    画图原则、一个硬件项目的连接器规格、UI 数值要可配置、一台设备的行号约定），证据都引了原话。→ 放大 `max_tokens`、加截断抢救。
-2. **第二次真跑**（修后）：待填。
-3. **页面**：待填（提案页截图）。
-4. **桌宠重启**：待填。
+2. **第二次真跑**（修后，同一批 150 条候选）：`claude-sonnet-5`、high，输入 38,972、输出 20,773 token（没到顶），**239.8 s**，
+   **5 条提案全部解析入库**：2 条全局 `add`（user 类：跨项目默认中文解释、画图原则），3 条项目 `change`（一个硬件项目的两个
+   克隆路径各一条、BigFatFish 一条——它准确地把当天「个人 / 公司判定要讲清、模型要可选」那两句归成对已有记忆条目的修改，
+   并写了 `replaces`）。每条都带 1–3 条原话依据，没有编造的。
+3. **页面**（`QT_QPA_PLATFORM=windows`，用这次真跑的提案库建页）：「提案 5」页头显示上次总结那行（时间 / 模型 / 强度 /
+   token / 秒 / 候选 → 提案）；列表每行「新增 · 全局 · …」「修改 · <项目名> · …」；点开一条，一句话 / 为什么 / 怎么用三个框可改，
+   下面是原话依据，右下接受 / 拒绝 / 跳过。流程图第四格写「上次 10-31 01:14 · 5 条提案」，第五格「待审 5 · 已接受 0 · 已拒 0」。
+4. **桌宠重启**：`2026-10-31 01:18:14 acquired pid=22140`，主检出快进到 `2dfd517b`；新进程日志无接线错误。把第二次真跑的
+   `proposals.json` / `distill-state.json` 复制进真实候选库目录（原来没有这两个文件），用户不用再等 4 分钟就能在实机上审。
 5. **用户审核**：待填。
 
 > 报告里不引用提案正文与候选原话（含用户项目名）；只给计数与类别。
@@ -129,4 +135,21 @@
 
 ## 数字
 
-待填（`git diff --numstat`）。
+`git diff --numstat 6fc80df2..2dfd517b`（16 个文件，+2201 / −26；含本报告与索引）：
+
+| 文件 | + / − |
+|---|---|
+| `pet/memory_distill_run.py`（新） | 456 / 0 |
+| `pet/memory_distill_sink.py`（新） | 354 / 0 |
+| `pet/memory_distill_ui.py` | 247 / 9 |
+| `pet/memory_distill_service.py` | 189 / 3 |
+| `pet/memory_distill.py` | 8 / 1 |
+| `pet/settings_memory_distill.py` | 6 / 0 |
+| `pet/personal_vault.py` | 9 / 3 |
+| `pet/work_briefing.py` | 1 / 1 |
+| `pet/locale/zh.json`、`en.json` | 47 / 2 ×2 |
+| `tests/test_memory_distill_phase2_ui.py`（新） | 295 / 0 |
+| `tests/test_memory_distill_run.py`（新） | 251 / 0 |
+| `tests/test_memory_distill_sink.py`（新） | 152 / 0 |
+| `tests/test_memory_distill_ui.py` | 6 / 5 |
+| `docs/PR-REPORT-MEMORY-DISTILL-PHASE2-2026-10-31.md`（新）、`docs/INDEX.md` | 132 / 0、1 / 0 |
