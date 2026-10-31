@@ -2,7 +2,7 @@
 
 > **基线**：`60d546ff`
 > **分支**：`feature/claude-session-fish`　**日期**：2026-10-31
-> **提交**：`efaca6cc`、`b4f20155`、`8332c2e6`、`9c80bd23`、`cd09b02a`、`297209b8`
+> **提交**：`efaca6cc`、`b4f20155`、`8332c2e6`、`9c80bd23`、`cd09b02a`、`297209b8`、`a56a16c4`、`e18a74e6`、`76fdde6d`
 > **范围**：实现 12 个文件（含文案 2 个）+ 测试 2 个（新）/ 2 个（改）
 > **过程**：2026-10-30 用户提出设计想法，评审两轮后逐条拍板（见下「设计决定」）；本 PR 是三期里的第一期
 
@@ -143,6 +143,7 @@ Claude Code 会话记录 ──► 增量抽取（规则打标）──► 本�
   `test_image_directory_picker_opens_right_drawer_with_three_column_masonry`（路径超 260）、`test_festival_id_guard_survives_optimize`、
   `test_real_second_process_refused_on_overlay_topology`（子进程输出 cp1252 解码）、`test_capture_window_rect_coordinates_and_clamping`
   （多显示器负原点）。没有新失败。
+- 第二轮改完再跑一次全量（`a56a16c4`，同一环境）：**5925 passed，14 skipped，4 failed，9 分 47 秒**，4 个失败仍是同一组基线。
 
 ## 七、已知限制与后续
 
