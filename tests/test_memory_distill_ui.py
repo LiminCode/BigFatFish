@@ -195,6 +195,8 @@ def test_window_shows_numbers_on_the_flow_tiles_and_lists_candidates(tmp_path):
         assert window.list.count() == 2
         assert window.list.item(1).text().startswith(dt.datetime.now().strftime("%m-%d"))
         assert "规则 · 个人 · Pet · 要，以后分支也用" in window.list.item(1).text()
+        assert "纠正 · 公司（WSL 路径） · corp" in window.list.item(0).text(), "公司侧要写出为什么"
+        assert "个人 1 条、公司 1 条" in window.sides_label.text() and "WorkSpace" in window.sides_label.text()
         window.list.setCurrentRow(1)
         detail = window.detail.toPlainText()
         assert "Claude 当时说" in detail and "用等宽字体？" in detail and "要，以后分支也用" in detail
@@ -324,19 +326,28 @@ def test_settings_rows_round_trip(tmp_path):
     dialog.config = config
     rows = sd.distill_rows(dialog)
     assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
-        "enabled", "keep_days", "work_roots", "daily_at", "model", "effort", "prompt")]
+        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "prompt")]
+    assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
     assert dialog.distill_keep_days_select.currentData() == 60
     assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"
     assert dialog.distill_time_select.currentData() == "21:30"
     assert "{candidates}" in dialog.distill_prompt_editor.edit.toPlainText()
     dialog.distill_enabled_check.setChecked(True)
     dialog.distill_roots_edit.setText(r" F:\Only ; ")
-    dialog.distill_model_edit.setText("claude-haiku-5-5")
+    dialog.distill_model_select.setCurrentIndex(dialog.distill_model_select.findData("claude-haiku-5-5"))
     dialog.distill_keep_days_select.setCurrentIndex(dialog.distill_keep_days_select.findData(180))
     sd.save_distill_settings(dialog)
     saved = config.get(md.CONFIG_KEY)
     assert saved["enabled"] is True and saved["work_roots"] == [r"F:\Only"] and saved["model"] == "claude-haiku-5-5"
     assert saved["keep_days"] == 180 and saved["prompt_zh"] == "", "没改提示词就存空串（= 内置）"
+    dialog.distill_model_select.setCurrentIndex(dialog.distill_model_select.findData(sd.CUSTOM))
+    assert not dialog.distill_model_edit.isHidden()
+    dialog.distill_model_edit.setText("claude-opus-5-5[1m]")
+    sd.save_distill_settings(dialog)
+    assert config.get(md.CONFIG_KEY)["model"] == "", "不合法的名字退回「跟 AI 对话一致」"
+    dialog.distill_model_edit.setText("my-custom-model")
+    sd.save_distill_settings(dialog)
+    assert config.get(md.CONFIG_KEY)["model"] == "my-custom-model"
     section = sd.flow_section(dialog)
     assert section is dialog.distill_flow_section and "抽取" in dialog.distill_flow_label.text()
     dialog.deleteLater()

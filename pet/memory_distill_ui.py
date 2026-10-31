@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+from typing import Iterable
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
@@ -34,6 +35,8 @@ COLUMNS = 3
 TAG_KEYS = {md.TAG_RULE: "distill.tag.rule", md.TAG_DECISION: "distill.tag.decision",
             md.TAG_CORRECTION: "distill.tag.correction", md.TAG_TASK: "distill.tag.task"}
 SIDE_KEYS = {md.SIDE_PERSONAL: "distill.side.personal", md.SIDE_WORK: "distill.side.work", "shared": "distill.side.shared"}
+REASON_KEYS = {md.REASON_WSL: "distill.side.reason_wsl", md.REASON_WORK_ROOT: "distill.side.reason_work_root",
+               md.REASON_PERSONAL: "distill.side.reason_personal"}
 PLACE_KEYS = {
     svc.PLACE_PERSONAL_VAULT: "distill.place.personal_vault", svc.PLACE_WORK_VAULT: "distill.place.work_vault",
     svc.PLACE_WINDOWS_CLAUDE: "distill.place.windows_claude", svc.PLACE_WSL_CLAUDE: "distill.place.wsl_claude",
@@ -112,22 +115,29 @@ def stage_values(stats: dict) -> dict[str, str]:
     }
 
 
-def row_label(row: dict) -> str:
-    """候选列表里的一行：时间 · 标签 · 侧 · 项目名 · 原话开头。"""
+def side_text(row: dict, work_roots: Iterable[str]) -> str:
+    """「公司（WSL 路径）」「公司（公司目录）」「个人」——按当前设置现算，改了公司目录列表就跟着变。"""
+    reason = md.side_reason(str(row.get("project") or ""), work_roots)
+    side = t(SIDE_KEYS[md.SIDE_PERSONAL if reason == md.REASON_PERSONAL else md.SIDE_WORK])
+    return side if reason == md.REASON_PERSONAL else t("distill.side.with_reason", side=side, reason=t(REASON_KEYS[reason]))
+
+
+def row_label(row: dict, work_roots: Iterable[str] = ()) -> str:
+    """候选列表里的一行：时间 · 标签 · 侧（为什么） · 项目名 · 原话开头。"""
     text = " ".join(str(row.get("text") or "").split())
     return (f"{_when(row.get('time') or '')} · {t(TAG_KEYS.get(row.get('tag'), 'distill.tag.task'))} · "
-            f"{t(SIDE_KEYS.get(row.get('side'), 'distill.side.personal'))} · "
+            f"{side_text(row, work_roots)} · "
             f"{md.posix_home_label(str(row.get('project') or ''))} · {text[:60]}{'…' if len(text) > 60 else ''}")
 
 
-def detail_html(row: dict, colors: dict) -> str:
-    """点开一条：Claude 问了什么、我说了什么、在哪个项目 / 会话 / 入口 / 分支。"""
+def detail_html(row: dict, colors: dict, work_roots: Iterable[str] = ()) -> str:
+    """点开一条：Claude 问了什么、我说了什么、在哪个项目 / 会话 / 入口 / 分支、算哪一侧为什么。"""
     esc = html.escape
     muted = colors.get("muted", "#777")
     parts = [f"<p style='color:{muted};font-size:12px;margin:0 0 6px 0'>"
              f"{esc(_when(row.get('time') or '', '%Y-%m-%d %H:%M'))} · "
              f"{esc(t(TAG_KEYS.get(row.get('tag'), 'distill.tag.task')))} · "
-             f"{esc(t(SIDE_KEYS.get(row.get('side'), 'distill.side.personal')))}</p>"]
+             f"{esc(side_text(row, work_roots))}</p>"]
     if row.get("before"):
         parts.append(f"<p style='color:{muted};margin:0 0 4px 0'><b>{esc(t('distill.detail.before'))}</b></p>"
                      f"<p style='margin:0 0 10px 0;white-space:pre-wrap'>{esc(str(row['before']))}</p>")
@@ -165,6 +175,22 @@ def stats_html(stats: dict, colors: dict) -> str:
     return f"<table cellspacing='0'>{''.join(rows)}</table>{note}"
 
 
+def sides_html(settings: dict, stats: dict) -> str:
+    """「个人 / 公司怎么分」：三条规则、当前公司目录、两侧各多少条、分开之后各自去哪。"""
+    esc = html.escape
+    by_side = stats.get("by_side") or {}
+    roots = "；".join(settings.get("work_roots") or []) or "—"
+    lines = [
+        f"<b>{esc(t('distill.sides.title'))}</b>",
+        esc(t("distill.sides.rule_wsl")),
+        esc(t("distill.sides.rule_root", roots=roots)),
+        esc(t("distill.sides.rule_personal")),
+        esc(t("distill.sides.counts", personal=by_side.get(md.SIDE_PERSONAL, 0), work=by_side.get(md.SIDE_WORK, 0))),
+        esc(t("distill.sides.where")),
+    ]
+    return "<br>".join(lines)
+
+
 def settings_html(settings: dict, root: str) -> str:
     esc = html.escape
     lines = [
@@ -173,7 +199,7 @@ def settings_html(settings: dict, root: str) -> str:
         esc(t("distill.settings.daily_at", time=settings["daily_at"])),
         esc(t("distill.settings.keep_days", days=settings["keep_days"])),
         esc(t("distill.settings.work_roots", roots="; ".join(settings["work_roots"]))),
-        esc(t("distill.settings.model", model=settings["model"], effort=settings["effort"])),
+        esc(t("distill.settings.model", model=settings["model"] or t("distill.settings.same_as_chat"), effort=settings["effort"])),
         esc(t("distill.settings.root", path=root)),
     ]
     return "<br>".join(lines)
@@ -317,6 +343,7 @@ class MemoryDistillWindow(QWidget):
         self._theme = theme if theme in THEMES else "system"
         self._colors = briefing_tokens(resolve_dark(self._theme))
         self._rows: list[dict] = []
+        self._work_roots: tuple[str, ...] = ()
         self.resize(700, 900)
         self.setMinimumSize(520, 480)
 
@@ -356,6 +383,12 @@ class MemoryDistillWindow(QWidget):
         self.candidates_note = QLabel(t("distill.candidates.note"), self)
         self.candidates_note.setObjectName("distillCaption")
         self.candidates_note.setWordWrap(True)
+        # 「个人 / 公司怎么分」（用户 2026-10-31：这个区别要讲细）：规则 + 当前公司目录 + 两侧各多少条
+        self.sides_label = QLabel("", self)
+        self.sides_label.setObjectName("distillSettings")
+        self.sides_label.setTextFormat(Qt.TextFormat.RichText)
+        self.sides_label.setWordWrap(True)
+        self.sides_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.settings_label = QLabel("", self)
         self.settings_label.setObjectName("distillSettings")
         self.settings_label.setTextFormat(Qt.TextFormat.RichText)
@@ -394,6 +427,7 @@ class MemoryDistillWindow(QWidget):
         flow.addWidget(self.places_caption)
         flow.addLayout(places)
         flow.addWidget(self.candidates_note)
+        flow.addWidget(self.sides_label)
         flow.addWidget(self.settings_label)
         flow.addStretch(1)
         self.flow_scroll = QScrollArea(self)
@@ -481,9 +515,11 @@ class MemoryDistillWindow(QWidget):
 
     # ---------------------------------------------------------- 内容
     def show_stats(self, stats: dict, settings: dict) -> None:
+        self._work_roots = tuple(settings.get("work_roots") or ())
         self.diagram.set_values(stage_values(stats))
         self.stats_body.setHtml(stats_html(stats, self._colors))
         self.settings_label.setText(settings_html(settings, str(stats.get("root") or "")))
+        self.sides_label.setText(sides_html(settings, stats))
         self.refresh_btn.setEnabled(not stats.get("busy"))
         if stats.get("error"):
             self.status_label.setText(t("distill.status.error", error=str(stats["error"])[-160:]))
@@ -509,7 +545,7 @@ class MemoryDistillWindow(QWidget):
         self.list.blockSignals(True)
         self.list.clear()
         for row in self._rows:
-            item = QListWidgetItem(row_label(row))
+            item = QListWidgetItem(row_label(row, self._work_roots))
             item.setToolTip(" ".join(str(row.get("text") or "").split())[:300])
             self.list.addItem(item)
         self.list.blockSignals(False)
@@ -531,7 +567,7 @@ class MemoryDistillWindow(QWidget):
 
     def _show_row(self, index: int) -> None:
         if 0 <= index < len(self._rows):
-            self.detail.setHtml(detail_html(self._rows[index], self._colors))
+            self.detail.setHtml(detail_html(self._rows[index], self._colors, self._work_roots))
 
     def _on_stage(self, stage: str) -> None:
         key = STAGE_PLACE.get(stage)

@@ -39,13 +39,19 @@ CANDIDATES_DIR = "candidates"
 CURSORS_FILE = "cursors.json"
 DEFAULT_KEEP_DAYS = 90
 DEFAULT_DAILY_AT = "21:30"
-DEFAULT_MODEL = "claude-sonnet-5-5"      # 个人 key 直连（个人助理同款）；第二期才真的调用
+DEFAULT_MODEL = ""                       # 空 = 跟「AI 对话」里的模型一致（个人助理同一约定）；第二期才真的调用
+#: 设置页模型下拉里的几个常用名
+MODEL_CHOICES = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")
 MAX_BEFORE_CHARS = 500                   # 「我问了什么」只留这么多
 MAX_TEXT_CHARS = 4000                    # 用户一条话超过这个长度（多半是粘贴）只留开头
 
 SIDE_PERSONAL = "personal"
 SIDE_WORK = "work"
 SIDES = (SIDE_PERSONAL, SIDE_WORK)
+#: 为什么算这一侧（给页面解释用）：WSL 路径 / 在公司目录下 / 都不是
+REASON_WSL = "wsl"
+REASON_WORK_ROOT = "work_root"
+REASON_PERSONAL = "personal"
 
 TAG_RULE = "rule"
 TAG_DECISION = "decision"
@@ -96,22 +102,32 @@ def default_work_root() -> str:
     return str(Path.home() / "WorkSpace")
 
 
-def classify_side(cwd: str, work_roots: Iterable[str]) -> str:
-    """POSIX 路径 → 公司侧（WSL 里登录的是公司账号）；Windows 路径在某个公司目录下 → 公司侧；其余个人。"""
+def side_reason(cwd: str, work_roots: Iterable[str]) -> str:
+    """这条话算哪一侧、为什么：
+
+    - ``wsl``：cwd 是 POSIX 路径（``/home/...``）——会话跑在 WSL 里，那里登录的是公司账号 → 公司侧；
+    - ``work_root``：Windows 路径落在设置里某个「公司目录」之下（按路径段比，``WorkSpaceX`` 不算 ``WorkSpace`` 下面）→ 公司侧；
+    - ``personal``：都不是 → 个人侧。
+
+    只看会话的工作目录，不看入口、不看内容：桌面版开的 WSL 会话入口也写 ``claude-desktop``，分不出来。"""
     path = str(cwd or "").strip()
     if not path:
-        return SIDE_PERSONAL
+        return REASON_PERSONAL
     if path.startswith("/"):
-        return SIDE_WORK
+        return REASON_WSL
     try:
         parts = tuple(p.lower() for p in PureWindowsPath(path).parts)
     except (TypeError, ValueError):
-        return SIDE_PERSONAL
+        return REASON_PERSONAL
     for root in work_roots:
         root_parts = tuple(p.lower() for p in PureWindowsPath(str(root)).parts)
         if root_parts and parts[:len(root_parts)] == root_parts:
-            return SIDE_WORK
-    return SIDE_PERSONAL
+            return REASON_WORK_ROOT
+    return REASON_PERSONAL
+
+
+def classify_side(cwd: str, work_roots: Iterable[str]) -> str:
+    return SIDE_PERSONAL if side_reason(cwd, work_roots) == REASON_PERSONAL else SIDE_WORK
 
 
 def clean_text(raw: str) -> str:
@@ -505,7 +521,7 @@ def normalize(value) -> dict:
         "keep_days": _normalize_days(data.get("keep_days", DEFAULT_KEEP_DAYS)),
         "work_roots": _normalize_roots(data.get("work_roots")),
         "daily_at": normalize_time(data.get("daily_at", DEFAULT_DAILY_AT)),
-        "model": model if model and wb.normalize_model(model) == model else DEFAULT_MODEL,
+        "model": model if model and wb.normalize_model(model) == model else DEFAULT_MODEL,   # 空 = 跟 AI 对话一致
         "effort": wb.normalize_effort(data.get("effort", wb.EFFORT)),
         "prompt_zh": wb.normalize_text(data.get("prompt_zh")),
         "prompt_en": wb.normalize_text(data.get("prompt_en")),

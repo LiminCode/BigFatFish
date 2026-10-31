@@ -51,6 +51,9 @@ def test_side_is_decided_by_path_not_by_entrypoint():
     assert md.classify_side(r"C:\Users\me\WorkSpaceX", roots) == md.SIDE_PERSONAL, "只认目录边界，不认前缀"
     assert md.classify_side(r"C:\Users\me\Github\Pet", roots) == md.SIDE_PERSONAL
     assert md.classify_side("", roots) == md.SIDE_PERSONAL
+    assert md.side_reason("/home/me/x", roots) == md.REASON_WSL
+    assert md.side_reason(r"C:\Users\me\WorkSpace\corp", roots) == md.REASON_WORK_ROOT
+    assert md.side_reason(r"C:\Users\me\Github\Pet", roots) == md.REASON_PERSONAL
 
 
 @pytest.mark.parametrize("text", [
@@ -250,7 +253,9 @@ def test_config_defaults_and_normalization():
     assert base["keep_days"] == 90
     assert base["work_roots"] == [md.default_work_root()]
     assert base["daily_at"] == "21:30"
-    assert base["model"] and base["effort"] == "high"
+    assert base["model"] == "" and base["effort"] == "high", "模型默认空 = 跟 AI 对话一致"
+    assert md.normalize({"model": "claude-haiku-5-5"})["model"] == "claude-haiku-5-5"
+    assert md.normalize({"model": "bad name!"})["model"] == ""
     assert base["prompt_zh"] == "" and base["prompt_en"] == ""
     fixed = md.normalize({"enabled": "yes", "keep_days": -5, "work_roots": "x", "daily_at": "25:99", "effort": "ultra"})
     assert fixed["enabled"] is True and fixed["keep_days"] == 90 and fixed["work_roots"] == [md.default_work_root()]

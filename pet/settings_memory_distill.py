@@ -17,6 +17,8 @@ from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleS
 from .settings_work_briefing import effort_select
 
 KEEP_DAYS_CHOICES = (30, 60, 90, 180, 365)
+SAME = ""              # 下拉里「跟 AI 对话一致」对应的值（配置里存空串）
+CUSTOM = "__custom__"
 TIME_CHOICES = ("20:00", "21:00", "21:30", "22:00", "23:00")
 ROOTS_SEPARATOR = ";"
 
@@ -69,11 +71,24 @@ def distill_rows(dialog) -> list[SettingRow]:
     time_select.setCurrentIndex(max(0, time_select.findData(settings["daily_at"])))
     dialog.distill_time_select = time_select
 
-    model = QLineEdit(dialog)
-    model.setText(settings["model"])
-    model.setPlaceholderText(md.DEFAULT_MODEL)
-    model.setAccessibleName(t("distill.settings.model_label"))
-    dialog.distill_model_edit = model
+    # 模型下拉（用户 2026-10-31：蒸馏模型要可选）：跟 AI 对话一致 / 几个常用名 / 自定义
+    model_select = ModernSelect(dialog, width=200)
+    model_select.addItem(t("distill.settings.same_as_chat"), SAME)
+    for value in md.MODEL_CHOICES:
+        model_select.addItem(value, value)
+    model_select.addItem(t("distill.settings.custom_choice"), CUSTOM)
+    model_edit = QLineEdit(dialog)
+    model_edit.setPlaceholderText(md.MODEL_CHOICES[1])
+    model_edit.setAccessibleName(t("distill.settings.custom_model"))
+    if settings["model"] in (SAME, *md.MODEL_CHOICES):
+        model_select.setCurrentIndex(max(0, model_select.findData(settings["model"])))
+    else:
+        model_select.setCurrentIndex(max(0, model_select.findData(CUSTOM)))
+        model_edit.setText(settings["model"])
+    model_edit.setVisible(model_select.currentData() == CUSTOM)
+    model_select.currentIndexChanged.connect(lambda _index: model_edit.setVisible(model_select.currentData() == CUSTOM))
+    dialog.distill_model_select = model_select
+    dialog.distill_model_edit = model_edit
     effort = effort_select(dialog, settings["effort"])
     dialog.distill_effort_select = effort
 
@@ -88,10 +103,18 @@ def distill_rows(dialog) -> list[SettingRow]:
         SettingRow("distill_keep_days", t("distill.settings.keep_days_label"), t("distill.settings.keep_days_hint"), keep),
         SettingRow("distill_work_roots", t("distill.settings.work_roots_label"), t("distill.settings.work_roots_hint"), roots),
         SettingRow("distill_daily_at", t("distill.settings.daily_at_label"), t("distill.settings.daily_at_hint"), time_select),
-        SettingRow("distill_model", t("distill.settings.model_label"), t("distill.settings.model_hint"), model),
+        SettingRow("distill_model", t("distill.settings.model_label"), t("distill.settings.model_hint"), model_select),
+        SettingRow("distill_model_custom", t("distill.settings.custom_model"), "", model_edit, stacked=True),
         SettingRow("distill_effort", t("distill.settings.effort_label"), t("distill.settings.effort_hint"), effort),
         SettingRow("distill_prompt", t("distill.settings.prompt"), t("distill.settings.prompt_hint"), prompt, stacked=True),
     ]
+
+
+def chosen_model(dialog) -> str:
+    value = dialog.distill_model_select.currentData()
+    if value == CUSTOM:
+        value = dialog.distill_model_edit.text()
+    return str(value or "").strip()
 
 
 def save_distill_settings(dialog) -> None:
@@ -106,7 +129,7 @@ def save_distill_settings(dialog) -> None:
         "keep_days": dialog.distill_keep_days_select.currentData(),
         "work_roots": roots,
         "daily_at": dialog.distill_time_select.currentData(),
-        "model": dialog.distill_model_edit.text().strip(),
+        "model": chosen_model(dialog),
         "effort": dialog.distill_effort_select.currentData(),
         f"prompt_{dialog.distill_prompt_language}": dialog.distill_prompt_editor.value(),
     }))
