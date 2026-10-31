@@ -440,8 +440,11 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
         result.error = "模型没有按约定输出 JSON 数组"
         return result, {**new_state, "last_error": result.error}
     stop = str(getattr(completion, "stop_reason", "") or "")
-    if stop == "max_tokens":
+    if stop == "max_tokens" and len(picked) > 1:
+        # 输出到顶：模型只写完了前面几条。游标只推到这批的一半，后一半下次重送（提案按 id 去重，重送无害）
         result.truncated = True
+        newest = str(picked[len(picked) // 2 - 1].get("time") or "")
+        result.newest_candidate = newest
     result.proposals = len(proposals)
     result.added = store.add(proposals)
     result.ok = True

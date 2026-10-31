@@ -225,6 +225,23 @@ def test_run_once_failure_and_bad_output_keep_the_cursor_for_a_retry(tmp_path):
     assert not result.ok and "JSON" in result.error and "last_candidate_time" not in state
 
 
+def test_truncated_run_keeps_half_the_batch_for_next_time(tmp_path):
+    """输出到 max_tokens：抢救到的入库，游标只推到这批一半，后一半下次重送。"""
+    rows = [_row(f"以后 {i}", n=i, tag=md.TAG_RULE) for i in range(1, 7)]
+    cut = RAW.split("```json")[1].split("```")[0]
+    cut = "```json" + cut[:cut.index('{"action": "retire"') + 30]
+
+    def fake(prompt, system, provider, *, model="", effort="", timeout=None, max_tokens=0):
+        return SimpleNamespace(text=cut, model="m", input_tokens=1, output_tokens=max_tokens, stop_reason="max_tokens")
+
+    result, state = run.run_once(NOW, SETTINGS, rows, {}, SimpleNamespace(model="m"), store=run.ProposalStore(tmp_path),
+                                 complete=fake, memory="")
+    assert result.ok and result.truncated and result.proposals == 2 and result.added == 2
+    assert state["last_candidate_time"] == "2026-10-31T10:03:00Z", "六条只推到第三条"
+    picked, _ = run.select_candidates(rows, state)
+    assert [r["text"] for r in picked] == ["以后 4", "以后 5", "以后 6"]
+
+
 def test_build_prompt_keeps_user_template_and_fills_three_placeholders():
     settings = {**SETTINGS, "prompt_zh": "候选：{candidates}\n记忆：{memory}\n别提：{dismissed}\n示例 {\"a\": 1}"}
     text = run.build_prompt(settings, [_row("x", n=1)], "M", ["旧条目"], "zh")
