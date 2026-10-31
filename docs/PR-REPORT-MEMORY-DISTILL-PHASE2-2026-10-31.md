@@ -117,7 +117,10 @@
 
 - 新用例在实现之前都是红的（纯逻辑两份测试先写；截断抢救用例对着第一次真跑的输出写、改前红）。
 - 聚焦：`test_memory_distill_run.py` 17、`test_memory_distill_sink.py` 5、`test_memory_distill_phase2_ui.py` 10，加第一期两份、i18n、配置 schema、菜单对齐、设置布局、个人助理、简报——全过；`ruff check pet tests` 干净；`git diff --check` 干净。
-- 全量：待填。
+- 全量（`2dfd517b`，独立 worktree，PowerShell 启动，offscreen，`APPDATA` 指到临时目录）：**5957 passed，14 skipped，5 failed，9 分 19 秒**。
+  4 个是本机既有的环境性基线（路径超 260、cp1252 解码 ×2、多显示器负原点）；第 5 个 `test_foreground_window_info_real_call_no_shadow_bug`
+  是**跑的时候屏幕锁着**：前台窗口是 `LockApp.exe`（实测 `GetForegroundWindow` → pid 的映像名），`vision.foreground_window_info`
+  对不可见的前台窗口按设计返回 None。`pet/vision.py` 本分支没动；解锁后单跑即过。
 
 ## 七、已知限制与后续
 
