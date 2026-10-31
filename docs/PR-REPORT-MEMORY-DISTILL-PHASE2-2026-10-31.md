@@ -118,7 +118,14 @@
    - 知识库镜像：`AI-Base/User/Claude Memory.md` 新建 16 行，commit `bc78dfa claude memory: 2026-10-31 11:33`，
      本地 HEAD == `origin/main`（已推送）。
    - 桌宠进程日志（pid 22140）11:30 之后 0 条 error / traceback。
-   项目级「修改」3 条尚未接受，`distill-<id>.md` + `MEMORY.md` 索引这条分支实机还没跑过，仍只有测试覆盖。
+   11:39 用户让我再接受 1 条**项目级「修改」**（走 `MemoryDistillService.review`，与页面按钮同一条路径；真实配置、真实数据目录），2.02 s 完成：
+   - `applied={claude_md: False, project_file: <项目>/memory/distill-<id>.md, vault_written: True, error: ''}`；`entries.json` 变 2 条
+     （1 global + 1 project，`project` 已归一到仓库根）；`~/.claude/CLAUDE.md` md5 前后一致（项目级不碰全局块），`backups/` 没有新增。
+   - 项目 memory 目录：新建 `distill-<id>.md`（frontmatter name / description / metadata.type=project / source，正文标题 + Why + How + 3 条原话依据 + 时间戳），
+     `MEMORY.md` 16 行 → 17 行，只追加 1 行索引，CRLF 保持（17/17）。目录命中的是已存在的 `c--…`（大小写不敏感匹配，没有另开 `C--…`）。
+   - 提案的 `replaces` 指向一条**手写**记忆标题，受管条目库里没有同名条目 → 按设计退化为新增，不改手写文件。
+   - 知识库：`Claude Memory.md` +8/−1 行（多出「项目 …」一节），commit `a4da0bf claude memory: 2026-10-31 11:39`，本地 HEAD == `origin/main`。
+   - 桌宠进程日志 0 条 error / traceback。剩 3 条待审（全局 1 · 项目 2）；`retire` 动作与 `change` 命中旧条目的分支实机还没跑过，只有测试覆盖。
 
 > 报告里不引用提案正文与候选原话（含用户项目名）；只给计数与类别。
 
