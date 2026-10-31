@@ -15,8 +15,8 @@ import html
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSplitter, QTabWidget,
-                               QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QScrollArea, QSplitter,
+                               QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from . import memory_distill as md
 from . import memory_distill_service as svc
@@ -50,6 +50,7 @@ QWidget#memoryDistill {{
 QLabel#briefingTitle {{ color: {muted}; font-size: 12px; font-weight: 600; letter-spacing: 1px; }}
 QLabel#distillIntro, QLabel#briefingStatus, QLabel#distillCaption {{ color: {muted}; font-size: 12px; }}
 QLabel#distillSettings {{ background: {tile}; color: {text}; padding: 10px 12px; font-size: 12px; }}
+QScrollArea#distillFlowScroll, QWidget#distillFlowBody {{ background: transparent; border: 0; }}
 QTabWidget#briefingTabs::pane {{ border: 0; background: transparent; }}
 QTabWidget#briefingTabs > QTabBar {{ background: transparent; }}
 QTabBar::tab {{
@@ -189,7 +190,7 @@ class FlowDiagram(QWidget):
         self._values: dict[str, str] = {s: "" for s in STAGES}
         self._hover = ""
         self.setMouseTracking(True)
-        self.setMinimumHeight(TILE_H * 2 + TILE_GAP + 8)
+        self.setFixedHeight(TILE_H * 2 + TILE_GAP + 8)      # 固定高：页面不够高时宁可滚动，也不让格子被压扁
         self.setAccessibleName(t("distill.flow.name"))
 
     def apply_theme(self, colors: dict) -> None:
@@ -316,7 +317,7 @@ class MemoryDistillWindow(QWidget):
         self._theme = theme if theme in THEMES else "system"
         self._colors = briefing_tokens(resolve_dark(self._theme))
         self._rows: list[dict] = []
-        self.resize(680, 760)
+        self.resize(700, 900)
         self.setMinimumSize(520, 480)
 
         self.title_label = QLabel(t("distill.app"), self)
@@ -382,9 +383,11 @@ class MemoryDistillWindow(QWidget):
         buttons.addWidget(self.distill_btn)
         buttons.addWidget(self.settings_btn)
         buttons.addWidget(self.close_btn)
-        flow_page = QWidget(self)
-        flow = QVBoxLayout(flow_page)
-        flow.setContentsMargins(0, 8, 0, 0)
+        # 流程页内容比窗口高时整页滚动（底部的按钮行固定在滚动区外）
+        flow_body = QWidget(self)
+        flow_body.setObjectName("distillFlowBody")
+        flow = QVBoxLayout(flow_body)
+        flow.setContentsMargins(0, 8, 8, 0)
         flow.setSpacing(10)
         flow.addWidget(self.intro_label)
         flow.addWidget(self.diagram)
@@ -393,12 +396,26 @@ class MemoryDistillWindow(QWidget):
         flow.addWidget(self.candidates_note)
         flow.addWidget(self.settings_label)
         flow.addStretch(1)
-        flow.addLayout(buttons)
+        self.flow_scroll = QScrollArea(self)
+        self.flow_scroll.setObjectName("distillFlowScroll")
+        self.flow_scroll.setWidgetResizable(True)
+        self.flow_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.flow_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.flow_scroll.setWidget(flow_body)
+        flow_page = QWidget(self)
+        page = QVBoxLayout(flow_page)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(8)
+        page.addWidget(self.flow_scroll, 1)
+        page.addLayout(buttons)
 
         # ---- 候选页
         self.list = QListWidget(self)
         self.list.setObjectName("notesList")
         self.list.setAccessibleName(t("distill.tab.candidates"))
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list.setWordWrap(False)
         self.list.currentRowChanged.connect(self._show_row)
         self.detail = QTextBrowser(self)
         self.detail.setObjectName("notesDetail")

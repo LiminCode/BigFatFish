@@ -60,8 +60,14 @@ _INJECTED_BLOCK_RE = re.compile(
     r"bash-stderr|create-pr-command|side-sessions-event|ci-monitor-event|pasted_content[^>]*)>.*?</\1>",
     re.DOTALL)
 _INJECTED_TAG_RE = re.compile(r"</?[a-z][a-z0-9_-]{1,40}(?:\s[^>]*)?>", re.IGNORECASE)
+#: 只贴了图 / 粘贴块时客户端替进去的占位行（「[Image: source: …]」「[Pasted text #1 +12 lines]」）
+_ATTACHMENT_LINE_RE = re.compile(r"^\s*\[(Image|Pasted text)[^\]]*\]\s*$", re.IGNORECASE | re.MULTILINE)
+#: 只贴了图 / 粘贴块时客户端替进去的占位行（「[Image: source: …]」「[Pasted text #1 +12 lines]」）
+_ATTACHMENT_LINE_RE = re.compile(r"^\s*\[(Image|Pasted text)[^\]]*\]\s*$", re.IGNORECASE | re.MULTILINE)
 #: 定时任务 / 监视器发来的消息以方括号标签开头（「[Ticket watch]」「[Request interrupted by user]」）
 _BRACKET_PREFIX_RE = re.compile(r"^\s*\[[^\]\n]{1,60}\]")
+#: 上下文压缩后客户端替用户发的摘要（不是人敲的，里面还满是 always / never）
+_CONTINUATION_RE = re.compile(r"^\s*This session is being continued from a previous conversation", re.IGNORECASE)
 _ACKS = frozenset({
     "ok", "okay", "k", "y", "yes", "yep", "sure", "go", "go ahead", "continue", "proceed", "done", "thanks", "thx",
     "好", "好的", "嗯", "行", "可以", "继续", "是", "是的", "对", "对的", "没问题", "谢谢", "收到", "开始", "做吧", "去吧",
@@ -71,8 +77,8 @@ _RULE_RE = re.compile(
     r"from now on|going forward|in (?:the )?future|always|never|remember|every time|as a rule|by default|"
     r"do not .{0,30}anymore|don'?t .{0,30}anymore|no longer)", re.IGNORECASE)
 _DECISION_RE = re.compile(
-    r"(^\s*(决定|就用|选|用|就按|按|定了|定为|还是用)|不用\s*\S+\s*了?\s*[，,]?\s*用|"
-    r"^\s*(let'?s go with|go with|let'?s use|we'?ll use|use|pick|choose|decision|decided|i'?ll take|option [a-z0-9])\b)",
+    r"(^\s*(决定|同意|就用|选|用|就按|按|定了|定为|还是用)|不用\s*\S+\s*了?\s*[，,]?\s*用|"
+    r"^\s*(let'?s go with|go with|let'?s use|we'?ll use|use|pick|choose|decision|decided|agreed|i'?ll take|option [a-z0-9])\b)",
     re.IGNORECASE)
 _CORRECTION_RE = re.compile(
     r"(不对|不是这|不是我要|错了|弄错|搞错|改回|撤回|撤销|回退|别这样|不要这|不用这|不该|太大了|太小了|太长了|"
@@ -112,6 +118,8 @@ def clean_text(raw: str) -> str:
     """剥掉系统注入的块与标签，收紧空白；剩下的是用户自己敲的。"""
     text = _INJECTED_BLOCK_RE.sub("", str(raw or ""))
     text = _INJECTED_TAG_RE.sub("", text)
+    text = _ATTACHMENT_LINE_RE.sub("", text)
+    text = _ATTACHMENT_LINE_RE.sub("", text)
     lines = [line.rstrip() for line in text.splitlines()]
     return "\n".join(line for line in lines if line.strip()).strip()
 
@@ -121,7 +129,7 @@ def is_noise(text: str) -> bool:
     body = str(text or "").strip()
     if not body or body.startswith("/") or body.startswith("<"):
         return True
-    if _BRACKET_PREFIX_RE.match(body):
+    if _BRACKET_PREFIX_RE.match(body) or _CONTINUATION_RE.match(body):
         return True
     return body.lower().rstrip("。.!！~") in _ACKS
 

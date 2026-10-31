@@ -57,6 +57,7 @@ def test_side_is_decided_by_path_not_by_entrypoint():
     "ok", "好的", "继续", "yes", "y", "嗯", "可以", "go ahead", "/compact", "/model opus",
     "[Request interrupted by user]", "<task-notification>done</task-notification>",
     "[Ticket watch] nothing new", "<ide_opened_file>a.py</ide_opened_file>", "",
+    "This session is being continued from a previous conversation that ran out of context. Always…",
 ])
 def test_noise_messages_are_skipped(text):
     assert md.is_noise(text), text
@@ -72,6 +73,13 @@ def test_injected_blocks_are_stripped_but_my_words_survive():
     assert md.clean_text(raw) == "以后 PR 描述用英文"
 
 
+def test_attachment_placeholders_are_not_my_words():
+    """只发了一张图：客户端把正文写成「[Image: source: …]」，剥掉后是空的 → 噪音；图 + 话则留话。"""
+    assert md.is_noise(md.clean_text("[Image: source: C:\\Users\\me\\x.png]"))
+    assert md.clean_text("[Image: source: C:\\Users\\me\\x.png]\n字太大了") == "字太大了"
+    assert md.clean_text("[Pasted text #1 +12 lines]\n按这个改") == "按这个改"
+
+
 @pytest.mark.parametrize("text,tag", [
     ("以后回复都用中文", md.TAG_RULE),
     ("from now on, open PRs directly", md.TAG_RULE),
@@ -80,6 +88,7 @@ def test_injected_blocks_are_stripped_but_my_words_survive():
     ("don't use a font list, it maps the whole library", md.TAG_CORRECTION),
     ("决定：用 CLAUDE.md 受管块，不另开目录", md.TAG_DECISION),
     ("let's go with option B", md.TAG_DECISION),
+    ("同意原始库放在本地。在页面上要加上原始库链接", md.TAG_DECISION),
     ("please add a button to the card", md.TAG_TASK),
 ])
 def test_tagging_rules(text, tag):

@@ -201,11 +201,11 @@ class MemoryDistillService(QObject):
         return stats
 
     def recent(self, limit: int = 200) -> list[dict]:
-        """最近的候选，新的在前。"""
+        """最近的候选，按时间新的在前（日文件里的顺序是扫到的顺序，不是时间顺序）。"""
         rows: list[dict] = []
         store = self.store
         for path in reversed(store.day_files()):
-            rows.extend(reversed(store.read_day(path.stem)))
+            rows.extend(sorted(store.read_day(path.stem), key=lambda r: str(r.get("time") or ""), reverse=True))
             if len(rows) >= limit:
                 break
         return rows[:limit]

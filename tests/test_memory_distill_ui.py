@@ -107,7 +107,7 @@ def test_service_refresh_runs_in_thread_and_reports_back(tmp_path):
     assert not service.busy and service.last_error == "" and service.last_refresh_at
     stats = service.stats()
     assert stats["total"] == 2 and stats["by_side"] == {md.SIDE_PERSONAL: 1, md.SIDE_WORK: 1}
-    assert [r["text"] for r in service.recent()] == ["不对，字太大了", "要，以后分支也用"], "新的在前"
+    assert [r["text"] for r in service.recent()] == ["不对，字太大了", "要，以后分支也用"], "按时间新的在前"
     assert service.place(svc.PLACE_WSL_CLAUDE).path.startswith("\\\\wsl.localhost"), "第一次抽取顺便问了 WSL 的路径"
     assert service.refresh_now() and _pump(lambda: got == [2, 0]), "第二次没新内容"
 
@@ -269,6 +269,21 @@ def test_window_in_english(tmp_path):
         assert [window.tabs.tabText(i) for i in range(3)] == ["Flow", "Candidates", "Stats"]
         assert window.diagram.value("distill") == "phase 2"
         assert window.place_buttons[svc.PLACE_CANDIDATES].text() == "Raw candidate pool (local)"
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_flow_page_scrolls_instead_of_squashing_the_diagram(tmp_path):
+    """实机截图（2026-10-31）：窗口不够高时入口按钮画到了流程图第二行上。流程图定高、整页滚动。"""
+    window = ui.MemoryDistillWindow()
+    try:
+        window.resize(600, 500)
+        window.show()
+        app.processEvents()
+        assert window.diagram.height() == ui.TILE_H * 2 + ui.TILE_GAP + 8
+        assert window.flow_scroll.verticalScrollBar().maximum() > 0, "内容比窗口高就能滚"
+        assert window.refresh_btn.isVisible(), "按钮行在滚动区外，一直看得见"
     finally:
         window.close()
         window.deleteLater()
