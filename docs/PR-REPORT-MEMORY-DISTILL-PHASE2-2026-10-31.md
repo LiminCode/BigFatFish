@@ -41,12 +41,12 @@
 | `pet/memory_distill_run.py`（新） | `is_due` / 状态文件；`select_candidates`（个人侧、上次之后、预算）；`format_candidates`；`repo_root` / `encode_project_dir` / `project_dir`（Claude Code 的目录编码 + worktree 归主仓库 + 大小写不敏感匹配）；`memory_context`；`Proposal` / `parse_proposals`（含截断抢救）；`ProposalStore`；`build_prompt`；`run_once` | 蒸馏这一步全是纯逻辑，模型调用注入，测试不花钱 |
 | `pet/memory_distill_sink.py`（新） | `Entry` / `EntriesStore.apply`（add / change / retire）；`render_block` / `splice_block` / `write_claude_md`（受管块 + 备份）；`write_project_entry` / `remove_project_entry`（文件 + 索引行）；`render_vault_note` / `write_vault_note` / `sync_vault`；`apply_proposal` | 三个落点一处收口；条目库做唯一真相才能真的改掉 / 作废旧内容 |
 | `pet/memory_distill_service.py` | `probe_wsl`（开窗独立探 WSL 目录，见实机记录 6）；`distill_now`（线程）、`check` 里的 `is_due`、`review`（接受即落盘、推送另起线程）、`sync_vault`、`stats` 多 `distill / proposals / entries / vault` 四块；可注入 `complete / provider / home / token / git` | Qt 侧只管线程与信号 |
-| `pet/memory_distill_ui.py` | 「提案」页、后三格数字、`run_line`、`proposal_label`、「现在总结」可点、控制器的 `distill_now / review / _on_distilled / _on_reviewed / _on_synced`、截断说明 | 审核要能改字，不能只是按钮 |
+| `pet/memory_distill_ui.py` | `PlaceTile`（实色 Metro 入口磁贴：标题 + 说明 + WSL 的「VS Code ▸」角标，高度按说明行数自算）、`FlowDiagram` 六格实色化、`breakable`（富文本路径可折行）；「提案」页、后三格数字、`run_line`、`proposal_label`、「现在总结」可点、控制器的 `distill_now / review / _on_distilled / _on_reviewed / _on_synced`、截断说明 | 审核要能改字，不能只是按钮 |
 | `pet/memory_distill.py` | 默认提示词加 `{dismissed}` 段；配置多 `mirror_to_vault`（默认开） | |
 | `pet/settings_memory_distill.py` | 「镜像进知识库」开关一行 | |
 | `pet/personal_vault.py` | `sync_inspiration` 的 add → commit → pull → push 抽成 `sync_path(repo_dir, rel_path, message)`，灵感记录改为调它 | 镜像复用同一条推送路，不复制 |
 | `pet/work_briefing.py` | `render_template` 的占位符白名单加 `candidates / memory / dismissed` | 它只换认识的名字（用户模板里的 JSON 花括号不能炸） |
-| `pet/locale/zh.json`、`en.json` | `distill.*` 新增 46 键，删 1 键（`distill_phase2`） | |
+| `pet/locale/zh.json`、`en.json` | `distill.*` 新增 57 键（含 7 个入口说明 `*_desc`、`place.vscode*`、`bubble.vscode_*`），删 1 键（`distill_phase2`） | |
 
 ### 测试
 
@@ -147,6 +147,30 @@
   是**跑的时候屏幕锁着**：前台窗口是 `LockApp.exe`（实测 `GetForegroundWindow` → pid 的映像名），`vision.foreground_window_info`
   对不可见的前台窗口按设计返回 None。`pet/vision.py` 本分支没动；解锁后单跑即过。
 
+7. **用户再要求**（样式 + 一个功能）：「流程图的框、快捷入口的框都要 Windows Phone Metro 风格，不是只做一个黑边；入口标题加大、
+   小一号字说明目录里是什么；目录在 WSL 里的加『用 VS Code 打开』，相当于在 WSL 那个目录里 `code .`」。
+   - **做法**：`FlowDiagram` 六格改实色（用量看板那套 Windows Phone accent 色）、白字、不描边；入口换成自绘的 `PlaceTile(TiltButton)`：
+     15px DemiBold 标题 + 12px 说明（悬停提亮 / 按下压暗 / 不可用灰 `#8e8e93`），路径仍在提示里；高度按说明在当前宽度下的
+     行数用字体度量算（≥78），最小宽度不按标题字算（长标题省略号），单出来的最后一块横跨两列；路径在 WSL 里（`\\wsl.localhost\…`
+     / `\\wsl$\…`，`Place.wsl`）的磁贴右下画「VS Code ▸」，点角标 / Shift+回车 → `service.open_in_vscode`。
+   - **「用 VS Code 打开」的实测转折**：第一版用 `claude_session_jump.open_in_vscode`（Windows 侧 `code --remote wsl+Ubuntu-24.04
+     /home/<用户>/.claude`）：`Popen` 成功、`code` 返回 0，但等 40 s 没有新窗口，`code --status` 的窗口清单里也没有 `.claude`；
+     `remote-wsl` 扩展装着。改在 WSL 里跑 `wsl.exe -d Ubuntu-24.04 -e sh -c "cd /home/<用户>/.claude && code ."`：
+     20 s 内 `code --status` 多出 `window [6] (.claude [WSL: Ubuntu-24.04] - CLAUDE.md)`。所以最终实现走 WSL 这边（后台线程、
+     60 s 超时、`vscode_done(ok, path, why)` 回 GUI 冒泡；WSL 里找不到 `code` 时把 `sh` 的报错原样冒出来）。
+   - **红 → 绿**：`test_flow_diagram_tiles_are_solid_metro_colors`（抓图取格子四角像素 = 该格颜色，修前是描边色）、
+     `test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip`（磁贴类型 / 颜色 / 说明文案 / 角点像素、角标只在
+     WSL 磁贴上、点角标发 `vscode_requested` 不发 `place_requested`、520px 宽说明折行磁贴长高且整页不横向溢出、灰磁贴灰色）、
+     `test_service_opens_a_wsl_place_by_running_code_inside_wsl`（argv 精确到 `[-d, Ubuntu, -e, sh, -c, cd … && code .]`、
+     成功 / `code: not found` 两种结果）。修前三条分别 `AttributeError: STAGE_COLORS / PlaceTile / open_in_vscode`。
+     窄窗口断言暴露了两处真问题：`QPushButton` 的最小宽度默认按文字算、富文本里的路径没有断点——分别用 `minimumSizeHint`
+     与零宽空格（`breakable`）解决；「快捷入口」说明行改折行。
+   - **实机**：真实配置截图（`QT_QPA_PLATFORM=windows`）700×900 白 / 黑两主题 + 520×760 窄窗，六格 + 七块入口全部实色、
+     无边框，窄窗下长标题省略号、说明折成三行、磁贴 78 → 94 px，无横向溢出；`open_window` 0.355 s（含一次 wsl.exe 探测）。
+     真实服务路径 `open_in_vscode`：1.80 s（同步 spawn，含 wsl.exe 里跑完 `code .`），`vscode_done=(True, …, '')`，VS Code 窗口
+     清单里有 `.claude [WSL: Ubuntu-24.04]`。桌宠重启 pid 39860，日志 0 条非噪音错误。
+   - **开销**：自绘磁贴只在重绘时画（无定时器）；「VS Code ▸」一次 wsl.exe 调用（点了才有，后台线程）；其余不变。
+
 ## 七、已知限制与后续
 
 - **第一次全历史**最多送 150 条，可能要跑两三次「现在总结」才把积压消化完（截断时后一半自动留到下次）；之后每天几十条一次就完。
@@ -169,15 +193,15 @@
 |---|---|
 | `pet/memory_distill_run.py`（新） | 456 / 0 |
 | `pet/memory_distill_sink.py`（新） | 354 / 0 |
-| `pet/memory_distill_ui.py` | 248 / 9 |
-| `pet/memory_distill_service.py` | 221 / 4 |
+| `pet/memory_distill_ui.py` | 460 / 44 |
+| `pet/memory_distill_service.py` | 260 / 4 |
 | `pet/memory_distill.py` | 8 / 1 |
 | `pet/settings_memory_distill.py` | 6 / 0 |
 | `pet/personal_vault.py` | 9 / 3 |
 | `pet/work_briefing.py` | 1 / 1 |
-| `pet/locale/zh.json`、`en.json` | 47 / 2 ×2 |
+| `pet/locale/zh.json`、`en.json` | 58 / 2 ×2 |
 | `tests/test_memory_distill_phase2_ui.py`（新） | 295 / 0 |
 | `tests/test_memory_distill_run.py`（新） | 251 / 0 |
 | `tests/test_memory_distill_sink.py`（新） | 152 / 0 |
-| `tests/test_memory_distill_ui.py` | 38 / 6 |
+| `tests/test_memory_distill_ui.py` | 128 / 8 |
 | `docs/PR-REPORT-MEMORY-DISTILL-PHASE2-2026-10-31.md`（新）、`docs/INDEX.md` | 132 / 0、1 / 0 |
