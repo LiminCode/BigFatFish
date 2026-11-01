@@ -23,7 +23,10 @@ from . import memory_distill as md
 from . import memory_distill_run as run
 from . import memory_distill_sink as sink
 from . import personal_vault as pv
+from . import vscode_workspaces as vw
 from . import work_notes as wn
+from .claude_session_info import SessionDetail
+from .claude_session_jump import open_in_vscode as _open_in_vscode
 
 log = logging.getLogger("big-fat-fish")
 
@@ -57,6 +60,11 @@ class Place:
             return Path(self.path).exists()
         except OSError:
             return False
+
+    @property
+    def wsl(self) -> bool:
+        """目录在 WSL 里（``\\\\wsl.localhost\\<发行版>\\…`` / ``\\\\wsl$\\…``）：入口上多一个「用 VS Code 打开」。"""
+        return bool(self.path) and self.path.startswith("\\\\") and vw.parse_directory(self.path, default_distro=lambda: "")[0]
 
 
 def _spawn_thread(target: Callable[[], None]) -> None:
@@ -103,7 +111,7 @@ class MemoryDistillService(QObject):
 
     def __init__(self, config, parent: QObject | None = None, *, spawn=_spawn_thread, roots=None,
                  wsl_runner=claude_hooks.run_wsl, opener=_open_target, now=None, complete=None, provider=None,
-                 home: Path | None = None, token=None, git=pv.run_git) -> None:
+                 home: Path | None = None, token=None, git=pv.run_git, vscode=_open_in_vscode) -> None:
         super().__init__(parent)
         self._config = config
         self._spawn = spawn
@@ -116,6 +124,7 @@ class MemoryDistillService(QObject):
         self._home = home                        # None = Path.home()
         self._token = token or pv.github_token
         self._git = git
+        self._vscode = vscode                    # (SessionDetail, 目标路径) -> 开成没有
         self._generation = 0
         self._busy = False
         self._distilling = False
@@ -444,6 +453,18 @@ class MemoryDistillService(QObject):
 
     def place(self, key: str) -> Place | None:
         return next((p for p in self.places() if p.key == key), None)
+
+    def open_in_vscode(self, key: str) -> tuple[str, str]:
+        """在 WSL 里对这个入口的目录 ``code .``（``code --remote wsl+<发行版> <路径>``）。
+        返回 ``("opened" | "not_wsl" | "no_code" | "missing", 路径)``。"""
+        place = self.place(key)
+        if place is None or not place.path:
+            return "missing", ""
+        if not place.wsl:
+            return "not_wsl", place.path
+        _wsl, distro, inner = vw.parse_directory(place.path, default_distro=lambda: "")
+        detail = SessionDetail(agent="claude_wsl", cwd=inner, distro=distro)
+        return ("opened" if self._vscode(detail, inner) else "no_code"), place.path
 
     def open_place(self, key: str) -> tuple[str, str]:
         """打开一个入口：``("obsidian" | "folder" | "file" | "missing" | "failed", 路径)``。"""

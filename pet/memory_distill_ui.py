@@ -14,10 +14,11 @@ import datetime as dt
 import html
 from typing import Iterable
 
-from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QPlainTextEdit, QScrollArea, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QScrollArea, QSizePolicy, QSplitter, QTabWidget, QTextBrowser, QToolTip,
+                               QVBoxLayout, QWidget)
 
 from . import memory_distill as md
 from . import memory_distill_run as run
@@ -44,6 +45,35 @@ PLACE_KEYS = {
     svc.PLACE_GLOBAL_CLAUDE_MD: "distill.place.global_claude_md", svc.PLACE_TRANSCRIPTS: "distill.place.transcripts",
     svc.PLACE_CANDIDATES: "distill.place.candidates",
 }
+#: Windows Phone 的 accent 色（和用量看板同一套）：流程图六格一组、入口磁贴一组，白字，不描边
+STAGE_COLORS = {"source": "#1ba1e2", "extract": "#0050ef", "store": "#008a00",
+                "distill": "#6a00ff", "review": "#d80073", "sink": "#fa6800"}
+PLACE_COLORS = {
+    svc.PLACE_PERSONAL_VAULT: "#60a917", svc.PLACE_WORK_VAULT: "#0050ef", svc.PLACE_WINDOWS_CLAUDE: "#1ba1e2",
+    svc.PLACE_WSL_CLAUDE: "#e51400", svc.PLACE_GLOBAL_CLAUDE_MD: "#6a00ff", svc.PLACE_TRANSCRIPTS: "#647687",
+    svc.PLACE_CANDIDATES: "#f0a30a",
+}
+DISABLED_TILE = "#8e8e93"
+PLACE_TILE_H = 78
+PLACE_TITLE_PX, PLACE_DESC_PX, PLACE_CHIP_PX = 15, 12, 11
+_PAD = 14
+
+
+def tile_fill(color: str, *, hovered: bool = False, pressed: bool = False, enabled: bool = True) -> QColor:
+    """磁贴底色：实色；悬停提一点亮、按下压一点暗、不可用一律灰。"""
+    if not enabled:
+        return QColor(DISABLED_TILE)
+    base = QColor(color)
+    if pressed:
+        return base.darker(115)
+    return base.lighter(112) if hovered else base
+
+
+def _tile_font(base: QFont, px: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    font = QFont(base)
+    font.setPixelSize(px)
+    font.setWeight(weight)
+    return font
 
 _QSS = """
 QWidget#memoryDistill {{
@@ -84,7 +114,6 @@ QPushButton:hover {{ background: {tile_hover}; }}
 QPushButton:pressed {{ background: {outline}; color: {page}; }}
 QPushButton:focus {{ border-color: {accent}; }}
 QPushButton:disabled {{ color: {disabled}; border-color: {disabled}; }}
-QPushButton#placeButton {{ text-align: left; padding: 6px 12px; min-height: 34px; font-weight: 400; }}
 QPushButton#themeToggle {{ border: 2px solid transparent; font-size: 16px; min-width: 30px; padding: 0 6px; }}
 QPushButton#themeToggle:hover {{ border-color: {outline}; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
@@ -230,7 +259,7 @@ def sides_html(settings: dict, stats: dict) -> str:
     """「个人 / 公司怎么分」：三条规则、当前公司目录、两侧各多少条、分开之后各自去哪。"""
     esc = html.escape
     by_side = stats.get("by_side") or {}
-    roots = "；".join(settings.get("work_roots") or []) or "—"
+    roots = "；".join(breakable(r) for r in settings.get("work_roots") or []) or "—"
     lines = [
         f"<b>{esc(t('distill.sides.title'))}</b>",
         esc(t("distill.sides.rule_wsl")),
@@ -242,6 +271,11 @@ def sides_html(settings: dict, stats: dict) -> str:
     return "<br>".join(lines)
 
 
+def breakable(path: str) -> str:
+    """路径里每个分隔符后面放一个零宽空格：富文本标签才有地方折行，不然一串长路径就决定了整页的最小宽度。"""
+    return path.replace("\\", "\​").replace("/", "/​")
+
+
 def settings_html(settings: dict, root: str) -> str:
     esc = html.escape
     lines = [
@@ -249,15 +283,15 @@ def settings_html(settings: dict, root: str) -> str:
         esc(t("distill.settings.enabled_on") if settings["enabled"] else t("distill.settings.enabled_off")),
         esc(t("distill.settings.daily_at", time=settings["daily_at"])),
         esc(t("distill.settings.keep_days", days=settings["keep_days"])),
-        esc(t("distill.settings.work_roots", roots="; ".join(settings["work_roots"]))),
+        esc(t("distill.settings.work_roots", roots="; ".join(breakable(r) for r in settings["work_roots"]))),
         esc(t("distill.settings.model", model=settings["model"] or t("distill.settings.same_as_chat"), effort=settings["effort"])),
-        esc(t("distill.settings.root", path=root)),
+        esc(t("distill.settings.root", path=breakable(root))),
     ]
     return "<br>".join(lines)
 
 
 class FlowDiagram(QWidget):
-    """六格流程图（两行三列），格子里写实时数字；第二期的格子虚线框。``stage_clicked(str)``。"""
+    """六格流程图（两行三列）：每格一块实色 Metro 磁贴（白字、不描边），格子里写实时数字。``stage_clicked(str)``。"""
 
     stage_clicked = Signal(str)
 
@@ -298,36 +332,25 @@ class FlowDiagram(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rects = self.tile_rects()
-        base = self.font()
-        title_font = QFont(base)
-        title_font.setPointSizeF(base.pointSizeF() + 1)
-        title_font.setWeight(QFont.Weight.DemiBold)
-        small = QFont(base)
-        small.setPointSizeF(max(7.0, base.pointSizeF() - 1.5))
+        title_font = _tile_font(self.font(), PLACE_TITLE_PX, QFont.Weight.DemiBold)
+        small = _tile_font(self.font(), PLACE_CHIP_PX)
+        white = QColor(255, 255, 255)
         for stage in STAGES:
             rect = rects[stage]
-            later = STAGE_PHASE[stage] == 2
             hovered = stage == self._hover and stage in STAGE_PLACE
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(c["tile_hover"] if hovered else c["tile"]))
-            painter.drawRect(rect)
-            pen = QPen(QColor(c["muted"] if later else c["accent"]), 2)
-            if later:
-                pen.setStyle(Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(rect.adjusted(1, 1, -1, -1))
+            painter.fillRect(rect, tile_fill(STAGE_COLORS[stage], hovered=hovered))
             inner = rect.adjusted(12, 10, -12, -8)
             painter.setFont(small)
-            painter.setPen(QColor(c["muted"]))
+            painter.setPen(QColor(255, 255, 255, 210))
+            caption = f"{STAGES.index(stage) + 1:02d}  {t(f'distill.stage.{stage}_caption')}"
             painter.drawText(inner, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                             f"{STAGES.index(stage) + 1:02d}  {t(f'distill.stage.{stage}_caption')}")
+                             QFontMetrics(small).elidedText(caption, Qt.TextElideMode.ElideRight, inner.width()))
             painter.setFont(title_font)
-            painter.setPen(QColor(c["muted"] if later else c["title"]))
+            painter.setPen(white)
             painter.drawText(inner.adjusted(0, 18, 0, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
                              t(f"distill.stage.{stage}"))
             painter.setFont(small)
-            painter.setPen(QColor(c["muted"] if later else c["text"]))
+            painter.setPen(white)
             painter.drawText(inner, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom | Qt.TextFlag.TextWordWrap,
                              self._values.get(stage, ""))
         # 箭头：同一行相邻格之间一条短线；第一行末到第二行首一条折线
@@ -377,6 +400,138 @@ class FlowDiagram(QWidget):
         super().mousePressEvent(event)
 
 
+class PlaceTile(TiltButton):
+    """快捷入口的 Metro 磁贴：实色底、白字，大标题下面一行小字说明目录里是什么（路径放提示里）。
+    目录在 WSL 里时右下角多一块「VS Code ▸」角标：点它发 ``action_clicked``（在那个目录里 ``code .``），
+    点别处还是普通的 ``clicked``。键盘：回车 = 打开目录，Shift+回车 = 角标。外观全部自己画，不走样式表。"""
+
+    action_clicked = Signal()
+
+    def __init__(self, key: str, title: str, desc: str, color: str, parent: QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        self.key = key
+        self._desc = desc
+        self._color = color
+        self._action = ""
+        self._action_hint = ""
+        self.setObjectName("placeButton")
+        self.setAccessibleName(title)
+        self.setAccessibleDescription(desc)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(PLACE_TILE_H)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(240, self.minimumHeight())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(150, self.minimumHeight())        # 不按标题文字算：长标题画时省略号截断，不许把网格撑宽
+
+    def _desc_width(self, width: int) -> int:
+        chip = self.action_rect()
+        return max(40, width - 2 * _PAD - (chip.width() + 8 if self._action else 0))
+
+    def _fit_height(self) -> None:
+        """说明在当前宽度下要几行就给几行（字体度量），磁贴至少 PLACE_TILE_H 高。"""
+        metrics = QFontMetrics(_tile_font(self.font(), PLACE_DESC_PX))
+        needed = metrics.boundingRect(QRect(0, 0, self._desc_width(self.width()), 1000),
+                                      Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self._desc).height()
+        height = max(PLACE_TILE_H, 36 + needed + 10)
+        if height != self.minimumHeight():
+            self.setMinimumHeight(height)
+            self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_height()
+
+    @property
+    def color(self) -> str:
+        return self._color
+
+    @property
+    def description(self) -> str:
+        return self._desc
+
+    @property
+    def action(self) -> str:
+        return self._action
+
+    def set_action(self, text: str, hint: str = "") -> None:
+        if (text, hint) != (self._action, self._action_hint):
+            self._action, self._action_hint = text, hint
+            self.setAccessibleDescription(f"{self._desc}\n{hint}" if text and hint else self._desc)
+            self._fit_height()
+            self.update()
+
+    def action_rect(self) -> QRect:
+        if not self._action:
+            return QRect()
+        width = QFontMetrics(_tile_font(self.font(), PLACE_CHIP_PX, QFont.Weight.DemiBold)).horizontalAdvance(self._action) + 16
+        return QRect(self.width() - _PAD - width, self.height() - _PAD - 22, width, 22)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setTransform(self.current_tilt())
+        pointer = self.tilt_point()
+        enabled = self.isEnabled()
+        painter.fillRect(self.rect(), tile_fill(self._color, hovered=pointer is not None, pressed=self.isDown(), enabled=enabled))
+        white = QColor(255, 255, 255)
+        dim = QColor(255, 255, 255, 210 if enabled else 160)
+        inner_w = self.width() - 2 * _PAD
+        title_font = _tile_font(self.font(), PLACE_TITLE_PX, QFont.Weight.DemiBold)
+        painter.setFont(title_font)
+        painter.setPen(white)
+        painter.drawText(QRect(_PAD, 10, inner_w, 24), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         QFontMetrics(title_font).elidedText(self.text(), Qt.TextElideMode.ElideRight, inner_w))
+        chip = self.action_rect()
+        desc_w = inner_w - (chip.width() + 8 if self._action else 0)
+        painter.setFont(_tile_font(self.font(), PLACE_DESC_PX))
+        painter.setPen(dim)
+        painter.drawText(QRect(_PAD, 36, desc_w, self.height() - 36 - 6),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, self._desc)
+        if self._action:
+            over_chip = pointer is not None and chip.contains(pointer)
+            painter.setPen(QPen(white, 1))
+            painter.setBrush(QColor(255, 255, 255, 70 if over_chip else 0))
+            painter.drawRect(chip.adjusted(0, 0, -1, -1))
+            painter.setFont(_tile_font(self.font(), PLACE_CHIP_PX, QFont.Weight.DemiBold))
+            painter.setPen(white)
+            painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, self._action)
+        if self.hasFocus():
+            painter.setPen(QPen(white, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.rect().adjusted(1, 1, -2, -2))
+        painter.end()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._action and self.isDown() and self.action_rect().contains(event.position().toPoint()):
+            self.setDown(False)
+            self.update()
+            event.accept()
+            self.action_clicked.emit()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if (self._action and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                and event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            event.accept()
+            self.action_clicked.emit()
+            return
+        super().keyPressEvent(event)
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip and self._action and self.action_rect().contains(event.pos()):
+            QToolTip.showText(event.globalPos(), self._action_hint or self._action, self)
+            return True
+        return super().event(event)
+
+
+
 class MemoryDistillWindow(QWidget):
     """独立窗口。信号：``refresh_requested`` / ``distill_requested`` / ``settings_requested`` /
     ``place_requested(key)`` / ``theme_changed(theme)``。"""
@@ -385,6 +540,7 @@ class MemoryDistillWindow(QWidget):
     distill_requested = Signal()
     settings_requested = Signal()
     place_requested = Signal(str)
+    vscode_requested = Signal(str)                          # 在 WSL 里对这个入口的目录 code .
     review_requested = Signal(str, str, str, str, str)     # id, status, title, why, how
     theme_changed = Signal(str)
 
@@ -422,17 +578,21 @@ class MemoryDistillWindow(QWidget):
         self.diagram.stage_clicked.connect(self._on_stage)
         self.places_caption = QLabel(t("distill.places.caption"), self)
         self.places_caption.setObjectName("distillCaption")
-        self.place_buttons: dict[str, TiltButton] = {}
+        self.places_caption.setWordWrap(True)              # 不折行的话它一行字就决定了整页的最小宽度
+        self.place_buttons: dict[str, PlaceTile] = {}
         places = QGridLayout()
         places.setHorizontalSpacing(10)
-        places.setVerticalSpacing(8)
+        places.setVerticalSpacing(10)
+        count = len(svc.PLACE_ORDER)
         for index, key in enumerate(svc.PLACE_ORDER):
-            button = TiltButton(t(PLACE_KEYS[key]), self)
-            button.setObjectName("placeButton")
-            button.setAccessibleName(t(PLACE_KEYS[key]))
-            button.clicked.connect(lambda _checked=False, key=key: self.place_requested.emit(key))
-            self.place_buttons[key] = button
-            places.addWidget(button, index // 2, index % 2)
+            tile = PlaceTile(key, t(PLACE_KEYS[key]), t(PLACE_KEYS[key] + "_desc"), PLACE_COLORS[key], self)
+            tile.clicked.connect(lambda _checked=False, key=key: self.place_requested.emit(key))
+            tile.action_clicked.connect(lambda key=key: self.vscode_requested.emit(key))
+            self.place_buttons[key] = tile
+            if index == count - 1 and count % 2:
+                places.addWidget(tile, index // 2, 0, 1, 2)          # 单出来的最后一块横跨两列（Metro 的宽磁贴）
+            else:
+                places.addWidget(tile, index // 2, index % 2)
         self.candidates_note = QLabel(t("distill.candidates.note"), self)
         self.candidates_note.setObjectName("distillCaption")
         self.candidates_note.setWordWrap(True)
@@ -665,6 +825,8 @@ class MemoryDistillWindow(QWidget):
             else:
                 button.setToolTip(t("distill.place.unknown"))
                 button.setEnabled(False)
+            button.set_action(t("distill.place.vscode") if place.wsl and button.isEnabled() else "",
+                              t("distill.place.vscode_hint"))
 
     def show_candidates(self, rows: list[dict]) -> None:
         self._rows = list(rows)
@@ -792,6 +954,17 @@ class MemoryDistillController(QObject):
         elif how == "folder" and self.service.place(key) is not None and self.service.place(key).kind == "vault":
             self._bubble(t("distill.bubble.obsidian_hint", path=target), 9000)
 
+    def open_in_vscode(self, key: str) -> None:
+        how, target = self.service.open_in_vscode(key)
+        if how == "opened":
+            self._bubble(t("distill.bubble.vscode_opened", path=target), 5000)
+        elif how == "no_code":
+            self._bubble(t("vscode.ui.code_command_was_not_found"), 6000)
+        elif how == "not_wsl":
+            self.open_place(key)                                 # 不在 WSL 里：就当普通入口打开
+        else:
+            self._bubble(t("distill.bubble.missing", path=target or t("distill.place.unknown")), 6000)
+
     def open_settings(self) -> None:
         opener = getattr(self._host, "open_settings_for", None)
         sprite = getattr(self._host, "sprite", None)
@@ -808,6 +981,7 @@ class MemoryDistillController(QObject):
             self.window.settings_requested.connect(self.open_settings)
             self.window.distill_requested.connect(self.distill_now)
             self.window.review_requested.connect(self.review)
+            self.window.vscode_requested.connect(self.open_in_vscode)
         self.service.probe_wsl()             # WSL 那条入口的路径要问 wsl.exe；抽取没开也得知道
         self._refresh_window()
         if tab:

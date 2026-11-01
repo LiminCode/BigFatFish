@@ -14,8 +14,9 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt
+from PySide6.QtGui import QFontMetrics, QMouseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
@@ -290,6 +291,82 @@ def test_window_theme_toggle_saves_the_shared_preference(tmp_path):
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_flow_diagram_tiles_are_solid_metro_colors():
+    """用户 2026-10-31：流程图的框要 Windows Phone 磁贴（实色、白字），不是只画一道边。"""
+    diagram = ui.FlowDiagram(ui.briefing_tokens(False))
+    diagram.resize(640, diagram.height())
+    image = diagram.grab().toImage()
+    assert set(ui.STAGE_COLORS) == set(ui.STAGES) and len(set(ui.STAGE_COLORS.values())) == len(ui.STAGES), "六格六色"
+    for stage, rect in diagram.tile_rects().items():
+        for x, y in ((rect.left() + 1, rect.top() + 1), (rect.right() - 1, rect.bottom() - 1), (rect.left() + 3, rect.center().y())):
+            assert image.pixelColor(x, y).name() == ui.STAGE_COLORS[stage], (stage, x, y, "边上也是实色，没有描边")
+
+
+def test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip(tmp_path):
+    """入口磁贴：实色 + 白字大标题 + 小字说明目录里是什么；路径在提示里；目录在 WSL 里时右下角「VS Code ▸」，
+    点角标发 ``vscode_requested``、点别处发 ``place_requested``；灰掉的磁贴一律灰色。"""
+    service = _service(tmp_path, enabled=False)
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    window = controller.window
+    try:
+        window.resize(700, 900)
+        app.processEvents()
+        tile = window.place_buttons[svc.PLACE_CANDIDATES]
+        assert isinstance(tile, ui.PlaceTile) and tile.color == ui.PLACE_COLORS[svc.PLACE_CANDIDATES]
+        assert tile.description == i18n.t("distill.place.candidates_desc") and tile.description and tile.description != tile.text()
+        assert tile.height() >= ui.PLACE_TILE_H and ui.PLACE_TITLE_PX > ui.PLACE_DESC_PX
+        image = tile.grab().toImage()
+        for x, y in ((1, 1), (tile.width() - 2, 1), (1, tile.height() - 2)):
+            assert image.pixelColor(x, y).name() == ui.PLACE_COLORS[svc.PLACE_CANDIDATES], "实色磁贴，没有边框"
+        wsl = window.place_buttons[svc.PLACE_WSL_CLAUDE]
+        assert wsl.isEnabled() and wsl.action == i18n.t("distill.place.vscode")
+        assert window.place_buttons[svc.PLACE_WINDOWS_CLAUDE].action == "", "不在 WSL 里的目录没有角标"
+        asked: list[str] = []
+        opened: list[str] = []
+        window.vscode_requested.connect(asked.append)
+        window.place_requested.connect(opened.append)
+        QTest.mouseClick(wsl, Qt.MouseButton.LeftButton, pos=wsl.action_rect().center())
+        assert asked == [svc.PLACE_WSL_CLAUDE] and opened == []
+        QTest.mouseClick(wsl, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+        assert asked == [svc.PLACE_WSL_CLAUDE] and opened == [svc.PLACE_WSL_CLAUDE]
+        window.resize(520, 700)                       # 最窄：说明折成三行，磁贴得跟着长高；整页不许横向溢出
+        app.processEvents()
+        body = window.flow_scroll.widget()
+        assert body.width() <= window.flow_scroll.viewport().width(), (body.width(), window.flow_scroll.viewport().width())
+        assert body.minimumSizeHint().width() <= window.flow_scroll.viewport().width()
+        for key, each in window.place_buttons.items():
+            metrics = QFontMetrics(ui._tile_font(each.font(), ui.PLACE_DESC_PX))
+            needed = metrics.boundingRect(QRect(0, 0, each._desc_width(each.width()), 1000),
+                                          Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, each.description).height()
+            assert each.height() >= 36 + needed + 6, (key, each.height(), needed)
+        window.resize(700, 900)
+        app.processEvents()
+        service._config.set("work_notes", {"repo_dir": str(tmp_path / "nope")})
+        window.show_places(service.places())
+        grey = window.place_buttons[svc.PLACE_WORK_VAULT]
+        assert not grey.isEnabled() and grey.grab().toImage().pixelColor(1, 1).name() == ui.DISABLED_TILE
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_service_opens_a_wsl_place_in_vscode(tmp_path):
+    """「用 VS Code 打开」= 在 WSL 里对那个目录 code .：走 claude_session_jump.open_in_vscode（--remote wsl+发行版）。"""
+    service = _service(tmp_path, enabled=False)
+    launched: list[tuple] = []
+    service._vscode = lambda detail, target: launched.append((detail.agent, detail.distro, detail.cwd, target)) or True
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("missing", ""), "没问过 WSL 之前不知道在哪"
+    service.probe_wsl()
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("opened", r"\\wsl.localhost\Ubuntu\home\me\.claude")
+    assert launched == [("claude_wsl", "Ubuntu", "/home/me/.claude", "/home/me/.claude")]
+    windows_home = service.place(svc.PLACE_WINDOWS_CLAUDE).path
+    assert service.open_in_vscode(svc.PLACE_WINDOWS_CLAUDE) == ("not_wsl", windows_home)
+    service._vscode = lambda *_a: False
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE)[0] == "no_code"
+    assert not service.place(svc.PLACE_WINDOWS_CLAUDE).wsl and service.place(svc.PLACE_WSL_CLAUDE).wsl
 
 
 def test_window_in_english(tmp_path):
