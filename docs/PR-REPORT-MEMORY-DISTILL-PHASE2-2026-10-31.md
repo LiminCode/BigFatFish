@@ -171,6 +171,19 @@
      清单里有 `.claude [WSL: Ubuntu-24.04]`。桌宠重启 pid 39860，日志 0 条非噪音错误。
    - **开销**：自绘磁贴只在重绘时画（无定时器）；「VS Code ▸」一次 wsl.exe 调用（点了才有，后台线程）；其余不变。
 
+8. **用户反馈两条**：「切到英文，页面上还有没翻译的中文」「磁贴颜色偏淡一点，别太刺眼」。
+   - **中文残留的定位**：用 `tokenize` 扫五个 `memory_distill*.py` 的字符串字面量 + 扫 `en.json` 里 `distill.*` 的值，UI 模块 0 处、
+     英文表 0 处；真实配置（已是 `ui_language=en`）现建窗口截图四页全英文。所以用户看到的中文来自**切换前建好、被控制器缓存
+     的那个窗口**（文案在构造时定死，没有 retranslate）。另有两条会冒到页面上的硬编码中文报错：`run` 的「模型没有按约定输出
+     JSON 数组」、`sink` 的「没找到要作废 / 修改的条目」。
+   - **修法**：`open_window` 记下建窗时的语言，再开时语言变了就关掉重建（`test_window_is_rebuilt_in_the_new_language_after_a_switch`：
+     中文开窗 → `set_language("en")` → 重开是新对象、标签 / 磁贴 / 流程图值全英文、指定页签生效；语言没变就复用）；两条报错改
+     `distill.run.bad_json` / `distill.sink.no_previous` 键。候选原话、提案标题是数据本身的语言，不翻。
+   - **颜色**：`tile_fill` 把 accent 色按 HSV 降饱和（S×0.6、V×0.8），最亮的两块换色相（落盘 橙 → 赭 `#a0522d`、候选库 琥珀 → 青
+     `#00aba9`），`test_tile_colors_are_softened_metro_accents` 盯住：每块底色饱和度 < 原色 80%、相对亮度 < 0.56（白字可读）。
+     像素断言改比 `tile_fill(color)`。实机截图白 / 黑两主题重出，白字对比正常。
+   - 相关 60 条测试 + i18n 表一致性测试通过；桌宠重启后日志 0 条非噪音错误。
+
 ## 七、已知限制与后续
 
 - **第一次全历史**最多送 150 条，可能要跑两三次「现在总结」才把积压消化完（截断时后一半自动留到下次）；之后每天几十条一次就完。
@@ -191,17 +204,17 @@
 
 | 文件 | + / − |
 |---|---|
-| `pet/memory_distill_run.py`（新） | 456 / 0 |
-| `pet/memory_distill_sink.py`（新） | 354 / 0 |
-| `pet/memory_distill_ui.py` | 460 / 44 |
+| `pet/memory_distill_run.py`（新） | 457 / 0 |
+| `pet/memory_distill_sink.py`（新） | 355 / 0 |
+| `pet/memory_distill_ui.py` | 470 / 44 |
 | `pet/memory_distill_service.py` | 260 / 4 |
 | `pet/memory_distill.py` | 8 / 1 |
 | `pet/settings_memory_distill.py` | 6 / 0 |
 | `pet/personal_vault.py` | 9 / 3 |
 | `pet/work_briefing.py` | 1 / 1 |
-| `pet/locale/zh.json`、`en.json` | 58 / 2 ×2 |
+| `pet/locale/zh.json`、`en.json` | 60 / 2 ×2 |
 | `tests/test_memory_distill_phase2_ui.py`（新） | 295 / 0 |
 | `tests/test_memory_distill_run.py`（新） | 251 / 0 |
 | `tests/test_memory_distill_sink.py`（新） | 152 / 0 |
-| `tests/test_memory_distill_ui.py` | 128 / 8 |
+| `tests/test_memory_distill_ui.py` | 161 / 8 |
 | `docs/PR-REPORT-MEMORY-DISTILL-PHASE2-2026-10-31.md`（新）、`docs/INDEX.md` | 132 / 0、1 / 0 |
