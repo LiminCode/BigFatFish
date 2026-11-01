@@ -353,19 +353,30 @@ def test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip(tmp_
         window.deleteLater()
 
 
-def test_service_opens_a_wsl_place_in_vscode(tmp_path):
-    """「用 VS Code 打开」= 在 WSL 里对那个目录 code .：走 claude_session_jump.open_in_vscode（--remote wsl+发行版）。"""
+def test_service_opens_a_wsl_place_by_running_code_inside_wsl(tmp_path):
+    """「用 VS Code 打开」= 在 WSL 里 cd 到那个目录 code .（wsl.exe -d 发行版 -e sh -c）；后台线程，结果走 vscode_done。"""
+    unc = r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    calls: list[list[str]] = []
+    answer = {"code": 0, "out": ""}
+
+    def runner(args, **_kw):
+        calls.append(list(args))
+        return (0, unc) if "wslpath" in " ".join(args) else (answer["code"], answer["out"])
+
     service = _service(tmp_path, enabled=False)
-    launched: list[tuple] = []
-    service._vscode = lambda detail, target: launched.append((detail.agent, detail.distro, detail.cwd, target)) or True
+    service._wsl_runner = runner
+    results: list[tuple] = []
+    service.vscode_done.connect(lambda ok, path, why: results.append((ok, path, why)))
     assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("missing", ""), "没问过 WSL 之前不知道在哪"
     service.probe_wsl()
-    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("opened", r"\\wsl.localhost\Ubuntu\home\me\.claude")
-    assert launched == [("claude_wsl", "Ubuntu", "/home/me/.claude", "/home/me/.claude")]
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("launching", unc)
+    assert calls[-1] == ["-d", "Ubuntu", "-e", "sh", "-c", "cd /home/me/.claude && code ."]
+    assert results == [(True, unc, "")]
     windows_home = service.place(svc.PLACE_WINDOWS_CLAUDE).path
     assert service.open_in_vscode(svc.PLACE_WINDOWS_CLAUDE) == ("not_wsl", windows_home)
-    service._vscode = lambda *_a: False
-    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE)[0] == "no_code"
+    answer.update(code=127, out="sh: 1: code: not found\n")
+    service.open_in_vscode(svc.PLACE_WSL_CLAUDE)
+    assert results[-1] == (False, unc, "sh: 1: code: not found")
     assert not service.place(svc.PLACE_WINDOWS_CLAUDE).wsl and service.place(svc.PLACE_WSL_CLAUDE).wsl
 
 

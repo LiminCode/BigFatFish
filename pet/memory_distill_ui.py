@@ -936,6 +936,7 @@ class MemoryDistillController(QObject):
         service.distilled.connect(self._on_distilled)
         service.reviewed.connect(self._on_reviewed)
         service.synced.connect(self._on_synced)
+        service.vscode_done.connect(self._on_vscode_done)
 
     # ---------------------------------------------------------- 动作
     def refresh_now(self) -> None:
@@ -956,14 +957,16 @@ class MemoryDistillController(QObject):
 
     def open_in_vscode(self, key: str) -> None:
         how, target = self.service.open_in_vscode(key)
-        if how == "opened":
-            self._bubble(t("distill.bubble.vscode_opened", path=target), 5000)
-        elif how == "no_code":
-            self._bubble(t("vscode.ui.code_command_was_not_found"), 6000)
-        elif how == "not_wsl":
+        if how == "not_wsl":
             self.open_place(key)                                 # 不在 WSL 里：就当普通入口打开
-        else:
+        elif how == "missing":
             self._bubble(t("distill.bubble.missing", path=target or t("distill.place.unknown")), 6000)
+
+    def _on_vscode_done(self, ok: bool, path: str, why: str) -> None:
+        if ok:
+            self._bubble(t("distill.bubble.vscode_opened", path=path), 5000)
+        else:
+            self._bubble(t("distill.bubble.vscode_failed", why=why or t("vscode.ui.code_command_was_not_found")), 8000)
 
     def open_settings(self) -> None:
         opener = getattr(self._host, "open_settings_for", None)

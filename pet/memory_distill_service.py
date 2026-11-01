@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import shlex
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +26,6 @@ from . import memory_distill_sink as sink
 from . import personal_vault as pv
 from . import vscode_workspaces as vw
 from . import work_notes as wn
-from .claude_session_info import SessionDetail
-from .claude_session_jump import open_in_vscode as _open_in_vscode
 
 log = logging.getLogger("big-fat-fish")
 
@@ -103,6 +102,8 @@ class MemoryDistillService(QObject):
     synced = Signal(bool, str)               # 知识库镜像推送的结果
     _done = Signal(int, int, str, str)       # generation, added, error, wsl_dir（线程 → GUI）
     _wsl_done = Signal(str)                  # 单独探 WSL 目录的结果（线程 → GUI）
+    vscode_done = Signal(bool, str, str)     # 「用 VS Code 打开」的结果：开成没有, 路径, 失败原因
+    _vscode_done = Signal(bool, str, str)    # 同上，线程 → GUI
     _distill_done = Signal(int, object, bool)
     _sync_done = Signal(int, bool, str)
 
@@ -111,7 +112,7 @@ class MemoryDistillService(QObject):
 
     def __init__(self, config, parent: QObject | None = None, *, spawn=_spawn_thread, roots=None,
                  wsl_runner=claude_hooks.run_wsl, opener=_open_target, now=None, complete=None, provider=None,
-                 home: Path | None = None, token=None, git=pv.run_git, vscode=_open_in_vscode) -> None:
+                 home: Path | None = None, token=None, git=pv.run_git) -> None:
         super().__init__(parent)
         self._config = config
         self._spawn = spawn
@@ -124,7 +125,6 @@ class MemoryDistillService(QObject):
         self._home = home                        # None = Path.home()
         self._token = token or pv.github_token
         self._git = git
-        self._vscode = vscode                    # (SessionDetail, 目标路径) -> 开成没有
         self._generation = 0
         self._busy = False
         self._distilling = False
@@ -140,6 +140,7 @@ class MemoryDistillService(QObject):
         self._timer.timeout.connect(self.check)
         self._done.connect(self._on_done)
         self._wsl_done.connect(self._on_wsl_done)
+        self._vscode_done.connect(self.vscode_done)
         self._distill_done.connect(self._on_distill_done)
         self._sync_done.connect(self._on_sync_done)
         app = QApplication.instance()
@@ -455,16 +456,33 @@ class MemoryDistillService(QObject):
         return next((p for p in self.places() if p.key == key), None)
 
     def open_in_vscode(self, key: str) -> tuple[str, str]:
-        """在 WSL 里对这个入口的目录 ``code .``（``code --remote wsl+<发行版> <路径>``）。
-        返回 ``("opened" | "not_wsl" | "no_code" | "missing", 路径)``。"""
+        """在 WSL 里对这个入口的目录执行 ``code .``：``wsl.exe -d <发行版> -e sh -c "cd <目录> && code ."``。
+        后台线程（发行版冷启动要几秒），结果从 ``vscode_done`` 回来；这里立刻返回
+        ``("launching" | "not_wsl" | "missing", 路径)``。
+
+        实测（2026-10-31）：Windows 侧 ``code --remote wsl+<发行版> <路径>`` 返回 0 却不开窗口，
+        WSL 里 ``code .`` 立刻开出远程窗口——所以走 WSL 这边。"""
         place = self.place(key)
         if place is None or not place.path:
             return "missing", ""
         if not place.wsl:
             return "not_wsl", place.path
         _wsl, distro, inner = vw.parse_directory(place.path, default_distro=lambda: "")
-        detail = SessionDetail(agent="claude_wsl", cwd=inner, distro=distro)
-        return ("opened" if self._vscode(detail, inner) else "no_code"), place.path
+        runner, path = self._wsl_runner, place.path
+        argv = ["-d", distro, "-e", "sh", "-c", f"cd {shlex.quote(inner)} && code ."]
+
+        def work() -> None:
+            try:
+                code, out = runner(argv, timeout=60)
+            except Exception as exc:  # noqa: BLE001 - 报给页面
+                code, out = 1, f"{type(exc).__name__}: {exc}"
+            try:
+                self._vscode_done.emit(code == 0, path, "" if code == 0 else (out.strip()[-200:] or f"exit {code}"))
+            except RuntimeError:
+                pass
+
+        self._spawn(work)
+        return "launching", path
 
     def open_place(self, key: str) -> tuple[str, str]:
         """打开一个入口：``("obsidian" | "folder" | "file" | "missing" | "failed", 路径)``。"""
