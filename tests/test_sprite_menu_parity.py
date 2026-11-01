@@ -69,7 +69,9 @@ ALLOWED_EXTRAS = frozenset({"退出这只", "肥鱼设置", "隐藏肥鱼", "每
                             # 「VS Code 工作区」：条目来自壳的门面回调，旧 PetWindow 没有
                             "VS Code 工作区",
                             # 「桂冠给哪个模型」：会话小鱼的记号，同样只有 overlay 有
-                            "桂冠给哪个模型"})
+                            "桂冠给哪个模型",
+                            # 「会话记忆蒸馏」：独立流程页，控制器挂在 overlay 壳上（2026-10-30）
+                            "会话记忆蒸馏"})
 
 # 用户点名的缺失条目（legacy 清单 → overlay 菜单必须逐项存在）
 REQUIRED_LABELS = (

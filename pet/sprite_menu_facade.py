@@ -701,6 +701,12 @@ class SpriteMenuFacade:
         if controller is not None:
             controller.open_notes()
 
+    def open_memory_distill(self) -> None:
+        """「会话记忆蒸馏」：独立流程页；宿主没接这个服务就什么都不做。"""
+        controller = getattr(self._shell, "memory_distill", None)
+        if controller is not None:
+            controller.open_window()
+
     # ---- Slack 关注（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
     def _slack_watch(self):
         return getattr(self._shell, "slack_watch", None)

@@ -3046,6 +3046,8 @@ class OverlayShell(QObject):
                               lambda s=sprite: self.exit_pet(s))
         self._pet_visible_actions = visible_actions
         menu.addSeparator()
+        if getattr(self, "memory_distill", None) is not None:
+            menu.addAction(t("distill.menu.open"), lambda: self.memory_distill.open_window())
         menu.addAction(t("menu.tray.settings"), lambda: self.open_settings_for(self.sprite))
         # legacy 托盘两项（app.py:3333-3343）：鼠标穿透的取消入口只有托盘/设置页，
         # 开着时肥鱼点不动；开机自启此前只有右键菜单有勾选项。

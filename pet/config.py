@@ -19,6 +19,7 @@ from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, DEFAULT_TEXT_SIZE, normalize_text_size, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from . import i18n
+from .memory_distill import normalize as normalize_memory_distill
 from .notification_center import normalize as normalize_notifications
 from .personal_vault import normalize as normalize_personal
 from .slack_watch import normalize as normalize_slack_watch
@@ -852,6 +853,8 @@ class Config:
             "work_notes": normalize_work_notes(None),
             # 个人助理（肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报；灵感记录推到 GitHub），见 pet/personal_vault.py
             "personal": normalize_personal(None),
+            # 会话记忆蒸馏（把我在 Claude Code 里说过的决定 / 偏好抽进本地候选库，定期总结），见 pet/memory_distill.py
+            "memory_distill": normalize_memory_distill(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1133,6 +1136,7 @@ class Config:
             "slack_watch",
             "work_notes",
             "personal",
+            "memory_distill",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1531,6 +1535,7 @@ class Config:
         self.data["slack_watch"] = normalize_slack_watch(self.data.get("slack_watch"))
         self.data["work_notes"] = normalize_work_notes(self.data.get("work_notes"))
         self.data["personal"] = normalize_personal(self.data.get("personal"))
+        self.data["memory_distill"] = normalize_memory_distill(self.data.get("memory_distill"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1721,6 +1726,7 @@ class Config:
             "slack_watch",
             "work_notes",
             "personal",
+            "memory_distill",
         }:
             self._normalize_pet_settings()
 

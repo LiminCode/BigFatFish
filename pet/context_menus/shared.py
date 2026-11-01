@@ -531,6 +531,9 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     # 「工作笔记」直接放在这一层（用户 2026-10-15：Agent 联动 → 工作简报 → 工作笔记 太深）
     if getattr(getattr(pet, "_shell", None), "work_notes", None) is not None:
         add_action(sub, t("notes.menu.open"), None, pet.open_work_notes, close_on_trigger=True)
+    # 「会话记忆蒸馏」的独立流程页（2026-10-30）
+    if getattr(getattr(pet, "_shell", None), "memory_distill", None) is not None:
+        add_action(sub, t("distill.menu.open"), None, pet.open_memory_distill, close_on_trigger=True)
     add_work_briefing_menu(sub, pet)
     add_slack_watch_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：

@@ -170,8 +170,8 @@ from . import settings_language
 from . import settings_tray
 from . import settings_island_icon
 from . import (
-    settings_help, settings_notifications, settings_personal, settings_slack_watch, settings_vscode, settings_work_briefing,
-    settings_work_notes,
+    settings_help, settings_memory_distill, settings_notifications, settings_personal, settings_slack_watch,
+    settings_vscode, settings_work_briefing, settings_work_notes,
 )
 from .i18n import t
 from .settings_dialogue_text import DIALOGUE_LABELS, DIALOGUE_PARAMS, dialogue_label, dialogue_param
@@ -1790,6 +1790,8 @@ class ModernSettingsDialog(QDialog):
             settings_work_notes.flow_section(self),
             SettingsSection(settings_personal.section_title(), settings_personal.personal_rows(self), briefing),
             settings_personal.flow_section(self),
+            SettingsSection(settings_memory_distill.section_title(), settings_memory_distill.distill_rows(self), briefing),
+            settings_memory_distill.flow_section(self),
         )):
             briefing_layout.insertWidget(index, widget)
 
@@ -2166,6 +2168,7 @@ class ModernSettingsDialog(QDialog):
         settings_work_briefing.save_work_briefing_settings(self)
         settings_work_notes.save_work_notes_settings(self)
         settings_personal.save_personal_settings(self)
+        settings_memory_distill.save_distill_settings(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
             from .proactive import PRESET_DEFAULTS
 

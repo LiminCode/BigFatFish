@@ -1961,6 +1961,7 @@ class AppShell:
             self._start_work_briefing()
             self._start_slack_watch()
             self._start_personal()
+            self._start_memory_distill()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -3192,6 +3193,21 @@ class AppShell:
             self._push_island_personal_state()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("个人助理接线失败")
+
+    def _start_memory_distill(self) -> None:
+        """会话记忆蒸馏（可选服务，2026-10-30）：增量抽 Claude Code 的会话记录进本地候选库；独立流程页。不需要 WSL。"""
+        if self._overlay_shell is None or getattr(self, "_memory_distill", None) is not None:
+            return
+        try:
+            from .memory_distill_service import MemoryDistillService
+            from .memory_distill_ui import MemoryDistillController
+
+            service = MemoryDistillService(self.config, parent=self.app)
+            self._memory_distill = MemoryDistillController(self._overlay_shell, service)
+            self._overlay_shell.memory_distill = self._memory_distill
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("会话记忆蒸馏接线失败")
 
     def _push_island_personal_state(self, *_args) -> None:
         island = getattr(self, "island", None)
