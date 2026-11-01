@@ -14,8 +14,9 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt
+from PySide6.QtGui import QFontMetrics, QMouseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
@@ -121,6 +122,22 @@ def test_service_check_only_refreshes_when_enabled(tmp_path):
     assert service.stats()["total"] == 2
 
 
+def test_wsl_place_is_probed_when_window_opens_even_if_extraction_is_off(tmp_path):
+    """抽取没开、这个进程里一次也没抽过：开流程页也要去问 WSL 的 ~/.claude，入口按钮才能亮；只问一次。"""
+    calls: list[int] = []
+    service = _service(tmp_path, enabled=False)
+    service._wsl_runner = lambda *_a, **_k: calls.append(1) or (0, r"\\wsl.localhost\Ubuntu\home\me\.claude")
+    assert service.place(svc.PLACE_WSL_CLAUDE).path == ""
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    assert service.place(svc.PLACE_WSL_CLAUDE).path == r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    button = controller.window.place_buttons[svc.PLACE_WSL_CLAUDE]
+    assert button.isEnabled() and button.toolTip() == r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    controller.open_window()
+    assert service.refresh_now() and calls == [1], "再开窗、再抽取都不重复问 wsl.exe"
+    controller.window.close()
+
+
 def test_service_reports_extraction_errors(tmp_path, monkeypatch):
     service = _service(tmp_path)
     errors: list[str] = []
@@ -149,6 +166,20 @@ def test_service_places_and_opening(tmp_path):
     how, target = service.open_place(svc.PLACE_PERSONAL_VAULT)
     assert how == "folder" and target == str(vault), "Obsidian 没登记就开文件夹"
     assert service._opened[-1] == str(vault)
+
+
+def test_wsl_place_stays_unknown_when_probe_fails(tmp_path):
+    """没装 WSL / wslpath 失败：按钮灰着、提示「还不知道在哪」，而且不会反复去问。"""
+    calls: list[int] = []
+    service = _service(tmp_path, enabled=False)
+    service._wsl_runner = lambda *_a, **_k: calls.append(1) or (1, "")
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    button = controller.window.place_buttons[svc.PLACE_WSL_CLAUDE]
+    assert not button.isEnabled() and button.toolTip().startswith("还不知道")
+    controller.open_window()
+    assert calls == [1]
+    controller.window.close()
 
 
 def test_wsl_claude_dir_is_empty_without_wsl_or_on_failure(monkeypatch):
@@ -183,9 +214,10 @@ def test_window_shows_numbers_on_the_flow_tiles_and_lists_candidates(tmp_path):
     window = controller.window
     try:
         assert window.windowTitle() == "会话记忆蒸馏"
-        assert window.tabs.count() == 3 and [window.tabs.tabText(i) for i in range(3)] == ["流程", "候选", "统计"]
+        assert window.tabs.count() == 4 and [window.tabs.tabText(i) for i in range(4)] == ["流程", "候选", "提案", "统计"]
         assert window.diagram.value("store").startswith("今天 0 条 · 共 0 条")
-        assert window.diagram.value("distill") == "第二期" and not window.distill_btn.isEnabled()
+        assert window.diagram.value("distill") == "还没跑过" and window.distill_btn.isEnabled()
+        assert window.diagram.value("review") == "待审 0 · 已接受 0 · 已拒 0" and window.diagram.value("sink") == "全局 0 条 · 项目 0 条"
         assert window.list.count() == 0 and "还没有候选" in window.detail.toPlainText()
         window.refresh_btn.click()
         assert _pump(lambda: window.diagram.value("store").startswith("今天 2 条 · 共 2 条"))
@@ -218,7 +250,8 @@ def test_window_place_buttons_and_tiles_open_places(tmp_path):
     try:
         buttons = window.place_buttons
         assert set(buttons) == set(svc.PLACE_ORDER)
-        assert not buttons[svc.PLACE_WSL_CLAUDE].isEnabled() and buttons[svc.PLACE_WSL_CLAUDE].toolTip().startswith("还不知道")
+        assert buttons[svc.PLACE_WSL_CLAUDE].isEnabled() and buttons[svc.PLACE_WSL_CLAUDE].toolTip().startswith("\\\\wsl.localhost"), \
+            "开窗就问到了 WSL 的路径（UNC 不 stat，直接当存在）"
         assert buttons[svc.PLACE_CANDIDATES].isEnabled(), "候选库目录还没建也能点（点了就建）"
         assert buttons[svc.PLACE_CANDIDATES].text() == "原始候选库（本地）"
         buttons[svc.PLACE_CANDIDATES].click()
@@ -260,6 +293,126 @@ def test_window_theme_toggle_saves_the_shared_preference(tmp_path):
         window.deleteLater()
 
 
+def test_flow_diagram_tiles_are_solid_metro_colors():
+    """用户 2026-10-31：流程图的框要 Windows Phone 磁贴（实色、白字），不是只画一道边。"""
+    diagram = ui.FlowDiagram(ui.briefing_tokens(False))
+    diagram.resize(640, diagram.height())
+    image = diagram.grab().toImage()
+    assert set(ui.STAGE_COLORS) == set(ui.STAGES) and len(set(ui.STAGE_COLORS.values())) == len(ui.STAGES), "六格六色"
+    for stage, rect in diagram.tile_rects().items():
+        for x, y in ((rect.left() + 1, rect.top() + 1), (rect.right() - 1, rect.bottom() - 1), (rect.left() + 3, rect.center().y())):
+            assert image.pixelColor(x, y).name() == ui.tile_fill(ui.STAGE_COLORS[stage]).name(), (stage, x, y, "边上也是实色，没有描边")
+
+
+def test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip(tmp_path):
+    """入口磁贴：实色 + 白字大标题 + 小字说明目录里是什么；路径在提示里；目录在 WSL 里时右下角「VS Code ▸」，
+    点角标发 ``vscode_requested``、点别处发 ``place_requested``；灰掉的磁贴一律灰色。"""
+    service = _service(tmp_path, enabled=False)
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    window = controller.window
+    try:
+        window.resize(700, 900)
+        app.processEvents()
+        tile = window.place_buttons[svc.PLACE_CANDIDATES]
+        assert isinstance(tile, ui.PlaceTile) and tile.color == ui.PLACE_COLORS[svc.PLACE_CANDIDATES]
+        assert tile.description == i18n.t("distill.place.candidates_desc") and tile.description and tile.description != tile.text()
+        assert tile.height() >= ui.PLACE_TILE_H and ui.PLACE_TITLE_PX > ui.PLACE_DESC_PX
+        image = tile.grab().toImage()
+        for x, y in ((1, 1), (tile.width() - 2, 1), (1, tile.height() - 2)):
+            assert image.pixelColor(x, y).name() == ui.tile_fill(tile.color).name(), "实色磁贴，没有边框"
+        wsl = window.place_buttons[svc.PLACE_WSL_CLAUDE]
+        assert wsl.isEnabled() and wsl.action == i18n.t("distill.place.vscode")
+        assert window.place_buttons[svc.PLACE_WINDOWS_CLAUDE].action == "", "不在 WSL 里的目录没有角标"
+        asked: list[str] = []
+        opened: list[str] = []
+        window.vscode_requested.connect(asked.append)
+        window.place_requested.connect(opened.append)
+        QTest.mouseClick(wsl, Qt.MouseButton.LeftButton, pos=wsl.action_rect().center())
+        assert asked == [svc.PLACE_WSL_CLAUDE] and opened == []
+        QTest.mouseClick(wsl, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+        assert asked == [svc.PLACE_WSL_CLAUDE] and opened == [svc.PLACE_WSL_CLAUDE]
+        window.resize(520, 700)                       # 最窄：说明折成三行，磁贴得跟着长高；整页不许横向溢出
+        app.processEvents()
+        body = window.flow_scroll.widget()
+        assert body.width() <= window.flow_scroll.viewport().width(), (body.width(), window.flow_scroll.viewport().width())
+        assert body.minimumSizeHint().width() <= window.flow_scroll.viewport().width()
+        for key, each in window.place_buttons.items():
+            metrics = QFontMetrics(ui._tile_font(each.font(), ui.PLACE_DESC_PX))
+            needed = metrics.boundingRect(QRect(0, 0, each._desc_width(each.width()), 1000),
+                                          Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, each.description).height()
+            assert each.height() >= 36 + needed + 6, (key, each.height(), needed)
+        window.resize(700, 900)
+        app.processEvents()
+        service._config.set("work_notes", {"repo_dir": str(tmp_path / "nope")})
+        window.show_places(service.places())
+        grey = window.place_buttons[svc.PLACE_WORK_VAULT]
+        assert not grey.isEnabled() and grey.grab().toImage().pixelColor(1, 1).name() == ui.DISABLED_TILE
+    finally:
+        window.close()
+        window.deleteLater()
+
+
+def test_service_opens_a_wsl_place_by_running_code_inside_wsl(tmp_path):
+    """「用 VS Code 打开」= 在 WSL 里 cd 到那个目录 code .（wsl.exe -d 发行版 -e sh -c）；后台线程，结果走 vscode_done。"""
+    unc = r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    calls: list[list[str]] = []
+    answer = {"code": 0, "out": ""}
+
+    def runner(args, **_kw):
+        calls.append(list(args))
+        return (0, unc) if "wslpath" in " ".join(args) else (answer["code"], answer["out"])
+
+    service = _service(tmp_path, enabled=False)
+    service._wsl_runner = runner
+    results: list[tuple] = []
+    service.vscode_done.connect(lambda ok, path, why: results.append((ok, path, why)))
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("missing", ""), "没问过 WSL 之前不知道在哪"
+    service.probe_wsl()
+    assert service.open_in_vscode(svc.PLACE_WSL_CLAUDE) == ("launching", unc)
+    assert calls[-1] == ["-d", "Ubuntu", "-e", "sh", "-c", "cd /home/me/.claude && code ."]
+    assert results == [(True, unc, "")]
+    windows_home = service.place(svc.PLACE_WINDOWS_CLAUDE).path
+    assert service.open_in_vscode(svc.PLACE_WINDOWS_CLAUDE) == ("not_wsl", windows_home)
+    answer.update(code=127, out="sh: 1: code: not found\n")
+    service.open_in_vscode(svc.PLACE_WSL_CLAUDE)
+    assert results[-1] == (False, unc, "sh: 1: code: not found")
+    assert not service.place(svc.PLACE_WINDOWS_CLAUDE).wsl and service.place(svc.PLACE_WSL_CLAUDE).wsl
+
+
+def test_tile_colors_are_softened_metro_accents():
+    """用户 2026-10-31：磁贴颜色偏淡一点、别刺眼——底色是 accent 色降饱和后的版本，白字仍然够对比。"""
+    from PySide6.QtGui import QColor
+    for color in list(ui.STAGE_COLORS.values()) + list(ui.PLACE_COLORS.values()):
+        raw, soft = QColor(color), ui.tile_fill(color)
+        assert soft.hsvSaturationF() < raw.hsvSaturationF() * 0.8, (color, soft.name())
+        assert soft.name() != raw.name()
+        luminance = 0.2126 * soft.redF() + 0.7152 * soft.greenF() + 0.0722 * soft.blueF()
+        assert luminance < 0.56, (color, soft.name(), "太亮的话白字就看不清")
+    assert ui.tile_fill("#0050ef", enabled=False).name() == ui.DISABLED_TILE
+
+
+def test_window_is_rebuilt_in_the_new_language_after_a_switch(tmp_path):
+    """用户 2026-10-31：切到英文后页面上还有中文——窗口是切换前建的、被控制器缓存。重开时语言变了就重建。"""
+    service = _service(tmp_path)
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    first = controller.window
+    assert first.tabs.tabText(0) == "流程"
+    i18n.set_language("en")
+    try:
+        controller.open_window("Proposals")      # select_tab 按标签文字匹配
+        window = controller.window
+        assert window is not first and window.tabs.tabText(0) == "Flow" and window.tabs.currentIndex() == 2
+        assert window.place_buttons[svc.PLACE_CANDIDATES].text() == "Raw candidate pool (local)"
+        assert window.diagram.value("distill") == "never"
+        controller.open_window()
+        assert controller.window is window, "语言没变就复用"
+        window.close()
+    finally:
+        i18n.set_language("zh")
+
+
 def test_window_in_english(tmp_path):
     service = _service(tmp_path)
     i18n.set_language("en")      # Config() 构造会把语言设回配置里的中文，所以放在建服务之后
@@ -268,8 +421,8 @@ def test_window_in_english(tmp_path):
     window = controller.window
     try:
         assert window.windowTitle() == "Session Memory Distill"
-        assert [window.tabs.tabText(i) for i in range(3)] == ["Flow", "Candidates", "Stats"]
-        assert window.diagram.value("distill") == "phase 2"
+        assert [window.tabs.tabText(i) for i in range(4)] == ["Flow", "Candidates", "Proposals", "Stats"]
+        assert window.diagram.value("distill") == "never"
         assert window.place_buttons[svc.PLACE_CANDIDATES].text() == "Raw candidate pool (local)"
     finally:
         window.close()
@@ -326,7 +479,7 @@ def test_settings_rows_round_trip(tmp_path):
     dialog.config = config
     rows = sd.distill_rows(dialog)
     assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
-        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "prompt")]
+        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt")]
     assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
     assert dialog.distill_keep_days_select.currentData() == 60
     assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"
