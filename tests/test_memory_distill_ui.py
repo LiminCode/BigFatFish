@@ -121,6 +121,22 @@ def test_service_check_only_refreshes_when_enabled(tmp_path):
     assert service.stats()["total"] == 2
 
 
+def test_wsl_place_is_probed_when_window_opens_even_if_extraction_is_off(tmp_path):
+    """抽取没开、这个进程里一次也没抽过：开流程页也要去问 WSL 的 ~/.claude，入口按钮才能亮；只问一次。"""
+    calls: list[int] = []
+    service = _service(tmp_path, enabled=False)
+    service._wsl_runner = lambda *_a, **_k: calls.append(1) or (0, r"\\wsl.localhost\Ubuntu\home\me\.claude")
+    assert service.place(svc.PLACE_WSL_CLAUDE).path == ""
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    assert service.place(svc.PLACE_WSL_CLAUDE).path == r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    button = controller.window.place_buttons[svc.PLACE_WSL_CLAUDE]
+    assert button.isEnabled() and button.toolTip() == r"\\wsl.localhost\Ubuntu\home\me\.claude"
+    controller.open_window()
+    assert service.refresh_now() and calls == [1], "再开窗、再抽取都不重复问 wsl.exe"
+    controller.window.close()
+
+
 def test_service_reports_extraction_errors(tmp_path, monkeypatch):
     service = _service(tmp_path)
     errors: list[str] = []
@@ -149,6 +165,20 @@ def test_service_places_and_opening(tmp_path):
     how, target = service.open_place(svc.PLACE_PERSONAL_VAULT)
     assert how == "folder" and target == str(vault), "Obsidian 没登记就开文件夹"
     assert service._opened[-1] == str(vault)
+
+
+def test_wsl_place_stays_unknown_when_probe_fails(tmp_path):
+    """没装 WSL / wslpath 失败：按钮灰着、提示「还不知道在哪」，而且不会反复去问。"""
+    calls: list[int] = []
+    service = _service(tmp_path, enabled=False)
+    service._wsl_runner = lambda *_a, **_k: calls.append(1) or (1, "")
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    button = controller.window.place_buttons[svc.PLACE_WSL_CLAUDE]
+    assert not button.isEnabled() and button.toolTip().startswith("还不知道")
+    controller.open_window()
+    assert calls == [1]
+    controller.window.close()
 
 
 def test_wsl_claude_dir_is_empty_without_wsl_or_on_failure(monkeypatch):
@@ -219,7 +249,8 @@ def test_window_place_buttons_and_tiles_open_places(tmp_path):
     try:
         buttons = window.place_buttons
         assert set(buttons) == set(svc.PLACE_ORDER)
-        assert not buttons[svc.PLACE_WSL_CLAUDE].isEnabled() and buttons[svc.PLACE_WSL_CLAUDE].toolTip().startswith("还不知道")
+        assert buttons[svc.PLACE_WSL_CLAUDE].isEnabled() and buttons[svc.PLACE_WSL_CLAUDE].toolTip().startswith("\\\\wsl.localhost"), \
+            "开窗就问到了 WSL 的路径（UNC 不 stat，直接当存在）"
         assert buttons[svc.PLACE_CANDIDATES].isEnabled(), "候选库目录还没建也能点（点了就建）"
         assert buttons[svc.PLACE_CANDIDATES].text() == "原始候选库（本地）"
         buttons[svc.PLACE_CANDIDATES].click()

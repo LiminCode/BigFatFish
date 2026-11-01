@@ -808,6 +808,7 @@ class MemoryDistillController(QObject):
             self.window.settings_requested.connect(self.open_settings)
             self.window.distill_requested.connect(self.distill_now)
             self.window.review_requested.connect(self.review)
+        self.service.probe_wsl()             # WSL 那条入口的路径要问 wsl.exe；抽取没开也得知道
         self._refresh_window()
         if tab:
             self.window.select_tab(tab)

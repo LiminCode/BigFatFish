@@ -94,6 +94,7 @@ class MemoryDistillService(QObject):
     reviewed = Signal(str, object)           # 提案 id, Applied
     synced = Signal(bool, str)               # 知识库镜像推送的结果
     _done = Signal(int, int, str, str)       # generation, added, error, wsl_dir（线程 → GUI）
+    _wsl_done = Signal(str)                  # 单独探 WSL 目录的结果（线程 → GUI）
     _distill_done = Signal(int, object, bool)
     _sync_done = Signal(int, bool, str)
 
@@ -120,6 +121,7 @@ class MemoryDistillService(QObject):
         self._distilling = False
         self._syncing = False
         self._wsl_dir: str | None = None     # None = 还没问过
+        self._probing_wsl = False
         self.last_error = ""
         self.last_refresh_at = ""
         self.last_run: run.RunResult | None = None
@@ -128,6 +130,7 @@ class MemoryDistillService(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.check)
         self._done.connect(self._on_done)
+        self._wsl_done.connect(self._on_wsl_done)
         self._distill_done.connect(self._on_distill_done)
         self._sync_done.connect(self._on_sync_done)
         app = QApplication.instance()
@@ -169,6 +172,31 @@ class MemoryDistillService(QObject):
         if run.is_due(settings, self.distill_state(), self._now()):
             self.distill_now(manual=False)
 
+    def probe_wsl(self) -> bool:
+        """开流程页时单独问一次 WSL 里 ``~/.claude`` 在哪（抽取没开的话没人会顺便问）。问过 / 正在问就不再问。"""
+        if self._wsl_dir is not None or self._probing_wsl:
+            return False
+        self._probing_wsl = True
+        runner = self._wsl_runner
+
+        def work() -> None:
+            try:
+                found = wsl_claude_dir(runner)
+            except Exception:  # noqa: BLE001 - 只是少一个入口
+                found = ""
+            try:
+                self._wsl_done.emit(found)
+            except RuntimeError:
+                pass
+
+        self._spawn(work)
+        return True
+
+    def _on_wsl_done(self, wsl_dir: str) -> None:
+        self._probing_wsl = False
+        self._wsl_dir = wsl_dir
+        self.changed.emit()                  # 入口按钮按新路径重摆
+
     # ---------------------------------------------------------- 抽取
     def refresh_now(self) -> bool:
         """手动 / 定时都走这：后台线程里增量扫 + 清理过期日文件。忙着就不叠加。"""
@@ -180,7 +208,9 @@ class MemoryDistillService(QObject):
         store = self.store
         roots = self.transcript_roots()
         work_roots = tuple(self.settings()["work_roots"])
-        need_wsl = self._wsl_dir is None
+        need_wsl = self._wsl_dir is None and not self._probing_wsl
+        if need_wsl:
+            self._probing_wsl = True
         runner = self._wsl_runner
 
         def work() -> None:
@@ -207,6 +237,7 @@ class MemoryDistillService(QObject):
         self._busy = False
         if wsl_dir != "\0":
             self._wsl_dir = wsl_dir
+            self._probing_wsl = False
         self.last_error = error
         if not error:
             self.last_refresh_at = self._now().isoformat(timespec="seconds")
