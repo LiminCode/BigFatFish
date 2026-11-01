@@ -1849,6 +1849,8 @@
   "distill.bubble.open_failed": "打不开：{path}",
   "distill.bubble.vscode_opened": "已在 WSL 里对 {path} 执行 code .",
   "distill.bubble.vscode_failed": "VS Code 没开起来：{why}",
+  "distill.run.bad_json": "模型没有按约定输出 JSON 数组",
+  "distill.sink.no_previous": "没找到要作废 / 修改的条目：{title}",
   "distill.bubble.obsidian_hint": "Obsidian 没登记这个库，先打开了文件夹：{path}。在 Obsidian 里「Open folder as vault」选它一次，以后就直达。",
   "distill.settings.section": "会话记忆蒸馏",
   "distill.settings.flow": "这个功能怎么运作",

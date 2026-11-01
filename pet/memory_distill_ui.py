@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QLineEdit, QLis
 from . import memory_distill as md
 from . import memory_distill_run as run
 from . import memory_distill_service as svc
+from . import i18n
 from .i18n import t
 from .settings_widgets import TiltButton
 from .work_briefing_ui import THEMES, briefing_tokens, resolve_dark, save_theme_preference, theme_preference
@@ -45,25 +46,28 @@ PLACE_KEYS = {
     svc.PLACE_GLOBAL_CLAUDE_MD: "distill.place.global_claude_md", svc.PLACE_TRANSCRIPTS: "distill.place.transcripts",
     svc.PLACE_CANDIDATES: "distill.place.candidates",
 }
-#: Windows Phone 的 accent 色（和用量看板同一套）：流程图六格一组、入口磁贴一组，白字，不描边
+#: Windows Phone 的 accent 色（和用量看板同一套）：流程图六格一组、入口磁贴一组，白字，不描边。
+#: 画的时候经 ``tile_fill`` 降饱和（用户 2026-10-31：别太刺眼），所以这里是「色相」，不是最终底色
 STAGE_COLORS = {"source": "#1ba1e2", "extract": "#0050ef", "store": "#008a00",
-                "distill": "#6a00ff", "review": "#d80073", "sink": "#fa6800"}
+                "distill": "#6a00ff", "review": "#d80073", "sink": "#a0522d"}
 PLACE_COLORS = {
     svc.PLACE_PERSONAL_VAULT: "#60a917", svc.PLACE_WORK_VAULT: "#0050ef", svc.PLACE_WINDOWS_CLAUDE: "#1ba1e2",
     svc.PLACE_WSL_CLAUDE: "#e51400", svc.PLACE_GLOBAL_CLAUDE_MD: "#6a00ff", svc.PLACE_TRANSCRIPTS: "#647687",
-    svc.PLACE_CANDIDATES: "#f0a30a",
+    svc.PLACE_CANDIDATES: "#00aba9",
 }
 DISABLED_TILE = "#8e8e93"
+SOFTEN_S, SOFTEN_V = 0.6, 0.8                      # 饱和度、明度各乘这个：柔一点，白字仍看得清
 PLACE_TILE_H = 78
 PLACE_TITLE_PX, PLACE_DESC_PX, PLACE_CHIP_PX = 15, 12, 11
 _PAD = 14
 
 
 def tile_fill(color: str, *, hovered: bool = False, pressed: bool = False, enabled: bool = True) -> QColor:
-    """磁贴底色：实色；悬停提一点亮、按下压一点暗、不可用一律灰。"""
+    """磁贴底色：accent 色降饱和后的实色；悬停提一点亮、按下压一点暗、不可用一律灰。"""
     if not enabled:
         return QColor(DISABLED_TILE)
-    base = QColor(color)
+    hue, sat, val, _alpha = QColor(color).getHsvF()
+    base = QColor.fromHsvF(hue, sat * SOFTEN_S, val * SOFTEN_V)
     if pressed:
         return base.darker(115)
     return base.lighter(112) if hovered else base
@@ -930,6 +934,7 @@ class MemoryDistillController(QObject):
         self._host = host
         self.service = service
         self.window: MemoryDistillWindow | None = None
+        self._window_language = ""              # 窗口是用哪种语言建的：切了语言就重建（文案在构造时定死）
         service.changed.connect(self._refresh_window)
         service.refreshed.connect(self._on_refreshed)
         service.failed.connect(self._on_failed)
@@ -975,7 +980,12 @@ class MemoryDistillController(QObject):
             opener(sprite)
 
     def open_window(self, tab: str = "") -> None:
+        if self.window is not None and self._window_language != i18n.current_language():
+            self.window.close()
+            self.window.deleteLater()
+            self.window = None
         if self.window is None:
+            self._window_language = i18n.current_language()
             config = self.service._config
             self.window = MemoryDistillWindow(theme=theme_preference(config))
             self.window.theme_changed.connect(lambda theme: save_theme_preference(config, theme))

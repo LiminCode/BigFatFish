@@ -1857,6 +1857,8 @@
   "distill.bubble.open_failed": "Could not open: {path}",
   "distill.bubble.vscode_opened": "Ran code . on {path} inside WSL",
   "distill.bubble.vscode_failed": "VS Code did not open: {why}",
+  "distill.run.bad_json": "The model did not return the agreed JSON array",
+  "distill.sink.no_previous": "No entry found to retire / change: {title}",
   "distill.bubble.obsidian_hint": "Obsidian has not registered this vault, so I opened the folder: {path}. Use \"Open folder as vault\" once in Obsidian and it will open directly next time.",
   "distill.settings.section": "Session memory distill",
   "distill.settings.flow": "How this works",

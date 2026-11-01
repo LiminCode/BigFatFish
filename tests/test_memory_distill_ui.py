@@ -301,7 +301,7 @@ def test_flow_diagram_tiles_are_solid_metro_colors():
     assert set(ui.STAGE_COLORS) == set(ui.STAGES) and len(set(ui.STAGE_COLORS.values())) == len(ui.STAGES), "六格六色"
     for stage, rect in diagram.tile_rects().items():
         for x, y in ((rect.left() + 1, rect.top() + 1), (rect.right() - 1, rect.bottom() - 1), (rect.left() + 3, rect.center().y())):
-            assert image.pixelColor(x, y).name() == ui.STAGE_COLORS[stage], (stage, x, y, "边上也是实色，没有描边")
+            assert image.pixelColor(x, y).name() == ui.tile_fill(ui.STAGE_COLORS[stage]).name(), (stage, x, y, "边上也是实色，没有描边")
 
 
 def test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip(tmp_path):
@@ -320,7 +320,7 @@ def test_place_tiles_are_metro_tiles_with_title_description_and_vscode_chip(tmp_
         assert tile.height() >= ui.PLACE_TILE_H and ui.PLACE_TITLE_PX > ui.PLACE_DESC_PX
         image = tile.grab().toImage()
         for x, y in ((1, 1), (tile.width() - 2, 1), (1, tile.height() - 2)):
-            assert image.pixelColor(x, y).name() == ui.PLACE_COLORS[svc.PLACE_CANDIDATES], "实色磁贴，没有边框"
+            assert image.pixelColor(x, y).name() == ui.tile_fill(tile.color).name(), "实色磁贴，没有边框"
         wsl = window.place_buttons[svc.PLACE_WSL_CLAUDE]
         assert wsl.isEnabled() and wsl.action == i18n.t("distill.place.vscode")
         assert window.place_buttons[svc.PLACE_WINDOWS_CLAUDE].action == "", "不在 WSL 里的目录没有角标"
@@ -378,6 +378,39 @@ def test_service_opens_a_wsl_place_by_running_code_inside_wsl(tmp_path):
     service.open_in_vscode(svc.PLACE_WSL_CLAUDE)
     assert results[-1] == (False, unc, "sh: 1: code: not found")
     assert not service.place(svc.PLACE_WINDOWS_CLAUDE).wsl and service.place(svc.PLACE_WSL_CLAUDE).wsl
+
+
+def test_tile_colors_are_softened_metro_accents():
+    """用户 2026-10-31：磁贴颜色偏淡一点、别刺眼——底色是 accent 色降饱和后的版本，白字仍然够对比。"""
+    from PySide6.QtGui import QColor
+    for color in list(ui.STAGE_COLORS.values()) + list(ui.PLACE_COLORS.values()):
+        raw, soft = QColor(color), ui.tile_fill(color)
+        assert soft.hsvSaturationF() < raw.hsvSaturationF() * 0.8, (color, soft.name())
+        assert soft.name() != raw.name()
+        luminance = 0.2126 * soft.redF() + 0.7152 * soft.greenF() + 0.0722 * soft.blueF()
+        assert luminance < 0.56, (color, soft.name(), "太亮的话白字就看不清")
+    assert ui.tile_fill("#0050ef", enabled=False).name() == ui.DISABLED_TILE
+
+
+def test_window_is_rebuilt_in_the_new_language_after_a_switch(tmp_path):
+    """用户 2026-10-31：切到英文后页面上还有中文——窗口是切换前建的、被控制器缓存。重开时语言变了就重建。"""
+    service = _service(tmp_path)
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    first = controller.window
+    assert first.tabs.tabText(0) == "流程"
+    i18n.set_language("en")
+    try:
+        controller.open_window("Proposals")      # select_tab 按标签文字匹配
+        window = controller.window
+        assert window is not first and window.tabs.tabText(0) == "Flow" and window.tabs.currentIndex() == 2
+        assert window.place_buttons[svc.PLACE_CANDIDATES].text() == "Raw candidate pool (local)"
+        assert window.diagram.value("distill") == "never"
+        controller.open_window()
+        assert controller.window is window, "语言没变就复用"
+        window.close()
+    finally:
+        i18n.set_language("zh")
 
 
 def test_window_in_english(tmp_path):

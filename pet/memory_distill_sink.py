@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from . import memory_distill_run as run
+from .i18n import t
 from . import personal_vault as pv
 
 ENTRIES_FILE = "entries.json"
@@ -332,7 +333,7 @@ def apply_proposal(proposal: run.Proposal, now: dt.datetime, *, entries: Entries
     outcome = Applied()
     entry, previous = entries.apply(proposal, now)
     if entry is None:
-        outcome.error = "没找到要作废 / 修改的条目：" + (proposal.replaces or proposal.title)
+        outcome.error = t("distill.sink.no_previous", title=proposal.replaces or proposal.title)
         return outcome
     outcome.entry_id = entry.id
     all_entries = entries.load()

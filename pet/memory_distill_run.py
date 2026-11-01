@@ -22,6 +22,7 @@ from typing import Callable, Iterable
 
 from . import memory_distill as md
 from . import work_briefing as wb
+from .i18n import t
 
 STATE_FILE = "distill-state.json"
 PROPOSALS_FILE = "proposals.json"
@@ -437,7 +438,7 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     result.raw_text = str(getattr(completion, "text", "") or "")
     proposals = parse_proposals(result.raw_text, projects=projects, run_at=run_at)
     if _json_array(result.raw_text) is None:
-        result.error = "模型没有按约定输出 JSON 数组"
+        result.error = t("distill.run.bad_json")
         return result, {**new_state, "last_error": result.error}
     stop = str(getattr(completion, "stop_reason", "") or "")
     if stop == "max_tokens" and len(picked) > 1:
