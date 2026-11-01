@@ -408,7 +408,7 @@ def prompt_language(language: str | None = None) -> str:
 
 
 #: 模板里的占位符（只认这几个；别的花括号——比如 JSON 示例——原样保留）
-_PLACEHOLDER_RE = re.compile(r"\{(now|hours|prs|priority_rules|bug|since|max_items|original|language)\}")
+_PLACEHOLDER_RE = re.compile(r"\{(now|hours|prs|priority_rules|bug|since|max_items|original|language|candidates|memory|dismissed)\}")
 
 
 def render_template(template: str, **values) -> str:
