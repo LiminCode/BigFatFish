@@ -40,7 +40,7 @@
 |---|---|---|
 | `pet/memory_distill_run.py`（新） | `is_due` / 状态文件；`select_candidates`（个人侧、上次之后、预算）；`format_candidates`；`repo_root` / `encode_project_dir` / `project_dir`（Claude Code 的目录编码 + worktree 归主仓库 + 大小写不敏感匹配）；`memory_context`；`Proposal` / `parse_proposals`（含截断抢救）；`ProposalStore`；`build_prompt`；`run_once` | 蒸馏这一步全是纯逻辑，模型调用注入，测试不花钱 |
 | `pet/memory_distill_sink.py`（新） | `Entry` / `EntriesStore.apply`（add / change / retire）；`render_block` / `splice_block` / `write_claude_md`（受管块 + 备份）；`write_project_entry` / `remove_project_entry`（文件 + 索引行）；`render_vault_note` / `write_vault_note` / `sync_vault`；`apply_proposal` | 三个落点一处收口；条目库做唯一真相才能真的改掉 / 作废旧内容 |
-| `pet/memory_distill_service.py` | `distill_now`（线程）、`check` 里的 `is_due`、`review`（接受即落盘、推送另起线程）、`sync_vault`、`stats` 多 `distill / proposals / entries / vault` 四块；可注入 `complete / provider / home / token / git` | Qt 侧只管线程与信号 |
+| `pet/memory_distill_service.py` | `probe_wsl`（开窗独立探 WSL 目录，见实机记录 6）；`distill_now`（线程）、`check` 里的 `is_due`、`review`（接受即落盘、推送另起线程）、`sync_vault`、`stats` 多 `distill / proposals / entries / vault` 四块；可注入 `complete / provider / home / token / git` | Qt 侧只管线程与信号 |
 | `pet/memory_distill_ui.py` | 「提案」页、后三格数字、`run_line`、`proposal_label`、「现在总结」可点、控制器的 `distill_now / review / _on_distilled / _on_reviewed / _on_synced`、截断说明 | 审核要能改字，不能只是按钮 |
 | `pet/memory_distill.py` | 默认提示词加 `{dismissed}` 段；配置多 `mirror_to_vault`（默认开） | |
 | `pet/settings_memory_distill.py` | 「镜像进知识库」开关一行 | |
@@ -126,6 +126,15 @@
    - 提案的 `replaces` 指向一条**手写**记忆标题，受管条目库里没有同名条目 → 按设计退化为新增，不改手写文件。
    - 知识库：`Claude Memory.md` +8/−1 行（多出「项目 …」一节），commit `a4da0bf claude memory: 2026-10-31 11:39`，本地 HEAD == `origin/main`。
    - 桌宠进程日志 0 条 error / traceback。剩 3 条待审（全局 1 · 项目 2）；`retire` 动作与 `change` 命中旧条目的分支实机还没跑过，只有测试覆盖。
+6. **用户追问**：「为什么全局 CLAUDE.md 能打开，WSL 的 ~/.claude 不能？」——定位：WSL 那条路径要问 `wsl.exe`（`wslpath -w ~/.claude`），
+   原来只在**抽取线程**里顺便问；用户配置 `enabled=False`，这个进程一次也没抽过，路径一直是空 → 按钮灰、提示「还不知道在哪」。
+   Windows 的 `~/.claude` 与 `CLAUDE.md` 由 `Path.home()` 直接算出，不受影响。修法：`open_window → service.probe_wsl()`
+   （后台线程、只问一次、正在抽取时不重复问），问到后 `changed` 重摆按钮。红 → 绿：
+   `test_wsl_place_is_probed_when_window_opens_even_if_extraction_is_off`（修前断言 `'' == '\\wsl.localhost…'` 失败）；
+   旧测试里「开窗时 WSL 按钮灰着」原是把缺陷写成了预期，改为「开窗就亮」，另加 `test_wsl_place_stays_unknown_when_probe_fails`
+   盯住没装 WSL 的情形。实机：真实配置（`enabled=False`）+ 真实 `wsl.exe`，`open_window` 0.347 s（含一次 wsl.exe，单独量 0.14 s），
+   按钮 enabled=True、提示 `\\wsl.localhost\<发行版>\home\<用户>\.claude`，`open_place` 收到同一路径；桌宠重启 pid 3056，日志无新错误
+   （仅已知的 TTS / 歌词网络噪音）。开窗多了一次 `wsl.exe` 调用（进程生命周期内最多一次；发行版停着时可能要几秒，在后台线程里，不卡 GUI）。
 
 > 报告里不引用提案正文与候选原话（含用户项目名）；只给计数与类别。
 
@@ -160,8 +169,8 @@
 |---|---|
 | `pet/memory_distill_run.py`（新） | 456 / 0 |
 | `pet/memory_distill_sink.py`（新） | 354 / 0 |
-| `pet/memory_distill_ui.py` | 247 / 9 |
-| `pet/memory_distill_service.py` | 189 / 3 |
+| `pet/memory_distill_ui.py` | 248 / 9 |
+| `pet/memory_distill_service.py` | 221 / 4 |
 | `pet/memory_distill.py` | 8 / 1 |
 | `pet/settings_memory_distill.py` | 6 / 0 |
 | `pet/personal_vault.py` | 9 / 3 |
@@ -170,5 +179,5 @@
 | `tests/test_memory_distill_phase2_ui.py`（新） | 295 / 0 |
 | `tests/test_memory_distill_run.py`（新） | 251 / 0 |
 | `tests/test_memory_distill_sink.py`（新） | 152 / 0 |
-| `tests/test_memory_distill_ui.py` | 6 / 5 |
+| `tests/test_memory_distill_ui.py` | 38 / 6 |
 | `docs/PR-REPORT-MEMORY-DISTILL-PHASE2-2026-10-31.md`（新）、`docs/INDEX.md` | 132 / 0、1 / 0 |
