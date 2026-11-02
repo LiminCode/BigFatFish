@@ -119,7 +119,7 @@ def test_the_session_fish_menu_speaks_english(shell):  # noqa: F811
                                  "Copy session ID", "Send this one off", "Session fish settings"]
     settings = menu.actions()[-1].menu()
     assert _labels(settings)[:4] == ["One fish per session", "Session fish limit", "Keep frozen fish for", "Detail card colors"]
-    colors = settings.actions()[2].menu()
+    colors = settings.actions()[3].menu()
     assert "Sakura pink" in _labels(colors)
 
 

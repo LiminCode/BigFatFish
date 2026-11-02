@@ -477,7 +477,7 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
             days_group = QActionGroup(days_menu)
             days_group.setExclusive(True)
             for days in sorted({1, 3, 7, 14, 30, current_days}):
-                choice = days_menu.addAction(t("menu.shared.keep_days", days=days))
+                choice = days_menu.addAction(t("menu.shared.keep_day") if days == 1 else t("menu.shared.keep_days", days=days))
                 choice.setCheckable(True)
                 choice.setChecked(days == current_days)
                 days_group.addAction(choice)

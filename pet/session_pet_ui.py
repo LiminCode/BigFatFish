@@ -1256,7 +1256,7 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     days_menu = add_submenu(settings, t("menu.session.session_fish_keep_days"))
     current_days = int((facade.cfg.get("agent_link") or {}).get("session_fish_keep_days", 3) or 3)
     for days in sorted({1, 3, 7, 14, 30, current_days}):
-        item = days_menu.addAction(t("menu.session.keep_days", days=days))
+        item = days_menu.addAction(t("menu.session.keep_day") if days == 1 else t("menu.session.keep_days", days=days))
         item.setCheckable(True)
         item.setChecked(days == current_days)
         item.triggered.connect(lambda _checked=False, n=days: facade.set_session_fish_keep_days(n))
