@@ -96,4 +96,6 @@
 | `tests/test_notification_toast.py` | 46 / 0 |
 | `docs/PR-REPORT-TOAST-TOPMOST-2026-11-02.md`（新）、`docs/INDEX.md` | — |
 
-全量测试（隔离 worktree、`QT_QPA_PLATFORM=offscreen`、临时 `APPDATA`）：待填。
+全量测试（隔离 worktree、`QT_QPA_PLATFORM=offscreen`、临时 `APPDATA`，Git Bash 启动）：**5927 过、14 跳过、5 失败，783 s**；
+5 条失败全是本机既有基线（路径超 260 的图片目录抽屉、子进程输出按 cp1252 解码的 3 条 `*_survives_optimize` / 二进程门禁、
+多显示器负原点的截屏矩形），与本改动无关。
