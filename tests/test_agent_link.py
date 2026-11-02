@@ -500,6 +500,7 @@ class TestAgentLinkManager:
             "session_pets": True,
             "session_card_text_size": 100,
             "session_pets_max": 6,
+            "session_fish_keep_days": 3,
             "session_card_theme": "sea",
             "crown_models": ["fable"],
             "session_history": True,

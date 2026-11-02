@@ -54,7 +54,7 @@ def test_the_same_functions_still_say_exactly_what_they_used_to_in_chinese():
     assert ch.summarize_sessions(SESSIONS) == ("Claude Code · 1 个在干活 · 2 个休息中",
                                                "web · 工作中 ｜ api (WSL) · 休息中 等 3 个")
     assert ch.summarize_sessions([]) == ("Claude Code · 没有在用的会话", "会话提问后会出现在这里")
-    assert dict(ch.PHASE_TEXT) == {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中"}
+    assert dict(ch.PHASE_TEXT) == {"working": "工作中", "waiting": "等你批准", "review": "等你回复", "resting": "休息中", "frozen": "冻结"}
 
 
 def test_time_and_origin_in_english(english):
