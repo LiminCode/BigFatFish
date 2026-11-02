@@ -927,6 +927,8 @@ class SessionPetActions(QObject):
         self.loader = load_detail
         self.jumper = claude_session_jump.jump
         self.opener = _open_path
+        self.uri_opener = claude_session_jump.open_uri        # 冻结鱼：按深链让 Claude 桌面版重开对话
+        self._history_actions = None                         # 冻结鱼：在终端里 claude --resume（懒建）
         QTimer.singleShot(_ICON_WARM_DELAY_MS, self, self._warm_host_icons)
 
     def _warm_host_icons(self) -> None:
@@ -955,6 +957,10 @@ class SessionPetActions(QObject):
         if info is None:
             return None
         detail = claude_session_info.from_session(key[0], info)
+        if info.get("host_session"):                 # 清单 / 历史里记下的桌面版会话 id（冻结后深链恢复用）
+            detail.extra["host_session"] = str(info["host_session"])
+        if info.get("entrypoint"):
+            detail.entrypoint = detail.entrypoint or str(info["entrypoint"])
         cached = self._cache.get(key)
         if cached is not None:
             for name in ("last_prompt", "git_branch", "entrypoint", "version", "name", "pid",
@@ -1053,6 +1059,8 @@ class SessionPetActions(QObject):
         detail = self._detail_for_key(key)
         if detail is None:
             return False
+        if detail.phase == "frozen":
+            return self.resume_key(key)          # 进程不在了：没有窗口可切，只能把对话重新开起来
         if self._controller.acknowledge(key):
             # 去看了：「等你回复」落回「休息中」，开着的卡片跟着换（下面的线程用的
             # 还是上面那份 detail——跳转只要会话 ID / 路径，与阶段无关）
@@ -1077,6 +1085,47 @@ class SessionPetActions(QObject):
         log.info("会话跳转 agent=%s session=%s ok=%s：%s", key[0], key[1][:8],
                  result.ok, result.message)
         self._say(key, result.message)
+
+    # ------------------------------------------------------------ 冻结鱼：恢复
+    def resume(self, sprite) -> bool:
+        key = self._controller.key_of(sprite)
+        return self.resume_key(key) if key else False
+
+    def resume_key(self, key: tuple[str, str]) -> bool:
+        """把一个进程已不在的对话重新开起来：桌面版开的走深链；其余在那个目录开终端 ``claude --resume``
+        （VS Code 开的先把工作区打开）。进程一回来，清单里就有它，鱼自然解冻。"""
+        info = self._controller.describe(key) or {}
+        entry = self._controller.history_entry(key) if hasattr(self._controller, "history_entry") else None
+        host = str((entry.host_session if entry is not None else "") or info.get("host_session") or "")
+        entrypoint = str((entry.entrypoint if entry is not None else "") or info.get("entrypoint") or "")
+        if entrypoint == claude_session_info.ENTRY_DESKTOP and host:
+            ok = self.uri_opener(claude_session_jump._DESKTOP_URI.format(session=host))
+            self._say(key, t("menu.session.opened_in_desktop") if ok else t("menu.session.couldn_t_open_desktop"))
+            return bool(ok)
+        if entry is None:
+            self._say(key, t("menu.session.no_record"))
+            return False
+        from .claude_session_history import default_action
+        self._say(key, self._history_runner().run(default_action(entry), entry))
+        return True
+
+    def open_in_desktop(self, sprite) -> bool:
+        key = self._controller.key_of(sprite)
+        if not key:
+            return False
+        info = self._controller.describe(key) or {}
+        entry = self._controller.history_entry(key) if hasattr(self._controller, "history_entry") else None
+        host = str((entry.host_session if entry is not None else "") or info.get("host_session") or "")
+        ok = bool(host) and self.uri_opener(claude_session_jump._DESKTOP_URI.format(session=host))
+        self._say(key, t("menu.session.opened_in_desktop") if ok else t("menu.session.couldn_t_open_desktop"))
+        return bool(ok)
+
+    def _history_runner(self):
+        if self._history_actions is None:
+            from .session_history_service import SessionHistoryActions
+            clipboard = QApplication.clipboard()
+            self._history_actions = SessionHistoryActions(copy=clipboard.setText if clipboard is not None else None)
+        return self._history_actions
 
     def open_folder(self, sprite) -> bool:
         key = self._controller.key_of(sprite)
@@ -1171,7 +1220,15 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
             "title": detail.title, "project": detail.project, "sessionId": detail.session_id}))
         header.setEnabled(False)
         menu.addSeparator()
-    add_action(menu, t("menu.session.jump_chat_2"), None, lambda: actions.jump(sprite), close_on_trigger=True)
+    frozen = detail is not None and detail.phase == "frozen"
+    if frozen:
+        # 进程不在了：没有窗口可跳，能做的是把对话重新开起来
+        add_action(menu, t("menu.session.resume_here"), None, lambda: actions.resume(sprite), close_on_trigger=True)
+        if detail.extra.get("host_session"):
+            add_action(menu, t("menu.session.open_in_desktop"), None, lambda: actions.open_in_desktop(sprite),
+                       close_on_trigger=True)
+    else:
+        add_action(menu, t("menu.session.jump_chat_2"), None, lambda: actions.jump(sprite), close_on_trigger=True)
     add_action(menu, t("menu.session.show_details"), None, lambda: actions.show_card(sprite), close_on_trigger=True)
     add_action(menu, t("menu.session.open_project_folder"), None, lambda: actions.open_folder(sprite),
                close_on_trigger=True)
@@ -1181,7 +1238,8 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     add_action(menu, t("menu.session.copy_session_id"), None, lambda: actions.copy_session_id(sprite),
                close_on_trigger=True)
     menu.addSeparator()
-    add_action(menu, t("menu.session.send_one_off"), None, lambda: actions.dismiss(sprite), close_on_trigger=True)
+    add_action(menu, t("menu.session.close_this" if frozen else "menu.session.send_one_off"), None,
+               lambda: actions.dismiss(sprite), close_on_trigger=True)
 
     settings = add_submenu(menu, t("menu.session.session_fish_settings"))
     enabled = settings.addAction(t("menu.session.one_fish_per_session"))
@@ -1195,6 +1253,13 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
         item.setCheckable(True)
         item.setChecked(limit == current)
         item.triggered.connect(lambda _checked=False, n=limit: facade.set_session_pets_max(n))
+    days_menu = add_submenu(settings, t("menu.session.session_fish_keep_days"))
+    current_days = int((facade.cfg.get("agent_link") or {}).get("session_fish_keep_days", 3) or 3)
+    for days in sorted({1, 3, 7, 14, 30, current_days}):
+        item = days_menu.addAction(t("menu.session.keep_days", days=days))
+        item.setCheckable(True)
+        item.setChecked(days == current_days)
+        item.triggered.connect(lambda _checked=False, n=days: facade.set_session_fish_keep_days(n))
     theme_menu = add_submenu(settings, t("menu.session.detail_card_colors"))
     current_theme = _configured_theme_id(facade.cfg)
     for theme_id, label in session_card_themes.theme_choices():

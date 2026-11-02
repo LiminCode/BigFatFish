@@ -58,7 +58,7 @@ _SESSION_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z-]{7,63}$")
 _TRANSCRIPT_STEM_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F-]{20,}$")
 _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(/.*)?$")
 _DRIVE_RE = re.compile(r"^([A-Za-z]):(.*)$")
-_FIELDS = ("cwd", "title", "project", "entrypoint", "git_branch", "distro")
+_FIELDS = ("cwd", "title", "project", "entrypoint", "git_branch", "distro", "host_session")
 
 
 def normalize_cwd(agent: str, cwd: str) -> str:
@@ -108,6 +108,7 @@ class HistoryEntry:
     entrypoint: str = ""
     git_branch: str = ""
     distro: str = ""
+    host_session: str = ""          # Claude 桌面版那边的会话 id（只有进程活着时拿得到；冻结后按它深链回去）
     last_seen: float = 0.0
     pinned: bool = False             # 用户置顶：一直排最前，直到取消
 

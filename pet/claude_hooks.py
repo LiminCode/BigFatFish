@@ -358,7 +358,7 @@ class WslSettingsStore:
 class _PhaseText(Mapping):
     """阶段 → 当前语言的状态文案（``session.phase.*``）。像字典一样用，但每次取都按当前语言。"""
 
-    _PHASES = ("working", "waiting", "review", "resting")
+    _PHASES = ("working", "waiting", "review", "resting", "frozen")
 
     def __getitem__(self, phase: str) -> str:
         if phase not in self._PHASES:
@@ -501,6 +501,33 @@ class ClaudeSessionTracker:
         """
         updates, self._updates = self._updates, []
         return updates
+
+    #: 能从运行清单认领进来的阶段（``claude_session_info.REGISTRY_PHASES`` 的值域）
+    _ADOPT_PHASES = ("working", "waiting", "resting")
+
+    def adopt(self, sid: str, *, phase: str, title: str = "", project: str = "", **extras: str) -> bool:
+        """从运行清单认领一个还没出场的会话。
+
+        肥鱼重启后，空闲的会话一声不响——光靠 hook 事件它们永远不出场。更新里带 ``adopted="1"``：
+        呈现层据此允许它以「休息中」出场。只管呈现，不进 ``_busy``：Agent 级状态仍只由事件决定。
+        已出场的会话返回 False。"""
+        sid = str(sid or "")
+        if not sid or sid in self._sessions or phase not in self._ADOPT_PHASES:
+            return False
+        self._sessions[sid] = {"phase": phase, "title": self._label(title), "project": self._label(project)}
+        while len(self._sessions) > self._MAX_SESSIONS:
+            self._session_gone(next(iter(self._sessions)))
+        self._extras[sid] = {key: str(value)[:self._PATH_MAX] for key, value in extras.items() if value}
+        self._updates.append({"sessionId": sid, **self._sessions[sid], **self._extras[sid], "adopted": "1"})
+        return True
+
+    def note_registry(self, sid: str, **extras: str) -> bool:
+        """已出场的会话从运行清单又知道了点什么（桌面版那边的会话 id、入口）：变了就补一条更新。"""
+        sid = str(sid or "")
+        if sid not in self._sessions or not self._note_extra(sid, **extras):
+            return False
+        self._updates.append({"sessionId": sid, **self._sessions[sid], **self._extras.get(sid, {})})
+        return True
 
     def _session_update(self, sid: str, *, phase: str = "", title: str = "", project: str = "",
                         born: bool = False) -> None:

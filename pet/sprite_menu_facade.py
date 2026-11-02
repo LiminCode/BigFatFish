@@ -621,6 +621,16 @@ class SpriteMenuFacade:
         self.cfg.set("agent_link", ag_data)
         self._save()
 
+    def set_session_fish_keep_days(self, days: int) -> None:
+        """冻结小鱼保留天数：落盘即生效（下一轮名册核对按新天数）。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_fish_keep_days"] = int(days)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        controller = getattr(self._shell, "session_pets", None)
+        if controller is not None and hasattr(controller, "reconcile"):
+            controller.reconcile()
+
     def crown_model_choices(self) -> list[tuple[str, str, bool]]:
         """「桂冠给哪个模型」：四个家族 + 在场会话的具体型号，带勾选态。"""
         from .session_crown import CONFIG_KEY, choices, normalize_tokens

@@ -438,3 +438,157 @@ def test_new_fish_never_land_on_top_of_existing_ones(shell):
         for b in bodies[i + 1:]:
             assert not a.intersects(b), f"{a} 与 {b} 重叠"
         assert shell._bounds.contains(a), "落点在屏幕可用区内"
+
+
+# ================================================================ 一直在（2026-11-02）：认领 / 冻结 / 关闭决定
+
+from pet.claude_session_history import SessionHistory  # noqa: E402
+from pet.session_fish_decisions import SessionFishDecisions  # noqa: E402
+from pet.session_history_service import SessionHistoryService  # noqa: E402
+
+NOW = 1_800_000_000.0
+
+
+@pytest.fixture
+def persistent(shell, monkeypatch, tmp_path):
+    """带「最近的对话」+ 落盘的关闭决定的控制器（保留 3 天，上限按壳的配置）。"""
+    monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
+    monkeypatch.setattr(SessionPetController, "REST_CLIPS", ("idle1",))
+    monkeypatch.setattr(SessionPetController, "REVIEW_CLIPS", ("click1",))
+    monkeypatch.setattr(SessionPetController, "FROZEN_CLIPS", ("frozen1",))
+    clock = {"now": NOW}
+    store = SessionHistory(None, clock=lambda: clock["now"])
+    history = SessionHistoryService(store, clock=lambda: 0.0)
+    decisions = SessionFishDecisions(tmp_path / "session-fish.json", clock=lambda: clock["now"])
+    ctl = SessionPetController(shell, enabled=lambda: True, decisions=decisions, keep_days=lambda: 3,
+                               clock=lambda: clock["now"])
+    ctl.attach_history(history)
+    ctl.clock = clock
+    ctl.history_store = store
+    ctl.decisions = decisions
+    return ctl
+
+
+def _adopted(sid, phase="resting", **extra):
+    return {"sessionId": sid, "phase": phase, "title": "", "project": "p", "adopted": "1", **extra}
+
+
+def test_an_adopted_resting_session_does_get_a_fish(shell, persistent):
+    """hook 事件里第一次看到休息中的会话不凭空生鱼（照旧）；从运行清单认领来的要生——它确实开着。"""
+    persistent.on_session_update("claude", _update(phase="resting"))
+    assert _session_pets(shell) == []
+    persistent.on_session_update("claude", _adopted("A"))
+    fish = _session_pets(shell)
+    assert len(fish) == 1 and fish[0].caption.endswith("休息中")
+
+
+def test_recent_conversations_without_a_process_become_frozen_fish(shell, persistent):
+    """最近 X 天开过、进程已不在的对话：冻结的鱼；点开详情能认出它；超过 X 天自动离场。"""
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 2 * 86400, cwd=r"C:\Users\me\Pet", title="旧对话")
+    persistent.history_store.record("claude", "older-222-bbb", seen=NOW - 5 * 86400, cwd=r"C:\Users\me\Pet")
+    persistent.reconcile()
+    fish = _session_pets(shell)
+    assert len(fish) == 1 and fish[0].caption == "旧对话 · 冻结" and fish[0].caption_tone == "frozen"
+    key = ("claude", "old-1111-aaaa")
+    assert persistent.key_of(fish[0]) == key
+    assert persistent.describe(key)["phase"] == "frozen" and persistent.describe(key)["cwd"] == r"C:\Users\me\Pet"
+    assert persistent.sessions() == [], "冻结的不算在用的会话（灵动岛汇总不变）"
+    persistent.clock["now"] = NOW + 2 * 86400          # 现在距它 4 天 > 3 天
+    persistent.reconcile()
+    assert _session_pets(shell) == []
+
+
+def test_a_frozen_conversation_that_comes_back_alive_thaws(shell, persistent):
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet")
+    persistent.reconcile()
+    frozen = _session_pets(shell)[0]
+    persistent.on_session_update("claude", _adopted("old-1111-aaaa"))
+    fish = _session_pets(shell)
+    assert len(fish) == 1 and fish[0] is not frozen and fish[0].caption.endswith("休息中")
+    persistent.on_session_update("claude", _update("old-1111-aaaa", phase="gone"))
+    persistent.reconcile()
+    assert len(_session_pets(shell)) == 1 and _session_pets(shell)[0].caption.endswith("冻结"), "进程没了：回到冻结，不是消失"
+
+
+def test_closing_a_fish_is_remembered_across_restarts_until_the_session_is_active_again(shell, persistent, tmp_path):
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet")
+    persistent.reconcile()
+    assert persistent.dismiss(_session_pets(shell)[0])
+    assert _session_pets(shell) == []
+    persistent.reconcile()
+    assert _session_pets(shell) == [], "同一轮里不回来"
+    # 「重启」：同一份决定文件、新的控制器
+    again = SessionFishDecisions(tmp_path / "session-fish.json")
+    again.load()
+    assert again.is_dismissed(("claude", "old-1111-aaaa"))
+    persistent.on_session_update("claude", _adopted("old-1111-aaaa"))
+    assert _session_pets(shell) == [], "认领回来也还是休息中：仍然关着"
+    persistent.on_session_update("claude", _update("old-1111-aaaa", phase="working", project="p"))
+    assert len(_session_pets(shell)) == 1, "又活跃了：决定作废，正常显示"
+    again.load()
+    assert not again.is_dismissed(("claude", "old-1111-aaaa"))
+
+
+def test_decisions_about_sessions_that_left_the_roster_are_forgotten(shell, persistent):
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet")
+    persistent.reconcile()
+    persistent.dismiss(_session_pets(shell)[0])
+    persistent.clock["now"] = NOW + 4 * 86400
+    persistent.reconcile()
+    assert not persistent.decisions.is_dismissed(("claude", "old-1111-aaaa"))
+
+
+def test_live_sessions_outrank_frozen_ones_when_the_cap_is_full(shell, persistent):
+    data = dict(shell._config.get("agent_link"))
+    data["session_pets_max"] = 2
+    shell._config.set("agent_link", data)
+    for i in range(3):
+        persistent.history_store.record("claude", f"old-{i}-aaaaaaaa", seen=NOW - (i + 1) * 3600, cwd=r"C:\Users\me\Pet")
+    persistent.reconcile()
+    assert [persistent.key_of(s)[1] for s in _session_pets(shell)] == ["old-0-aaaaaaaa", "old-1-aaaaaaaa"], "最近的优先"
+    persistent.on_session_update("claude", _update("live", project="p"))
+    keys = [persistent.key_of(s)[1] for s in _session_pets(shell)]
+    assert "live" in keys and len(keys) == 2 and "old-1-aaaaaaaa" not in keys, "活的进来，最旧的冻结鱼让位"
+
+
+def test_frozen_fish_menu_offers_resume_instead_of_jump(shell, persistent, monkeypatch):
+    from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
+
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet",
+                                    entrypoint="claude-desktop", host_session="local_abc123def456")
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    opened: list = []
+    actions.uri_opener = lambda uri: opened.append(uri) or True
+    menu = build_session_pet_menu(shell, sprite, actions)
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "恢复这个对话" in labels and "在 Claude 桌面版打开" in labels and "关闭这只" in labels
+    assert "跳到这个对话" not in labels and "让这只离场" not in labels
+    assert actions.jump(sprite) is True
+    assert opened == ["claude://claude.ai/epitaxy/local_abc123def456"], "冻结 + 桌面版：走深链"
+    menu.deleteLater()
+
+
+@pytest.mark.parametrize("raw, expected", [({}, 3), ({"session_fish_keep_days": 14}, 14),
+                                           ({"session_fish_keep_days": 99}, 30), ({"session_fish_keep_days": "x"}, 3)])
+def test_session_fish_keep_days_is_normalised(tmp_path, raw, expected):
+    cfg = Config(base=tmp_path)
+    cfg.set("agent_link", {**(cfg.get("agent_link") or {}), **raw})
+    assert cfg.get("agent_link")["session_fish_keep_days"] == expected
+
+
+def test_facade_persists_the_keep_days_and_the_menu_offers_them(shell, tmp_path):
+    from pet.sprite_menu_facade import SpriteMenuFacade
+
+    SpriteMenuFacade(shell).set_session_fish_keep_days(7)
+    assert shell._config.get("agent_link")["session_fish_keep_days"] == 7
+    cfg = Config(base=tmp_path / "other")             # 壳的配置就在 tmp_path 下，另开一份看默认值
+    pet = _MenuPet(cfg, with_toggle=True)
+    picked: list = []
+    pet.set_session_fish_keep_days = picked.append
+    days_menu = _menu_actions(pet)["冻结小鱼保留天数"].menu()
+    choices = {a.text(): a for a in days_menu.actions()}
+    assert [a.text() for a in days_menu.actions() if a.isChecked()] == ["3 天"]
+    choices["14 天"].trigger()
+    assert picked == [14]

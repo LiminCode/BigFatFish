@@ -1036,7 +1036,12 @@ class OverlayShell(QObject):
         # 4.3 后半：共享子系统注入（等价 PetWindow 的构造参数；None = 惰性空转）
         self.agent_link_manager = agent_link_manager
         self.proactive_watcher = proactive_watcher
-        self.session_pets = SessionPetController(self, enabled=self._session_pets_enabled)
+        from .session_fish_decisions import DECISIONS_FILE, SessionFishDecisions
+        decisions_dir = self._spawn_config_dir()
+        self.session_pets = SessionPetController(
+            self, enabled=self._session_pets_enabled,
+            decisions=SessionFishDecisions(Path(decisions_dir) / DECISIONS_FILE if decisions_dir else None),
+            keep_days=lambda: self._agent_link_value("session_fish_keep_days", 3))
         # 会话小鱼的交互面（详情卡 / 专属右键菜单 / 跳转）
         from .session_pet_ui import SessionPetActions
         self.session_actions = SessionPetActions(
@@ -1060,6 +1065,8 @@ class OverlayShell(QObject):
         if agent_link_manager is not None:
             self.session_history.attach(agent_link_manager)
         self.session_history.start()
+        # 最近 X 天开过、进程已不在的对话 → 冻结的小鱼（用户 2026-11-02：小鱼要一直在，除非主动关闭）
+        self.session_pets.attach_history(self.session_history)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
         # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()

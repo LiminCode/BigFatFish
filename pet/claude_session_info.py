@@ -399,6 +399,43 @@ def local_liveness(session_ids: Iterable[str], *, home: Path | None = None,
     return result
 
 
+#: 运行清单的 ``status`` → 逐会话阶段（认领用）
+REGISTRY_PHASES = {"idle": "resting", "busy": "working", "waiting": "waiting"}
+
+
+def _folder_name(cwd: str) -> str:
+    text = str(cwd or "").rstrip("\\/")
+    return text.replace("\\", "/").rsplit("/", 1)[-1] if text else ""
+
+
+def adoptable_sessions(registry: dict[str, dict], *, alive: Callable[[dict], bool | None],
+                       home: Path | None = None, local: bool = True) -> dict[str, dict]:
+    """运行清单 → 可认领的会话 ``{sessionId: {"phase", "title", "project", "cwd", "transcript", "entrypoint",
+    "host_session"}}``。进程明确已死的不要；判断不了的照认（条目是 Claude Code 自己写的）。
+    标题只取用户起的名字（``nameSource == "user"``），自动拼的（项目名-两位十六进制）不算。"""
+    found: dict[str, dict] = {}
+    for sid, entry in registry.items():
+        if alive(entry) is False:
+            continue
+        name, host = str(entry.get("name") or ""), str(entry.get("hostSessionId") or "")
+        found[sid] = {
+            "phase": REGISTRY_PHASES.get(str(entry.get("status") or ""), "resting"),
+            "title": _clean(name, 80) if entry.get("nameSource") == "user" and name else "",
+            "project": _folder_name(str(entry.get("cwd") or "")),
+            "cwd": str(entry.get("cwd") or ""),
+            "transcript": find_transcript(sid, home) if local else "",
+            "entrypoint": str(entry.get("entrypoint") or ""),
+            "host_session": host if _HOST_SESSION_RE.match(host) else "",
+        }
+    return found
+
+
+def local_registry_sessions(*, home: Path | None = None,
+                            alive: Callable[[dict], bool | None] = process_alive) -> dict[str, dict]:
+    """本机运行清单里活着的会话（认领用，见 ``adoptable_sessions``）。"""
+    return adoptable_sessions(read_registry(registry_dir(home)), alive=alive, home=home)
+
+
 # ---------------------------------------------------------------- WSL 读取
 #: 在发行版里跑的脚本：发行版名、清单文件（附该进程此刻的启动时刻，对不上 = 已死）、
 #: ``$2`` 那个会话的进程是在哪种终端里跑的（两个环境变量），以及 ``$1`` 指的
@@ -494,6 +531,16 @@ def wsl_liveness(session_ids: Iterable[str], *,
     parsed = parse_wsl_output(out)
     return {sid: (parsed["alive"].get(sid) if sid in parsed["registry"] else None)
             for sid in session_ids}
+
+
+def wsl_registry_sessions(*, runner=claude_hooks.run_wsl) -> dict[str, dict]:
+    """WSL 发行版里运行清单上活着的会话（认领用）；起一次 ``wsl.exe``，失败返回空。"""
+    code, out = runner(["-e", "sh", "-c", WSL_SCRIPT, "sh", ""])
+    if code != 0 and not out:
+        return {}
+    parsed = parse_wsl_output(out)
+    return adoptable_sessions(parsed["registry"], local=False,
+                              alive=lambda entry: parsed["alive"].get(str(entry.get("sessionId") or "")))
 
 
 def load(detail: SessionDetail) -> SessionDetail:

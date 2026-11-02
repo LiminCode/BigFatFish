@@ -257,7 +257,7 @@ def test_file_holds_paths_and_titles_only(tmp_path):
     history.record("claude", SID_A, cwd="C:\\work", title="T")
     history.save()
     data = json.loads((tmp_path / "history.json").read_text(encoding="utf-8"))
-    assert set(data["entries"][0]) == {
+    assert set(data["entries"][0]) - {"host_session"} == {
         "agent", "session_id", "cwd", "title", "project", "entrypoint", "git_branch", "distro", "last_seen",
         "pinned"}
 
@@ -430,3 +430,16 @@ def test_default_action_follows_how_the_session_was_opened():
     assert hist.default_action(_entry(cwd="C:\\a", entrypoint="cli")) == "terminal"
     assert hist.default_action(_entry(cwd="C:\\a", entrypoint="claude-vscode")) == "vscode"
     assert hist.default_action(_entry(cwd="C:\\a")) == "terminal", "不知道从哪开的：按终端"
+
+
+def test_history_keeps_the_desktop_host_session_and_entrypoint_for_frozen_fish(tmp_path):
+    """冻结的鱼要能按深链回到桌面版的对话：桌面版那边的会话 id 只有进程活着时才拿得到，所以记进历史。"""
+    path = tmp_path / "h.json"
+    store = hist.SessionHistory(path, clock=lambda: 1000.0)
+    store.record("claude", "11111111-aaaa-bbbb-cccc-000000000001", cwd=r"C:\Users\me\Pet", entrypoint="claude-desktop",
+                 host_session="local_abc123def456")
+    store.save()
+    again = hist.SessionHistory(path, clock=lambda: 1000.0)
+    again.load()
+    entry = again.entries()[0]
+    assert entry.host_session == "local_abc123def456" and entry.entrypoint == "claude-desktop"

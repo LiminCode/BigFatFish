@@ -640,3 +640,33 @@ def test_session_label_prefers_title_then_project_then_short_id():
     assert ch.session_label("claude", {"title": "", "project": "P", "sessionId": "abc"}) == "P"
     assert ch.session_label("claude_wsl", {"sessionId": "0123456789"}) == "01234567 (WSL)"
     assert ch.session_label("claude", {}) == "Claude Code"
+
+
+# ================================================================ 认领运行清单里的会话（2026-11-02）
+
+def test_tracker_adopts_a_registry_session_once_and_marks_the_update():
+    """肥鱼重启后空闲的会话不会再发 hook 事件：从运行清单认领进来，呈现层凭 adopted 允许它以休息中出场。"""
+    tracker = ClaudeSessionTracker()
+    assert tracker.adopt("S1", phase="resting", title="", project="Pet", cwd=r"C:\Users\me\Pet",
+                         host_session="local_abc123def456", entrypoint="claude-desktop")
+    assert not tracker.adopt("S1", phase="working"), "已出场的不再认领"
+    assert not tracker.adopt("S2", phase="gone"), "只认三种在用阶段"
+    updates = tracker.take_session_updates()
+    assert len(updates) == 1 and updates[0]["sessionId"] == "S1" and updates[0]["phase"] == "resting"
+    assert updates[0]["adopted"] == "1" and updates[0]["project"] == "Pet" and updates[0]["cwd"] == r"C:\Users\me\Pet"
+    assert updates[0]["host_session"] == "local_abc123def456"
+    assert tracker.session_ids() == ["S1"]
+    # 认领后它自己来事件：照常走 hook 那条路，不会重复出场
+    tracker.feed({"event": "UserPromptSubmit", "sessionId": "S1"})
+    assert [u["phase"] for u in tracker.take_session_updates()] == ["working"]
+
+
+def test_tracker_notes_registry_facts_for_sessions_already_present():
+    tracker = ClaudeSessionTracker()
+    tracker.feed({"event": "UserPromptSubmit", "sessionId": "S1"})
+    tracker.take_session_updates()
+    assert tracker.note_registry("S1", host_session="local_abc123def456", entrypoint="claude-desktop")
+    assert not tracker.note_registry("S1", host_session="local_abc123def456"), "没变不重报"
+    assert not tracker.note_registry("nobody", host_session="x"), "没出场的不记"
+    updates = tracker.take_session_updates()
+    assert len(updates) == 1 and updates[0]["host_session"] == "local_abc123def456"
