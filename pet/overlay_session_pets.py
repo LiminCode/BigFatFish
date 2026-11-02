@@ -35,8 +35,10 @@ class SessionPetController(QObject):
     REVIEW_CLIPS: tuple[str, ...] = ("工作状态-雀跃庆祝", "工作状态-原地踱步张望")
     #: 冻结（进程不在了的最近对话）：素材库里还没有这一段时退回休息那段并停住播放节拍——静止就是冻结
     FROZEN_CLIPS: tuple[str, ...] = ("冻结",)
-    #: 名册核对（最近 X 天的对话 ↔ 冻结的鱼）的周期
+    #: 名册核对（最近 X 天的对话 ↔ 冻结的鱼）的周期；接上历史后第一次核对延后这么久——
+    #: 接线发生在壳的 __init__ 里，那时 sprite 的落点 / 屏幕路由还没建好（实机 2026-11-02 启动失败）
     RECONCILE_MS = 60_000
+    FIRST_RECONCILE_MS = 1_500
     PHASE_TEXT = claude_hooks.PHASE_TEXT
     AGENT_KEYS = ("claude", "claude_wsl")
 
@@ -214,7 +216,7 @@ class SessionPetController(QObject):
         if changed is not None:
             changed.connect(self.reconcile)
         self._timer.start()
-        self.reconcile()
+        QTimer.singleShot(self.FIRST_RECONCILE_MS, self, self.reconcile)     # 别在壳的构造里就生鱼
 
     def _roster(self) -> list:
         """该冻结的对话：最近 ``keep_days`` 天开过、现在不在用的，最近的在前。"""
@@ -247,7 +249,11 @@ class SessionPetController(QObject):
             key = entry.key
             if key in self._frozen or self._decisions.is_dismissed(key):
                 continue
-            sprite = shell.spawn_session_pet()
+            try:
+                sprite = shell.spawn_session_pet()
+            except Exception:  # noqa: BLE001 - 冻结鱼是锦上添花，生不出来不能把壳带倒
+                log.exception("冻结的会话小鱼生成失败")
+                break
             if sprite is None:
                 break                                # 到上限：更早的对话排不进来
             self._frozen[key] = sprite
@@ -257,16 +263,20 @@ class SessionPetController(QObject):
             shell.set_session_pet_caption(
                 sprite, f"{claude_hooks.session_label(key[0], self._frozen_info[key])} · {self.PHASE_TEXT['frozen']}",
                 tone="frozen")
-            try:
-                held = shell.behavior.hold(sprite, self.FROZEN_CLIPS)
-            except Exception:  # noqa: BLE001 - 素材库不认这段名：当没有
-                held = False
-            if not held:
-                shell.behavior.hold(sprite, self.REST_CLIPS)
+            if not self._hold(sprite, self.FROZEN_CLIPS):
+                self._hold(sprite, self.REST_CLIPS)
                 pause = getattr(shell, "_set_sprite_clip_paused", None)
                 if callable(pause):
                     pause(sprite, True)              # 没有「冻结」素材：停在休息的姿势上不动
             log.info("冻结的会话小鱼出场 agent=%s session=%s", key[0], key[1][:8])
+
+    def _hold(self, sprite, clips: tuple[str, ...]) -> bool:
+        """保持一组动画；素材库不认这些段名（换了角色 / 测试替身）就当没有，不让异常传出去。"""
+        try:
+            return bool(self._shell.behavior.hold(sprite, clips))
+        except Exception:  # noqa: BLE001
+            log.debug("会话小鱼：保持 %s 失败", clips, exc_info=True)
+            return False
 
     def _retire_frozen(self, key: tuple[str, str]) -> None:
         sprite = self._frozen.pop(key, None)

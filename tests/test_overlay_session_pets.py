@@ -592,3 +592,29 @@ def test_facade_persists_the_keep_days_and_the_menu_offers_them(shell, tmp_path)
     assert [a.text() for a in days_menu.actions() if a.isChecked()] == ["3 天"]
     choices["14 天"].trigger()
     assert picked == [14]
+
+
+def test_a_shell_built_over_an_existing_history_does_not_spawn_during_its_own_init(tmp_path, monkeypatch):
+    """实机 2026-11-02：历史里有 23 条近期对话，壳一建就生冻结鱼，而 sprite 落点要用的屏幕路由还没建好 → 启动失败。
+    接上历史后第一次核对要延后；延后之后冻结鱼照常出场。"""
+    import json
+    import time as _time
+
+    from PySide6.QtTest import QTest
+
+    from pet.claude_session_history import HISTORY_FILE
+
+    monkeypatch.setattr(SessionPetController, "FIRST_RECONCILE_MS", 0)
+    config_dir = tmp_path / APP_DIR_NAME
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / HISTORY_FILE).write_text(json.dumps({"version": 1, "entries": [
+        {"agent": "claude", "session_id": "old-1111-aaaa", "cwd": r"C:\Users\me\Pet", "title": "旧对话",
+         "last_seen": _time.time() - 3600}]}), encoding="utf-8")
+    shell, _ = _make_persistent_shell(tmp_path, {"scale": 0.85})
+    try:
+        assert _session_pets(shell) == [], "构造期间不生鱼"
+        QTest.qWait(50)
+        fish = _session_pets(shell)
+        assert len(fish) == 1 and fish[0].caption == "旧对话 · 冻结"
+    finally:
+        shell._delete_runtime_marker()
