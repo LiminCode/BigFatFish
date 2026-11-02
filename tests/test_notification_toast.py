@@ -117,6 +117,52 @@ def test_pushed_toasts_stack_from_the_chosen_corner(stack):
     assert all(c.isVisible() for c in cards)
 
 
+def test_reflow_reasserts_topmost_oldest_first_newest_last(stack):
+    """实机 2026-11-02：卡片是从不激活的置顶工具窗，Qt 只在建窗时写一次 WS_EX_TOPMOST；被最大化的
+    Electron 窗口（Windows 把它当全屏）盖住后再也不自己回来——屏幕上就「中间空一块」。每次重排都把在场的
+    卡重新插回 topmost 带最上：老的先插、最新的最后插（在最上）。"""
+    raised: list[int] = []
+    stack._topmost = lambda card: raised.append(card.notice.uid) or True
+    for uid in (1, 2, 3):
+        stack.push(_notice(uid))
+    assert raised[-3:] == [1, 2, 3]
+    raised.clear()
+    stack.visible_cards()[0].dismiss("closed")
+    app.processEvents()
+    assert raised == [1, 2], "一张走了重排：剩下的再插一遍"
+
+
+def test_topmost_watchdog_runs_while_cards_are_shown_and_stops_after(stack):
+    """没有新通知、没人走时也可能被盖住（用户点了最大化窗口）：在场期间每隔一会儿重插一次，没卡片就停。"""
+    raised: list[int] = []
+    stack._topmost = lambda card: raised.append(card.notice.uid) or True
+    stack._watch.setInterval(10)
+    stack.push(_notice(1))
+    assert stack._watch.isActive()
+    QTest.qWait(120)
+    assert raised.count(1) >= 3
+    stack.visible_cards()[0].dismiss("closed")
+    app.processEvents()
+    QTest.qWait(40)
+    assert not stack._watch.isActive()
+
+
+def test_reflow_uses_expanded_height_so_the_card_below_does_not_overlap(stack):
+    """展开的一摞变高了，下面那张要按展开后的高度让位（原来按收起的高度算，会叠在一起）。"""
+    for uid in (1, 2, 3, 4):
+        stack.push(_slack(uid))
+    stack.push(_notice(9))
+    stack.push(_slack(5))                 # 同频道再来一条：这一摞挪回最上，单卡在它下面
+    app.processEvents()
+    group = next(c for c in stack.visible_cards() if c.is_group())
+    single = next(c for c in stack.visible_cards() if not c.is_group())
+    assert single.y() == group.y() + group.height() + nt.GAP
+    group.set_expanded(True)
+    app.processEvents()
+    assert group.height() > nt.card_height(group.notices)
+    assert single.y() == group.y() + group.height() + nt.GAP
+
+
 def test_cards_dropped_off_the_end_of_the_queue_are_deleted(stack):
     """排队满了丢掉最旧的：它们藏着的卡片窗口也要删掉，不然「一直留着」时一天下来越积越多。"""
     import shiboken6
