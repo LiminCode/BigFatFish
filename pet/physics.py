@@ -81,7 +81,7 @@ GRAVITY = 1400.0          # px/s²
 # 时间 interaction_state 一直挂在 "thrown"，行为机不重绑、抛掷 clip 播完停在
 # 最后一帧（实机"碰撞后画面卡住不动"的直接观感）。0.68 把同一场抛掷收敛到
 # ~5s / 8 次弹跳（"地面弹跳段不超过 5s"是这次的设计目标，见
-# docs/PR-REPORT-THROWN-ISLAND-PUMP-2026-09-24.md 的对照表）。
+# https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-THROWN-ISLAND-PUMP-2026-09-24.md 的对照表）。
 RESTITUTION = 0.68        # 碰边恢复系数
 GROUND_FRICTION = 2.5     # 地面水平摩擦（/s）
 REST_VY = 40.0            # 落地时 |vy| 小于它直接停竖直

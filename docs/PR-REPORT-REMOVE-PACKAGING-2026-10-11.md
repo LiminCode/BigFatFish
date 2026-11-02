@@ -69,7 +69,7 @@ GitHub Actions 构建 / 发布工作流、产物校验脚本及其测试、两�
 
 `README.md` 下半部分保留的上游文档原文仍有下载、安装包、构建的章节，并链接到已删除的
 `docs/ONEDIR_PACKAGING.md`（两处死链）。那部分是原样保留的上游文档，没有逐段修改；在
-「移除的功能」表里写明了它们在本项目不适用。`docs/ONLINE-UPDATE.md` 同样有两处死链，
+「移除的功能」表里写明了它们在本项目不适用。[`ONLINE-UPDATE.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/ONLINE-UPDATE.md) 同样有两处死链，
 它本身是已移除功能的历史说明。`requirements.txt` 里有四处注释提到 PyInstaller 的收集
 行为，依赖本身没有变，注释未动。
 
@@ -132,7 +132,7 @@ GitHub Actions 构建 / 发布工作流、产物校验脚本及其测试、两�
 
 - **运行期的打包分支还在**（`sys.frozen`、`build_variant`、`_MEI` 清理、无聊天变体的延迟
   导入约束）。它们现在是不可达代码，可以另开一轮按模块拆除。
-- **上游文档原文里的死链**（README 两处、`ONLINE-UPDATE.md` 两处）没有修。
+- **上游文档原文里的死链**（README 两处、[`ONLINE-UPDATE.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/ONLINE-UPDATE.md) 两处）没有修。
 - **与上游的差异继续扩大**：上游还在维护这些构建脚本，以后合并上游时这些文件会以
   「我方删除、对方修改」的形式冲突，需要逐次选择保持删除。
 - 以后要恢复打包，从 `b992184` 取回这 25 个文件即可；注意它们在那个提交里刚被改过名

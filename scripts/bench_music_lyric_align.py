@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """歌词对齐（手动校准快进 / 半途起播）性能实测。
 
-对应 PR 报告 `docs/PR-REPORT-music-lyric-align-2026-09-22.md` 的「性能分析」
+对应 PR 报告 `https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-music-lyric-align-2026-09-22.md` 的「性能分析」
 一节：把该 PR 新增/改动的路径成本压成可复现的数字，避免只有定性说法。
 
 测三类东西：
