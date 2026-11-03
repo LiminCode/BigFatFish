@@ -498,6 +498,12 @@ class SpriteMenuFacade:
         return rally if self._is_main_sprite and callable(rally) else None
 
     @property
+    def on_lineup_pets(self):
+        """「列队」：小肥鱼到主屏底边按状态排成一排。同「护驾」，只有主肥鱼的菜单有。"""
+        lineup = getattr(self._shell, "lineup_pets", None)
+        return lineup if self._is_main_sprite and callable(lineup) else None
+
+    @property
     def has_small_pets(self) -> bool:
         """场上有没有小肥鱼（手动生的 / 会话小鱼）：没有时「护驾」置灰。"""
         return bool(getattr(self._shell, "_spawned", None))

@@ -88,6 +88,53 @@ def escort_spots(sizes: Sequence[Sequence[int]], anchor: Sequence[int], bounds: 
     return spots
 
 
+def lineup_spots(sizes: Sequence[Sequence[int]], bounds: Sequence[int], *,
+                 obstacles: Iterable[Sequence[int]] = (), gap: int = 12) -> list[tuple[int, int] | None]:
+    """「列队」：按给定顺序从左到右、脚底贴着可用区底边站成一排；一排站满了往上再排一排。
+    返回各自身体框的左上角（放不下为 None）。
+
+    ``sizes`` 是各只的身体框 ``(w, h)``（顺序就是队列顺序），``bounds`` 是可用区 ``(左, 上, 右, 下)``
+    （右 / 下不含），``obstacles`` 是不许压上去的矩形（主肥鱼、灵动岛）：撞上就往右挪到它右侧再试。
+    同一排里个头不一的脚底对齐；下一排的底边在这一排最高那只的头顶上方 ``gap``。
+    """
+    left, top, right, bottom = (int(v) for v in bounds)
+    blocks = [tuple(int(v) for v in o) for o in obstacles]
+    spots: list[tuple[int, int] | None] = []
+    row_bottom, row_height, x = bottom, 0, left + gap
+    for size in sizes:
+        w, h = int(size[0]), int(size[1])
+        spot = None
+        if 0 < w <= right - left - 2 * gap and 0 < h:
+            for _attempt in range(10_000):             # 每次要么落下、要么 x 往右、要么换行：有限步
+                y = row_bottom - h
+                if y < top:
+                    break                            # 排到屏幕顶了
+                if x + w + gap > right:
+                    row_bottom -= (row_height or h) + gap     # 换行
+                    row_height, x = 0, left + gap
+                    continue
+                hit = next((o for o in blocks if _too_close(x, y, w, h, o, gap)), None)
+                if hit is None:
+                    spot = (x, y)
+                    break
+                x = hit[0] + hit[2] + gap               # 让过障碍
+        spots.append(spot)
+        if spot is not None:
+            x = spot[0] + w + gap
+            row_height = max(row_height, h)
+    return spots
+
+
+class FixedAnchor:
+    """不动的锚：``SpriteRallyWorld`` 的落点记成「相对锚的偏移」，列队要的是屏上的绝对位置，
+    就给它一个钉在原点的锚。"""
+
+    __slots__ = ("pos",)
+
+    def __init__(self, pos: QPointF | None = None) -> None:
+        self.pos = QPointF(pos) if pos is not None else QPointF(0, 0)
+
+
 class _Flight:
     __slots__ = ("anchor", "offset", "start", "elapsed", "duration")
 

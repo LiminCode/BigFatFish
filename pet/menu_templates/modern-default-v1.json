@@ -5,6 +5,7 @@
     {"type": "action", "id": "ojingjing", "visible": true, "section": "profile"},
     {"type": "separator", "id": "default.separator-profile", "visible": true},
     {"type": "action", "id": "rally_pets", "visible": true, "section": "interaction"},
+    {"type": "action", "id": "lineup_pets", "visible": true, "section": "interaction"},
     {"type": "action", "id": "chat", "visible": true, "section": "interaction"},
     {"type": "action", "id": "look_screen", "visible": true, "section": "interaction"},
     {"type": "separator", "id": "default.separator-interaction", "visible": true},

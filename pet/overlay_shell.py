@@ -4005,6 +4005,50 @@ class OverlayShell(QObject):
             self.driver.note_kinetic()           # 肥鱼静止时 tick 已降档：飞行要满速
         return len(moves)
 
+    # ---------------------------------------------------------------- 列队
+    def lineup_pets(self) -> int:
+        """列队：所有小肥鱼到主屏（合成窗那块屏）底边从左到右站成一排。先按状态——等你批准 /
+        等你回复 → 工作中 → 休息中 → 冻结 → 手动生的——同一状态里最近更新的在前；一排站满往上再排。
+        不压主肥鱼和灵动岛（``sprite_rally.lineup_spots``）；飞行段复用护驾那套（固定锚）。
+        住在别的屏上的先搬过来。被用户拖着的那只不抢。返回出发的只数。"""
+        from . import sprite_rally
+
+        fish = [s for s in self._spawned if not getattr(s, "dragging", False)]
+        if not fish:
+            return 0
+        screen = self._screen
+        for sprite in fish:
+            if self._screens.screen_of(sprite) is not screen:
+                self._screens.rehome(sprite, screen)
+        self._screens.schedule_prune()
+        controller = getattr(self, "session_pets", None)
+        ranks = {}
+        for index, sprite in enumerate(fish):
+            rank = controller.lineup_rank(sprite) if controller is not None else None
+            # 手动生的排最后、保持现有先后（时间项取负的序号：序号小的「更新」）
+            ranks[id(sprite)] = rank if rank is not None else (99, -float(index))
+        fish.sort(key=lambda s: (ranks[id(s)][0], -ranks[id(s)][1]))
+        bounds, main_body = QRect(self._bounds), self.sprite.body_rect()
+        bodies = [s.body_rect() for s in fish]
+        spots = sprite_rally.lineup_spots(
+            [(b.width(), b.height()) for b in bodies],
+            (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1),
+            obstacles=[(main_body.x(), main_body.y(), main_body.width(), main_body.height()),
+                       *self.collision.static_member_rects()])
+        moves = []
+        for sprite, body, spot in zip(fish, bodies, spots):
+            if spot is None:
+                continue                         # 屏幕站满了：这只留在原地
+            rect = sprite.rect()
+            moves.append((sprite, QPointF(spot[0] - (body.x() - rect.x()), spot[1] - (body.y() - rect.y()))))
+        self._rally.start(sprite_rally.FixedAnchor(), moves)
+        for sprite, _target in moves:
+            self.behavior.on_drag_started(sprite)
+        if moves:
+            self.driver.note_kinetic()
+        logging.info("列队：%d 只出发（共 %d 只，%d 只站不下留在原地）", len(moves), len(fish), len(fish) - len(moves))
+        return len(moves)
+
     def _on_rally_arrived(self, sprite) -> None:
         """护驾落地：收掉悬空动画；会话小鱼接着播它那一组（忙 / 休息）。"""
         self.behavior.on_drag_released(sprite)
