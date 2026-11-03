@@ -73,8 +73,9 @@ A capsule at the top of the screen. Click it to expand the card.
   conversations**. Recent conversations remember where each one was opened, because `claude --resume` only lists
   conversations from the current folder. Click a row to go back. Right-click to resume in a terminal, open in
   VS Code, pin it, or copy the path.
-- **Today's usage:** the token count of all Claude Code conversations today, read from local files. Click it to
-  open a **7-day dashboard**: tokens, messages sent, when you started and stopped working, and focus time.
+- **Today's usage:** the token count of all Claude Code conversations today, read from local files. The Windows
+  account and the one inside WSL are shown side by side (`Win 2.4M · WSL 1.8M`). Click it to open a **7-day
+  dashboard**: tokens and messages sent per account, when you started and stopped working, and focus time.
 - Two looks: the original dark capsule, or Metro tiles.
 
 <p align="center">
@@ -155,7 +156,8 @@ the effort level and when each one runs.
   outside that the right tab was selected. VS Code asks for confirmation the first time.
 - **Multiple monitors:** a thrown fish stays on its own screen. Dropping files to feed the fish only works on the
   primary screen. Mixed display scaling has not been tested.
-- **Today's usage** counts conversations on this machine only, not inside WSL.
+- **Today's usage** reads the WSL account over the `\\wsl.localhost` share, so it only counts distros that are
+  already running (it never starts one); while a distro is down the slot shows `WSL --` and retries a minute later.
 - **Claude Code's internal formats:** the detail card, recent conversations, usage and memory distill read Claude
   Code's transcripts and running-session list. These are not public interfaces, so a Claude Code update can break
   them. When that happens the affected item stays empty and nothing else is affected.
