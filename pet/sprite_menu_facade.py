@@ -50,6 +50,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QInputDialog, QMenu
 
 from . import catalog
+from .config import SESSION_PETS_MAX_CAP
 from .context_menu import load_menu_template, normalize_template_id
 from .context_menus import build_legacy_menu, build_modern_menu
 from .context_menus.menu_styles import (
@@ -620,6 +621,32 @@ class SpriteMenuFacade:
         ag_data["session_pets_max"] = int(limit)
         self.cfg.set("agent_link", ag_data)
         self._save()
+
+    def ask_session_pets_max(self, prompt=None) -> None:
+        """上限子菜单的「自定义…」：弹数字框填 1–``SESSION_PETS_MAX_CAP``；取消不动。``prompt(current) -> (value, ok)``
+        可注入（测试不弹窗）。"""
+        current = int((self.cfg.get("agent_link", {}) or {}).get("session_pets_max", 6) or 6)
+        if prompt is None:
+            def prompt(cur: int):
+                return QInputDialog.getInt(
+                    getattr(self._shell, "overlay", None), t("menu.facade.session_fish_limit"),
+                    t("menu.facade.session_fish_limit_prompt", cap=SESSION_PETS_MAX_CAP), cur, 1, SESSION_PETS_MAX_CAP)
+        value, ok = prompt(current)
+        if not ok:
+            return
+        value = max(1, min(SESSION_PETS_MAX_CAP, int(value)))
+        self.set_session_pets_max(value)
+        self._bubble(t("menu.facade.session_fish_limit_set", n=value))
+
+    def set_session_fish_keep_days(self, days: int) -> None:
+        """冻结小鱼保留天数：落盘即生效（下一轮名册核对按新天数）。"""
+        ag_data = dict(self.cfg.get("agent_link", {}) or {})
+        ag_data["session_fish_keep_days"] = int(days)
+        self.cfg.set("agent_link", ag_data)
+        self._save()
+        controller = getattr(self._shell, "session_pets", None)
+        if controller is not None and hasattr(controller, "reconcile"):
+            controller.reconcile()
 
     def crown_model_choices(self) -> list[tuple[str, str, bool]]:
         """「桂冠给哪个模型」：四个家族 + 在场会话的具体型号，带勾选态。"""

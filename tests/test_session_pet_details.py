@@ -332,6 +332,23 @@ def test_vscode_jump_falls_back_to_the_code_command_when_no_title_matches():
     assert result.ok and [step[0] for step in desk.log] == ["code", "uri"]
 
 
+def _resume_kwargs(desk):
+    return {k: v for k, v in desk.kwargs.items() if k not in ("chain", "select_tab")}   # 重开那一路没有终端的事
+
+
+def test_resume_in_vscode_opens_the_workspace_and_then_the_session_link():
+    """实机 2026-11-02：冻结的 VS Code 会话点「恢复」只开了文件夹，看到的是空的新对话。要再发插件的会话深链；
+    工作区已开着就只聚焦那个窗口。"""
+    desk = _Desk()
+    result = sj.resume_in_vscode(_vscode_detail(alive=False, cwd=r"C:\somewhere\else"), **_resume_kwargs(desk))
+    assert result.ok and "重开" in result.message
+    assert desk.log == [("code", r"C:\somewhere\else"), ("uri", f"vscode://anthropic.claude-code/open?session={SID}")]
+
+    desk = _Desk()
+    result = sj.resume_in_vscode(_vscode_detail(alive=False), **_resume_kwargs(desk))
+    assert result.ok and desk.log == [("focus", 2), ("uri", f"vscode://anthropic.claude-code/open?session={SID}")]
+
+
 def test_jump_refuses_a_dead_session_and_points_to_the_resume_command():
     desk = _Desk()
     result = sj.jump(_vscode_detail(alive=False), **desk.kwargs)
@@ -502,16 +519,18 @@ def test_copy_and_open_folder_use_the_sessions_own_data(shell):
     assert actions.copy_resume(shell.sprite) is False, "主肥鱼不是会话"
 
 
-def test_dismissed_fish_stays_away_until_its_session_closes(shell):
+def test_dismissed_fish_stays_away_until_its_session_is_active_again(shell):
+    """用户 2026-11-02：关掉的小鱼在会话又活跃（提问 / 等批准）时要能再正常显示；只是休息着不回来。"""
     fish = _session(shell)
     ctl = shell.session_pets
     assert shell.session_actions.dismiss(fish) is True
     assert not shell.is_session_pet(fish)
 
     _session(shell, phase="resting")
-    _session(shell, phase="working")
-    assert ctl.sprite_of(("claude", "A")) is None, "这个会话还开着：不再为它生小鱼"
+    assert ctl.sprite_of(("claude", "A")) is None, "还关着：休息中不回来"
     assert [s["sessionId"] for s in ctl.sessions()] == ["A"], "会话本身照常记着"
+    _session(shell, phase="working")
+    assert ctl.sprite_of(("claude", "A")) is not None, "又活跃了：决定作废，正常显示"
 
     ctl.on_session_update("claude", {"sessionId": "A", "phase": "gone"})
     assert _session(shell) is not None, "会话关掉再开（同一个 ID 被恢复）：重新出场"
@@ -547,3 +566,74 @@ def test_transcript_is_found_by_session_id_when_the_hook_has_not_sent_its_path_y
 
     assert detail.last_prompt == "路径还没送到时的问题"
     assert si.find_transcript("../../etc", tmp_path) == "", "只按合法的会话 ID 找"
+
+
+# ================================================================ 从运行清单认领（2026-11-02）
+
+def test_registry_sessions_turn_live_entries_into_adoptable_sessions(tmp_path):
+    """清单条目 → 可认领的会话：按 status 给阶段、用户起的名字当标题、目录名当项目名；进程死了的不要。"""
+    reg = tmp_path / ".claude" / "sessions"
+    reg.mkdir(parents=True)
+    (tmp_path / ".claude" / "projects" / "C--x").mkdir(parents=True)
+    (tmp_path / ".claude" / "projects" / "C--x" / "11111111-aaaa-bbbb-cccc-000000000001.jsonl").write_text("{}", encoding="utf-8")
+    rows = {
+        "1.json": {"pid": 1, "sessionId": "11111111-aaaa-bbbb-cccc-000000000001", "cwd": r"C:\Users\me\Pet", "status": "idle",
+                   "name": "Pet-3f", "nameSource": "auto", "entrypoint": "claude-desktop",
+                   "hostSessionId": "local_abc123def456", "updatedAt": 5},
+        "2.json": {"pid": 2, "sessionId": "s-busy", "cwd": r"C:\Users\me\Work", "status": "busy", "name": "我的会话",
+                   "nameSource": "user", "entrypoint": "cli", "updatedAt": 5},
+        "3.json": {"pid": 3, "sessionId": "s-wait", "cwd": r"C:\Users\me\Work", "status": "waiting", "updatedAt": 5},
+        "4.json": {"pid": 4, "sessionId": "s-dead", "cwd": r"C:\Users\me\Old", "status": "idle", "updatedAt": 5},
+    }
+    for name, row in rows.items():
+        (reg / name).write_text(json.dumps(row), encoding="utf-8")
+    found = si.local_registry_sessions(home=tmp_path, alive=lambda entry: entry["pid"] != 4)
+    assert set(found) == {"11111111-aaaa-bbbb-cccc-000000000001", "s-busy", "s-wait"}
+    first = found["11111111-aaaa-bbbb-cccc-000000000001"]
+    assert first["phase"] == "resting" and first["title"] == "" and first["project"] == "Pet"
+    assert first["cwd"] == r"C:\Users\me\Pet" and first["entrypoint"] == "claude-desktop"
+    assert first["host_session"] == "local_abc123def456"
+    assert first["transcript"].endswith("11111111-aaaa-bbbb-cccc-000000000001.jsonl")
+    assert found["s-busy"]["phase"] == "working" and found["s-busy"]["title"] == "我的会话"
+    assert found["s-wait"]["phase"] == "waiting" and found["s-wait"]["project"] == "Work"
+
+
+def test_wsl_registry_sessions_come_from_the_same_script(monkeypatch):
+    out = ("@@distro Ubuntu\n"
+           '@@reg 100 {"pid": 7, "sessionId": "w1", "cwd": "/home/me/corp", "status": "idle", "procStart": "100", "entrypoint": "cli", "updatedAt": 1}\n'
+           '@@reg 999 {"pid": 8, "sessionId": "w2", "cwd": "/home/me/dead", "status": "idle", "procStart": "100", "entrypoint": "cli", "updatedAt": 1}\n'
+           "@@tail\n")
+    found = si.wsl_registry_sessions(runner=lambda *a, **k: (0, out))
+    assert list(found) == ["w1"] and found["w1"]["project"] == "corp" and found["w1"]["phase"] == "resting"
+    assert si.wsl_registry_sessions(runner=lambda *a, **k: (1, "")) == {}
+
+
+def test_monitor_adopts_live_registry_sessions_on_its_first_poll(tmp_path, monkeypatch):
+    """重启后第一轮就把清单里活着的会话认领进来；已出场的只补事实，不重复。"""
+    from pet.agent_link import ClaudeCodeMonitor
+    from tests.test_claude_link import _append, _monitor
+
+    monkeypatch.setattr(ClaudeCodeMonitor, "_LIVENESS_PERIOD_S", 0.0)
+    monkeypatch.setattr(si, "local_liveness", lambda ids: {sid: True for sid in ids})
+    monkeypatch.setattr(si, "local_registry_sessions", lambda: {
+        "idle1": {"phase": "resting", "title": "", "project": "Pet", "cwd": r"C:\Users\me\Pet", "transcript": "",
+                  "entrypoint": "claude-desktop", "host_session": "local_abc123def456"},
+        "busy1": {"phase": "working", "title": "", "project": "Work", "cwd": r"C:\Users\me\Work", "transcript": "",
+                  "entrypoint": "cli", "host_session": ""},
+    })
+    mon, got = _monitor(tmp_path)
+    mon.adopt_from_registry = True                 # 测试辅助默认关着（别读真机的清单）
+    raw: list = []
+    mon.session_update.connect(lambda _k, p: raw.append(dict(p)))
+    try:
+        _append(mon, json.dumps({"ts": 1, "agent": "claude", "event": "UserPromptSubmit", "sessionId": "busy1"}) + "\n")
+        mon._poll()
+        phases = {s[1]: s[2] for s in got.sessions}
+        assert phases["idle1"] == "resting" and phases["busy1"] == "working"
+        adopted = [p for p in raw if p["sessionId"] == "idle1"]
+        assert len(adopted) == 1 and adopted[0].get("adopted") == "1" and adopted[0]["cwd"] == r"C:\Users\me\Pet"
+        assert sorted(mon._sessions.session_ids()) == ["busy1", "idle1"]
+        mon._poll()
+        assert len([p for p in raw if p["sessionId"] == "idle1"]) == 1, "再轮询不重复认领"
+    finally:
+        mon.stop()

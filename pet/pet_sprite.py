@@ -115,6 +115,7 @@ class PetSprite(QObject):
         self.caption_below = False       # False = 身体框上方；True = 下方
         self.caption_tone = ""           # 胶囊配色（_CAPTION_TONES 的键）；不认识的用默认
         self.caption_badge = ""          # 胶囊左边的记号：""（没有）/ "crown"（金色桂冠）
+        self.caption_host = ""           # 胶囊最左边的来源图标（host_icons 的种类：vscode / desktop / terminal / wsl / script）；空 = 没有
         self._caption_text_cache: tuple | None = None   # (文本, 可用宽度) → 排版结果
         self._caption_pixmap_cache: tuple | None = None  # (文本, 宽, 高, dpr, 配色) → 胶囊贴图
         self.pos = QPointF(0, 0)
@@ -1043,6 +1044,8 @@ class PetSprite(QObject):
     _CAPTION_PAD_X = 8
     _CAPTION_PAD_Y = 3
     _CAPTION_BADGE_W = 16            # 桂冠占的宽度（含与文字的间距）
+    _CAPTION_HOST_W = 18             # 来源图标占的宽度（含与后面的间距）；顺序：来源 → 桂冠 → 文字
+    _CAPTION_HOST_PX = 14            # 来源图标的边长（胶囊高约 22）
     # Qt 默认 UI 字体不含中文，回退到的字形发硬：点名一个含中文的字体——与气泡同一
     # 种（等线，没装则各平台的中文 UI 字体，见 ui_fonts）。必须是**单族**。
     _CAPTION_FONT_FAMILY = ui_fonts.bubble_font_family()
@@ -1050,7 +1053,8 @@ class PetSprite(QObject):
     _CAPTION_DEFAULT_TONE = ((24, 28, 36, 200), (255, 255, 255))
     #: 工作中淡绿；等你回复（做完了还没看）天蓝——与默认的深灰一眼分得开
     _CAPTION_TONES = {"working": ((176, 245, 190, 235), (16, 74, 36)),
-                      "review": ((150, 200, 255, 240), (10, 44, 102))}
+                      "review": ((150, 200, 255, 240), (10, 44, 102)),
+                      "frozen": ((205, 210, 220, 225), (70, 76, 90))}     # 进程不在了：灰
 
     def _caption_layout(self) -> tuple[QRect, str]:
         """标签的胶囊矩形与（必要时省略过的）文本；无标签返回 (空矩形, "")。
@@ -1064,7 +1068,7 @@ class PetSprite(QObject):
         rect, body = self.rect(), self.body_rect()
         # 标签每帧都画：字体度量（建 QFont / QFontMetrics、省略、量宽）只在文本或
         # 画布宽度变了才重算；位置是下面几行整数运算，移动时照常跟着走。
-        badge_w = self._CAPTION_BADGE_W if self.caption_badge else 0
+        badge_w = self._caption_lead_width()
         key = (self.caption, rect.width(), badge_w)
         cached = self._caption_text_cache
         if cached is None or cached[0] != key:
@@ -1091,6 +1095,13 @@ class PetSprite(QObject):
 
     _CAPTION_SEP = " · "
 
+    def _caption_lead_width(self) -> int:
+        """文字前面占掉的宽度：来源图标 + 桂冠（各自有才算）。"""
+        from . import host_icons
+
+        host_w = self._CAPTION_HOST_W if self.caption_host in host_icons.FALLBACK_GLYPHS else 0
+        return host_w + (self._CAPTION_BADGE_W if self.caption_badge else 0)
+
     @classmethod
     def _elide_caption(cls, metrics: QFontMetrics, caption: str, available: int) -> str:
         """``名字 · 状态`` 放不下时只省略名字；没有分隔符或状态自己都放不下时退回整句中间省略。"""
@@ -1116,8 +1127,8 @@ class PetSprite(QObject):
         if pill.isEmpty():
             return None
         fill, ink = self._CAPTION_TONES.get(self.caption_tone, self._CAPTION_DEFAULT_TONE)
-        badge = self.caption_badge
-        key = (text, pill.width(), pill.height(), self._dpr, fill, ink, badge)
+        badge, host = self.caption_badge, self.caption_host
+        key = (text, pill.width(), pill.height(), self._dpr, fill, ink, badge, host)
         cached = self._caption_pixmap_cache
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -1132,16 +1143,31 @@ class PetSprite(QObject):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(*fill))
             painter.drawRoundedRect(QRectF(0, 0, width, height), height / 2, height / 2)
-            badge_w = self._CAPTION_BADGE_W if badge else 0
+            lead = self._caption_lead_width()
+            x = self._CAPTION_PAD_X - 2
+            if lead and host:
+                self._paint_host(painter, host, QRect(x, (height - self._CAPTION_HOST_PX) // 2,
+                                                      self._CAPTION_HOST_PX, self._CAPTION_HOST_PX), QColor(*ink))
+                x += self._CAPTION_HOST_W
             if badge == "crown":
-                self._paint_crown(painter, QRectF(self._CAPTION_PAD_X - 2, 0, badge_w, height))
+                self._paint_crown(painter, QRectF(x, 0, self._CAPTION_BADGE_W, height))
             painter.setFont(self._caption_text_cache[2])
             painter.setPen(QColor(*ink))
-            painter.drawText(QRect(badge_w, 0, width - badge_w, height), int(Qt.AlignmentFlag.AlignCenter), text)
+            painter.drawText(QRect(lead, 0, width - lead, height), int(Qt.AlignmentFlag.AlignCenter), text)
         finally:
             painter.end()
         self._caption_pixmap_cache = (key, pixmap)
         return pixmap
+
+    def _paint_host(self, painter: QPainter, host: str, box: QRect, ink: QColor) -> None:
+        """来源图标：那个程序自己的图标（VS Code / Claude 桌面版 / PowerShell / wsl.exe），没装就用
+        单色记号、颜色跟胶囊字色。与详情卡页头同一份（``host_icons``），按 (种类, 尺寸, DPR) 缓存，
+        这里每次换文字重画胶囊时只是一次 ``QIcon.paint``。"""
+        from . import host_icons
+
+        icon = host_icons.host_icon_for_dpr(host, self._CAPTION_HOST_PX, self._dpr, ink=ink.name())
+        if not icon.isNull():
+            icon.paint(painter, box)
 
     @staticmethod
     def _paint_crown(painter: QPainter, box: QRectF) -> None:

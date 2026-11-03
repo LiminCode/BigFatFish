@@ -12,7 +12,7 @@ import sys
 
 import pytest
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 from pet import catalog
@@ -203,6 +203,79 @@ def test_caption_rect_is_empty_without_text_and_inside_rect_with_it():
     assert _sprite("").caption_rect() == QRect()
     sprite = _sprite("x")
     assert sprite.rect().contains(sprite.caption_rect())
+
+
+def _lead_pixels(sprite, columns: int) -> int:
+    """胶囊左边 ``columns`` 个逻辑像素列里有颜色、且不是底色的像素数（来源图标 / 桂冠画在这里）。"""
+    image = sprite.caption_pixmap().toImage()
+    dpr = image.devicePixelRatio()
+    fill = image.pixelColor(int(4 * dpr), image.height() // 2)
+    count = 0
+    for y in range(image.height()):
+        for x in range(int(columns * dpr)):
+            c = image.pixelColor(x, y)
+            if c.alpha() > 128 and (abs(c.red() - fill.red()) + abs(c.green() - fill.green())
+                                    + abs(c.blue() - fill.blue())) > 60:
+                count += 1
+    return count
+
+
+@pytest.fixture
+def _no_programs(monkeypatch):
+    """这台机器装没装 VS Code 不该决定测试结果：一律走手绘记号。"""
+    from pet import host_icons
+
+    host_icons.clear_cache()
+    monkeypatch.setattr(host_icons, "host_executable", lambda kind: "")
+    yield
+    host_icons.clear_cache()
+
+
+def test_the_host_icon_sits_at_the_left_of_the_pill_before_the_crown(_no_programs):
+    """用户 2026-11-02：二十来只鱼，表面上看不出哪只是 VS Code、哪只是桌面版、哪只是终端。
+
+    详情卡页头那块程序图标搬到胶囊最左边：来源 → 桂冠 → 「名字 · 状态」。"""
+    sprite = _sprite("dsh-pet · 工作中")
+    plain = sprite.caption_rect().width()
+    icon_end = sprite._CAPTION_PAD_X - 2 + sprite._CAPTION_HOST_PX      # 图标落在 [6, 20)；文字从 lead + 8 起
+    assert _lead_pixels(sprite, sprite._CAPTION_PAD_X - 2) == 0, "没有来源时内边距里什么都没有"
+
+    sprite.caption_host = "vscode"
+    assert sprite.caption_rect().width() == plain + sprite._CAPTION_HOST_W, "图标自己占一格，不压着字"
+    assert _lead_pixels(sprite, icon_end) > 10, "左边那格里画了东西"
+
+    sprite.caption_badge = "crown"
+    assert sprite.caption_rect().width() == plain + sprite._CAPTION_HOST_W + sprite._CAPTION_BADGE_W
+    assert _lead_pixels(sprite, icon_end + sprite._CAPTION_BADGE_W) > _lead_pixels(sprite, icon_end)
+    assert sprite.rect().contains(sprite.caption_rect())
+
+
+def test_an_unknown_host_adds_nothing(_no_programs):
+    sprite = _sprite("dsh-pet · 工作中")
+    plain = sprite.caption_pixmap().cacheKey()
+    sprite.caption_host = "没有这种来源"
+    assert sprite.caption_rect().width() == _sprite("dsh-pet · 工作中").caption_rect().width()
+    assert sprite.caption_pixmap().cacheKey() != plain, "键变了就重画一次，之后照常缓存"
+    assert sprite.caption_pixmap().cacheKey() == sprite.caption_pixmap().cacheKey()
+
+
+def _lead_colors(sprite) -> list:
+    image = sprite.caption_pixmap().toImage()
+    dpr = image.devicePixelRatio()
+    return [image.pixelColor(x, y) for y in range(image.height()) for x in range(int(sprite._CAPTION_HOST_W * dpr))]
+
+
+def test_the_hand_drawn_host_glyph_takes_the_pills_ink(_no_programs):
+    """没装那个程序时画的是单色记号：颜色要跟胶囊的字色，深底白字、淡绿底墨绿字都看得见。"""
+    sprite = _sprite("dsh-pet · 工作中")
+    sprite.caption_host = "wsl"
+    ink = QColor(*sprite._CAPTION_DEFAULT_TONE[1])
+    assert any(c.alpha() > 200 and abs(c.red() - ink.red()) < 40 and abs(c.blue() - ink.blue()) < 40
+               for c in _lead_colors(sprite))
+    sprite.caption_tone = "working"
+    green_ink = QColor(*sprite._CAPTION_TONES["working"][1])
+    assert any(c.alpha() > 200 and abs(c.green() - green_ink.green()) < 40 and c.red() < 80
+               for c in _lead_colors(sprite))
 
 
 def test_eliding_cuts_the_name_not_the_status_word():

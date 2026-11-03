@@ -50,6 +50,7 @@ def _monitor(tmp_path, key: str = "claude"):
     """不起线程的监视器：直接驱动 ``_poll``，信号同步落进 ``got``。"""
     QApplication.instance() or QApplication([])
     mon = ClaudeCodeMonitor(key, tmp_path)
+    mon.adopt_from_registry = False      # 不读这台机器真实的运行清单（认领另有专门的测试）
     mon.events_dir.mkdir(parents=True, exist_ok=True)
     mon.events_file.touch()
     mon._tailer.read_new_lines()        # 首读：定位到末尾（之后的追加才算新事件）

@@ -28,6 +28,8 @@ from .work_notes import normalize as normalize_work_notes
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
+#: 会话小鱼上限的硬顶（菜单「自定义…」与 normalize 共用；用户 2026-11-02 开着 20 个会话，24 太贴）
+SESSION_PETS_MAX_CAP = 40
 DEFAULT_SELF_TALK_MIN_INTERVAL = 20.0
 DEFAULT_SELF_TALK_MAX_INTERVAL = 60.0
 DEFAULT_SELF_TALK_DURATION_SECONDS = 3.2
@@ -267,6 +269,8 @@ def _default_agent_link_data() -> dict:
         "session_pets": True,
         # 会话小鱼上限（1~24）：实测每只约 9% 单核 + 3~4MB，超出的会话只体现在汇总状态里
         "session_pets_max": 6,
+        # 进程已不在的会话（冻结的小鱼）保留这么多天（1~30）：最近开过的对话一直有鱼，过期自动离场
+        "session_fish_keep_days": 3,
         # 会话小鱼头顶的金色桂冠给跑着这些模型的会话（匹配片段，见 pet/session_crown.py）
         "crown_models": ["fable"],
         # 会话小鱼详情卡的配色方案（几个命名好的方案里选，见 pet/session_card_themes.py）
@@ -393,7 +397,8 @@ def _clean_agent_link_data(raw: Any) -> dict:
         if key in raw:
             result[key] = bool(raw[key])
     try:
-        result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
+        result["session_pets_max"] = max(1, min(SESSION_PETS_MAX_CAP,
+                                               int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
     result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))
@@ -402,7 +407,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
 
     result["crown_models"] = _normalize_crown_tokens(raw.get("crown_models", result.get("crown_models")))
     for key, low, high in (("session_history_days", 1, 30), ("session_history_max", 1, 200),
-                           ("session_history_rows", 3, 20)):
+                           ("session_history_rows", 3, 20), ("session_fish_keep_days", 1, 30)):
         try:
             result[key] = max(low, min(high, int(raw.get(key, defaults[key]))))
         except (TypeError, ValueError):

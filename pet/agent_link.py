@@ -2105,6 +2105,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
     def __init__(self, agent_key: str, config_dir: Path, parent=None) -> None:
         super().__init__(agent_key, config_dir, parent)
         self._sessions = claude_hooks.ClaudeSessionTracker()
+        self.adopt_from_registry = True      # 从运行清单认领还没出场的会话（测试里关掉，别读真机的清单）
 
     def start(self) -> bool:
         """启动时刷新 hook 脚本（脚本整体归本肥鱼所有，升级版本自动覆盖旧版）。"""
@@ -2307,6 +2308,7 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
         super()._poll(gen)
         self._trim_events_file()
         self._reap_dead_sessions(gen)
+        self._adopt_registry_sessions()
 
     #: 每隔这么久核对一次会话进程是否还在
     _LIVENESS_PERIOD_S = 60.0
@@ -2343,6 +2345,41 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
                 log.info("Claude Code 会话进程已不在，按已关闭处理 agent=%s session=%s",
                          self.agent_key, sid[:8])
                 self._dispatch_state({"event": "SessionEnd", "sessionId": sid}, "SessionEnd", "", gen)
+
+    #: 每隔这么久从运行清单认领一次还没出场的会话（第一轮就认：重启后空闲的会话马上回来）
+    _ADOPT_PERIOD_S = 60.0
+
+    def _adopt_registry_sessions(self) -> None:
+        """运行清单里活着、却还没出场的会话认领进来；已出场的补上只有清单里才有的事实。
+
+        hook 事件只在会话有动静时才来：肥鱼重启后，空闲的会话一声不响，光靠事件它们永远不出场
+        （用户 2026-11-02：「重启后只剩工作中的那只」）。清单是 Claude Code 自己写的（一个进程一个文件），
+        进程不在的条目不认——会话真关了的不会回来。"""
+        if not getattr(self, "adopt_from_registry", True):
+            return
+        now = time.monotonic()
+        last = getattr(self, "_last_adopt", None)
+        if last is not None and now - last < self._ADOPT_PERIOD_S:
+            return
+        self._last_adopt = now
+        from . import claude_session_info
+        reader = (claude_session_info.wsl_registry_sessions if self.agent_key == "claude_wsl"
+                  else claude_session_info.local_registry_sessions)
+        try:
+            found = reader()
+        except Exception:
+            log.debug("读取 Claude Code 运行清单失败", exc_info=True)
+            return
+        known = set(self._sessions.session_ids())
+        for sid, item in found.items():
+            facts = {key: item.get(key, "") for key in ("cwd", "transcript", "entrypoint", "host_session")}
+            if sid in known:
+                self._sessions.note_registry(sid, **facts)
+            elif self._sessions.adopt(sid, phase=item["phase"], title=item.get("title", ""),
+                                      project=item.get("project", ""), **facts):
+                log.info("从运行清单认领 Claude Code 会话 agent=%s session=%s phase=%s",
+                         self.agent_key, sid[:8], item["phase"])
+        self._flush_session_updates()
 
     def _trim_events_file(self) -> None:
         """事件文件超限且已读到末尾时清空（tailer 把截断识别为新文件，从头读起）。

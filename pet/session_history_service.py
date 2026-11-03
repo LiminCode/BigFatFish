@@ -127,7 +127,8 @@ class SessionHistoryService(QObject):
     def on_session_update(self, agent_key, update) -> None:
         if not isinstance(update, dict) or not self._enabled():
             return
-        fields = {name: str(update.get(name) or "") for name in ("cwd", "title", "project")}
+        fields = {name: str(update.get(name) or "")
+                  for name in ("cwd", "title", "project", "entrypoint", "host_session")}
         if self._store.record(str(agent_key), str(update.get("sessionId") or ""), **fields):
             self._touched()
 

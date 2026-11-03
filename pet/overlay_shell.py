@@ -88,6 +88,7 @@ from .overlay_session_pets import SessionPetController
 from . import slot_manager
 from . import tray_icon as tray_icon_mod
 from . import window_alerts
+from .config import SESSION_PETS_MAX_CAP
 from .context_menus.shared import release_menu_tree
 from .physics import throw_speed_cap
 from .config import (
@@ -1036,7 +1037,12 @@ class OverlayShell(QObject):
         # 4.3 后半：共享子系统注入（等价 PetWindow 的构造参数；None = 惰性空转）
         self.agent_link_manager = agent_link_manager
         self.proactive_watcher = proactive_watcher
-        self.session_pets = SessionPetController(self, enabled=self._session_pets_enabled)
+        from .session_fish_decisions import DECISIONS_FILE, SessionFishDecisions
+        decisions_dir = self._spawn_config_dir()
+        self.session_pets = SessionPetController(
+            self, enabled=self._session_pets_enabled,
+            decisions=SessionFishDecisions(Path(decisions_dir) / DECISIONS_FILE if decisions_dir else None),
+            keep_days=lambda: self._agent_link_value("session_fish_keep_days", 3))
         # 会话小鱼的交互面（详情卡 / 专属右键菜单 / 跳转）
         from .session_pet_ui import SessionPetActions
         self.session_actions = SessionPetActions(
@@ -1060,6 +1066,8 @@ class OverlayShell(QObject):
         if agent_link_manager is not None:
             self.session_history.attach(agent_link_manager)
         self.session_history.start()
+        # 最近 X 天开过、进程已不在的对话 → 冻结的小鱼（用户 2026-11-02：小鱼要一直在，除非主动关闭）
+        self.session_pets.attach_history(self.session_history)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
         # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()
@@ -3780,7 +3788,7 @@ class OverlayShell(QObject):
             limit = int(agent_cfg.get("session_pets_max", self.SESSION_PET_MAX))
         except (AttributeError, TypeError, ValueError):
             limit = self.SESSION_PET_MAX
-        return max(0, min(24, limit))
+        return max(0, min(SESSION_PETS_MAX_CAP, limit))
 
     def _agent_link_value(self, key: str, default):
         agent_cfg = self._config.get("agent_link") or {}
@@ -3829,12 +3837,14 @@ class OverlayShell(QObject):
         self._remove_spawned_sprite(sprite)
         self._refresh_tray_menu()
 
-    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "", badge: str = "") -> None:
-        if sprite.caption == text and sprite.caption_tone == tone and sprite.caption_badge == badge:
+    def set_session_pet_caption(self, sprite, text: str, *, tone: str = "", badge: str = "", host: str = "") -> None:
+        if (sprite.caption == text and sprite.caption_tone == tone and sprite.caption_badge == badge
+                and sprite.caption_host == host):
             return
         sprite.caption = text
         sprite.caption_tone = tone
         sprite.caption_badge = badge
+        sprite.caption_host = host
         self.overlay.update(QRegion(sprite.rect()))
 
     def _slot_writer(self, slot: int):

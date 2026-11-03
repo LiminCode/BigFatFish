@@ -16,9 +16,10 @@ import logging
 import time
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from . import claude_hooks
+from .session_fish_decisions import SessionFishDecisions
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,12 @@ class SessionPetController(QObject):
     WORK_CLIPS: tuple[str, ...] = ("写代码", "吃Token")
     REST_CLIPS: tuple[str, ...] = ("原地小憩沉眠",)
     REVIEW_CLIPS: tuple[str, ...] = ("工作状态-雀跃庆祝", "工作状态-原地踱步张望")
+    #: 冻结（进程不在了的最近对话）：素材库里还没有这一段时退回休息那段并停住播放节拍——静止就是冻结
+    FROZEN_CLIPS: tuple[str, ...] = ("冻结",)
+    #: 名册核对（最近 X 天的对话 ↔ 冻结的鱼）的周期；接上历史后第一次核对延后这么久——
+    #: 接线发生在壳的 __init__ 里，那时 sprite 的落点 / 屏幕路由还没建好（实机 2026-11-02 启动失败）
+    RECONCILE_MS = 60_000
+    FIRST_RECONCILE_MS = 1_500
     PHASE_TEXT = claude_hooks.PHASE_TEXT
     AGENT_KEYS = ("claude", "claude_wsl")
 
@@ -40,10 +47,23 @@ class SessionPetController(QObject):
     #: 一个会话离场了（``(agent_key, sessionId)``）：详情缓存、正开着的详情卡据此收掉
     session_gone = Signal(object)
 
-    def __init__(self, shell, *, enabled: Callable[[], bool], parent: QObject | None = None) -> None:
+    def __init__(self, shell, *, enabled: Callable[[], bool], parent: QObject | None = None,
+                 decisions: SessionFishDecisions | None = None, keep_days: Callable[[], int] = lambda: 3,
+                 clock: Callable[[], float] = time.time) -> None:
         super().__init__(parent)
         self._shell = shell
         self._enabled = enabled
+        self._keep_days = keep_days
+        self._clock = clock
+        # 用户的「关闭这只」决定（落盘、跨重启；会话再活跃就作废）
+        self._decisions = decisions if decisions is not None else SessionFishDecisions(None)
+        # 冻结层：最近 X 天开过、进程已不在的对话 → 一只静止的鱼（``attach_history`` 之后才有）
+        self._history = None
+        self._frozen: dict[tuple[str, str], Any] = {}
+        self._frozen_info: dict[tuple[str, str], dict] = {}
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.RECONCILE_MS)
+        self._timer.timeout.connect(self.reconcile)
         self._pets: dict[tuple[str, str], Any] = {}
         self._phases: dict[tuple[str, str], str] = {}
         # 在用的会话登记表：与「有没有鱼」无关——功能关着、超出上限的会话也照记，
@@ -52,8 +72,6 @@ class SessionPetController(QObject):
         # 详情用的附加信息：完整工作目录、transcript 路径、最近调用的工具、当前阶段
         # 的起始时刻。不进 _sessions——那张表的内容变化会触发灵动岛刷新。
         self._extras: dict[tuple[str, str], dict] = {}
-        # 用户点了「让这只离场」的会话：到它关闭为止不再生小鱼
-        self._dismissed: set[tuple[str, str]] = set()
         # 回合结束了、用户还没去看的会话：显示成「等你回复」而不是「休息中」
         self._unseen: set[tuple[str, str]] = set()
 
@@ -63,18 +81,28 @@ class SessionPetController(QObject):
         for key, owned in self._pets.items():
             if owned is sprite:
                 return key
+        for key, owned in self._frozen.items():
+            if owned is sprite:
+                return key
         return None
 
     def sprite_of(self, key: tuple[str, str]):
-        return self._pets.get(key)
+        return self._pets.get(key) or self._frozen.get(key)
 
     def describe(self, key: tuple[str, str]) -> dict | None:
         """一个会话的已知信息：``sessions()`` 的那几项 + ``cwd / transcript / tool``。"""
         info = self._sessions.get(key)
         if info is None:
-            return None
+            return dict(self._frozen_info[key]) if key in self._frozen_info else None
         extras = self._extras.get(key, {})
         return {**info, **{k: v for k, v in extras.items() if k != "since"}}
+
+    def is_frozen(self, key: tuple[str, str]) -> bool:
+        return key in self._frozen
+
+    def history_entry(self, key: tuple[str, str]):
+        """这个会话在「最近的对话」里的那一行（冻结鱼恢复用）；没记录 / 没接历史 → None。"""
+        return self._history.find(key) if self._history is not None else None
 
     def since(self, key: tuple[str, str]) -> float | None:
         """当前阶段（工作中 / 等批准 / 休息中）是从什么时候开始的（Unix 秒）。
@@ -95,12 +123,17 @@ class SessionPetController(QObject):
         return True
 
     def dismiss(self, sprite) -> bool:
-        """让这只小鱼离场，并且这个会话关闭之前不再为它生小鱼。"""
+        """用户关掉这只：小鱼离场，决定落盘；到这个会话再活跃（提问 / 等批准）为止不再为它生小鱼。"""
         key = self.key_of(sprite)
         if key is None:
             return False
-        self._dismissed.add(key)
-        self._retire(key)
+        info = self.describe(key) or {}
+        self._decisions.dismiss(key, title=claude_hooks.session_label(key[0], info))
+        log.info("用户关掉会话小鱼 agent=%s session=%s", key[0], key[1][:8])
+        if key in self._frozen:
+            self._retire_frozen(key)
+        else:
+            self._retire(key)
         return True
 
     def retitle(self, key: tuple[str, str], title: str) -> bool:
@@ -131,7 +164,7 @@ class SessionPetController(QObject):
         sprite = self._pets.get(key)
         if sprite is not None and self._shell.is_session_pet(sprite):
             self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
-                                                badge=self._badge_for(key))
+                                                badge=self._badge_for(key), host=sprite.caption_host)
         return True
 
     def _badge_for(self, key: tuple[str, str]) -> str:
@@ -144,12 +177,20 @@ class SessionPetController(QObject):
         model = self._extras.get(key, {}).get("model", "")
         return "crown" if session_crown.is_crowned(model, session_crown.normalize_tokens(tokens)) else ""
 
+    def _host_for(self, key: tuple[str, str]) -> str:
+        """这个会话从哪开的（``vscode`` / ``desktop`` / ``terminal`` / ``wsl`` / ``script`` / 空）：标签最左边的
+        图标。入口来自 hook 事件 / 运行清单（``entrypoint``），WSL 通道的会话没有入口也算 ``wsl``；规则与
+        详情卡同一份（``claude_session_info.host_kind``）。"""
+        from . import claude_session_info
+
+        return claude_session_info.host_kind(self._extras.get(key, {}).get("entrypoint", ""), key[0] == "claude_wsl")
+
     def refresh_badges(self) -> None:
         """「桂冠给哪个模型」改了：在场的小鱼当场换。"""
         for key, sprite in self._pets.items():
             if key in self._sessions and self._shell.is_session_pet(sprite):
                 self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
-                                                    badge=self._badge_for(key))
+                                                    badge=self._badge_for(key), host=sprite.caption_host)
 
     def seen_models(self) -> list[str]:
         """在场会话用过的模型 id（菜单里列具体型号用）。"""
@@ -171,6 +212,95 @@ class SessionPetController(QObject):
         """所有会话小鱼离场（功能被关掉时）。"""
         for key in list(self._pets):
             self._retire(key)
+        for key in list(self._frozen):
+            self._retire_frozen(key)
+
+    # ------------------------------------------------------------ 冻结层：最近 X 天的对话
+    def attach_history(self, service) -> None:
+        """接上「最近的对话」：它变了、每隔一会儿、每次会话更新后，都核对一遍名册。"""
+        self._history = service
+        self._decisions.load()
+        changed = getattr(service, "changed", None)
+        if changed is not None:
+            changed.connect(self.reconcile)
+        self._timer.start()
+        QTimer.singleShot(self.FIRST_RECONCILE_MS, self, self.reconcile)     # 别在壳的构造里就生鱼
+
+    def _roster(self) -> list:
+        """该冻结的对话：最近 ``keep_days`` 天开过、现在不在用的，最近的在前。"""
+        if self._history is None:
+            return []
+        try:
+            days = max(1, min(30, int(self._keep_days())))
+        except (TypeError, ValueError):
+            days = 3
+        cutoff = self._clock() - days * 86400.0
+        rows = [e for e in self._history.entries() if e.last_seen >= cutoff and e.key not in self._sessions]
+        rows.sort(key=lambda e: -e.last_seen)
+        return rows
+
+    @Slot()
+    def reconcile(self) -> None:
+        """名册 = 在用的会话 ∪ 最近 X 天的对话。不在名册里的关闭决定忘掉；该冻结的生鱼、不该的收走。"""
+        if self._history is None:
+            return
+        rows = self._roster()
+        wanted = {e.key: e for e in rows}
+        self._decisions.prune([*self._sessions, *wanted])
+        for key in list(self._frozen):
+            if key not in wanted or self._decisions.is_dismissed(key) or not self._enabled():
+                self._retire_frozen(key)
+        if not self._enabled():
+            return
+        shell = self._shell
+        for entry in rows:
+            key = entry.key
+            if key in self._frozen or self._decisions.is_dismissed(key):
+                continue
+            try:
+                sprite = shell.spawn_session_pet()
+            except Exception:  # noqa: BLE001 - 冻结鱼是锦上添花，生不出来不能把壳带倒
+                log.exception("冻结的会话小鱼生成失败")
+                break
+            if sprite is None:
+                break                                # 到上限：更早的对话排不进来
+            self._frozen[key] = sprite
+            self._frozen_info[key] = {"sessionId": key[1], "phase": "frozen", "title": entry.title,
+                                      "project": entry.project or entry.folder, "cwd": entry.cwd,
+                                      "entrypoint": entry.entrypoint, "host_session": entry.host_session,
+                                      "distro": entry.distro}
+            shell.set_session_pet_caption(
+                sprite, f"{claude_hooks.session_label(key[0], self._frozen_info[key])} · {self.PHASE_TEXT['frozen']}",
+                tone="frozen", host=entry.host)
+            if not self._hold(sprite, self.FROZEN_CLIPS):
+                self._hold(sprite, self.REST_CLIPS)
+                pause = getattr(shell, "_set_sprite_clip_paused", None)
+                if callable(pause):
+                    pause(sprite, True)              # 没有「冻结」素材：停在休息的姿势上不动
+            log.info("冻结的会话小鱼出场 agent=%s session=%s", key[0], key[1][:8])
+
+    def _hold(self, sprite, clips: tuple[str, ...]) -> bool:
+        """保持一组动画；素材库不认这些段名（换了角色 / 测试替身）就当没有，不让异常传出去。"""
+        try:
+            return bool(self._shell.behavior.hold(sprite, clips))
+        except Exception:  # noqa: BLE001
+            log.debug("会话小鱼：保持 %s 失败", clips, exc_info=True)
+            return False
+
+    def _retire_frozen(self, key: tuple[str, str]) -> None:
+        sprite = self._frozen.pop(key, None)
+        self._frozen_info.pop(key, None)
+        if sprite is not None and self._shell.is_session_pet(sprite):
+            self._shell.remove_session_pet(sprite)
+            log.info("冻结的会话小鱼离场 agent=%s session=%s", key[0], key[1][:8])
+        self.session_gone.emit(key)
+
+    def _make_room(self) -> bool:
+        """活的会话要出场、上限满了：最旧的那只冻结鱼让位。"""
+        if not self._frozen:
+            return False
+        self._retire_frozen(next(reversed(self._frozen)))
+        return True
 
     def _retire(self, key: tuple[str, str]) -> None:
         sprite = self._pets.pop(key, None)
@@ -206,7 +336,6 @@ class SessionPetController(QObject):
         if phase == "gone":
             changed = self._sessions.pop(key, None) is not None
             self._extras.pop(key, None)
-            self._dismissed.discard(key)
             self._unseen.discard(key)
             self.session_gone.emit(key)
         else:
@@ -218,14 +347,18 @@ class SessionPetController(QObject):
             changed = previous_info != info
             self._sessions[key] = info
             extras = self._extras.setdefault(key, {})
-            for name in ("cwd", "transcript", "tool", "model"):
+            for name in ("cwd", "transcript", "tool", "model", "entrypoint", "host_session"):
                 if update.get(name):
                     extras[name] = str(update[name])
             seen_now = previous_phase == "review" and phase == "resting"
             if previous_phase != phase and not seen_now:
                 extras["since"] = time.time()
+            if phase in ("working", "waiting") and self._decisions.revive(key):
+                log.info("会话又活跃了，关闭决定作废 agent=%s session=%s", key[0], key[1][:8])
         if changed:
             self.sessions_changed.emit()
+        if key in self._frozen:
+            self._retire_frozen(key)         # 进程回来了（或被判定没了）：冻结的那只先走，下面按活的规则重生
         shell = self._shell
         sprite = self._pets.get(key)
         if sprite is not None and not shell.is_session_pet(sprite):
@@ -233,22 +366,28 @@ class SessionPetController(QObject):
             self._pets.pop(key, None)
             self._phases.pop(key, None)
             sprite = None
-        if phase == "gone" or not self._enabled() or key in self._dismissed:
+        if phase == "gone" or not self._enabled() or self._decisions.is_dismissed(key):
             self._retire(key)
+            self._after_update()
             return
         if sprite is None:
-            if phase in ("resting", "review"):
-                return  # 没赶上它干活（或刚被退掉）：不凭空生一只，等它下次提问
+            if phase in ("resting", "review") and not update.get("adopted"):
+                self._after_update()
+                return  # 没赶上它干活（或刚被退掉）：不凭空生一只，等它下次提问（从清单认领来的例外：它确实开着）
             sprite = shell.spawn_session_pet()
+            if sprite is None and self._make_room():
+                sprite = shell.spawn_session_pet()
             if sprite is None:
+                self._after_update()
                 return  # 到上限：这个会话只体现在主肥鱼的汇总状态里
             self._pets[key] = sprite
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
             sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}",
-            tone=phase, badge=self._badge_for(key))
+            tone=phase, badge=self._badge_for(key), host=self._host_for(key))
         previous = self._phases.get(key)
         if previous == phase:
+            self._after_update()
             return  # 只是标签变了：不重启正在播的动画
         self._phases[key] = phase
         if phase == "resting":
@@ -258,6 +397,13 @@ class SessionPetController(QObject):
         elif phase == "working" or previous is None:
             clips = self.WORK_CLIPS
         else:
+            self._after_update()
             return  # 干活途中转入等批准：姿势不变，只换标签
         if not shell.behavior.hold(sprite, clips):
             log.debug("会话小鱼：素材库里没有 %s，退回随机行为", clips)
+        self._after_update()
+
+    def _after_update(self) -> None:
+        """会话有增减之后核对一次名册（会话没了 → 它的对话可能该冻结；回来了 → 冻结的该走）。"""
+        if self._history is not None:
+            self.reconcile()

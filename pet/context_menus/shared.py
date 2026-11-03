@@ -470,6 +470,22 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(limit == current)
                 group.addAction(choice)
                 connect_action(choice, lambda limit=limit: set_limit(limit))
+            ask_limit = getattr(pet, "ask_session_pets_max", None)
+            if callable(ask_limit):
+                limit_menu.addSeparator()
+                connect_action(limit_menu.addAction(t("menu.shared.custom_limit")), ask_limit)
+        set_keep_days = getattr(pet, "set_session_fish_keep_days", None)
+        if callable(set_keep_days):
+            days_menu = add_submenu(sub, t("menu.shared.session_fish_keep_days"), None)
+            current_days = int(agent_cfg.get("session_fish_keep_days", 3) or 3)
+            days_group = QActionGroup(days_menu)
+            days_group.setExclusive(True)
+            for days in sorted({1, 3, 7, 14, 30, current_days}):
+                choice = days_menu.addAction(t("menu.shared.keep_day") if days == 1 else t("menu.shared.keep_days", days=days))
+                choice.setCheckable(True)
+                choice.setChecked(days == current_days)
+                days_group.addAction(choice)
+                connect_action(choice, lambda days=days: set_keep_days(days))
         set_card_theme = getattr(pet, "set_session_card_theme", None)
         if callable(set_card_theme):
             from ..session_card_themes import CONFIG_KEY, normalize_theme_id, theme_choices
