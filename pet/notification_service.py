@@ -191,10 +191,16 @@ class NotificationService(QObject):
             self._unread.clear()
             self.unread_changed.emit(0)
 
-    def activate(self, uid) -> bool:
-        """跳到这条对应的消息（工作线程里跑；结果走 ``activation_done``）。不认识的 uid 返回 False。"""
-        notice = self.notice(uid)
+    def activate(self, target) -> bool:
+        """跳到这条对应的消息（工作线程里跑；结果走 ``activation_done``）。
+
+        ``target`` 是 uid 或 ``Notice`` 本体。名单只留最近 ``keep`` 条，自家弹窗的卡片却可以一直留着
+        （``toast.seconds`` = 0），卡片点了时那条可能早被挤出名单：卡片手里有本体，直接带本体来就照样跳。
+        只给 uid 而名单里没有的返回 False 并记一行日志（以前是静默丢掉，用户看到的就是「点了没反应」）。
+        """
+        notice = target if isinstance(target, nc.Notice) else self.notice(target)
         if notice is None:
+            log.info("通知跳转：名单里已经没有这条（uid=%s），不跳", target)
             return False
         activate = self._activate
         self._unread.discard(notice.uid)

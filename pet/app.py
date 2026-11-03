@@ -3295,7 +3295,7 @@ class AppShell:
     def _on_notification_toast_activated(self, notice) -> None:
         service = getattr(self, "_notifications", None)
         if service is not None:
-            service.activate(notice.uid)
+            service.activate(notice)        # 带本体：卡片可以比服务的名单活得久（名单只留最近 keep 条）
 
     def _push_island_notifications(self, *_args) -> None:
         island = getattr(self, "island", None)
@@ -3334,6 +3334,9 @@ class AppShell:
         if service.activate(uid):
             island.show_notification_status(t("notices.status.jumping"))
             island.collapse_card()
+        else:                               # 行还在屏上、名单里已经没了（刚被挤掉 / 移除）：别装没事
+            island.show_notification_status(t("notices.status.gone"))
+            self._push_island_notifications()
 
     def _on_island_notification_action(self, action: str, uid) -> None:
         service = getattr(self, "_notifications", None)

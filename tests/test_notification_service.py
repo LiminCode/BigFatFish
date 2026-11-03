@@ -102,6 +102,23 @@ def test_mark_seen_activate_dismiss_and_clear(world):
     assert service.notices == [] and center.removed == [2, 1]
 
 
+def test_activate_takes_the_notice_itself_so_a_forgotten_one_still_jumps(world, caplog):
+    """弹窗卡片手里有通知本体：名单只留最近 ``keep`` 条，被挤出去的那条点了也要能跳；
+    只给 uid 而名单里没有的，记一行日志、返回 False（调用方据此提示）。"""
+    config, center, service, events = world
+    config.set(nc.CONFIG_KEY, {**nc.normalize(None), "keep": 5})
+    center.items = [_notice(uid, created=uid) for uid in range(1, 11)]
+    service.poll()
+    assert [n.uid for n in service.notices] == [10, 9, 8, 7, 6], "名单只留最新 5 条"
+    forgotten = _notice(3, created=3)
+    assert service.notice(3) is None
+    assert service.activate(forgotten) is True
+    assert center.activated == [3] and events[-1] == ("done", 3, "activated")
+    with caplog.at_level("INFO", logger="pet.notification_service"):
+        assert service.activate(3) is False, "只给 uid 时名单里没有就不跳"
+    assert any("uid=3" in record.getMessage() for record in caplog.records), "静默丢弃过一次，现在要留痕"
+
+
 def test_disabling_in_config_stops_polling_and_empties_the_island(world):
     config, center, service, events = world
     center.items = [_notice(1, 10)]

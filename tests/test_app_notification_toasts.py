@@ -28,8 +28,8 @@ class FakeService:
         self.logos = {"Slack!App": b"PNG"}
         self.activated = []
 
-    def activate(self, uid):
-        self.activated.append(uid)
+    def activate(self, target):
+        self.activated.append(target)
         return True
 
 
@@ -97,7 +97,8 @@ def test_click_goes_through_the_service_and_turning_off_clears(tmp_path):
     shell._on_notifications_arrived([_notice(7)])
     card = stack.visible_cards()[0]
     card.clicked.emit(card.notice)
-    assert shell._notifications.activated == [7]
+    assert shell._notifications.activated == [card.notice], "交给服务的是通知本体，不是 uid：名单忘了它也能跳"
+    assert isinstance(shell._notifications.activated[0], nc.Notice) and shell._notifications.activated[0].uid == 7
     shell._on_notifications_arrived([_notice(8)])
     shell.config.set(nc.CONFIG_KEY, nc.normalize(None))     # 弹窗关掉
     shell._sync_notification_toasts()
