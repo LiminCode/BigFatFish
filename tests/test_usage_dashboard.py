@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication
 
 from pet import activity_log
 from pet.activity_log import ActivityLog, DaySummary
-from pet.claude_week import DayUsage
+from pet.claude_week import AccountWeek, DayUsage
 from pet.config import Config
 from pet.usage_dashboard import DashboardData, UsageDashboard, build_tiles, footer_text, place_above
 from tests.test_island_info_slot import _island
@@ -35,8 +35,18 @@ def _at(day: dt.date, hour: int, minute: int = 0) -> float:
     return dt.datetime.combine(day, dt.time(hour, minute)).timestamp()
 
 
-def _usage(tokens=(0, 0, 0, 0, 0, 1000, 2_380_000), prompts=(0, 1, 2, 3, 4, 5, 9)) -> list[DayUsage]:
+def _days(tokens=(0, 0, 0, 0, 0, 1000, 2_380_000), prompts=(0, 1, 2, 3, 4, 5, 9)) -> list[DayUsage]:
     return [DayUsage(day, output=t, prompts=p) for day, t, p in zip(WEEK, tokens, prompts)]
+
+
+def _usage() -> list[AccountWeek]:
+    """只有本机一个账号（没有 WSL 的机器）。"""
+    return [AccountWeek("windows", _days())]
+
+
+def _two_accounts(wsl_days=None) -> list[AccountWeek]:
+    wsl = _days(tokens=(0, 0, 0, 0, 500_000, 0, 1_100_000), prompts=(0, 0, 0, 0, 2, 0, 4)) if wsl_days is None else wsl_days
+    return [AccountWeek("windows", _days()), AccountWeek("wsl", wsl)]
 
 
 def _activity() -> list[DaySummary]:
@@ -86,6 +96,50 @@ def test_footer_says_since_when_activity_has_been_recorded():
     assert "活动从 10/23 开始记录" in footer_text(data)
     full = DashboardData(_usage(), _activity(), recording_since=WEEK[0] - dt.timedelta(days=3))
     assert "开始记录" not in footer_text(full), "记满 7 天就不用再说"
+
+
+# ---------------------------------------------------------------- 两个账号
+
+def test_two_accounts_stay_apart_on_the_tiles():
+    tokens, prompts = build_tiles(DashboardData(_two_accounts(), _activity()))[:2]
+
+    assert tokens.value == "Win 2.38M · WSL 1.10M" and prompts.value == "Win 9 · WSL 4"
+    assert tokens.sub == "7 天 ■ Win 2.38M · □ WSL 1.60M"
+    assert prompts.sub == "7 天 ■ Win 24 · □ WSL 6"
+    assert all(len(bar.parts) == 2 for bar in tokens.bars + prompts.bars)
+    assert tokens.bars[-1].parts == (2_380_000.0, 1_100_000.0) and tokens.bars[-1].value == 2_380_000.0
+    assert tokens.bars[2].parts == (0.0, 0.0)
+    assert tokens.bars[-1].tip == "10/24 六：Win 2.38M（输出 2.38M） · WSL 1.10M（输出 1.10M）"
+    assert prompts.bars[-1].tip == "10/24 六：Win 发出 9 条 · WSL 发出 4 条"
+    assert all(bar.parts == () for bar in build_tiles(DashboardData(_usage(), _activity()))[0].bars), "一个账号：照旧"
+
+
+def test_an_unreadable_account_says_so_instead_of_zero():
+    accounts = [AccountWeek("windows", _days()), AccountWeek("wsl", None)]
+    tokens, prompts = build_tiles(DashboardData(accounts, _activity()))[:2]
+    assert tokens.value == "Win 2.38M · WSL --" and prompts.value == "Win 9 · WSL --"
+    assert tokens.sub == "7 天 ■ Win 2.38M · □ WSL --"
+    assert tokens.bars[-1].parts == (2_380_000.0, 0.0)
+    assert tokens.bars[-1].tip.endswith(" · WSL --")
+
+
+def test_grouped_bars_are_painted_side_by_side_with_the_second_account_hollow():
+    from pet.usage_dashboard_ui import MetricTile
+
+    tile = MetricTile()
+    try:
+        tile.set_tile(build_tiles(DashboardData(_two_accounts(), _activity()))[0])
+        groups = tile.part_rects()
+        assert len(groups) == 7 and all(len(group) == 2 for group in groups)
+        win, wsl = groups[-1]
+        assert win.right() <= wsl.left(), "同一天的两根并排：先 Win 后 WSL"
+        assert win.height() > wsl.height() > 0, "柱高按同一个峰值算"
+        assert groups[2][0].height() == 0 and groups[2][1].height() == 0, "没有用量：不画柱子"
+        tile.set_tile(build_tiles(DashboardData(_usage(), _activity()))[0])
+        assert tile.part_rects() == [], "一个账号：还是原来的单柱"
+    finally:
+        tile.deleteLater()
+        app.processEvents()
 
 
 # ---------------------------------------------------------------- 摆在哪

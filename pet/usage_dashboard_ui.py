@@ -7,7 +7,8 @@
   白天 / 黑夜跟「外观」里的主题（``apply_theme``）；
 - 每张磁贴一块实色、方角、无描边无阴影：左上小标题，大号细体数字（今天），一行副标题
   （7 天合计 / 平均），底下 7 根柱子（最右是今天，实白；以前的天半透明白）。「上下班」是
-  悬浮的区间柱，纵轴从上到下是一天里的钟点，右侧标出上下沿；
+  悬浮的区间柱，纵轴从上到下是一天里的钟点，右侧标出上下沿；用量 / 消息分账号时每天并排
+  两根（Win 实心、WSL 空心，``part_rects``），大数字一行写不下时自动缩小字号；
 - 悬停一根柱子弹出那天的确切数字（``QToolTip``）。
 
 无边框置顶的工具窗：点别处（窗口失去激活）、按 Esc 或点右上角 × 收起。开着时每分钟发一次
@@ -17,7 +18,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QToolTip, QVBoxLayout, QWidget
 
 from .i18n import t
@@ -28,6 +29,7 @@ from .usage_dashboard import Bar, Tile
 TILE_W, TILE_H = 236, 200
 TILE_GAP = 8
 _PAD = 14
+_PART_GAP = 2.0               # 分账号时同一天两根柱子之间的缝
 _FAMILIES = ["Segoe UI", "SF Pro Text", "PingFang SC", "Microsoft YaHei UI"]
 _REFRESH_MS = 60_000
 
@@ -37,6 +39,15 @@ def _font(px: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
     font.setFamilies(_FAMILIES)
     font.setPixelSize(px)
     font.setWeight(weight)
+    return font
+
+
+def _value_font(text: str, width: float) -> QFont:
+    """大数字的字号：34px 起，一行写不下（分账号的「Win 2.38M · WSL 1.10M」）就逐级缩到 20px。"""
+    for px in (34, 28, 24, 20):
+        font = _font(px, QFont.Weight.Light)
+        if QFontMetrics(font).horizontalAdvance(text) <= width:
+            break
     return font
 
 
@@ -108,7 +119,7 @@ class MetricTile(QWidget):
         painter.setPen(white)
         inner = self.width() - 2 * _PAD
         for font, text, top, height in ((_font(15, QFont.Weight.DemiBold), tile.title, 10, 22),
-                                         (_font(34, QFont.Weight.Light), tile.value, 30, 46),
+                                         (_value_font(tile.value, inner), tile.value, 30, 46),
                                          (_font(12), tile.sub, 76, 18)):
             painter.setFont(font)
             elided = QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, inner)
@@ -137,7 +148,30 @@ class MetricTile(QWidget):
         width = max(6.0, column.width() - 10)
         return column.center().x() - width / 2, width
 
+    def part_rects(self) -> list[list[QRectF]]:
+        """分账号时每一列里并排的几根柱子（先 Win 后 WSL）；没有分账号 = 空列表。高 0 = 那天那个账号没有用量。"""
+        tile = self.tile
+        if tile is None or not any(bar.parts for bar in tile.bars):
+            return []
+        chart = self._chart_rect()
+        peak = max((max(bar.parts, default=0.0) for bar in tile.bars), default=0.0)
+        groups = []
+        for bar, column in zip(tile.bars, self.bar_rects()):
+            x, width = self._bar_x(column)
+            count = max(1, len(bar.parts))
+            each = (width - _PART_GAP * (count - 1)) / count
+            rects = []
+            for index, part in enumerate(bar.parts):
+                height = max(3.0, chart.height() * part / peak) if part > 0 and peak > 0 else 0.0
+                rects.append(QRectF(x + index * (each + _PART_GAP), chart.bottom() - height, each, height))
+            groups.append(rects)
+        return groups
+
     def _paint_bars(self, painter: QPainter, tile: Tile, chart: QRectF, columns: list[QRectF]) -> None:
+        groups = self.part_rects()
+        if groups:
+            self._paint_grouped(painter, tile, chart, groups)
+            return
         peak = max((bar.value for bar in tile.bars), default=0.0)
         painter.setPen(Qt.PenStyle.NoPen)
         for index, (bar, column) in enumerate(zip(tile.bars, columns)):
@@ -149,6 +183,25 @@ class MetricTile(QWidget):
             height = max(3.0, chart.height() * bar.value / peak)
             painter.setBrush(self._bar_color(bar, index))
             painter.drawRect(QRectF(x, chart.bottom() - height, width, height))
+
+    def _paint_grouped(self, painter: QPainter, tile: Tile, chart: QRectF, groups: list[list[QRectF]]) -> None:
+        """同一天并排几根：第一个账号实心，第二个起空心（1.5px 描边）；没有用量的贴底一道细线。"""
+        for index, (bar, rects) in enumerate(zip(tile.bars, groups)):
+            color = self._bar_color(bar, index)
+            for part, rect in enumerate(rects):
+                if rect.height() <= 0:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(255, 255, 255, 70))
+                    painter.drawRect(QRectF(rect.left(), chart.bottom() - 2, rect.width(), 2))
+                elif part == 0:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(color)
+                    painter.drawRect(rect)
+                else:
+                    painter.setPen(QPen(color, 1.5))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRect(rect.adjusted(0.75, 0.75, -0.75, -0.75))
+        painter.setPen(Qt.PenStyle.NoPen)
 
     def _paint_ranges(self, painter: QPainter, tile: Tile, chart: QRectF, columns: list[QRectF]) -> None:
         top, bottom = tile.span

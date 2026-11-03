@@ -12,7 +12,8 @@ import threading
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
-from pet.claude_usage import UsageTotals
+from pet import claude_usage
+from pet.claude_usage import AccountUsage, UsageTotals
 from pet.claude_usage_monitor import ClaudeUsageMonitor
 
 app = QApplication.instance() or QApplication([])
@@ -126,3 +127,17 @@ def test_real_worker_thread_delivers_on_the_gui_thread():
 
     assert measure_threads and measure_threads[0] is not threading.main_thread()
     assert slot_threads == [threading.main_thread()]
+
+
+def test_two_accounts_are_announced_side_by_side():
+    accounts = [AccountUsage("windows", UsageTotals(output=2_380_000)), AccountUsage("wsl", UsageTotals(output=1_100_000))]
+    monitor = _monitor(_Measure(accounts))
+    monitor.set_active(True)
+    assert monitor.seen == [("今日 Win 2.38M · WSL 1.10M", claude_usage.detail(accounts))]
+    assert monitor.seen[0][1].splitlines()[1].startswith("WSL：1.10M")
+
+
+def test_a_bare_totals_result_still_reads_as_the_single_local_account():
+    monitor = _monitor(_Measure(UsageTotals(output=10)))
+    monitor.set_active(True)
+    assert monitor.seen == [("今日 10", UsageTotals(output=10).detail)]

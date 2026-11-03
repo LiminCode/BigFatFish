@@ -14,7 +14,8 @@ import os
 
 import pytest
 
-from pet.claude_usage import UsageMeter, UsageTotals, format_tokens
+from pet.claude_usage import (UsageAccounts, UsageMeter, UsageTotals, detail, format_tokens, headline,
+                              running_distros, wsl_projects_roots, wsl_share)
 
 DAY = 86400
 NOW = 1_800_000_000 - (1_800_000_000 % DAY) + 15 * 3600      # 某天 15:00（按 UTC 算天，测试里不碰时区）
@@ -202,3 +203,78 @@ def test_totals_start_over_at_midnight(home):
 
     _write(path, [_reply("m2", at=NOW + DAY - 5, output=3)], mode="a", mtime=NOW + DAY)
     assert meter.refresh().output == 3, "同一个文件里昨天的那条不算"
+
+
+# ---------------------------------------------------------------- 两个账号：Windows 本机 + WSL 发行版
+
+def _accounts(home, wsl_roots, clock=None) -> UsageAccounts:
+    return UsageAccounts(home, wsl_roots=wsl_roots, clock=clock or Clock(), day_start=lambda now: now - (now % DAY))
+
+
+def test_a_meter_can_span_several_roots(home):
+    _write(home / "a" / "p" / "s.jsonl", [_reply("m1", output=10)])
+    _write(home / "b" / "q" / "s.jsonl", [_reply("m2", output=5)])
+    meter = UsageMeter(roots=[home / "a", home / "b"], clock=Clock(), day_start=lambda now: now - (now % DAY))
+    assert meter.refresh().output == 15
+
+
+def test_the_two_accounts_are_counted_and_worded_apart(home):
+    _write(_projects(home) / "p" / "s.jsonl", [_reply("m1", output=1000)])
+    wsl = home / "wsl" / "projects"
+    _write(wsl / "q" / "s.jsonl", [_reply("w1", output=300, input=5)])
+
+    got = _accounts(home, lambda: [wsl]).refresh()
+
+    assert [(a.key, a.label, a.totals.output) for a in got] == [("windows", "Win", 1000), ("wsl", "WSL", 300)]
+    assert headline(got) == "今日 Win 1.0K · WSL 305"
+    assert detail(got).splitlines() == [
+        "Win：1.0K（输出 1.0K · 输入 0 · 缓存写入 0；另有缓存读取 0，不计入）",
+        "WSL：305（输出 300 · 输入 5 · 缓存写入 0；另有缓存读取 0，不计入）"]
+
+
+def test_without_wsl_the_wording_is_the_old_single_number(home):
+    _write(_projects(home) / "p" / "s.jsonl", [_reply("m1", output=2_380_000)])
+    got = _accounts(home, lambda: None).refresh()
+    assert [a.key for a in got] == ["windows"]
+    assert headline(got) == "今日 2.38M" and detail(got) == got[0].totals.detail
+
+
+def test_an_unreachable_wsl_shows_dashes_then_recovers_and_keeps_todays_numbers(home):
+    roots: list = []
+    wsl = home / "wsl" / "projects"
+    accounts = _accounts(home, lambda: list(roots))
+
+    got = accounts.refresh()
+    assert got[1].totals is None
+    assert headline(got) == "今日 Win 0 · WSL --"
+    assert detail(got).splitlines()[1].startswith("WSL：读不到")
+
+    _write(wsl / "q" / "s.jsonl", [_reply("w1", output=7)])
+    roots.append(wsl)
+    assert accounts.refresh()[1].totals.output == 7
+    roots.clear()                                           # 发行版停了：今天已经读到的数不丢
+    assert accounts.refresh()[1].totals.output == 7
+
+
+def test_wsl_roots_come_from_running_distros_and_their_home_folders(tmp_path):
+    share = tmp_path / "share"
+    (share / "Ubuntu" / "home" / "me" / ".claude" / "projects").mkdir(parents=True)
+    (share / "Ubuntu" / "home" / "other").mkdir(parents=True)
+    (share / "Debian" / "home" / "me" / ".claude" / "projects").mkdir(parents=True)
+    unc = lambda distro: share / distro  # noqa: E731
+
+    assert wsl_projects_roots(distros=["Ubuntu", "Debian"], running=["Ubuntu"], share=unc) == [
+        share / "Ubuntu" / "home" / "me" / ".claude" / "projects"]
+    assert wsl_projects_roots(distros=["Ubuntu", "Debian"], running=["Debian", "Ubuntu"], share=unc) == [
+        share / "Ubuntu" / "home" / "me" / ".claude" / "projects", share / "Debian" / "home" / "me" / ".claude" / "projects"]
+    assert wsl_projects_roots(distros=[], running=[], share=unc) is None, "没有 WSL：就一个账号"
+    assert wsl_projects_roots(distros=["Ubuntu"], running=[], share=unc) == [], "没在运行：不碰共享（碰了会把它拉起来）"
+    assert wsl_projects_roots(distros=["Ubuntu"], running=["Ubuntu"], share=lambda d: tmp_path / "nowhere") == []
+    assert str(wsl_share("Ubuntu-24.04") / "home") == r"\\wsl.localhost\Ubuntu-24.04\home"
+
+
+def test_running_distros_are_read_from_wsl_exe():
+    assert running_distros(runner=lambda args, **kw: (0, "Ubuntu-24.04\r\n\r\ndocker-desktop\r\n")) == [
+        "Ubuntu-24.04", "docker-desktop"]
+    assert running_distros(runner=lambda args, **kw: (1, "")) == []
+    assert running_distros(runner=lambda args, **kw: (0, "U\x00b\x00u\x00\n")) == ["Ubu"], "UTF-16 的残渣也认得"
