@@ -14,6 +14,7 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "ojingjing",
         "default.separator-profile",
         "rally_pets",
+        "lineup_pets",
         "chat",
         "look_screen",
         "default.separator-interaction",
@@ -324,6 +325,7 @@ def test_missing_user_layout_resolves_versioned_default():
         "spawn_pet",
         "clear_spawned_pets",
         "rally_pets",
+        "lineup_pets",
         "golden_spin",
         "edge_probe",
         "quick_launch",
@@ -350,6 +352,7 @@ def test_missing_user_layout_resolves_versioned_default():
     assert [node["id"] for node in result.nodes if node["type"] != "separator"] == [
         "ojingjing",
         "rally_pets",
+        "lineup_pets",
         "chat",
         "look_screen",
         "animations_hub",
@@ -515,6 +518,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     expected_root = [
         "厉害了我的鲸",
         "护驾",
+        "列队",
         "AI 对话",
         "看看屏幕",
         "播放动画",
@@ -542,7 +546,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     rendered = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
     expected_rendered = [
         "厉害了我的鲸", "|",
-        "护驾", "AI 对话", "看看屏幕", "|",
+        "护驾", "列队", "AI 对话", "看看屏幕", "|",
         "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music",
         "Claude Desktop", "Claude Code（WSL）", "|",
         "肥鱼控制", "快捷启动", "|",

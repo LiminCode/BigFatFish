@@ -24,6 +24,7 @@ from .shared import (
     add_no_move,
     add_on_top,
     add_quit,
+    add_lineup_pets,
     add_rally_pets,
     add_return_corner,
     add_spawn_pet,
@@ -61,6 +62,7 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     add_autostart(menu, icons=False)
     add_spawn_pet(menu, pet)
     add_rally_pets(menu, pet, icons=False)
+    add_lineup_pets(menu, pet, icons=False)
     add_clear_spawned_pets(menu, pet, icons=False)
     add_golden_spin(menu, pet, icons=False)
     # legacy 布局约定无图标（测试 test_legacy_config_value_dispatches_legacy_layout 守着）

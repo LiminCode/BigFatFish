@@ -230,3 +230,80 @@ def test_modern_menu_puts_护驾_at_the_top_level(shell):
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert "护驾" in labels, "右键一眼看得到，不用翻子菜单"
     assert labels.index("护驾") == 1, f"常用：紧跟在最上面的头像行后面，排在所有别的入口之前：{labels[:4]}"
+
+
+# ---------------------------------------------------------------- 列队
+def _session(shell, sid, phase, since):
+    if phase == "resting":          # 第一次就「休息中」的会话不生鱼（等它下次提问）：先工作一下
+        shell.session_pets.on_session_update("claude", {"sessionId": sid, "phase": "working", "title": sid, "project": "p"})
+    shell.session_pets.on_session_update("claude", {"sessionId": sid, "phase": phase, "title": sid, "project": "p"})
+    shell.session_pets._extras[("claude", sid)]["since"] = since
+    return shell.session_pets.sprite_of(("claude", sid))
+
+
+def test_lineup_sorts_by_state_then_recency_and_stands_them_along_the_bottom(shell, monkeypatch):
+    """用户 2026-11-02：「列队」——主屏上从左到右，按状态排，同一状态里最近更新的在前。
+    等你批准 / 等你回复（回合刚结束、还没去看）→ 工作中（新的在前）→ 休息中 → 手动生的小肥鱼。"""
+    from pet.overlay_session_pets import SessionPetController
+
+    monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
+    monkeypatch.setattr(SessionPetController, "REST_CLIPS", ("idle1",))
+    monkeypatch.setattr(SessionPetController, "REVIEW_CLIPS", ("click1",))
+    shell.sprite.set_pos(QPointF(1500, 600))          # 主肥鱼离底边远一点，别挡队
+    a = _session(shell, "A", "working", 1000.0)
+    b = _session(shell, "B", "resting", 300.0)        # 工作完落回来 = 「等你回复」：和等批准同档，按时间排在 C 后
+    c = _session(shell, "C", "waiting", 500.0)        # 等你批准：比工作中的都老，但最前
+    d = _session(shell, "D", "working", 1500.0)       # 工作中里更新的：排 A 前面
+    shell.spawn_pet()
+    manual = shell._spawned[-1]
+    fish = [a, b, c, d, manual]
+    for sprite in fish:
+        _give_hang_clip(shell, sprite)
+    _scatter(shell, fish)
+
+    assert shell.lineup_pets() == 5
+    assert all(sprite.interaction_state == INTERACTION_DRAG for sprite in fish), "飞行途中是悬空态"
+    _fly(shell)
+
+    bodies = {id(s): s.body_rect() for s in fish}
+    # 替身素材整张画布都是身体（544 px 宽），一排站不下 5 只：队列从底边那一排开始、往上一排又从左边起
+    order = sorted(fish, key=lambda s: (-bodies[id(s)].bottom(), bodies[id(s)].x()))
+    assert [shell.session_pets.key_of(s) and shell.session_pets.key_of(s)[1] for s in order] == ["C", "B", "D", "A", None]
+    rows = sorted({bodies[id(s)].bottom() for s in fish}, reverse=True)
+    assert rows[0] == shell._bounds.bottom(), "第一排脚底贴着主屏底边"
+    assert len(rows) >= 2 and all(b < a for a, b in zip(rows, rows[1:])), "站不下就往上再排一排"
+    for sprite in fish:
+        assert shell._bounds.contains(bodies[id(sprite)])
+        assert sprite.interaction_state == INTERACTION_NORMAL
+    for i, s in enumerate(order[1:], 1):
+        prev = bodies[id(order[i - 1])]
+        mine = bodies[id(s)]
+        if mine.bottom() == prev.bottom():
+            assert mine.left() >= prev.right() + 1 + 8, "同一排从左到右、彼此不叠"
+        else:
+            assert mine.left() == order[0] and False or mine.left() <= prev.left(), "换排后又从左边开始"
+    for i, a in enumerate(fish):
+        for b in fish[:i]:
+            assert not bodies[id(a)].intersects(bodies[id(b)]), "谁也不压谁"
+    assert not shell._rally.active()
+
+
+def test_lineup_with_no_small_fish_does_nothing(shell):
+    assert shell.lineup_pets() == 0 and not shell._rally.active()
+
+
+def test_menu_action_is_registered_as_列队():
+    assert ACTION_LABELS["lineup_pets"] == "列队" and "lineup_pets" in MENU_ACTIONS.ids
+
+
+def test_main_fish_menu_offers_lineup_next_to_rally(shell):
+    facade = SpriteMenuFacade(shell)
+    assert "lineup_pets" in MENU_ACTIONS.available_ids(facade)
+    assert "lineup_pets" not in MENU_ACTIONS.enabled_ids(facade), "一只小肥鱼都没有：置灰"
+    shell.spawn_session_pet()
+    assert "lineup_pets" in MENU_ACTIONS.enabled_ids(facade)
+    menu = build_sprite_full_menu(shell, shell.sprite)
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert labels.index("列队") == labels.index("护驾") + 1, "紧跟在「护驾」下面"
+    menu.deleteLater()
+    assert "lineup_pets" not in MENU_ACTIONS.available_ids(SpriteMenuFacade(shell, shell._spawned[0])), "小肥鱼的菜单没有"
