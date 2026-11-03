@@ -928,6 +928,7 @@ class SessionPetActions(QObject):
         self.jumper = claude_session_jump.jump
         self.opener = _open_path
         self.uri_opener = claude_session_jump.open_uri        # 冻结鱼：按深链让 Claude 桌面版重开对话
+        self.vscode_resumer = claude_session_jump.resume_in_vscode   # 冻结鱼：开工作区 + 插件深链重开对话
         self._history_actions = None                         # 冻结鱼：在终端里 claude --resume（懒建）
         QTimer.singleShot(_ICON_WARM_DELAY_MS, self, self._warm_host_icons)
 
@@ -961,6 +962,8 @@ class SessionPetActions(QObject):
             detail.extra["host_session"] = str(info["host_session"])
         if info.get("entrypoint"):
             detail.entrypoint = detail.entrypoint or str(info["entrypoint"])
+        if info.get("distro"):                       # 冻结的 WSL 会话：code --remote 要发行版名
+            detail.distro = detail.distro or str(info["distro"])
         cached = self._cache.get(key)
         if cached is not None:
             for name in ("last_prompt", "git_branch", "entrypoint", "version", "name", "pid",
@@ -1092,8 +1095,9 @@ class SessionPetActions(QObject):
         return self.resume_key(key) if key else False
 
     def resume_key(self, key: tuple[str, str]) -> bool:
-        """把一个进程已不在的对话重新开起来：桌面版开的走深链；其余在那个目录开终端 ``claude --resume``
-        （VS Code 开的先把工作区打开）。进程一回来，清单里就有它，鱼自然解冻。"""
+        """把一个进程已不在的对话重新开起来：桌面版开的走深链；VS Code 开的聚焦 / 打开工作区再发插件深链
+        （只开文件夹看到的是空的新对话——实机 2026-11-02）；其余在那个目录开终端 ``claude --resume``。
+        进程一回来，清单里就有它，鱼自然解冻。"""
         info = self._controller.describe(key) or {}
         entry = self._controller.history_entry(key) if hasattr(self._controller, "history_entry") else None
         host = str((entry.host_session if entry is not None else "") or info.get("host_session") or "")
@@ -1102,6 +1106,27 @@ class SessionPetActions(QObject):
             ok = self.uri_opener(claude_session_jump._DESKTOP_URI.format(session=host))
             self._say(key, t("menu.session.opened_in_desktop") if ok else t("menu.session.couldn_t_open_desktop"))
             return bool(ok)
+        if entrypoint == claude_session_info.ENTRY_VSCODE:
+            detail = self._detail_for_key(key)
+            if detail is None or not detail.cwd:
+                self._say(key, t("menu.session.no_record"))
+                return False
+            detail.entrypoint = detail.entrypoint or entrypoint
+            if entry is not None:
+                detail.distro = detail.distro or entry.distro
+            self._say(key, t("menu.session.reopening_in_vs_code"))
+
+            def work() -> None:
+                try:
+                    result = self.vscode_resumer(detail)      # 聚焦 / 开工作区要等一两秒
+                except Exception:
+                    log.exception("在 VS Code 里重开会话失败")
+                    result = claude_session_jump.JumpResult(False, t("menu.session.couldn_t_reopen_vs_code"))
+                if shiboken6.isValid(self):
+                    self._jump_done.emit(key, result)
+
+            threading.Thread(target=work, name="session-resume", daemon=True).start()
+            return True
         if entry is None:
             self._say(key, t("menu.session.no_record"))
             return False
@@ -1204,6 +1229,15 @@ def _open_path(path: str) -> bool:
         return False
 
 
+def resume_label(detail: SessionDetail) -> str:
+    """冻结鱼「恢复」那一项的文案：按会话的入口说清会在哪里重开（与 ``SessionPetActions.resume_key`` 的分流一致）。"""
+    if detail.entrypoint == claude_session_info.ENTRY_DESKTOP and detail.extra.get("host_session"):
+        return t("menu.session.resume_in_desktop")
+    if detail.entrypoint == claude_session_info.ENTRY_VSCODE:
+        return t("menu.session.resume_in_vs_code")
+    return t("menu.session.resume_in_terminal")
+
+
 def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     """会话小鱼的右键菜单：只有和这个会话有关的动作。"""
     from .context_menus.menu_styles import apply_modern_menu_style, install_modern_check_indicators
@@ -1222,9 +1256,10 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
         menu.addSeparator()
     frozen = detail is not None and detail.phase == "frozen"
     if frozen:
-        # 进程不在了：没有窗口可跳，能做的是把对话重新开起来
-        add_action(menu, t("menu.session.resume_here"), None, lambda: actions.resume(sprite), close_on_trigger=True)
-        if detail.extra.get("host_session"):
+        # 进程不在了：没有窗口可跳，能做的是把对话重新开起来——文案说清在哪里重开（用户 2026-11-02：
+        # 「跳到对话」之后不是之前的对话，那就别叫跳转）
+        add_action(menu, resume_label(detail), None, lambda: actions.resume(sprite), close_on_trigger=True)
+        if detail.extra.get("host_session") and detail.entrypoint != claude_session_info.ENTRY_DESKTOP:
             add_action(menu, t("menu.session.open_in_desktop"), None, lambda: actions.open_in_desktop(sprite),
                        close_on_trigger=True)
     else:

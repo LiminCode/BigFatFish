@@ -259,7 +259,8 @@ class SessionPetController(QObject):
             self._frozen[key] = sprite
             self._frozen_info[key] = {"sessionId": key[1], "phase": "frozen", "title": entry.title,
                                       "project": entry.project or entry.folder, "cwd": entry.cwd,
-                                      "entrypoint": entry.entrypoint, "host_session": entry.host_session}
+                                      "entrypoint": entry.entrypoint, "host_session": entry.host_session,
+                                      "distro": entry.distro}
             shell.set_session_pet_caption(
                 sprite, f"{claude_hooks.session_label(key[0], self._frozen_info[key])} · {self.PHASE_TEXT['frozen']}",
                 tone="frozen")

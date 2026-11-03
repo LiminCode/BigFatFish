@@ -759,7 +759,8 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
     return _jump_terminal(detail, all_windows, focus, chain, wsl_env or {}, owner, select_tab)
 
 
-def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known) -> JumpResult:
+def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known,
+                 done: str = "session_jump.ui.jumped_conversation_vs_code") -> JumpResult:
     wsl = detail.is_wsl
     owners = owning_workspaces(known, detail.cwd, wsl=wsl)
     recorded = [w for w in session_windows(known, detail.session_id) if w.wsl == wsl]
@@ -805,7 +806,29 @@ def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known) -> JumpR
     sleep(_URI_DELAY_S)
     if not uri(session_uri(detail.session_id)):
         return JumpResult(True, t("session_jump.ui.switched_vs_code_but_could"))
-    return JumpResult(True, t("session_jump.ui.jumped_conversation_vs_code"))
+    return JumpResult(True, t(done))
+
+
+def resume_in_vscode(detail: SessionDetail, *,
+                     windows: Callable[[], list[Window]] = list_windows,
+                     focus: Callable[[int], bool] = focus_window,
+                     uri: Callable[[str], bool] = open_uri,
+                     vscode: Callable[..., bool] = open_in_vscode,
+                     workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces,
+                     sleep: Callable[[float], None] = time.sleep) -> JumpResult:
+    """重开一个**进程已不在**的 VS Code 会话（冻结的会话小鱼）：聚焦 / 打开它的工作区，再发
+    ``vscode://anthropic.claude-code/open?session=<id>``——插件对已关掉的对话也认这个链接，会把它重开
+    （实机 2026-11-02 探针：窗口标题随即变成那个对话的名字、运行清单里出现它的新进程）。
+    只开文件夹是不够的：那只是一个空的新对话。阻塞一两秒，放后台线程里调。"""
+    if sys.platform != "win32" and windows is list_windows:
+        return JumpResult(False, t("session_jump.ui.jumping_session_only_works_windows"))
+    try:
+        known = list(workspaces())
+    except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
+        log.exception("读取 VS Code 的窗口记录失败")
+        known = []
+    return _jump_vscode(detail, windows(), focus, uri, vscode, sleep, known,
+                        done="session_jump.ui.reopened_conversation_vs_code")
 
 
 def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None,

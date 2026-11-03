@@ -563,10 +563,56 @@ def test_frozen_fish_menu_offers_resume_instead_of_jump(shell, persistent, monke
     actions.uri_opener = lambda uri: opened.append(uri) or True
     menu = build_session_pet_menu(shell, sprite, actions)
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert "恢复这个对话" in labels and "在 Claude 桌面版打开" in labels and "关闭这只" in labels
+    assert "在 Claude 桌面版重开这个对话" in labels and "关闭这只" in labels
+    assert "在 Claude 桌面版打开" not in labels, "恢复那一项就是它：不重复"
     assert "跳到这个对话" not in labels and "让这只离场" not in labels
     assert actions.jump(sprite) is True
     assert opened == ["claude://claude.ai/epitaxy/local_abc123def456"], "冻结 + 桌面版：走深链"
+    menu.deleteLater()
+
+
+def test_frozen_vs_code_fish_reopens_the_conversation_in_its_wsl_workspace(shell, persistent):
+    """用户 2026-11-02：冻结的 VS Code 会话点了「跳到对话」看到的不是之前的对话——之前只开了工作区文件夹。
+    现在：菜单说清是在 VS Code 里重开；点下去把带发行版名的详情交给重开那一路（它负责聚焦工作区 + 插件深链）。"""
+    from PySide6.QtTest import QTest
+
+    from pet.claude_session_jump import JumpResult
+    from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
+
+    persistent.history_store.record("claude_wsl", "old-2222-bbbb", seen=NOW - 3600, cwd="/home/me/proj",
+                                    entrypoint="claude-vscode", distro="Ubuntu-24.04")
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    handed: list = []
+    actions.vscode_resumer = lambda detail: handed.append(detail) or JumpResult(True, "已让 VS Code 重开这个对话")
+    menu = build_session_pet_menu(shell, sprite, actions)
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "在 VS Code 里重开这个对话" in labels and "在 Claude 桌面版打开" not in labels
+    assert actions.jump(sprite) is True, "冻结鱼的「跳转」就是重开"
+    for _ in range(100):
+        if handed:
+            break
+        QTest.qWait(20)
+    assert len(handed) == 1
+    detail = handed[0]
+    assert (detail.session_id, detail.cwd, detail.entrypoint, detail.distro) == (
+        "old-2222-bbbb", "/home/me/proj", "claude-vscode", "Ubuntu-24.04")
+    assert detail.is_wsl
+    menu.deleteLater()
+
+
+def test_frozen_terminal_fish_says_it_resumes_in_a_terminal(shell, persistent):
+    from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
+
+    persistent.history_store.record("claude", "old-3333-cccc", seen=NOW - 3600, cwd=r"C:\Users\me\Pet",
+                                    entrypoint="cli")
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    menu = build_session_pet_menu(shell, sprite, actions)
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "在终端里恢复这个对话" in labels
     menu.deleteLater()
 
 

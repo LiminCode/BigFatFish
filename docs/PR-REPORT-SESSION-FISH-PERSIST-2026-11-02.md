@@ -21,8 +21,11 @@
 - 现在：`ClaudeCodeMonitor` 第一轮 + 每 60 s 从清单**认领**活着的、还没出场的会话（`ClaudeSessionTracker.adopt`，更新里带
   `adopted="1"`，呈现层据此允许以休息中出场；hook 事件那条「不凭空生鱼」的规则照旧）；已出场的会话顺便补上只有清单里才有的
   事实（桌面版那边的会话 id、入口）。
-- 冻结鱼的右键菜单：**恢复这个对话**（桌面版开的走 `claude://claude.ai/epitaxy/<hostSessionId>` 深链；其余在那个目录开终端
-  `claude --resume <id>`，VS Code 开的先开工作区）、**在 Claude 桌面版打开**（记有桌面版会话 id 时）、详情 / 目录 / 复制、**关闭这只**。
+- 冻结鱼的右键菜单：恢复那一项**按入口说清在哪里重开**——**在 Claude 桌面版重开这个对话**（走
+  `claude://claude.ai/epitaxy/<hostSessionId>` 深链）/ **在 VS Code 里重开这个对话**（聚焦或 `code` 打开它的工作区，再发插件深链
+  `vscode://anthropic.claude-code/open?session=<id>`，插件对已关掉的对话也认这个链接）/ **在终端里恢复这个对话**（在那个目录开终端
+  `claude --resume <id>`）；另有**在 Claude 桌面版打开**（非桌面版入口却记有桌面版会话 id 时）、详情 / 目录 / 复制、**关闭这只**。
+  点冻结鱼（原来的「跳转」）等价于恢复。
   「跳到这个对话」对冻结鱼等价于恢复。
 - 活的会话要出场而上限满了：最旧的冻结鱼让位。上限仍是 `session_pets_max`；保留天数新设置 `session_fish_keep_days`
   （1–30，默认 3），和上限一样放在右键「会话小鱼设置」里（不进设置页——与上限同一归属；见 `docs/SETTINGS-CHANGE-GATES.md`
@@ -35,16 +38,17 @@
 | `pet/claude_session_info.py` | `REGISTRY_PHASES`、`adoptable_sessions`、`local_registry_sessions`、`wsl_registry_sessions`：清单条目 → 可认领的会话（阶段、用户起的标题、目录名、cwd、transcript、入口、桌面版会话 id）；进程明确已死的不要 | 认领的数据源；WSL 复用同一段 `WSL_SCRIPT` |
 | `pet/claude_hooks.py` | `_PhaseText` 多 `frozen`；`ClaudeSessionTracker.adopt` / `note_registry` | 认领进收敛器的会话表（只管呈现，不进 `_busy`：Agent 级状态仍由事件决定） |
 | `pet/agent_link.py` | `ClaudeCodeMonitor._adopt_registry_sessions`（第一轮 + 每 60 s）、`adopt_from_registry` 开关 | 重启后空闲的会话马上回来；测试里关掉别读真机清单 |
-| `pet/overlay_session_pets.py` | 构造多 `decisions / keep_days / clock`；`attach_history`、`reconcile`（名册 = 在用 ∪ 最近 X 天）、冻结鱼的生灭、`_make_room`、`history_entry`、`is_frozen`；`dismiss` 落盘；`on_session_update` 认领例外、活跃即作废、冻结 ↔ 活的切换；第一次核对延后 `FIRST_RECONCILE_MS` | 两层合一处；接线在壳的 `__init__` 里，立刻生鱼会用到还没建好的屏幕路由（实机启动失败，见记录 4） |
+| `pet/overlay_session_pets.py` | 构造多 `decisions / keep_days / clock`；`attach_history`、`reconcile`（名册 = 在用 ∪ 最近 X 天）、冻结鱼的生灭、`_make_room`、`history_entry`、`is_frozen`；`dismiss` 落盘；`on_session_update` 认领例外、活跃即作废、冻结 ↔ 活的切换；第一次核对延后 `FIRST_RECONCILE_MS`；冻结鱼的详情带 `distro` | 两层合一处；接线在壳的 `__init__` 里，立刻生鱼会用到还没建好的屏幕路由（实机启动失败，见记录 4）；WSL 会话 `code --remote` 要发行版名（记录 5） |
 | `pet/session_fish_decisions.py`（新） | 「关闭」决定：dismiss / revive / prune / load / save（原子写） | 跨重启；只存会话 ID、通道、时间、标题 |
-| `pet/session_pet_ui.py` | `resume` / `resume_key` / `open_in_desktop`；`jump_key` 冻结分支；菜单冻结分支；详情带上 `host_session` / `entrypoint`；设置子菜单多「冻结小鱼保留天数」 | 冻结鱼没有窗口可跳，只能把对话重新开起来 |
+| `pet/session_pet_ui.py` | `resume` / `resume_key`（桌面版深链 / **VS Code：后台线程 `resume_in_vscode`** / 终端）、`open_in_desktop`、`resume_label`；`jump_key` 冻结分支；菜单冻结分支按入口给文案，桌面版入口不再重复给「在 Claude 桌面版打开」；详情带上 `host_session` / `entrypoint` / `distro`；设置子菜单多「冻结小鱼保留天数」 | 用户 2026-11-02：冻结的 VS Code 会话点下去只开了工作区文件夹，看到的是空的新对话（记录 5）；文案要说清在哪里重开，别叫「跳转」 |
 | `pet/claude_session_history.py`、`pet/session_history_service.py` | 历史行多 `host_session`，记录时连 `entrypoint` / `host_session` 一起记 | 桌面版会话 id 只有进程活着时拿得到，冻结后靠它深链 |
+| `pet/claude_session_jump.py` | `resume_in_vscode`（读窗口记录 → `_jump_vscode`）；`_jump_vscode` 多 `done` 文案参数 | 冻结的 VS Code 会话复用活会话跳转那套「聚焦对的窗口 → 发会话深链」，只是成功文案说「重开」而不是「跳到」 |
 | `pet/overlay_shell.py` | 控制器带决定文件（和历史同目录）与保留天数；`session_history.start()` 之后 `attach_history` | 接线 |
 | `pet/config.py`、`pet/sprite_menu_facade.py`、`pet/context_menus/shared.py` | `session_fish_keep_days` 默认 3、clamp 1–30；facade setter；主肥鱼「Agent 联动」子菜单同样多这一项 | 设置项 |
 | `pet/pet_sprite.py` | 标签色调 `frozen`（灰） | 一眼分清冻结 |
-| `pet/locale/zh.json`、`en.json` | `session.phase.frozen`、`menu.session.*`（恢复 / 桌面版打开 / 关闭这只 / 没记录 / 天数）、`menu.shared.*`（天数） | 文案 |
+| `pet/locale/zh.json`、`en.json` | `session.phase.frozen`、`menu.session.*`（三种入口的重开文案 / 正在让 VS Code 重开 / 没能重开 / 桌面版打开 / 关闭这只 / 没记录 / 天数）、`menu.shared.*`（天数）、`session_jump.ui.reopened_conversation_vs_code` | 文案 |
 | `tests/test_session_fish_decisions.py`（新） | 落盘 / 重载 / 作废 / 忘掉 / 坏文件 | — |
-| `tests/test_claude_hooks.py`、`tests/test_session_pet_details.py`、`tests/test_overlay_session_pets.py`、`tests/test_claude_session_history.py`、`tests/test_claude_link.py`、`tests/test_sprite_menu_parity.py` | 认领（收敛器 / 清单 / 监视器）、认领来的休息中出场、冻结、解冻、关闭跨重启且再活跃作废、离开名册即忘、活的优先、冻结菜单与深链、天数设置、历史新字段、建壳不炸；旧测试「关到会话关闭为止」按新语义改成「关到再活跃为止」；`_monitor` 辅助默认不读真机清单；菜单清单允许项多一条 | — |
+| `tests/test_claude_hooks.py`、`tests/test_session_pet_details.py`、`tests/test_overlay_session_pets.py`、`tests/test_claude_session_history.py`、`tests/test_claude_link.py`、`tests/test_sprite_menu_parity.py` | 认领（收敛器 / 清单 / 监视器）、认领来的休息中出场、冻结、解冻、关闭跨重启且再活跃作废、离开名册即忘、活的优先、冻结菜单与深链、天数设置、历史新字段、建壳不炸；**第四轮**：`resume_in_vscode` 先开工作区再发会话链接 / 工作区开着只聚焦、冻结的 WSL VS Code 鱼菜单文案 + 点下去交出带发行版名的详情、冻结的终端会话文案；旧测试「关到会话关闭为止」按新语义改成「关到再活跃为止」；`_monitor` 辅助默认不读真机清单；菜单清单允许项多一条 | — |
 
 ### 未改动
 
@@ -93,9 +97,21 @@
    + 1 工作；WSL 12：全休息）；冻结鱼先按历史出场 9 只、随后活的会话逐只进来、最旧的冻结鱼逐只让位，终态 **10 只活鱼
    （本机 5 + WSL 5）、0 只冻结**，另 7 个 WSL 会话超上限只在汇总里。主屏截图右下一排 10 只带「· 休息中」标签的小鱼（截图含
    用户工作内容，不入库）。
-5. **没在实机上点过的**：右键「关闭这只」→ 重启 → 不回来 → 再提问回来；冻结鱼的「恢复这个对话」深链。前者只有单元测试
-   （决定文件 round trip + 控制器语义）；后者用的是既有的 `open_uri` / `terminal_resume_argv`（它们在跳转 / 历史面板里已实机用过），
-   但「关掉标签页后桌面版会不会按深链重开」在调查结论里就标明未验证——请用户在实机上各点一次，结果补进下一期。
+5. **用户实机反馈（2026-11-02 18:10，pid 55800）**：用户关掉一个 WSL 里 VS Code 开的会话标签页，鱼如期变「冻结」
+   （日志 `冻结的会话小鱼出场 agent=claude_wsl`），点下去却「不是之前的对话」。原因：`resume_key` 对 VS Code 入口走的是
+   `default_action` = 只用 `code --remote wsl+<发行版>` 打开工作区文件夹——那只是一个空的新对话。**探针**（本机，Windows 侧
+   VS Code 2.1.296 插件；`scratchpad/probe_vscode_reopen.py`）：对一个进程已不在 27 h 的本机 VS Code 会话，先 `code <文件夹>`、
+   1.55 s 后 `os.startfile("vscode://anthropic.claude-code/open?session=<id>")`：VS Code 窗口标题随即变成
+   `<文件夹> - <那个对话的名字>`；再发一次链接后 1 s，`~/.claude/sessions` 里出现这个 sessionId 的新进程条目
+   （`status=idle, entrypoint=claude-vscode`）——插件对已关掉的对话也认这个链接（插件源码里 `handleUri` 的 `/open` 分支把
+   `session` 直接交给 `claude-vscode.primaryEditor.open`）。修：VS Code 入口的恢复改走 `claude_session_jump.resume_in_vscode`
+   （复用活会话跳转的「聚焦对的窗口 / `code` 打开工作区 → 等 1.2 s → 发会话链接」），后台线程里跑，结果走 `_jump_done`；
+   冻结鱼详情带上 `distro`（之前缺它，WSL 会话连 `--remote` 都组不出来）；菜单文案按入口分成三条，不再叫「恢复 / 跳到」。
+   第一次发链接时运行清单 20 s 内没出现条目、第二次 1 s 就有，怀疑新窗口冷启动时插件把对话打开了但进程是懒起的；
+   不影响用户看到的结果（对话已重开），记在这里。
+6. **仍没在实机上点过的**：右键「关闭这只」→ 重启 → 不回来 → 再提问回来（只有单元测试：决定文件 round trip + 控制器语义）；
+   桌面版入口的冻结鱼深链（`claude://…`，调查结论里就标明未验证）；以及修完后从鱼上点「在 VS Code 里重开这个对话」
+   这一整条（探针验证的是同一组命令，但不是从菜单点出去的）——请用户各点一次，结果补进下一期。
 
 ## 六、测试与验证
 
@@ -123,20 +139,21 @@
 
 | 文件 | +/− |
 |---|---|
-| `pet/overlay_session_pets.py` | 151 / 14 |
+| `pet/overlay_session_pets.py` | 151 / 14，第四轮 +2 / −1 |
 | `pet/session_fish_decisions.py`（新） | 126 / 0 |
-| `pet/session_pet_ui.py` | 67 / 2 |
+| `pet/session_pet_ui.py` | 67 / 2，第四轮 +40 / −5 |
 | `pet/claude_session_info.py` | 47 / 0 |
 | `pet/agent_link.py` | 37 / 0 |
 | `pet/claude_hooks.py` | 28 / 1 |
 | `pet/context_menus/shared.py` | 12 / 0 |
-| `pet/locale/zh.json`、`en.json` | 11 / 0 ×2 |
+| `pet/locale/zh.json`、`en.json` | 11 / 0 ×2，第四轮 +6 / −1 ×2 |
+| `pet/claude_session_jump.py` | 第四轮 +25 / −2 |
 | `pet/sprite_menu_facade.py` | 10 / 0 |
 | `pet/overlay_shell.py` | 8 / 1 |
 | `pet/config.py` | 3 / 1 |
 | `pet/claude_session_history.py`、`pet/session_history_service.py`、`pet/pet_sprite.py` | 2 / 1 ×3 |
-| `tests/test_overlay_session_pets.py` | 180 / 0 |
-| `tests/test_session_pet_details.py` | 76 / 3 |
+| `tests/test_overlay_session_pets.py` | 180 / 0，第四轮 +47 / −1 |
+| `tests/test_session_pet_details.py` | 76 / 3，第四轮 +17 / 0 |
 | `tests/test_session_fish_decisions.py`（新） | 53 / 0 |
 | `tests/test_claude_hooks.py` | 30 / 0 |
 | `tests/test_claude_session_history.py` | 14 / 1 |
@@ -145,3 +162,5 @@
 全量测试（隔离 worktree、`QT_QPA_PLATFORM=offscreen`、临时 `APPDATA`，Git Bash 启动，提交 `a8443261`）：**5949 过、14 跳过、5 失败，609 s**；
 5 条失败全是本机既有基线（路径超 260 的图片目录抽屉、子进程输出按 cp1252 解码的 3 条、多显示器负原点的截屏矩形），与本改动无关。
 第一轮（提交 `bd4338e2`）另有 3 条快照测试没跟上新设置项 / 新阶段 / 新菜单项，已更新（`9de284bf`、`a8443261`）。
+第四轮（VS Code 重开）：3 条新测试先红后绿；相关 8 族 **212 passed**，`ruff` 过；只改了会话小鱼这一条路径的恢复分流与文案，
+接口 / 持久数据 / 生命周期 / 平台分派都没动，按 AGENTS.md 的风险门只跑焦点 + 相关族，没重跑全量。

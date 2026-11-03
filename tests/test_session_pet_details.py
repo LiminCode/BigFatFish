@@ -332,6 +332,23 @@ def test_vscode_jump_falls_back_to_the_code_command_when_no_title_matches():
     assert result.ok and [step[0] for step in desk.log] == ["code", "uri"]
 
 
+def _resume_kwargs(desk):
+    return {k: v for k, v in desk.kwargs.items() if k not in ("chain", "select_tab")}   # 重开那一路没有终端的事
+
+
+def test_resume_in_vscode_opens_the_workspace_and_then_the_session_link():
+    """实机 2026-11-02：冻结的 VS Code 会话点「恢复」只开了文件夹，看到的是空的新对话。要再发插件的会话深链；
+    工作区已开着就只聚焦那个窗口。"""
+    desk = _Desk()
+    result = sj.resume_in_vscode(_vscode_detail(alive=False, cwd=r"C:\somewhere\else"), **_resume_kwargs(desk))
+    assert result.ok and "重开" in result.message
+    assert desk.log == [("code", r"C:\somewhere\else"), ("uri", f"vscode://anthropic.claude-code/open?session={SID}")]
+
+    desk = _Desk()
+    result = sj.resume_in_vscode(_vscode_detail(alive=False), **_resume_kwargs(desk))
+    assert result.ok and desk.log == [("focus", 2), ("uri", f"vscode://anthropic.claude-code/open?session={SID}")]
+
+
 def test_jump_refuses_a_dead_session_and_points_to_the_resume_command():
     desk = _Desk()
     result = sj.jump(_vscode_detail(alive=False), **desk.kwargs)
