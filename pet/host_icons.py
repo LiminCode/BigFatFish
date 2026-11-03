@@ -9,7 +9,7 @@
 - ``script`` → 没有对应程序，直接用手绘记号
 
 图标由 Windows 的外壳给（``QFileIconProvider``），第一次取要几毫秒，按 (种类, 尺寸, 缩放)
-缓存。``WindowsApps`` 下的执行别名（``wt.exe`` / ``pwsh.exe`` 那种）给出来的是通用的程序
+缓存；手绘记号另按颜色缓存（``ink``：会话小鱼标签的胶囊有深有浅，记号跟字色）。``WindowsApps`` 下的执行别名（``wt.exe`` / ``pwsh.exe`` 那种）给出来的是通用的程序
 图标，不是本尊，所以不在候选里（2026-10-14 实测）。非 Windows 一律用手绘记号。
 """
 
@@ -30,7 +30,8 @@ FALLBACK_GLYPHS = {"vscode": "vscode", "desktop": "sparkle", "terminal": "termin
 _DESKTOP_PACKAGE = ("Claude_", "__pzs8sxrjxfjjc")
 _PACKAGE_REPOSITORY = (r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion"
                        r"\AppModel\Repository\Packages")
-_CACHE: dict[tuple[str, int, float], QIcon] = {}
+_CACHE: dict[tuple, QIcon] = {}
+_PROBES: dict[float, object] = {}
 
 
 def _env(name: str) -> str:
@@ -106,9 +107,13 @@ def _shell_icon(path: str) -> QIcon:
     return QFileIconProvider().icon(QFileInfo(path))
 
 
-def host_icon(widget, kind: str, size: int, *, executable: Callable[[str], str] | None = None,
+def host_icon(widget, kind: str, size: int, *, ink: str | None = None,
+              executable: Callable[[str], str] | None = None,
               provider: Callable[[str], QIcon] | None = None) -> QIcon:
-    """``kind`` 的图标，按 ``size``（逻辑像素）裁好；不认识的种类返回空图标。"""
+    """``kind`` 的图标，按 ``size``（逻辑像素）裁好；不认识的种类返回空图标。
+
+    ``ink`` 只管手绘记号的颜色（``#rrggbb``；缺省跟 widget 的主题色），真图标与它无关——所以
+    真图标按 (种类, 尺寸, 缩放) 缓存一份，记号再按颜色各缓存一份。"""
     from .context_menus.icons import vector_widget_icon
     from .context_menus.quick_launch import fitted_application_icon
 
@@ -120,6 +125,10 @@ def host_icon(widget, kind: str, size: int, *, executable: Callable[[str], str] 
     cached = _CACHE.get(key)
     if cached is not None:
         return cached
+    glyph_key = key + (ink,)
+    cached = _CACHE.get(glyph_key)
+    if cached is not None:
+        return cached
     icon = QIcon()
     path = (executable or host_executable)(kind)      # 调用时才取默认：测试里替换模块级函数要生效
     if path:
@@ -129,10 +138,31 @@ def host_icon(widget, kind: str, size: int, *, executable: Callable[[str], str] 
             icon = QIcon()
     if not icon.isNull():
         icon = fitted_application_icon(icon, size, widget)
+        _CACHE[key] = icon
     else:
-        icon = vector_widget_icon(widget, glyph, size)
-    _CACHE[key] = icon
+        icon = vector_widget_icon(widget, glyph, size, ink)
+        _CACHE[glyph_key] = icon
     return icon
+
+
+def probe_widget(dpr: float):
+    """一个只报固定 DPR 的隐藏 widget：没有 widget 的调用方（sprite 画标签）借它取图。每种 DPR 一个。"""
+    from PySide6.QtWidgets import QWidget
+
+    dpr = float(dpr or 1.0)
+    probe = _PROBES.get(dpr)
+    if probe is None:
+        class _Probe(QWidget):
+            def devicePixelRatioF(self) -> float:  # noqa: N802 - Qt 命名
+                return dpr
+
+        probe = _PROBES[dpr] = _Probe()
+    return probe
+
+
+def host_icon_for_dpr(kind: str, size: int, dpr: float, *, ink: str | None = None, **overrides) -> QIcon:
+    """按给定 DPR 取 ``kind`` 的图标（见 ``host_icon``）。"""
+    return host_icon(probe_widget(dpr), kind, size, ink=ink, **overrides)
 
 
 def warm(widget, size: int, **overrides) -> int:
@@ -146,3 +176,4 @@ def warm(widget, size: int, **overrides) -> int:
 
 def clear_cache() -> None:
     _CACHE.clear()
+    _PROBES.clear()
