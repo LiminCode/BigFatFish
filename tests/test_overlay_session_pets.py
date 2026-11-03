@@ -390,7 +390,7 @@ def test_session_pet_limit_is_configurable(shell):
     assert shell.spawn_session_pet() is not None, "调大即时生效"
 
 
-@pytest.mark.parametrize("raw, expected", [(12, 12), ("9", 9), (0, 1), (999, 24), ("x", 6), (None, 6)])
+@pytest.mark.parametrize("raw, expected", [(12, 12), ("9", 9), (0, 1), (999, 40), (20, 20), ("x", 6), (None, 6)])
 def test_session_pets_max_is_normalised(tmp_path, raw, expected):
     cfg = Config(base=tmp_path)
     assert cfg.get("agent_link")["session_pets_max"] == 6
@@ -421,6 +421,48 @@ def test_facade_persists_the_session_pet_limit(shell):
     SpriteMenuFacade(shell).set_session_pets_max(10)
     assert shell._config.get("agent_link")["session_pets_max"] == 10
     assert shell._session_pet_limit() == 10
+
+
+def test_custom_limit_asks_for_a_number_and_the_menus_show_it(shell, controller, tmp_path):
+    """用户 2026-11-02：上限要能随便填（要设 20，预设里没有）。「自定义…」弹数字框；填的值两处菜单都列出来并勾上；取消不动。"""
+    from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
+    from pet.sprite_menu_facade import SpriteMenuFacade
+
+    facade = SpriteMenuFacade(shell)
+    asked: list = []
+    facade.ask_session_pets_max(prompt=lambda cur: (asked.append(cur), (20, True))[1])
+    assert asked == [6] and shell._session_pet_limit() == 20
+    facade.ask_session_pets_max(prompt=lambda cur: (99, False))
+    assert shell._session_pet_limit() == 20, "取消不动"
+    facade.ask_session_pets_max(prompt=lambda cur: (999, True))
+    assert shell._session_pet_limit() == 40, "超过硬顶按硬顶"
+    facade.set_session_pets_max(20)
+
+    # 小鱼自己的菜单：20 只 列出来并勾上，末尾有「自定义…」
+    controller.on_session_update("claude", _update(project="dsh-pet"))
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, controller, anchor_factory=lambda s: None)
+    menu = build_session_pet_menu(shell, sprite, actions)
+    settings = next(a for a in menu.actions() if a.text() == "会话小鱼设置").menu()
+    limit_menu = next(a for a in settings.actions() if a.text() == "会话小鱼上限").menu()
+    labels = [a.text() for a in limit_menu.actions() if not a.isSeparator()]
+    assert labels == ["3 只", "6 只", "9 只", "12 只", "16 只", "20 只", "24 只", "自定义…"]
+    assert [a.text() for a in limit_menu.actions() if a.isChecked()] == ["20 只"]
+    menu.deleteLater()
+
+    # 主肥鱼的共享菜单同样
+    cfg = Config(base=tmp_path / "other")
+    cfg.set("agent_link", {**(cfg.get("agent_link") or {}), "session_pets_max": 20})
+    pet = _MenuPet(cfg, with_toggle=True)
+    pet.set_session_pets_max = lambda n: None
+    custom: list = []
+    pet.ask_session_pets_max = lambda: custom.append(True)
+    shared_limit = _menu_actions(pet)["会话小鱼上限"].menu()
+    shared_labels = [a.text() for a in shared_limit.actions() if not a.isSeparator()]
+    assert shared_labels == ["3 只", "6 只", "9 只", "12 只", "16 只", "20 只", "24 只", "自定义…"]
+    assert [a.text() for a in shared_limit.actions() if a.isChecked()] == ["20 只"]
+    next(a for a in shared_limit.actions() if a.text() == "自定义…").trigger()
+    assert custom == [True]
 
 
 # ---------------------------------------------------------------- 生成落点

@@ -28,6 +28,8 @@ from .work_notes import normalize as normalize_work_notes
 
 
 DEFAULT_ANIMATION_GAP_SECONDS = 0.0
+#: 会话小鱼上限的硬顶（菜单「自定义…」与 normalize 共用；用户 2026-11-02 开着 20 个会话，24 太贴）
+SESSION_PETS_MAX_CAP = 40
 DEFAULT_SELF_TALK_MIN_INTERVAL = 20.0
 DEFAULT_SELF_TALK_MAX_INTERVAL = 60.0
 DEFAULT_SELF_TALK_DURATION_SECONDS = 3.2
@@ -395,7 +397,8 @@ def _clean_agent_link_data(raw: Any) -> dict:
         if key in raw:
             result[key] = bool(raw[key])
     try:
-        result["session_pets_max"] = max(1, min(24, int(raw.get("session_pets_max", defaults["session_pets_max"]))))
+        result["session_pets_max"] = max(1, min(SESSION_PETS_MAX_CAP,
+                                               int(raw.get("session_pets_max", defaults["session_pets_max"]))))
     except (TypeError, ValueError):
         result["session_pets_max"] = defaults["session_pets_max"]
     result["session_card_theme"] = normalize_theme_id(result.get("session_card_theme"))

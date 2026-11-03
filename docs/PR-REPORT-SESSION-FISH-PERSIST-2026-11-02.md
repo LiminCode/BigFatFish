@@ -43,6 +43,7 @@
 | `pet/session_pet_ui.py` | `resume` / `resume_key`（桌面版深链 / **VS Code：后台线程 `resume_in_vscode`** / 终端）、`open_in_desktop`、`resume_label`；`jump_key` 冻结分支；菜单冻结分支按入口给文案，桌面版入口不再重复给「在 Claude 桌面版打开」；详情带上 `host_session` / `entrypoint` / `distro`；设置子菜单多「冻结小鱼保留天数」 | 用户 2026-11-02：冻结的 VS Code 会话点下去只开了工作区文件夹，看到的是空的新对话（记录 5）；文案要说清在哪里重开，别叫「跳转」 |
 | `pet/claude_session_history.py`、`pet/session_history_service.py` | 历史行多 `host_session`，记录时连 `entrypoint` / `host_session` 一起记 | 桌面版会话 id 只有进程活着时拿得到，冻结后靠它深链 |
 | `pet/claude_session_jump.py` | `resume_in_vscode`（读窗口记录 → `_jump_vscode`）；`_jump_vscode` 多 `done` 文案参数 | 冻结的 VS Code 会话复用活会话跳转那套「聚焦对的窗口 → 发会话深链」，只是成功文案说「重开」而不是「跳到」 |
+| `pet/config.py`（`SESSION_PETS_MAX_CAP`）、`pet/sprite_menu_facade.py`（`ask_session_pets_max`）、`pet/session_pet_ui.py` / `pet/context_menus/shared.py`（上限子菜单） | 上限硬顶 24 → 40；两处上限子菜单多「自定义…」弹数字框（1–40），当前值不在预设里也列出来并勾上 | 用户 2026-11-02 第五轮：要设 20，预设里没有、硬顶又贴着 24 |
 | `pet/overlay_shell.py` | 控制器带决定文件（和历史同目录）与保留天数；`session_history.start()` 之后 `attach_history` | 接线 |
 | `pet/config.py`、`pet/sprite_menu_facade.py`、`pet/context_menus/shared.py` | `session_fish_keep_days` 默认 3、clamp 1–30；facade setter；主肥鱼「Agent 联动」子菜单同样多这一项 | 设置项 |
 | `pet/pet_sprite.py` | 标签色调 `frozen`（灰） | 一眼分清冻结 |
@@ -109,7 +110,9 @@
    冻结鱼详情带上 `distro`（之前缺它，WSL 会话连 `--remote` 都组不出来）；菜单文案按入口分成三条，不再叫「恢复 / 跳到」。
    第一次发链接时运行清单 20 s 内没出现条目、第二次 1 s 就有，怀疑新窗口冷启动时插件把对话打开了但进程是懒起的；
    不影响用户看到的结果（对话已重开），记在这里。
-6. **仍没在实机上点过的**：右键「关闭这只」→ 重启 → 不回来 → 再提问回来（只有单元测试：决定文件 round trip + 控制器语义）；
+6. **第五轮（上限可随便填）**：用户开着 20 个会话、要把上限设成 20，而菜单只有六档预设、硬顶 24。改完后把本机
+   `agent_link.session_pets_max` 设成 20 重启：日志 0 错误，20 个会话全认领、20 只活鱼在场（见下）。
+7. **仍没在实机上点过的**：右键「关闭这只」→ 重启 → 不回来 → 再提问回来（只有单元测试：决定文件 round trip + 控制器语义）；
    桌面版入口的冻结鱼深链（`claude://…`，调查结论里就标明未验证）；以及修完后从鱼上点「在 VS Code 里重开这个对话」
    这一整条（探针验证的是同一组命令，但不是从菜单点出去的）——请用户各点一次，结果补进下一期。
 
@@ -123,7 +126,7 @@
 ## 七、已知限制与后续
 
 - **上限**：开着的会话比上限多时（实机 17 > 10），超出的既没鱼也不冻结，只在灵动岛汇总里；排序 活的 > 冻结的，冻结里最近的
-  优先。想全看见就调大上限（1–24）或关掉用不着的 WSL 会话。
+  优先。想全看见就调大上限（预设几档，或「自定义…」填 1–40；用户 2026-11-02 第五轮设成 20）或关掉用不着的 WSL 会话。
 - **认领只认运行清单写了的版本**：老版本 Claude Code 不写清单的会话仍只能靠事件出场。
 - **冻结 → 活的切换**最多等一轮认领（60 s）；恢复命令起的进程发了第一条 hook 事件会更快。
 - **冻结素材**：用户稍后生成；在此之前是静止的休息姿势。
@@ -148,6 +151,7 @@
 | `pet/context_menus/shared.py` | 12 / 0 |
 | `pet/locale/zh.json`、`en.json` | 11 / 0 ×2，第四轮 +6 / −1 ×2 |
 | `pet/claude_session_jump.py` | 第四轮 +25 / −2 |
+| 第五轮：`pet/sprite_menu_facade.py` 17 / 0、`pet/config.py` 4 / 1、`pet/context_menus/shared.py` 4 / 0、`pet/session_pet_ui.py` 3 / 1、`pet/overlay_shell.py` 2 / 1、`pet/locale/zh.json`、`en.json` 5 / 0 ×2、`tests/test_overlay_session_pets.py` 43 / 1 | |
 | `pet/sprite_menu_facade.py` | 10 / 0 |
 | `pet/overlay_shell.py` | 8 / 1 |
 | `pet/config.py` | 3 / 1 |
@@ -162,5 +166,6 @@
 全量测试（隔离 worktree、`QT_QPA_PLATFORM=offscreen`、临时 `APPDATA`，Git Bash 启动，提交 `a8443261`）：**5949 过、14 跳过、5 失败，609 s**；
 5 条失败全是本机既有基线（路径超 260 的图片目录抽屉、子进程输出按 cp1252 解码的 3 条、多显示器负原点的截屏矩形），与本改动无关。
 第一轮（提交 `bd4338e2`）另有 3 条快照测试没跟上新设置项 / 新阶段 / 新菜单项，已更新（`9de284bf`、`a8443261`）。
+第五轮（上限自定义）：1 条新测试先红后绿、normalize 参数化多两例；相关族过。
 第四轮（VS Code 重开）：3 条新测试先红后绿；相关 8 族 **212 passed**，`ruff` 过；只改了会话小鱼这一条路径的恢复分流与文案，
 接口 / 持久数据 / 生命周期 / 平台分派都没动，按 AGENTS.md 的风险门只跑焦点 + 相关族，没重跑全量。

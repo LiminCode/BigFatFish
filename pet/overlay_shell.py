@@ -88,6 +88,7 @@ from .overlay_session_pets import SessionPetController
 from . import slot_manager
 from . import tray_icon as tray_icon_mod
 from . import window_alerts
+from .config import SESSION_PETS_MAX_CAP
 from .context_menus.shared import release_menu_tree
 from .physics import throw_speed_cap
 from .config import (
@@ -3787,7 +3788,7 @@ class OverlayShell(QObject):
             limit = int(agent_cfg.get("session_pets_max", self.SESSION_PET_MAX))
         except (AttributeError, TypeError, ValueError):
             limit = self.SESSION_PET_MAX
-        return max(0, min(24, limit))
+        return max(0, min(SESSION_PETS_MAX_CAP, limit))
 
     def _agent_link_value(self, key: str, default):
         agent_cfg = self._config.get("agent_link") or {}

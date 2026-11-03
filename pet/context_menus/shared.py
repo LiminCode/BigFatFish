@@ -470,6 +470,10 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
                 choice.setChecked(limit == current)
                 group.addAction(choice)
                 connect_action(choice, lambda limit=limit: set_limit(limit))
+            ask_limit = getattr(pet, "ask_session_pets_max", None)
+            if callable(ask_limit):
+                limit_menu.addSeparator()
+                connect_action(limit_menu.addAction(t("menu.shared.custom_limit")), ask_limit)
         set_keep_days = getattr(pet, "set_session_fish_keep_days", None)
         if callable(set_keep_days):
             days_menu = add_submenu(sub, t("menu.shared.session_fish_keep_days"), None)

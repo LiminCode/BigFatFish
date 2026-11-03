@@ -1283,11 +1283,13 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     enabled.toggled.connect(lambda on: facade.toggle_session_pets(on))
     limit_menu = add_submenu(settings, t("menu.session.session_fish_limit"))
     current = shell._session_pet_limit()
-    for limit in (3, 6, 9, 12, 16, 24):
+    for limit in sorted({3, 6, 9, 12, 16, 24, current} - {0}):    # 当前值不在预设里也列出来（自定义填的）
         item = limit_menu.addAction(t("menu.session.limit_fish", limit=limit))
         item.setCheckable(True)
         item.setChecked(limit == current)
         item.triggered.connect(lambda _checked=False, n=limit: facade.set_session_pets_max(n))
+    limit_menu.addSeparator()
+    add_action(limit_menu, t("menu.session.custom_limit"), None, facade.ask_session_pets_max, close_on_trigger=True)
     days_menu = add_submenu(settings, t("menu.session.session_fish_keep_days"))
     current_days = int((facade.cfg.get("agent_link") or {}).get("session_fish_keep_days", 3) or 3)
     for days in sorted({1, 3, 7, 14, 30, current_days}):
