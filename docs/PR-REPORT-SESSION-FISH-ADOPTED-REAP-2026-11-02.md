@@ -124,4 +124,6 @@ B(plain)    pid=1669785 sid=d02b3098-…
   肥鱼自己的无界面运行不会走到这一步，因为它们根本不被认领。探针结束后假记录、`sleep` 进程和桌宠历史里的两条假会话都清掉了。
 
 **测试**：`ruff check pet/ tests/` 通过；新用例在没有实现时 4 个全红（`git checkout -- pet/` 后复跑），实现后
-`test_claude_hooks` / `test_session_pet_details` / `test_claude_link` / `test_overlay_session_pets` 180 项全绿。全量见 PR 描述。
+`test_claude_hooks` / `test_session_pet_details` / `test_claude_link` / `test_overlay_session_pets` 180 项全绿。全量 `pytest -q`
+（隔离工作区，12 分钟）：**5907 通过、5 失败、14 跳过**，5 个都不是本分支的——4 个本机既有基线失败（路径超 260、cp1252 子进程解码 ×2、
+多显示器负原点），加 `test_session_card_metro.py::test_host_icons_are_warmed_at_the_cards_size`（在基线 `d630e7c9` 上原样失败）。
