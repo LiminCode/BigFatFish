@@ -2341,6 +2341,16 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
             log.debug("核对 Claude Code 会话进程失败", exc_info=True)
             return
         for sid, alive in verdicts.items():
+            if alive is None:
+                # 清单里没有记录：从没见过的不动（没有记录不等于没了）；以前在清单里见过、现在连着几轮
+                # 没有的，是进程退出时清单文件被删了——被直接杀掉或肥鱼自己的无界面运行都不发 SessionEnd
+                if not self._sessions.registry_vanished(sid):
+                    continue
+                log.info("Claude Code 会话已从运行清单消失，按已关闭处理 agent=%s session=%s",
+                         self.agent_key, sid[:8])
+                self._dispatch_state({"event": "SessionEnd", "sessionId": sid}, "SessionEnd", "", gen)
+                continue
+            self._sessions.mark_registry(sid)
             if alive is False:
                 log.info("Claude Code 会话进程已不在，按已关闭处理 agent=%s session=%s",
                          self.agent_key, sid[:8])
