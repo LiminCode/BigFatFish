@@ -136,3 +136,33 @@ def test_on_this_machine_every_kind_yields_some_icon_without_raising():
     widget = QWidget()
     for kind in ("vscode", "terminal", "wsl", "script"):
         assert not host_icons.host_icon(widget, kind, 16).isNull(), kind
+
+
+def test_the_hand_drawn_glyph_takes_the_callers_ink_and_is_cached_per_ink():
+    """小鱼标签的胶囊有深有浅：记号颜色由调用方给，不同颜色各自缓存；真图标不管颜色。"""
+    widget = QWidget()
+    white = host_icons.host_icon(widget, "wsl", 14, ink="#ffffff", executable=lambda kind: "")
+    dark = host_icons.host_icon(widget, "wsl", 14, ink="#102030", executable=lambda kind: "")
+    assert _pixels(white, 14) != _pixels(dark, 14)
+    assert host_icons.host_icon(widget, "wsl", 14, ink="#ffffff",
+                                executable=lambda kind: "").cacheKey() == white.cacheKey()
+    calls = []
+
+    def provider(path):
+        calls.append(path)
+        return _red_square()
+
+    real = host_icons.host_icon(widget, "vscode", 14, ink="#ffffff", executable=lambda kind: r"C:\apps\Code.exe",
+                                provider=provider)
+    again = host_icons.host_icon(widget, "vscode", 14, ink="#102030", executable=lambda kind: r"C:\apps\Code.exe",
+                                 provider=provider)
+    assert again.cacheKey() == real.cacheKey() and calls == [r"C:\apps\Code.exe"], "真图标与颜色无关：只取一次"
+
+
+def test_icons_can_be_fetched_by_dpr_without_a_widget():
+    """sprite 画标签时手里没有 widget，只有自己所在屏的 DPR。"""
+    icon = host_icons.host_icon_for_dpr("vscode", 14, 2.0, executable=lambda kind: r"C:\apps\Code.exe",
+                                        provider=lambda path: _red_square())
+    assert not icon.isNull()
+    assert icon.availableSizes()[0].width() == 28, "按 2.0 的 DPR 画：物理像素翻倍"
+    assert host_icons.host_icon_for_dpr("nonsense", 14, 2.0).isNull()

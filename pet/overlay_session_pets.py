@@ -164,7 +164,7 @@ class SessionPetController(QObject):
         sprite = self._pets.get(key)
         if sprite is not None and self._shell.is_session_pet(sprite):
             self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
-                                                badge=self._badge_for(key))
+                                                badge=self._badge_for(key), host=sprite.caption_host)
         return True
 
     def _badge_for(self, key: tuple[str, str]) -> str:
@@ -177,12 +177,20 @@ class SessionPetController(QObject):
         model = self._extras.get(key, {}).get("model", "")
         return "crown" if session_crown.is_crowned(model, session_crown.normalize_tokens(tokens)) else ""
 
+    def _host_for(self, key: tuple[str, str]) -> str:
+        """这个会话从哪开的（``vscode`` / ``desktop`` / ``terminal`` / ``wsl`` / ``script`` / 空）：标签最左边的
+        图标。入口来自 hook 事件 / 运行清单（``entrypoint``），WSL 通道的会话没有入口也算 ``wsl``；规则与
+        详情卡同一份（``claude_session_info.host_kind``）。"""
+        from . import claude_session_info
+
+        return claude_session_info.host_kind(self._extras.get(key, {}).get("entrypoint", ""), key[0] == "claude_wsl")
+
     def refresh_badges(self) -> None:
         """「桂冠给哪个模型」改了：在场的小鱼当场换。"""
         for key, sprite in self._pets.items():
             if key in self._sessions and self._shell.is_session_pet(sprite):
                 self._shell.set_session_pet_caption(sprite, sprite.caption, tone=sprite.caption_tone,
-                                                    badge=self._badge_for(key))
+                                                    badge=self._badge_for(key), host=sprite.caption_host)
 
     def seen_models(self) -> list[str]:
         """在场会话用过的模型 id（菜单里列具体型号用）。"""
@@ -263,7 +271,7 @@ class SessionPetController(QObject):
                                       "distro": entry.distro}
             shell.set_session_pet_caption(
                 sprite, f"{claude_hooks.session_label(key[0], self._frozen_info[key])} · {self.PHASE_TEXT['frozen']}",
-                tone="frozen")
+                tone="frozen", host=entry.host)
             if not self._hold(sprite, self.FROZEN_CLIPS):
                 self._hold(sprite, self.REST_CLIPS)
                 pause = getattr(shell, "_set_sprite_clip_paused", None)
@@ -376,7 +384,7 @@ class SessionPetController(QObject):
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
             sprite, f"{claude_hooks.session_label(key[0], self._sessions[key])} · {self.PHASE_TEXT[phase]}",
-            tone=phase, badge=self._badge_for(key))
+            tone=phase, badge=self._badge_for(key), host=self._host_for(key))
         previous = self._phases.get(key)
         if previous == phase:
             self._after_update()

@@ -706,3 +706,32 @@ def test_a_shell_built_over_an_existing_history_does_not_spawn_during_its_own_in
         assert len(fish) == 1 and fish[0].caption == "旧对话 · 冻结"
     finally:
         shell._delete_runtime_marker()
+
+
+# ---------------------------------------------------------------- 来源图标
+
+def test_the_fish_shows_where_its_session_runs_next_to_the_label(shell, controller):
+    """用户 2026-11-02：看不出哪只是 VS Code / 桌面版 / 终端。规则与详情卡同一份（``host_kind``）。"""
+    controller.on_session_update("claude", _update(project="p") | {"entrypoint": "claude-vscode"})
+    controller.on_session_update("claude_wsl", _update("B", project="p") | {"entrypoint": "cli"})
+    controller.on_session_update("claude", _update("C", project="p") | {"entrypoint": "claude-desktop"})
+    controller.on_session_update("claude", _update("D", project="p"))
+    hosts = {controller.key_of(s)[1]: s.caption_host for s in _session_pets(shell)}
+    assert hosts == {"A": "vscode", "B": "wsl", "C": "desktop", "D": ""}, "D 还不知道从哪开的：先不画"
+
+    controller.on_session_update("claude", _update("D", project="p") | {"entrypoint": "cli"})
+    assert controller.sprite_of(("claude", "D")).caption_host == "terminal", "运行清单补上入口后就有了"
+    controller.on_session_update("claude", _update("D", phase="resting", project="p"))
+    assert controller.sprite_of(("claude", "D")).caption_host == "terminal", "换阶段不丢"
+    assert controller.remodel(("claude", "A"), "claude-fable-5-1") is True
+    assert controller.sprite_of(("claude", "A")).caption_host == "vscode", "戴桂冠不丢"
+
+
+def test_a_frozen_fish_shows_where_the_conversation_was_opened(shell, persistent):
+    persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet",
+                                    entrypoint="claude-vscode")
+    persistent.history_store.record("claude_wsl", "old-2222-aaaa", seen=NOW - 7200, cwd="/home/me/pet",
+                                    entrypoint="cli")
+    persistent.reconcile()
+    hosts = {persistent.key_of(s)[1]: s.caption_host for s in _session_pets(shell)}
+    assert hosts == {"old-1111-aaaa": "vscode", "old-2222-aaaa": "wsl"}

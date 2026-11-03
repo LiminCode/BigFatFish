@@ -940,6 +940,13 @@ class SessionPetActions(QObject):
         probe = QWidget()
         try:
             warm(probe, int(round(16 * _card_scale(self._shell._config))))
+            # 小鱼标签胶囊里的那份（14 px，按合成窗所在屏的 DPR）：第一只 VS Code 的鱼出场时别卡
+            from .host_icons import probe_widget
+            from .pet_sprite import PetSprite
+
+            overlay = getattr(self._shell, "overlay", None)
+            dpr = float(overlay.devicePixelRatioF() or 1.0) if overlay is not None else 1.0
+            warm(probe_widget(dpr), PetSprite._CAPTION_HOST_PX)
         except Exception:  # noqa: BLE001 - 预热失败没关系，用到时再取
             log.debug("预热来源图标失败", exc_info=True)
         finally:
