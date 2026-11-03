@@ -4,8 +4,8 @@
 > **实测环境**：Windows，系统代理 `http://127.0.0.1:12450`（全局模式 VPN 客户端进程 `core`），
 > CPython 3.11.1，全部数字为 2026-09-22 本机单次实测（每项 1 次，含冷连接）
 > **缘由**：用户反馈「合并后识别不到网易云的歌词、快进进度也不行了」，真因是**系统代理把歌词取词拖到超时**
-> （完整证据链见 [`PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md`](PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md)），
-> 与相关机制见 [`PR-REPORT-music-lyric-align-2026-09-22.md`](PR-REPORT-music-lyric-align-2026-09-22.md)。
+> （完整证据链见 [`PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md)），
+> 与相关机制见 [`PR-REPORT-music-lyric-align-2026-09-22.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-music-lyric-align-2026-09-22.md)。
 
 ## 一句话结论
 

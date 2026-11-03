@@ -6,7 +6,7 @@
 约束靠"实现看起来是这样"守不住：把 ``_ensure_session_probe`` 换成同步查、把空闲
 退出改成永不退出，原来的行为用例**全部照绿**（本文件就是为堵这个盲区补的）。
 
-四个契约（每条都做过消融验证，见 `docs/PR-REPORT-SMTC-MEDIA-TYPE-2026-10-06.md`）：
+四个契约（每条都做过消融验证，见 `https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-SMTC-MEDIA-TYPE-2026-10-06.md`）：
 
 1. OS 请求发生在探针线程，**调用线程自己一次 SMTC 都不查**；
 2. 缓存新鲜时，门读判定是**纯缓存读**，零 OS 请求；

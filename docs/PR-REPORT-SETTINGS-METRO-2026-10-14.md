@@ -3,7 +3,7 @@
 > **基线**：`71960c7`（feat(slack-watch): 设置页「自动化与联动」新一节，`feature/claude-session-fish`）
 > **分支**：`feature/claude-session-fish`　**日期**：2026-10-14
 > **范围**：15 个文件（实现 5、测试 5：新增 1、改 4、规范 1、文档 2、截图 4 个目录 31 张）
-> **关联**：[`SETTINGS-REDESIGN-UI-ACCEPTANCE.md`](SETTINGS-REDESIGN-UI-ACCEPTANCE.md)（本轮追加了 iteration-10）、
+> **关联**：[设置页 UI 验收（iteration-10）](#附设置页-ui-验收iteration-10)（本文末尾；原先追加在上游的 `SETTINGS-REDESIGN-UI-ACCEPTANCE.md`）、
 > `.agents/skills/desktop-pet-ui-style/references/visual-system.md`（令牌与组件规范，本轮重写）
 
 ## 一、核心特性
@@ -62,7 +62,7 @@
 | 文件 | 增删 | 内容 |
 |---|---|---|
 | `.agents/skills/desktop-pet-ui-style/references/visual-system.md` | +73 / −47 | 重写为 Metro 口径：权威顺序、组成（手风琴）、字号表、间距表、表面与颜色表、「没有圆角」「倾斜」两节、组件清单、离屏截图没有中文字体的说明。 |
-| `docs/SETTINGS-REDESIGN-UI-ACCEPTANCE.md` | 追加 | iteration-10 一节：证据目录、逐页结果、没做的。 |
+| `docs/SETTINGS-REDESIGN-UI-ACCEPTANCE.md`（上游文档，已移出本仓库；这一节见本文末尾） | 追加 | iteration-10 一节：证据目录、逐页结果、没做的。 |
 | `docs/screenshots/settings-redesign/iteration-10-metro-{wide,dark,compact,real}/` | 31 张 | 离屏 1100 浅 / 深、720 浅各九页；真实窗口四张。 |
 
 ### 未改动
@@ -150,3 +150,27 @@ on `#1b1b1f`、分隔线、滚动条方角；720 px 下「互动」页手风琴�
 `real_second_process`、`capture_window_rect` 多显示器负原点）。第 5 个 `test_modern_settings_panel_uses_sidebar_and_includes_ai_settings`
 是本轮改的断言写成了只认浅色令牌：全量里前面的用例把应用调色板留成了深色，对话框建的是深色表（以前浅色基础表总在、
 深色只是追加，所以老断言不受影响；现在两张表二选一）。改为明 / 暗任一令牌命中即可，单跑该文件通过。
+
+
+## 附：设置页 UI 验收（iteration-10）
+
+> 原先追加在上游 `SETTINGS-REDESIGN-UI-ACCEPTANCE.md` 末尾；2026-11-02 上游文档移出本仓库时搬到这里。
+
+真实平台：Windows 11（Qt windows 后端，125% 缩放）。证据目录：
+
+- `docs/screenshots/settings-redesign/iteration-10-metro-real/`：真实窗口的四张（常规页、悬停侧栏项时的倾斜、菜单页的手风琴、悬停折叠表头时的倾斜）。
+- `docs/screenshots/settings-redesign/iteration-10-metro-wide|dark|compact/`：离屏 1100×760 浅色 / 深色与 720×760 九页矩阵（离屏平台没有中文字体，文字渲成方块，只看布局与配色）。
+
+本轮定稿的口径：方角、无描边磁贴、大而轻的页标题、主题色满宽选中条、2px 描边按钮、上下折叠的手风琴
+取代页内左右标签、磁贴朝光标倾斜。令牌见 `pet/settings_theme_qss.py::METRO_TOKENS`，规范见
+`.agents/skills/desktop-pet-ui-style/references/visual-system.md`。
+
+| 页面 | 验收重点 | 结果 |
+| --- | --- | --- |
+| 常规 | 页标题、节标题、磁贴、Metro 开关、下拉的方角 | 真实窗口通过 |
+| 菜单 | 手风琴（菜单编排开 / 快捷启动、外观收）、表头左缘主题色、编辑 / 预览分栏方角 | 真实窗口通过 |
+| 互动 | 手风琴（点击与音效 / 自言自语）、720 px 下控件可达 | 离屏 720 通过 |
+| 其余六页 | 浅 / 深色配色、卡片与分隔线、滚动 | 离屏通过 |
+
+倾斜只在真实窗口里看得到（离屏没有悬停）：两张悬停截图里侧栏项与折叠表头都呈现朝光标一侧压下去的梯形。
+没有做的：真实窗口的深色模式、放大字体与极端文案矩阵（离屏有、真实没有）。

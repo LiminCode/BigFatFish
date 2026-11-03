@@ -18,6 +18,10 @@
   点标题那一块收起。关掉 / 划走是整摞。
 - **停留**：``seconds`` 秒后自己走；0 = 一直留着，直到用户关掉。
 - 每张卡片是一个独立的置顶、不抢焦点的无边框窗口，画在一张缓存的位图上再按动画变换贴出来。
+- **置顶要自己守**（实机 2026-11-02「中间空一块」）：Qt 只在建窗时写一次 ``WS_EX_TOPMOST``，带内先后由
+  「谁最近被激活 / 显示」决定；卡片从不激活，被最大化的 Electron 窗口（Windows 当它全屏）盖住后再也不自己
+  回来，屏幕上就缺一块。每次重排、以及在场期间每隔 ``_TOPMOST_EVERY_MS`` 一次看门狗，把在场的卡按老→新重新
+  插回 topmost 带最上（``platform_win._set_windows_topmost``，灵动岛同一招）；有真全屏应用时不插。
 
 纯函数 ``stack_positions`` / ``resolve_screen`` / ``normalize`` 不碰窗口，测试直接用。
 """
@@ -25,6 +29,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
+import sys
 
 from PySide6.QtCore import (
     Property, QEasingCurve, QObject, QPoint, QPointF, QPropertyAnimation, QRect, QRectF, Qt, QTimer, Signal,
@@ -72,6 +78,8 @@ _SWIPE_FRACTION = 0.35   # 划过卡宽的这么多就算划走
 _CLICK_SLOP = 6
 _MAX_PENDING = 50       # 排队最多留这么多（更旧的丢掉）
 _TILT = (5.0, 8.0)       # 卡片比设置页的磁贴宽，倾斜小一点
+_TOPMOST_EVERY_MS = 2000  # 看门狗：在场的卡片每隔这么久重新插回 topmost 带最上
+log = logging.getLogger("big-fat-fish")
 _FONTS = ["Segoe UI", "Microsoft YaHei UI", "PingFang SC", "sans-serif"]
 
 
@@ -82,6 +90,22 @@ def normalize(raw) -> dict:
     theme = str(data.get("theme") or "").strip()
     return {**nc.normalize_toast(data), "theme": theme if theme in THEMES else DEFAULTS["theme"],
             "stack": nc.normalize_stack(data.get("stack"))}
+
+
+def raise_topmost(card: QWidget) -> bool:
+    """把一张在场的卡重新插到 topmost 带最上（只改 z 序、不动几何、不夺焦点）。
+    只在 Windows 上做；有真全屏应用（D3D 全屏 / 演示模式）时不插——别压在游戏上面。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        from . import platform_win
+
+        if platform_win._fs_user_busy_state()[0]:
+            return False
+        return platform_win._set_windows_topmost(int(card.winId()), True)
+    except Exception:  # noqa: BLE001 - 置顶失败只是可能被盖住，不影响别的
+        log.debug("通知弹窗：重新置顶失败", exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------- 摆放（纯函数）
@@ -635,9 +659,13 @@ class ToastStack(QObject):
     activated = Signal(object)
     dismissed = Signal(object, str)
 
-    def __init__(self, *, animate: bool = True, parent: QObject | None = None) -> None:
+    def __init__(self, *, animate: bool = True, parent: QObject | None = None, topmost=None) -> None:
         super().__init__(parent)
         self._animate = animate
+        self._topmost = raise_topmost if topmost is None else topmost     # (card) -> bool
+        self._watch = QTimer(self)
+        self._watch.setInterval(_TOPMOST_EVERY_MS)
+        self._watch.timeout.connect(self._assert_topmost)
         self._settings = normalize(None)
         self._entries: list[_Entry] = []            # 在场的 + 排队的，最新的在前
         self._seen: set = set()
@@ -729,7 +757,7 @@ class ToastStack(QObject):
             return
         head = self._entries[:self._settings["max_visible"]]
         positions = stack_positions(screen.availableGeometry(), self._settings["corner"], CARD_WIDTH,
-                                    [card_height(e.notices) for e in head])
+                                    [card_height(e.notices, bool(e.card is not None and e.card.expanded)) for e in head])
         for entry, pos in zip(head, positions):
             if entry.card is None:
                 entry.card = self._make_card(entry)
@@ -740,6 +768,18 @@ class ToastStack(QObject):
         for entry in self._entries[len(positions):]:
             if entry.card is not None and entry.card.isVisible():
                 entry.card.park()
+        self._assert_topmost()
+        if not self._watch.isActive() and self.visible_cards():
+            self._watch.start()
+
+    def _assert_topmost(self) -> None:
+        """在场的卡按老 → 新重新插回 topmost 带最上（最新的最后插、在最上）；没卡片了看门狗就停。"""
+        cards = [e.card for e in self._entries if e.card is not None and e.card.isVisible() and not e.card.leaving()]
+        if not cards:
+            self._watch.stop()
+            return
+        for card in reversed(cards):
+            self._topmost(card)
 
     def _on_clicked(self, card: ToastCard, notice) -> None:
         """点了某一条：交给调用方跳过去。一摞里的只拿掉那一条，其余留着；单条的卡片收走。"""
