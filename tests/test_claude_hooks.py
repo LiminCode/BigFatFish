@@ -670,3 +670,23 @@ def test_tracker_notes_registry_facts_for_sessions_already_present():
     assert not tracker.note_registry("nobody", host_session="x"), "没出场的不记"
     updates = tracker.take_session_updates()
     assert len(updates) == 1 and updates[0]["host_session"] == "local_abc123def456"
+
+
+def test_tracker_counts_a_registry_session_that_vanished_from_the_registry():
+    """清单里见过的会话，清单里连着两轮没它 = 它结束了（进程退出时 Claude Code 删掉清单文件，而肥鱼自己
+    起的无界面运行不发 SessionEnd）；只靠 hook 出场、清单里从没见过的会话，查不到不算数。"""
+    tracker = ClaudeSessionTracker()
+    tracker.feed({"event": "UserPromptSubmit", "sessionId": "hooked"})
+    assert tracker.adopt("adopted", phase="working", project="home")
+    tracker.take_session_updates()
+
+    assert not tracker.registry_vanished("hooked") and not tracker.registry_vanished("hooked"), "没见过：永远不算"
+    assert not tracker.registry_vanished("adopted"), "第一轮没查到：可能是清单文件正在重写"
+    assert tracker.registry_vanished("adopted"), "连着两轮没查到：没了"
+
+    tracker.mark_registry("adopted")                       # 又在清单里看到了：重新数
+    assert not tracker.registry_vanished("adopted")
+    tracker.mark_registry("hooked")                        # hook 出场的会话一旦在清单里见过，同样适用
+    assert not tracker.registry_vanished("hooked") and tracker.registry_vanished("hooked")
+    assert tracker.note_registry("hooked", entrypoint="cli") and not tracker.registry_vanished("hooked"), \
+        "note_registry 也算见到了"
