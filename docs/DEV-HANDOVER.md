@@ -503,9 +503,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-
 - 存放：`docs/PR-REPORT-<主题>-<YYYY-MM-DD>.md`，模板见
   [`PR-REPORT-TEMPLATE.md`](PR-REPORT-TEMPLATE.md)（复制后逐节填写），并在
   [`INDEX.md`](INDEX.md) 的「PR 报告存档」登记一行。示例：
-  - `docs/PR-REPORT-VOICE-CHIME-2026-09-15.md`（语音报时，含九轮改进章节）
-  - `docs/PR-REPORT-GATES-2026-09-10.md`、`docs/PR-REPORT-PR76-2026-09-10.md`
-  - `docs/PR-REPORT-music-lyric-align-2026-09-22.md`（三个必备章节的完整范例）
+  - [`PR-REPORT-VOICE-CHIME-2026-09-15.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-VOICE-CHIME-2026-09-15.md)（语音报时，含九轮改进章节）
+  - [`PR-REPORT-GATES-2026-09-10.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-GATES-2026-09-10.md)、[`PR-REPORT-PR76-2026-09-10.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-PR76-2026-09-10.md)
+  - [`PR-REPORT-music-lyric-align-2026-09-22.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-music-lyric-align-2026-09-22.md)（三个必备章节的完整范例）
 - **机器化校验**：`tests/test_pr_report_discipline.py` 对 `2026-09-22` 及之后的
   报告强制校验「修改文件说明 / 性能分析 / 实机运行记录」三个章节、模板存在、
   `AGENTS.md` 与本文件仍写明该要求；历史报告豁免。
@@ -609,6 +609,6 @@ explorer "%APPDATA%\big-fat-fish-webm-chat"
 | 菜单模板节点 | `pet/menu_templates/modern-default-v1.json` |
 | 行数预算常量 | `tests/test_architecture.py`（`WINDOW_PY_LINE_BUDGET` / `MODERN_SETTINGS_DIALOG_PY_LINE_BUDGET`） |
 | 构建脚本 | `scripts/build_onedir.ps1`、`scripts/slim_bundle.py`、`scripts/check_bundle_encoding.py`、`scripts/verify_bundle_qt.py` |
-| 相关工程文档 | `docs/SETTINGS-CHANGE-GATES.md`、`docs/WINDOW_PY_SPLIT_GUIDE.md`、`docs/PR-REPORT-VOICE-CHIME-2026-09-15.md`、`docs/PR-MERGE-LESSONS-2026-09-12.md` |
+| 相关工程文档 | `docs/SETTINGS-CHANGE-GATES.md`、`docs/WINDOW_PY_SPLIT_GUIDE.md`、[`PR-REPORT-VOICE-CHIME-2026-09-15.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-VOICE-CHIME-2026-09-15.md)、`docs/PR-MERGE-LESSONS-2026-09-12.md` |
 
 *（内容由AI生成，仅供参考）*

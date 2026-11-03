@@ -1251,7 +1251,7 @@ def _pil():
     """懒载 Pillow：``(Image, ImageMath, ImageFilter, ImageChops)``。
 
     PIL 不随本模块导入常驻（模块在启动路径上被 library 导入，见
-    docs/OPTIMIZATION_CHECKLIST.md 的"不加载 Pillow"口径）；缺失时抛 ``ImportError``，
+    https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/OPTIMIZATION_CHECKLIST.md 的"不加载 Pillow"口径）；缺失时抛 ``ImportError``，
     由 ``unblend_frames_in_place`` 收口成「本段进不了阶段二」。
     """
     from PIL import Image, ImageChops, ImageFilter, ImageMath

@@ -13,7 +13,7 @@
 
 本机只有一块屏（DISPLAY1），所以这里用假双屏驱动**真实**的钳制与边界
 代码；真实跨屏由用户在双屏机器上验收，见
-``docs/PR-REPORT-ISSUE-186-TRAY-MENU-2026-09-23.md``。
+``https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-ISSUE-186-TRAY-MENU-2026-09-23.md``。
 """
 from __future__ import annotations
 

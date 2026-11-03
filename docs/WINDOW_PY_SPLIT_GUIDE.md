@@ -230,5 +230,5 @@ seam 隔离原生 popup。测试局部对象应定向销毁，不应使用全局
 
 ---
 
-*本文档随 `docs/HANDOVER_2026-09.md` 一同交付。对本文内容有异议或补充，
+*本文档随 [`HANDOVER_2026-09.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/HANDOVER_2026-09.md) 一同交付。对本文内容有异议或补充，
 欢迎通过 PR 修订。*
