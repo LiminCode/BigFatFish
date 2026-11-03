@@ -4,9 +4,10 @@
 ``set_active(True)`` 起：立刻量一次，之后每分钟一次；``set_active(False)`` 停表，在途
 的结果作废。只有信息槽选了「今日用量」且灵动岛开着时才是 active——别的时候零开销。
 
-量用量（``claude_usage.UsageMeter.refresh``）要读文件，放在 daemon 线程里跑，结果经
-信号排队回本对象所在的 GUI 线程。进程内共用一只 ``UsageMeter``：它是增量的，记着每个
-文件读到哪了（首次约 0.1 秒，之后通常 2 毫秒）。
+量用量（``claude_usage.UsageAccounts.refresh``：本机账号 + WSL 账号各一份）要读文件、问一次
+wsl.exe、走 ``\\\\wsl.localhost`` 共享，放在 daemon 线程里跑，结果经信号排队回本对象所在的
+GUI 线程。进程内共用一套 ``UsageAccounts``：每只表都是增量的，记着每个文件读到哪了（本机首次
+约 0.1 秒、之后通常 2 毫秒；WSL 侧每分钟枚举一遍约 1.1 秒、首读 1.2 秒，见 ``claude_usage``）。
 """
 
 from __future__ import annotations
@@ -21,13 +22,14 @@ from . import claude_usage
 
 log = logging.getLogger(__name__)
 
-_meter: claude_usage.UsageMeter | None = None
+_meter: claude_usage.UsageAccounts | None = None
 
 
-def _default_measure() -> claude_usage.UsageTotals:
+def _default_measure() -> list[claude_usage.AccountUsage]:
+    """两个账号（本机 + WSL）各一份；只在 worker 线程里调（monitor 保证在途只有一次）。"""
     global _meter
     if _meter is None:
-        _meter = claude_usage.UsageMeter()
+        _meter = claude_usage.UsageAccounts()
     return _meter.refresh()
 
 
@@ -102,7 +104,10 @@ class ClaudeUsageMonitor(QObject):
         self._busy = False
         if totals is None:
             return
-        announced = (totals.headline, totals.detail)
+        if isinstance(totals, claude_usage.UsageTotals):        # 只给一份合计：就是本机那个账号
+            totals = [claude_usage.AccountUsage(claude_usage.LOCAL_ACCOUNT, totals)]
+        accounts = list(totals)
+        announced = (claude_usage.headline(accounts), claude_usage.detail(accounts))
         if announced != self._last:
             self._last = announced
             self.usage_changed.emit(*announced)

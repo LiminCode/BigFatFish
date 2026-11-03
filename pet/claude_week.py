@@ -20,7 +20,8 @@
 会话会带着同样的记录）。
 
 ``WeekMeter`` 是增量的：和 ``UsageMeter`` 一样记住每个文件读到哪了。阻塞调用，放到
-后台线程（``usage_dashboard``）。
+后台线程（``usage_dashboard``）。``WeekAccounts`` 给 Windows 本机和 WSL 发行版里的账号各一只表
+（根怎么找、读不到怎么办，都和 ``claude_usage.UsageAccounts`` 同一套），仪表盘按账号分开画。
 """
 
 from __future__ import annotations
@@ -30,9 +31,10 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
-from .claude_usage import _FIELDS, _PATTERNS, _number
+from .claude_usage import (_FIELDS, LOCAL_ACCOUNT, WSL_ACCOUNT, _number, account_label, transcript_files,
+                           wsl_projects_roots)
 
 DAYS = 7
 _USAGE_MARK = b'"usage"'
@@ -91,22 +93,26 @@ def is_user_prompt(record: dict) -> bool:
 class WeekMeter:
     """最近 ``DAYS`` 天（含今天）每天的用量与消息数。不是线程安全的：同一时刻只让一个线程调。"""
 
-    def __init__(self, home: Path | None = None, *, clock: Callable[[], float] = time.time,
+    def __init__(self, home: Path | None = None, *, roots: Iterable[Path] | None = None,
+                 clock: Callable[[], float] = time.time,
                  today: Callable[[float], dt.date] = lambda now: dt.datetime.fromtimestamp(now).date()) -> None:
-        self._projects = (home or Path.home()) / ".claude" / "projects"
+        self.roots = [Path(root) for root in roots] if roots is not None else [
+            (home or Path.home()) / ".claude" / "projects"]
         self._clock = clock
         self._today = today
         self._replies: dict[tuple, tuple[dt.date, tuple[int, int, int, int]]] = {}
         self._prompts: dict[str, dt.date] = {}
         self._files: dict[str, tuple[int, bytes]] = {}
         self.bytes_read = 0
+        self.reachable = False
 
     def refresh(self) -> list[DayUsage]:
         """读入新追加的记录；返回从 6 天前到今天、每天一项（没数据的天全是 0）。"""
         today = self._today(self._clock())
         first = today - dt.timedelta(days=DAYS - 1)
         floor = dt.datetime.combine(first, dt.time()).timestamp()
-        for path in self._recent_files(floor):
+        files, self.reachable = transcript_files(self.roots, floor)
+        for path in files:
             self._read_new(path, first)
         for key in [key for key, (day, _values) in self._replies.items() if day < first]:
             del self._replies[key]
@@ -122,20 +128,6 @@ class WeekMeter:
             if day in counts:
                 counts[day] += 1
         return [DayUsage(day, *sums[day], prompts=counts[day]) for day in days]
-
-    def _recent_files(self, floor: float) -> list[Path]:
-        found = []
-        try:
-            for pattern in _PATTERNS:
-                for path in self._projects.glob(pattern):
-                    try:
-                        if path.stat().st_mtime >= floor:
-                            found.append(path)
-                    except OSError:
-                        continue
-        except OSError:
-            return []
-        return found
 
     def _read_new(self, path: Path, first: dt.date) -> None:
         offset, carry = self._files.get(str(path), (0, b""))
@@ -178,3 +170,41 @@ class WeekMeter:
             self._replies[key] = (day, values if previous is None else tuple(map(max, previous[1], values)))
         elif is_user_prompt(record):
             self._prompts[str(record.get("uuid") or len(self._prompts))] = day
+
+
+# ---------------------------------------------------------------- 两个账号
+
+@dataclass(frozen=True)
+class AccountWeek:
+    """一个账号的 7 天；``days`` 为 None = 现在读不到、窗口里也没读到过。"""
+
+    key: str
+    days: list[DayUsage] | None = None
+
+    @property
+    def label(self) -> str:
+        return account_label(self.key)
+
+
+class WeekAccounts:
+    """本机账号 + WSL 账号各一只 ``WeekMeter``（根的发现与 ``claude_usage.UsageAccounts`` 同一套）。"""
+
+    def __init__(self, home: Path | None = None, *, wsl_roots: Callable[[], list[Path] | None] | None = None,
+                 clock: Callable[[], float] = time.time) -> None:
+        self._local = WeekMeter(home, clock=clock)
+        self._wsl = WeekMeter(roots=[], clock=clock)
+        self._wsl_roots = wsl_roots or wsl_projects_roots
+
+    def refresh(self) -> list[AccountWeek]:
+        accounts = [AccountWeek(LOCAL_ACCOUNT, self._local.refresh())]
+        try:
+            roots = self._wsl_roots()
+        except Exception:  # noqa: BLE001 - 这一次当作读不到
+            roots = []
+        if roots is None:
+            return accounts
+        self._wsl.roots = [Path(root) for root in roots]
+        days = self._wsl.refresh()
+        if not self._wsl.reachable and not any(d.tokens or d.prompts for d in days):
+            return accounts + [AccountWeek(WSL_ACCOUNT, None)]
+        return accounts + [AccountWeek(WSL_ACCOUNT, days)]

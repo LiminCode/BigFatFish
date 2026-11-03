@@ -12,7 +12,7 @@ import json
 import os
 
 from pet.claude_usage import UsageMeter
-from pet.claude_week import DAYS, WeekMeter, is_user_prompt
+from pet.claude_week import DAYS, WeekAccounts, WeekMeter, is_user_prompt
 
 TODAY = dt.date(2026, 10, 24)
 NOW = dt.datetime.combine(TODAY, dt.time(15, 0)).timestamp()
@@ -142,3 +142,20 @@ def test_unreadable_lines_are_skipped(tmp_path):
     path.write_text('{"type":"user" broken\n[1,2]\n' + json.dumps(_user("u1", "ok")) + "\n", encoding="utf-8")
     os.utime(path, (NOW, NOW))
     assert _meter(tmp_path).refresh()[-1].prompts == 1
+
+
+# ---------------------------------------------------------------- 两个账号
+
+def test_each_account_gets_its_own_week(tmp_path):
+    _write(_session(tmp_path), [_reply("m1", o=10)])
+    wsl = tmp_path / "wsl" / "projects"
+    _write(wsl / "proj" / "s1.jsonl", [_user("u1", "hi"), _reply("w1", o=3)])
+
+    weeks = WeekAccounts(tmp_path, wsl_roots=lambda: [wsl], clock=Clock()).refresh()
+    assert [(w.key, w.label, w.days[-1].tokens, w.days[-1].prompts) for w in weeks] == [
+        ("windows", "Win", 10, 0), ("wsl", "WSL", 3, 1)]
+    assert [d.day for d in weeks[0].days] == [d.day for d in weeks[1].days], "两边的 7 天是同一串日子"
+
+    down = WeekAccounts(tmp_path, wsl_roots=lambda: [], clock=Clock()).refresh()
+    assert down[1].days is None, "发行版读不到：说读不到，不装作是 0"
+    assert [w.key for w in WeekAccounts(tmp_path, wsl_roots=lambda: None, clock=Clock()).refresh()] == ["windows"]

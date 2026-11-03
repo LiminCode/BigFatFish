@@ -5,6 +5,8 @@
 
 - **用量**：每天的 Claude Code token（``claude_week``，和岛上「今日」同一口径、同一个数）；
 - **发出的消息**：每天在所有 Claude Code 会话里发出去的消息数（``claude_week``）；
+  这两张按账号分开：Windows 本机与 WSL 发行版里的 Claude Code 各一组数、每天并排两根柱子
+  （``claude_week.WeekAccounts``）；没有 WSL 的机器和从前一样一个数一根柱；
 - **上下班**：每天第一次 / 最后一次动键鼠的时刻，6 点换天（``activity_log``）；
 - **专注**：每天真在用电脑的时长——有输入的分钟加上不超过 5 分钟的空档（``activity_log``）。
 
@@ -28,8 +30,8 @@ from PySide6.QtCore import QObject, QRect, Signal
 
 from . import activity_log, claude_week
 from .activity_log import DaySummary
-from .claude_usage import format_tokens
-from .claude_week import DayUsage
+from .claude_usage import LOCAL_ACCOUNT, format_tokens
+from .claude_week import AccountWeek, DayUsage
 from .i18n import t
 
 log = logging.getLogger(__name__)
@@ -38,11 +40,15 @@ log = logging.getLogger(__name__)
 #: （翡翠绿 4.53 最紧，所以磁贴上的字一律纯白、不降透明度）。
 TILE_COLORS = {"tokens": "#0050ef", "prompts": "#008a00", "hours": "#d80073", "focus": "#6a00ff"}
 GAP = 8                       # 窗口与岛之间的距离
+_JOINER = " · "
+#: 分账号时副标题里的图例：第一个账号实心柱、第二个空心柱（和 usage_dashboard_ui 的画法对应）
+_ACCOUNT_GLYPHS = ("■", "□", "▣", "▢")
 
 
 @dataclass(frozen=True)
 class Bar:
-    """一根柱子：``value`` 是柱高（0 = 没有）；``low`` / ``high`` 只给「上下班」那种悬浮区间用。"""
+    """一根柱子：``value`` 是柱高（0 = 没有）；``low`` / ``high`` 只给「上下班」那种悬浮区间用；
+    ``parts`` 是分账号时同一天并排的几根（Win、WSL……，``value`` 取其中最高的那根）。"""
 
     label: str
     tip: str
@@ -50,6 +56,7 @@ class Bar:
     low: float | None = None
     high: float | None = None
     today: bool = False
+    parts: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,7 +77,7 @@ class Tile:
 
 @dataclass(frozen=True)
 class DashboardData:
-    usage: list[DayUsage]
+    usage: list[AccountWeek]                  # 每个账号 7 天；只有本机一个账号时磁贴和从前一样
     activity: list[DaySummary]
     recording_since: dt.date | None = None
 
@@ -110,7 +117,12 @@ def _average(values: list[float]) -> float:
 # ---------------------------------------------------------------- 磁贴
 
 def build_tiles(data: DashboardData) -> list[Tile]:
-    """数据 → 四张磁贴。今天总在最右边；没有记录的天柱子为空、提示写「没有记录」。"""
+    """数据 → 四张磁贴。今天总在最右边；没有记录的天柱子为空、提示写「没有记录」。
+
+    用量与消息两张按账号分开：只有本机一个账号时和从前一样（一个大数字、一根柱子）；有 WSL 账号时
+    大数字写成「Win 2.38M · WSL 1.10M」，每天并排两根柱子（■ 实心 Win / □ 空心 WSL），读不到的账号
+    写「--」而不是 0。
+    """
     return [_tokens_tile(data.usage), _prompts_tile(data.usage),
             _hours_tile(data.activity), _focus_tile(data.activity)]
 
@@ -120,7 +132,17 @@ def _count_bars(days: list[DayUsage], value: Callable[[DayUsage], int], tip: Cal
     return tuple(Bar(_weekday(d.day), tip(d), float(value(d)), today=i == last) for i, d in enumerate(days))
 
 
-def _tokens_tile(days: list[DayUsage]) -> Tile:
+def _single_account(accounts: list[AccountWeek]) -> list[DayUsage] | None:
+    """只有一个账号且读得到 → 它的 7 天（走原来的单柱画法）；否则 None（分账号画）。"""
+    return accounts[0].days if len(accounts) == 1 and accounts[0].days is not None else None
+
+
+def _tokens_tile(accounts: list[AccountWeek]) -> Tile:
+    days = _single_account(accounts)
+    if days is None:
+        return _accounts_tile("tokens", t("dashboard.tokens"), accounts, lambda d: d.tokens, format_tokens,
+                              lambda a, d: t("dashboard.accounts.tip.tokens", label=a.label,
+                                             tokens=format_tokens(d.tokens), output=format_tokens(d.output)))
     total = sum(d.tokens for d in days)
     today = days[-1].tokens if days else 0
     return Tile("tokens", t("dashboard.tokens"), format_tokens(today),
@@ -130,13 +152,41 @@ def _tokens_tile(days: list[DayUsage]) -> Tile:
                                         output=format_tokens(d.output))))
 
 
-def _prompts_tile(days: list[DayUsage]) -> Tile:
+def _prompts_tile(accounts: list[AccountWeek]) -> Tile:
+    days = _single_account(accounts)
+    if days is None:
+        return _accounts_tile("prompts", t("dashboard.prompts"), accounts, lambda d: d.prompts, str,
+                              lambda a, d: t("dashboard.accounts.tip.prompts", label=a.label, n=d.prompts))
     total = sum(d.prompts for d in days)
     avg = total / max(1, len(days))
     return Tile("prompts", t("dashboard.prompts"), str(days[-1].prompts if days else 0),
                 t("dashboard.week_sub", total=total, avg=f"{avg:.1f}"),
                 _count_bars(days, lambda d: d.prompts,
                             lambda d: t("dashboard.tip.prompts", date=_date(d.day), n=d.prompts)))
+
+
+def _accounts_tile(key: str, title: str, accounts: list[AccountWeek], value: Callable[[DayUsage], int],
+                   fmt: Callable[[int], str], tip_item: Callable[[AccountWeek, DayUsage], str]) -> Tile:
+    """分账号的计数磁贴：大数字、副标题（7 天合计 + 图例）、每天并排几根柱子。"""
+    def labelled(account: AccountWeek, text: str) -> str:
+        return t("dashboard.accounts.value", label=account.label, value=text)
+
+    def latest(account: AccountWeek) -> str:
+        return fmt(value(account.days[-1])) if account.days else t("usage.none")
+
+    def week(account: AccountWeek) -> str:
+        return fmt(sum(value(d) for d in account.days)) if account.days is not None else t("usage.none")
+
+    dates = next(([d.day for d in a.days] for a in accounts if a.days is not None), [])
+    headline = _JOINER.join(labelled(a, latest(a)) for a in accounts)
+    legend = _JOINER.join(f"{glyph} " + labelled(a, week(a)) for glyph, a in zip(_ACCOUNT_GLYPHS, accounts))
+    bars = []
+    for index, day in enumerate(dates):
+        parts = tuple(float(value(a.days[index])) if a.days else 0.0 for a in accounts)
+        items = _JOINER.join(tip_item(a, a.days[index]) if a.days else labelled(a, t("usage.none")) for a in accounts)
+        bars.append(Bar(_weekday(day), t("dashboard.accounts.tip", date=_date(day), items=items), max(parts),
+                        today=index == len(dates) - 1, parts=parts))
+    return Tile(key, title, headline, t("dashboard.accounts.week_sub", items=legend), tuple(bars))
 
 
 def _hours_since_origin(summary: DaySummary) -> tuple[float, float]:
@@ -212,13 +262,13 @@ def place_above(anchor: QRect, size, available: QRect, gap: int = GAP) -> QRect:
 
 # ---------------------------------------------------------------- 控制器
 
-_meter: claude_week.WeekMeter | None = None
+_meter: claude_week.WeekAccounts | None = None
 
 
-def _default_measure() -> list[DayUsage]:
+def _default_measure() -> list[AccountWeek]:
     global _meter
     if _meter is None:
-        _meter = claude_week.WeekMeter()
+        _meter = claude_week.WeekAccounts()
     return _meter.refresh()
 
 
@@ -232,7 +282,7 @@ class UsageDashboard(QObject):
     _measured = Signal(int, object)          # worker 线程 → GUI 线程
 
     def __init__(self, config, *, activity: Callable[[], object] | None = None,
-                 measure: Callable[[], list[DayUsage]] | None = None, spawn: Callable | None = None,
+                 measure: Callable[[], list[AccountWeek]] | None = None, spawn: Callable | None = None,
                  clock: Callable[[], float] = time.time, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.config = config
@@ -242,7 +292,7 @@ class UsageDashboard(QObject):
         self._clock = clock
         self._busy = False
         self._generation = 0
-        self._usage: list[DayUsage] | None = None
+        self._usage: list[AccountWeek] | None = None
         self.window = None
         self._measured.connect(self._on_measured)
 
@@ -313,7 +363,8 @@ class UsageDashboard(QObject):
     def data(self) -> DashboardData:
         now = self._clock()
         today = dt.datetime.fromtimestamp(now).date()
-        usage = self._usage or [DayUsage(today - dt.timedelta(days=n)) for n in range(claude_week.DAYS - 1, -1, -1)]
+        usage = self._usage or [AccountWeek(LOCAL_ACCOUNT, [DayUsage(today - dt.timedelta(days=n))
+                                                            for n in range(claude_week.DAYS - 1, -1, -1)])]
         work_today = activity_log.work_day(now)
         work_days = [work_today - dt.timedelta(days=n) for n in range(claude_week.DAYS - 1, -1, -1)]
         log_ = self._activity()

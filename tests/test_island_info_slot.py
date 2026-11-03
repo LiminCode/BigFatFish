@@ -14,7 +14,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from pet import modern_settings_dialog as settings_mod
-from pet.claude_usage import UsageTotals
+from pet.claude_usage import AccountUsage, UsageTotals, detail, headline
 from pet.config import Config
 from pet.dynamic_island import DynamicIsland
 from tests.test_island_shell_wiring import _make_shell, _teardown_shell
@@ -190,3 +190,14 @@ def test_measurements_reach_the_island(shell):
     shell._usage_monitor.usage_changed.emit(totals.headline, totals.detail)
     assert shell.island._info_text() == "今日 2.38M"
     assert totals.detail in shell.island.toolTip()
+
+
+def test_both_accounts_show_on_the_island_and_in_its_tooltip(shell):
+    """Windows 账号和 WSL 账号各自的数字并排在岛上；WSL 读不到时写 --，悬停说明分两行。"""
+    accounts = [AccountUsage("windows", UsageTotals(output=2_380_000)), AccountUsage("wsl", None)]
+    shell._usage_monitor.usage_changed.emit(headline(accounts), detail(accounts))
+    assert shell.island._info_text() == "今日 Win 2.38M · WSL --"
+    lines = shell.island.toolTip().splitlines()
+    assert lines[-3].startswith("Win：2.38M（输出 2.38M")
+    assert lines[-2].startswith("WSL：读不到")
+    assert lines[-1] == "点数字看近 7 天仪表盘"

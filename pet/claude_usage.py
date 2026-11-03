@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""今日用量：今天所有 Claude Code 对话用掉的 token（纯逻辑 + 本机读取，零 Qt）。
+"""今日用量：今天所有 Claude Code 对话用掉的 token（纯逻辑 + 文件读取，零 Qt）。
 
 数字来自 Claude Code 自己的对话记录——``~/.claude/projects/<项目>/<会话>.jsonl`` 里每条
 回复（``type: assistant``）带的 ``message.usage``。纯本地、不联网、不需要 API Key。
@@ -18,7 +18,22 @@
 
 ``UsageMeter`` 是增量的：记住每个文件读到哪了，之后每次只读新追加的部分（首次
 35.7MB 约 0.1 秒，之后通常几 KB）。阻塞调用，由调用方放到后台线程
-（``claude_usage_monitor``）。只统计本机；WSL 发行版里的对话不在内。
+（``claude_usage_monitor``）。
+
+**两个账号分开算**（2026-11-02）：Windows 本机的 ``~/.claude/projects`` 是一个账号；WSL
+发行版里跑的 Claude Code（另一个账号）有自己的家目录，Windows 侧经
+``\\\\wsl.localhost\\<发行版>\\home\\<用户>\\.claude\\projects`` 读。``UsageAccounts`` 给每个账号
+一只 ``UsageMeter``（一只表可以跨好几个根：几个发行版 / 几个用户合成一个「WSL」账号），各出
+一份 ``UsageTotals``；岛上的文案由 ``headline`` / ``detail`` 拼。WSL 那边读不到时要能容错：
+没装 WSL → 只有一个账号、文案照旧；装了但读不到（发行版没在运行、共享刚起来还没就绪）→
+「WSL --」、下一分钟再试；今天已经读到的数不因为中途读不到而丢。
+
+访问 ``\\\\wsl.localhost`` 会把没在运行的发行版拉起来，所以先问一次
+``wsl.exe --list --running``（约 50–150 ms，一个无窗口子进程），只碰在运行的。实测
+（2026-11-02，WSL 侧 1009 个项目目录、今天 115 MB）：枚举一遍 1.1 s、首读 1.2 s，之后每分钟
+只读追加的部分。目录枚举用 ``os.scandir`` 一次拿到 mtime（Windows 上目录项自带、不另 stat——
+UNC 上每次 stat 都是一次往返）；子代理目录只看今天动过的那些会话下面的
+（``<项目>/<会话>/subagents/``），不再全盘 ``glob``（那一遍在 UNC 上要 2 s）。
 """
 
 from __future__ import annotations
@@ -26,17 +41,21 @@ from __future__ import annotations
 from .i18n import t
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 _USAGE_MARK = b'"usage"'
 #: usage 里的字段 → 本模块的名字
 _FIELDS = (("input", "input_tokens"), ("output", "output_tokens"),
            ("cache_write", "cache_creation_input_tokens"), ("cache_read", "cache_read_input_tokens"))
-_PATTERNS = ("*/*.jsonl", "*/*/subagents/*.jsonl")
+#: 两个账号的键（也是 i18n ``usage.account.<键>`` 的后缀）
+LOCAL_ACCOUNT = "windows"
+WSL_ACCOUNT = "wsl"
+_JOINER = " · "
 
 
 def format_tokens(count: int) -> str:
@@ -91,18 +110,71 @@ def _number(value) -> int:
         return 0
 
 
-class UsageMeter:
-    """今天的用量（增量统计，见模块说明）。不是线程安全的：同一时刻只让一个线程调。"""
+# ---------------------------------------------------------------- 找文件
 
-    def __init__(self, home: Path | None = None, *, clock: Callable[[], float] = time.time,
+def _fresh(entry: os.DirEntry, since: float) -> bool:
+    try:
+        return entry.is_file() and entry.stat().st_mtime >= since
+    except OSError:
+        return False
+
+
+def _subagent_files(folder: Path, since: float) -> list[Path]:
+    try:
+        with os.scandir(folder) as entries:
+            return [Path(entry.path) for entry in entries if entry.name.endswith(".jsonl") and _fresh(entry, since)]
+    except OSError:
+        return []
+
+
+def transcript_files(roots: Iterable[Path], since: float) -> tuple[list[Path], bool]:
+    """各根下 ``since`` 之后动过的会话记录：主对话 jsonl 和它们的 ``subagents/*.jsonl``。
+
+    返回 ``(文件, 至少一个根能枚举)``——后者让调用方分得清「没有新内容」和「根本读不到」。
+    一层 ``os.scandir`` 顺手拿到 mtime，不另 stat（UNC 上每次 stat 都是一次往返）。
+    """
+    found: list[Path] = []
+    reachable = False
+    for root in roots:
+        try:
+            with os.scandir(root) as entries:
+                projects = [entry.path for entry in entries if entry.is_dir()]
+        except OSError:
+            continue
+        reachable = True
+        for project in projects:
+            try:
+                with os.scandir(project) as entries:
+                    sessions = [entry for entry in entries if entry.name.endswith(".jsonl") and _fresh(entry, since)]
+            except OSError:
+                continue
+            for entry in sessions:
+                found.append(Path(entry.path))
+                found.extend(_subagent_files(Path(project) / entry.name[:-len(".jsonl")] / "subagents", since))
+    return found, reachable
+
+
+# ---------------------------------------------------------------- 一只表
+
+class UsageMeter:
+    """今天的用量（增量统计，见模块说明）。不是线程安全的：同一时刻只让一个线程调。
+
+    ``roots``：要统计的 ``projects`` 目录（可以好几个）；不给就是本机 ``home/.claude/projects``。
+    ``reachable``：上一次 ``refresh`` 时至少有一个根能枚举。
+    """
+
+    def __init__(self, home: Path | None = None, *, roots: Iterable[Path] | None = None,
+                 clock: Callable[[], float] = time.time,
                  day_start: Callable[[float], float] = local_midnight) -> None:
-        self._projects = (home or Path.home()) / ".claude" / "projects"
+        self.roots = [Path(root) for root in roots] if roots is not None else [
+            (home or Path.home()) / ".claude" / "projects"]
         self._clock = clock
         self._day_start = day_start
         self._day: float | None = None
         self._messages: dict[tuple, tuple[int, int, int, int]] = {}
         self._files: dict[str, tuple[int, bytes]] = {}     # 路径 → (读到哪了, 没写完的那半行)
         self.bytes_read = 0
+        self.reachable = False
 
     def refresh(self) -> UsageTotals:
         """读入新追加的记录，返回今天到现在的合计。"""
@@ -111,24 +183,11 @@ class UsageMeter:
             self._day = day
             self._messages.clear()
             self._files.clear()
-        for path in self._todays_files(day):
+        files, self.reachable = transcript_files(self.roots, day)
+        for path in files:
             self._read_new(path, day)
         sums = [sum(values[index] for values in self._messages.values()) for index in range(4)]
         return UsageTotals(*sums, messages=len(self._messages))
-
-    def _todays_files(self, day: float) -> list[Path]:
-        found = []
-        try:
-            for pattern in _PATTERNS:
-                for path in self._projects.glob(pattern):
-                    try:
-                        if path.stat().st_mtime >= day:
-                            found.append(path)
-                    except OSError:
-                        continue
-        except OSError:
-            return []
-        return found
 
     def _read_new(self, path: Path, day: float) -> None:
         offset, carry = self._files.get(str(path), (0, b""))
@@ -171,3 +230,135 @@ class UsageMeter:
         values = tuple(_number(usage.get(source)) for _name, source in _FIELDS)
         previous = self._messages.get(key)
         self._messages[key] = values if previous is None else tuple(map(max, previous, values))
+
+
+# ---------------------------------------------------------------- WSL 那边的根
+
+def wsl_share(distro: str) -> Path:
+    """发行版的根在 Windows 侧的共享路径（``\\\\wsl.localhost\\<发行版>``）。"""
+    return Path("\\\\wsl.localhost\\" + distro)
+
+
+def running_distros(*, runner: Callable | None = None) -> list[str]:
+    """正在运行的 WSL 发行版名（``wsl.exe --list --running --quiet``）；没装 WSL / 失败 / 都没在跑 → 空。"""
+    if runner is None:
+        from .claude_hooks import run_wsl
+
+        runner = run_wsl
+    try:
+        code, out = runner(["--list", "--running", "--quiet"], timeout=10)
+    except Exception:  # noqa: BLE001 - 只是这一分钟不读 WSL
+        return []
+    if code != 0:
+        return []
+    names = (line.replace("\x00", "").strip() for line in str(out).splitlines())   # 偶见 UTF-16 残渣
+    return [name for name in names if name]
+
+
+def wsl_projects_roots(*, distros: list[str] | None = None, running: list[str] | None = None,
+                       share: Callable[[str], Path] = wsl_share) -> list[Path] | None:
+    """在运行的每个 WSL 发行版里、每个用户的 ``~/.claude/projects``（Windows 侧路径）。
+
+    ``None`` = 这台机器没有 WSL 发行版（就一个账号）；``[]`` = 有发行版但现在读不到（没在运行、
+    共享还没就绪、里面没装过 Claude Code）。没在运行的发行版不去碰：碰一下共享就会把它拉起来。
+    阻塞：一次 wsl.exe + 每个在运行的发行版几次目录往返；调用方放后台线程。
+    """
+    if distros is None:
+        from .vscode_workspaces import wsl_distros
+
+        distros = wsl_distros()
+    if not distros:
+        return None
+    live = {name.lower() for name in (running_distros() if running is None else running)}
+    roots: list[Path] = []
+    for distro in distros:
+        if distro.lower() not in live:
+            continue
+        try:
+            with os.scandir(share(distro) / "home") as entries:
+                users = sorted(entry.path for entry in entries if entry.is_dir())
+        except OSError:
+            continue
+        for user in users:
+            projects = Path(user) / ".claude" / "projects"
+            try:
+                if projects.is_dir():
+                    roots.append(projects)
+            except OSError:
+                continue
+    return roots
+
+
+# ---------------------------------------------------------------- 两个账号
+
+@dataclass(frozen=True)
+class AccountUsage:
+    """一个账号今天的用量；``totals`` 为 None = 这次读不到、今天也还没读到过。"""
+
+    key: str
+    totals: UsageTotals | None = None
+
+    @property
+    def label(self) -> str:
+        return account_label(self.key)
+
+
+def account_label(key: str) -> str:
+    """账号在界面上的短名（Win / WSL）。"""
+    return t(f"usage.account.{key}")
+
+
+def _tokens_text(account: AccountUsage) -> str:
+    return format_tokens(account.totals.tokens) if account.totals is not None else t("usage.none")
+
+
+def headline(accounts: list[AccountUsage]) -> str:
+    """信息槽文案：一个账号「今日 2.38M」（和从前一样）；两个「今日 Win 2.38M · WSL 1.10M」。"""
+    if len(accounts) == 1 and accounts[0].totals is not None:
+        return accounts[0].totals.headline
+    items = _JOINER.join(t("usage.account_item", label=a.label, tokens=_tokens_text(a)) for a in accounts)
+    return t("usage.headline.multi", accounts=items)
+
+
+def detail(accounts: list[AccountUsage]) -> str:
+    """悬停说明：一个账号一行。"""
+    if len(accounts) == 1 and accounts[0].totals is not None:
+        return accounts[0].totals.detail
+    return "\n".join(_account_detail(a) for a in accounts)
+
+
+def _account_detail(account: AccountUsage) -> str:
+    totals = account.totals
+    if totals is None:
+        return t("usage.detail.unavailable", label=account.label)
+    return t("usage.detail.account", label=account.label, total=format_tokens(totals.tokens),
+             output=format_tokens(totals.output), input=format_tokens(totals.input),
+             cache_write=format_tokens(totals.cache_write), cache_read=format_tokens(totals.cache_read))
+
+
+class UsageAccounts:
+    """两个账号各一只表：本机 ``home/.claude/projects`` 与 WSL 发行版里的（``wsl_roots`` 每次刷新问一遍）。
+
+    不是线程安全的：同一时刻只让一个线程调（``claude_usage_monitor`` 保证在途只有一次）。
+    """
+
+    def __init__(self, home: Path | None = None, *, wsl_roots: Callable[[], list[Path] | None] | None = None,
+                 clock: Callable[[], float] = time.time,
+                 day_start: Callable[[float], float] = local_midnight) -> None:
+        self._local = UsageMeter(home, clock=clock, day_start=day_start)
+        self._wsl = UsageMeter(roots=[], clock=clock, day_start=day_start)
+        self._wsl_roots = wsl_roots or wsl_projects_roots
+
+    def refresh(self) -> list[AccountUsage]:
+        accounts = [AccountUsage(LOCAL_ACCOUNT, self._local.refresh())]
+        try:
+            roots = self._wsl_roots()
+        except Exception:  # noqa: BLE001 - 这一分钟当作读不到
+            roots = []
+        if roots is None:
+            return accounts
+        self._wsl.roots = [Path(root) for root in roots]
+        totals = self._wsl.refresh()
+        if not self._wsl.reachable and totals.messages == 0:
+            return accounts + [AccountUsage(WSL_ACCOUNT, None)]
+        return accounts + [AccountUsage(WSL_ACCOUNT, totals)]
