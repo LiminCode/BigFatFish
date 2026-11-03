@@ -13,7 +13,7 @@
 国内域名，走系统代理只会多绕一段路；2026-09-22 实机事故里，用户开着全局代理时
 三个源单次耗时 20~41 秒（全部超过 ``HTTP_TIMEOUT``），于是每首未缓存曲目都以
 「0 行」收场，看起来就像歌词功能被改坏了（详见
-``docs/PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md``）。
+``https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-MUSIC-LYRIC-SYSTEM-PROXY-2026-09-22.md``）。
 
 缓存放数据目录下的 ``lyrics_cache/``，只存歌词文本，不存音频、不存收听历史；
 条目数超过上限时按文件修改时间淘汰最旧的。用户可在设置页一键清空。

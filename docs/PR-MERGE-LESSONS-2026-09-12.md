@@ -9,7 +9,7 @@
 ## 教训 1：叠放 PR —— squash 掉父 PR 后，子 PR 一定在冲突边缘
 
 **现象**
-#104（父，桥接插件归零外部依赖）以 squash 合并为 `7f3b896` 后，#105（正文写明"基于 #104 叠放"）从 `clean` 直接变成 **`dirty` 冲突**。冲突文件恰好是 #105 的后续提交又改过的那 3 个：`.github/workflows/pr-test.yml`、`docs/ACCEPTANCE_TESTS.md`、`integrations/dsh-pet-bridge/verify_import.mjs`。
+#104（父，桥接插件归零外部依赖）以 squash 合并为 `7f3b896` 后，#105（正文写明"基于 #104 叠放"）从 `clean` 直接变成 **`dirty` 冲突**。冲突文件恰好是 #105 的后续提交又改过的那 3 个：`.github/workflows/pr-test.yml`、[`ACCEPTANCE_TESTS.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/ACCEPTANCE_TESTS.md)、`integrations/dsh-pet-bridge/verify_import.mjs`。
 
 **根因**
 squash 合并会在 main 上生成**内容相同但提交不同**的新提交 `A'`。子分支里是「原提交 `A` + 后续微调」。三方合并时 base→ours 与 base→theirs **都修改了同一批行**，git 无法判断 `ours ⊆ theirs`，于是报冲突。

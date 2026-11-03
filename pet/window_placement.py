@@ -8,7 +8,7 @@ pass itself as the host, so existing callers and test patches continue to work.
 （``DesktopArea``），``band_bounds()`` 按宠物当前所在的屏幕带收窄它，
 ``move_window_towards`` / ``throw_bounds`` 在有快照时用它、没有快照时逐位退回
 本屏语义（单屏用户与漫游/落位/边缘探头不受影响）。见
-``docs/PR-REPORT-ISSUE-186-TRAY-MENU-2026-09-23.md``。
+``https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-ISSUE-186-TRAY-MENU-2026-09-23.md``。
 """
 
 from __future__ import annotations
