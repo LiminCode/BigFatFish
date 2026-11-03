@@ -35,6 +35,8 @@ class SessionPetController(QObject):
     REVIEW_CLIPS: tuple[str, ...] = ("工作状态-雀跃庆祝", "工作状态-原地踱步张望")
     #: 冻结（进程不在了的最近对话）：素材库里还没有这一段时退回休息那段并停住播放节拍——静止就是冻结
     FROZEN_CLIPS: tuple[str, ...] = ("冻结",)
+    #: 「列队」的先后：要人看的在前，冻结的最后（用户 2026-11-02）
+    LINEUP_RANK = {"waiting": 0, "review": 0, "working": 1, "resting": 2, "frozen": 3}
     #: 名册核对（最近 X 天的对话 ↔ 冻结的鱼）的周期；接上历史后第一次核对延后这么久——
     #: 接线发生在壳的 __init__ 里，那时 sprite 的落点 / 屏幕路由还没建好（实机 2026-11-02 启动失败）
     RECONCILE_MS = 60_000
@@ -109,6 +111,18 @@ class SessionPetController(QObject):
 
         「等你回复」与看过之后的「休息中」共用一个起点：回合结束的那一刻。"""
         return self._extras.get(key, {}).get("since")
+
+    def lineup_rank(self, sprite) -> tuple[int, float] | None:
+        """「列队」排序键 ``(状态档, 最近更新的 Unix 秒)``：状态档小的在前，同档里时间大的在前。
+        不是会话小鱼 → None（壳把它们排到最后）。冻结鱼的时间是历史里最后一次活动。"""
+        key = self.key_of(sprite)
+        if key is None:
+            return None
+        if key in self._frozen:
+            entry = self.history_entry(key)
+            return (self.LINEUP_RANK["frozen"], float(entry.last_seen) if entry is not None else 0.0)
+        phase = str((self._sessions.get(key) or {}).get("phase") or "")
+        return (self.LINEUP_RANK.get(phase, self.LINEUP_RANK["resting"]), float(self.since(key) or 0.0))
 
     def acknowledge(self, key: tuple[str, str]) -> bool:
         """用户去看过这个会话了（点了「跳到对话」）：「等你回复」落回「休息中」。

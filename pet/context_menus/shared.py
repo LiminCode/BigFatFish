@@ -679,6 +679,20 @@ def add_rally_pets(menu: QMenu, pet, *, icons: bool = True):
     )
 
 
+def add_lineup_pets(menu: QMenu, pet, *, icons: bool = True):
+    """右键菜单：列队——所有小肥鱼到主屏底边按状态从左到右站一排（只有主肥鱼有这个入口）。"""
+    callback = getattr(pet, "on_lineup_pets", None)
+    if callback is None:
+        return None
+    return add_action(
+        menu,
+        t("menu.shared.lineup"),
+        "interaction" if icons else None,
+        callback,
+        close_on_trigger=True,
+    )
+
+
 def add_golden_spin(menu: QMenu, pet, *, icons: bool = True):
     """右键菜单快捷入口：让肥鱼原地逆时针旋转一圈。"""
     callback = getattr(pet, "trigger_golden_spin", None)

@@ -12,7 +12,7 @@ import pytest
 from PySide6.QtCore import QPointF
 
 from pet.pet_sprite import INTERACTION_DRAG, INTERACTION_NORMAL
-from pet.sprite_rally import SpriteRallyWorld, escort_spots
+from pet.sprite_rally import FixedAnchor, SpriteRallyWorld, escort_spots, lineup_spots
 
 BOUNDS = (0, 0, 1920, 1040)
 ANCHOR = (900, 800, 120, 150)          # 主肥鱼身体框 (x, y, w, h)
@@ -227,3 +227,65 @@ def test_odd_frame_times_are_safe(dt):
     world.start(anchor, [(fish, QPointF(60, 0))])
     world.tick([anchor, fish], dt)
     assert 100 <= fish.pos.x() <= 560
+
+
+# ---------------------------------------------------------------- 列队
+def test_lineup_stands_fish_left_to_right_along_the_bottom_in_the_given_order():
+    sizes = [(120, 150), (90, 100), (120, 150), (100, 130)]
+    spots = lineup_spots(sizes, BOUNDS, gap=12)
+    assert all(spot is not None for spot in spots)
+    xs = [s[0] for s in spots]
+    assert xs == sorted(xs) and xs[0] == 12, "按给的顺序从左边开始"
+    for (w, h), (x, y) in zip(sizes, spots):
+        assert y + h == BOUNDS[3], "脚底贴着底边"
+    for i in range(1, len(spots)):
+        assert spots[i][0] >= spots[i - 1][0] + sizes[i - 1][0] + 12, "彼此留间隙"
+
+
+def test_lineup_steps_over_the_main_fish_and_other_obstacles():
+    main = (300, 890, 120, 150)            # 主肥鱼站在底边靠左
+    sizes = [(120, 150)] * 4
+    spots = lineup_spots(sizes, BOUNDS, obstacles=[main], gap=12)
+    rects = _rects(sizes, spots)
+    assert not any(_overlaps(r, main, 12) for r in rects), "没人压到主肥鱼身上"
+    assert [r[0] for r in rects] == sorted(r[0] for r in rects), "让过去之后还是从左到右"
+    assert rects[1][0] == 12 + 120 + 12 or rects[1][0] >= main[0] + main[2] + 12
+
+
+def test_lineup_wraps_to_a_second_row_above_when_the_first_is_full():
+    sizes = [(400, 100)] * 6               # 一排放不下 6 只 400 宽的
+    spots = lineup_spots(sizes, BOUNDS, gap=12)
+    assert all(spot is not None for spot in spots)
+    rows = sorted({y for _x, y in spots}, reverse=True)
+    assert len(rows) == 2 and rows[0] == BOUNDS[3] - 100 and rows[1] == rows[0] - 100 - 12
+    assert [x for x, y in spots if y == rows[0]] == [12, 424, 836, 1248], "第一排从左到右"
+    assert [x for x, y in spots if y == rows[1]] == [12, 424], "第二排又从左边开始"
+    rects = _rects(sizes, spots)
+    for i, a in enumerate(rects):
+        assert not any(_overlaps(a, b) for b in rects[:i])
+
+
+def test_lineup_gives_up_only_when_the_screen_is_full():
+    tall = [(1000, 1040)] * 3              # 一只就占满一排、而且顶到天花板
+    spots = lineup_spots(tall, BOUNDS, gap=12)
+    assert spots[0] is not None and spots[1] is None and spots[2] is None
+
+
+def test_fixed_anchor_keeps_lineup_targets_absolute():
+    class Fish:
+        def __init__(self):
+            self.pos, self.interaction_state, self.collision_suspended, self.dragging = QPointF(900, 40), INTERACTION_NORMAL, False, False
+
+        def set_velocity(self, v):
+            pass
+
+        def set_pos(self, p):
+            self.pos = QPointF(p)
+
+    fish = Fish()
+    world = SpriteRallyWorld()
+    world.start(FixedAnchor(), [(fish, QPointF(12, 890))])
+    for _ in range(200):
+        world.tick([fish], 1 / 60)
+    assert (round(fish.pos.x()), round(fish.pos.y())) == (12, 890)
+    assert fish.interaction_state == INTERACTION_NORMAL and not world.active()
