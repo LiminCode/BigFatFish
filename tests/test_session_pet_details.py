@@ -177,9 +177,26 @@ def test_load_wsl_uses_one_call_and_never_injects_a_strange_session_id():
 
 
 def test_wsl_failure_is_not_a_verdict():
-    assert si.wsl_liveness(["a"], runner=lambda args: (1, "")) == {"a": None}
+    """wsl.exe 起不来不是「清单里没有」：核对要整轮作废（抛出去，调用方跳过这一轮），不能当成会话没了。"""
+    with pytest.raises(RuntimeError):
+        si.wsl_liveness(["a"], runner=lambda args: (1, ""))
     detail = si.from_session("claude_wsl", {"sessionId": "a", "title": "T"})
     assert si.load_wsl(detail, runner=lambda args: (127, "")).title == "T"
+
+
+def test_wsl_script_marks_the_pets_own_headless_runs_and_they_are_not_adopted():
+    """肥鱼自己在 WSL 里起的 ``claude -p``（Slack 关注 / 工作简报，环境里带 BIG_FAT_FISH_HEADLESS）也会写进
+    运行清单：脚本按进程环境标出来，认领时跳过——它们几十秒就结束、hook 又不报 SessionEnd，认进来只会留下
+    一条永远「工作中」的鱼（2026-11-02 实机）。"""
+    from pet.claude_hooks import HEADLESS_ENV
+
+    assert HEADLESS_ENV in si.WSL_SCRIPT and "@@headless" in si.WSL_SCRIPT
+    out = _wsl_output().replace("@@env TERM_PROGRAM=vscode", "@@env TERM_PROGRAM=vscode\n@@headless 501")
+    parsed = si.parse_wsl_output(out)
+    assert parsed["headless"] == {"live"}
+    assert parsed["alive"]["live"] is True, "只是标出来，活没活另算"
+    assert si.wsl_registry_sessions(runner=lambda *a, **k: (0, out)) == {}, "活着但是肥鱼自己的：不认领"
+    assert list(si.wsl_registry_sessions(runner=lambda *a, **k: (0, _wsl_output()))) == ["live"]
 
 
 # ================================================================ 数据通路
@@ -635,5 +652,48 @@ def test_monitor_adopts_live_registry_sessions_on_its_first_poll(tmp_path, monke
         assert sorted(mon._sessions.session_ids()) == ["busy1", "idle1"]
         mon._poll()
         assert len([p for p in raw if p["sessionId"] == "idle1"]) == 1, "再轮询不重复认领"
+    finally:
+        mon.stop()
+
+
+def test_monitor_retires_an_adopted_session_once_the_registry_stops_listing_it(tmp_path, monkeypatch):
+    """认领来的会话，清单里连着两轮没它就按已关闭处理（进程退出时清单文件被删，无界面运行又不发 SessionEnd）；
+    中途又出现一次要重新数；hook 出场、清单里从没见过的会话照旧不动。"""
+    from pet.agent_link import ClaudeCodeMonitor
+    from tests.test_claude_link import _append, _monitor
+
+    monkeypatch.setattr(ClaudeCodeMonitor, "_LIVENESS_PERIOD_S", 0.0)
+    monkeypatch.setattr(ClaudeCodeMonitor, "_ADOPT_PERIOD_S", 0.0)
+    registry = {"sdk1": {"phase": "working", "title": "", "project": "home", "cwd": "/home/me", "transcript": "",
+                         "entrypoint": "sdk-cli", "host_session": ""}}
+    monkeypatch.setattr(si, "local_registry_sessions", lambda: dict(registry))
+    monkeypatch.setattr(si, "local_liveness", lambda ids: {sid: (True if sid in registry else None) for sid in ids})
+    mon, got = _monitor(tmp_path)
+    mon.adopt_from_registry = True
+    try:
+        _append(mon, json.dumps({"ts": 1, "agent": "claude", "event": "UserPromptSubmit", "sessionId": "hooked"}) + "\n")
+        mon._poll()
+        assert sorted(mon._sessions.session_ids()) == ["hooked", "sdk1"]
+
+        registry.clear()                                   # 进程退出：清单文件没了
+        mon._poll()
+        assert sorted(mon._sessions.session_ids()) == ["hooked", "sdk1"], "第一轮没查到先不动（文件可能正在重写）"
+        mon._poll()
+        gone = [s[1] for s in got.sessions if s[2] == "gone"]
+        assert gone == ["sdk1"] and mon._sessions.session_ids() == ["hooked"], "连着两轮没有：收走；hook 出场的不动"
+
+        registry["sdk2"] = {"phase": "resting", "title": "", "project": "p", "cwd": "/p", "transcript": "",
+                            "entrypoint": "cli", "host_session": ""}
+        mon._poll()                                        # 认领
+        registry.clear()
+        mon._poll()                                        # 没查到一轮
+        registry["sdk2"] = {"phase": "resting", "title": "", "project": "p", "cwd": "/p", "transcript": "",
+                            "entrypoint": "cli", "host_session": ""}
+        mon._poll()                                        # 又出现：重新数
+        registry.clear()
+        mon._poll()
+        assert "sdk2" in mon._sessions.session_ids(), "中途出现过一次：这才是第一轮没查到"
+        mon._poll()
+        assert "sdk2" not in mon._sessions.session_ids()
     finally:
         mon.stop()

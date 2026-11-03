@@ -448,6 +448,9 @@ for f in "$HOME"/.claude/sessions/*.json; do
     s=
     [ -r "/proc/$p/stat" ] && s=$(sed 's/^.*) //' "/proc/$p/stat" 2>/dev/null | cut -d" " -f20)
     printf '@@reg %s ' "$s"; tr -d '\n' < "$f"; echo
+    if [ -n "$s" ] && [ -r "/proc/$p/environ" ] && tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -q '^''' + claude_hooks.HEADLESS_ENV + r'''='; then
+        echo "@@headless $p"
+    fi
     if [ -n "${2:-}" ] && [ -r "/proc/$p/environ" ] && grep -q "\"sessionId\":\"$2\"" "$f" 2>/dev/null; then
         tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -E '^(TERM_PROGRAM|WT_SESSION)=' | sed 's/^/@@env /'
     fi
@@ -474,12 +477,18 @@ def parse_wsl_output(text: str) -> dict:
     entries: list[str] = []
     live_start: dict[int, str] = {}
     env: dict[str, str] = {}
+    headless_pids: set[int] = set()
     for line in head.splitlines():
         if line.startswith("@@distro "):
             distro = line[len("@@distro "):].strip()
         elif line.startswith("@@env "):
             key, _sep, value = line[len("@@env "):].partition("=")
             env[key] = value
+        elif line.startswith("@@headless "):
+            try:
+                headless_pids.add(int(line[len("@@headless "):].strip()))
+            except ValueError:
+                continue
         elif line.startswith("@@reg "):
             start, _sep, body = line[len("@@reg "):].partition(" ")
             if not body.startswith("{"):       # 进程不在：启动时刻那一栏是空的
@@ -498,7 +507,8 @@ def parse_wsl_output(text: str) -> dict:
         recorded = str(entry.get("procStart") or "")
         # 进程在，且启动时刻对得上（清单没记启动时刻就只看进程在不在）
         alive[sid] = bool(now) and (not recorded or now == recorded)
-    return {"distro": distro, "registry": registry, "alive": alive, "env": env, "tail": tail}
+    headless = {sid for sid, entry in registry.items() if entry["pid"] in headless_pids}
+    return {"distro": distro, "registry": registry, "alive": alive, "env": env, "tail": tail, "headless": headless}
 
 
 def _safe_session_id(session_id: str) -> str:
@@ -525,21 +535,30 @@ def load_wsl(detail: SessionDetail, *, runner=claude_hooks.run_wsl) -> SessionDe
 
 def wsl_liveness(session_ids: Iterable[str], *,
                  runner=claude_hooks.run_wsl) -> dict[str, bool | None]:
+    """一批 WSL 会话是否还活着（口径同 ``local_liveness``：清单里没有 = None）。
+
+    wsl.exe 起不来时抛 ``RuntimeError``——那不是「清单里没有」，这一轮核对要整个作废，
+    不然认领来的会话会被当成已经结束。"""
     code, out = runner(["-e", "sh", "-c", WSL_SCRIPT, "sh", ""])
     if code != 0 and not out:
-        return {sid: None for sid in session_ids}
+        raise RuntimeError(f"wsl.exe 返回 {code}，没有输出")
     parsed = parse_wsl_output(out)
     return {sid: (parsed["alive"].get(sid) if sid in parsed["registry"] else None)
             for sid in session_ids}
 
 
 def wsl_registry_sessions(*, runner=claude_hooks.run_wsl) -> dict[str, dict]:
-    """WSL 发行版里运行清单上活着的会话（认领用）；起一次 ``wsl.exe``，失败返回空。"""
+    """WSL 发行版里运行清单上活着的会话（认领用）；起一次 ``wsl.exe``，失败返回空。
+
+    肥鱼自己起的无界面运行（Slack 关注 / 工作简报的 ``claude -p``，环境里带 ``BIG_FAT_FISH_HEADLESS``）
+    也在清单里：脚本按进程环境标出来（``@@headless``），这里不认——它们几十秒就结束、hook 又不报
+    SessionEnd，认进来只会留下一条永远「工作中」的鱼。"""
     code, out = runner(["-e", "sh", "-c", WSL_SCRIPT, "sh", ""])
     if code != 0 and not out:
         return {}
     parsed = parse_wsl_output(out)
-    return adoptable_sessions(parsed["registry"], local=False,
+    registry = {sid: entry for sid, entry in parsed["registry"].items() if sid not in parsed["headless"]}
+    return adoptable_sessions(registry, local=False,
                               alive=lambda entry: parsed["alive"].get(str(entry.get("sessionId") or "")))
 
 

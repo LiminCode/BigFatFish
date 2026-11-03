@@ -474,6 +474,12 @@ class ClaudeSessionTracker:
         self._sessions: dict[str, dict[str, str]] = {}
         self._extras: dict[str, dict[str, str]] = {}   # 会话 ID → 附加字段（见 _EXTRA_KEYS）
         self._updates: list[dict[str, str]] = []
+        # 在运行清单里见过的会话 → 之后连着几轮没查到它。进程退出时 Claude Code 会删掉清单文件；
+        # 被直接杀掉或肥鱼自己起的无界面运行（hook 不报 SessionEnd）都靠这个收场。
+        self._registry_missed: dict[str, int] = {}
+
+    #: 清单里连着这么多轮没查到才算没了（第一轮可能只是清单文件正在重写）
+    _REGISTRY_MISSES = 2
 
     def reset(self) -> None:
         self._busy.clear()
@@ -481,6 +487,20 @@ class ClaudeSessionTracker:
         self._sessions.clear()
         self._extras.clear()
         self._updates.clear()
+        self._registry_missed.clear()
+
+    def mark_registry(self, sid: str) -> None:
+        """这一轮在运行清单里看到了这个会话（活着或死了都算看到）。"""
+        if sid:
+            self._registry_missed[sid] = 0
+
+    def registry_vanished(self, sid: str) -> bool:
+        """这一轮清单里没有它：以前见过、且已经连着 ``_REGISTRY_MISSES`` 轮没有 → True（该按已关闭处理）。
+        清单里从没见过的会话永远 False——没有记录不等于没了。"""
+        if sid not in self._registry_missed:
+            return False
+        self._registry_missed[sid] += 1
+        return self._registry_missed[sid] >= self._REGISTRY_MISSES
 
     def any_busy(self) -> bool:
         return bool(self._busy)
@@ -519,12 +539,17 @@ class ClaudeSessionTracker:
             self._session_gone(next(iter(self._sessions)))
         self._extras[sid] = {key: str(value)[:self._PATH_MAX] for key, value in extras.items() if value}
         self._updates.append({"sessionId": sid, **self._sessions[sid], **self._extras[sid], "adopted": "1"})
+        self.mark_registry(sid)
         return True
 
     def note_registry(self, sid: str, **extras: str) -> bool:
-        """已出场的会话从运行清单又知道了点什么（桌面版那边的会话 id、入口）：变了就补一条更新。"""
+        """已出场的会话从运行清单又知道了点什么（桌面版那边的会话 id、入口）：变了就补一条更新。
+        不管变没变，都算这一轮在清单里见到了它。"""
         sid = str(sid or "")
-        if sid not in self._sessions or not self._note_extra(sid, **extras):
+        if sid not in self._sessions:
+            return False
+        self.mark_registry(sid)
+        if not self._note_extra(sid, **extras):
             return False
         self._updates.append({"sessionId": sid, **self._sessions[sid], **self._extras.get(sid, {})})
         return True
@@ -568,6 +593,7 @@ class ClaudeSessionTracker:
     def _session_gone(self, sid: str) -> None:
         info = self._sessions.pop(sid, None)
         self._extras.pop(sid, None)
+        self._registry_missed.pop(sid, None)
         if info is not None:
             self._updates.append({"sessionId": sid, **info, "phase": "gone"})
 
