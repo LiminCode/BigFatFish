@@ -181,5 +181,8 @@ WeekAccounts.refresh: 4045 ms
 并在真机上见过它的近亲（共享刚起来时的 `WinError 3`，见上）。
 
 **测试**：`ruff check pet/ tests/` 通过；相关族（`test_claude_usage` / `test_claude_usage_monitor` / `test_claude_week` /
-`test_usage_dashboard` / `test_island_info_slot` / `test_i18n`）87 项连续 3 遍全绿（3.7 s / 遍）；全量 `pytest -q` 见 PR 描述
-（本机 4 个与改动无关的基线失败：路径超 260、cp1252 子进程解码 ×2、多显示器负原点）。
+`test_usage_dashboard` / `test_island_info_slot` / `test_i18n`）87 项连续 3 遍全绿（3.7 s / 遍）。全量 `pytest -q`（隔离工作区，
+17 分 40 秒）：**5914 通过、6 失败、14 跳过**，6 个都不是本分支的：4 个是本机既有基线失败（路径超 260、cp1252 子进程解码 ×2、
+多显示器负原点）；`test_session_card_metro.py::test_host_icons_are_warmed_at_the_cards_size` 在基线 `d630e7c9` 上原样失败
+（在那个提交的临时 worktree 里复跑：小鱼来源图标现在也预热 14 px 那份，断言仍只认 `[21]`）；
+`test_overlay_hidden_polling.py::test_hidden_overlay_polls_nothing` 对负载敏感，单跑 3/3 通过。
