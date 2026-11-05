@@ -2,7 +2,7 @@
 
 > **基线**：`390af73e`（main，Merge PR #14「列队」）
 > **分支**：`feature/island-usage-tiles-polish`　**日期**：2026-11-05
-> **范围**：14 个文件（实现 7、测试 6、文档 1 + `INDEX.md` 登记）
+> **范围**：14 个文件（实现 7、测试 6、文档 1 + `INDEX.md` 登记）；第二轮再改其中 2 个
 > **关联**：同日的任务栏停靠修复 `PR-REPORT-ISLAND-DOCK-TASKBAR-2026-11-05.md`（PR #21，独立分支）；
 > 通知卡片的置顶看门狗 `PR-REPORT-TOAST-TOPMOST-2026-11-02.md`（本次岛的看门狗与它同口径，但多了「真被盖住才插」）；
 > 分账号用量 `PR-REPORT-ISLAND-USAGE-TWO-ACCOUNTS-2026-11-02.md`
@@ -153,7 +153,49 @@ island back on top after 1.76 s
 | 架构红线 / 报告纪律 | `pytest -q tests/test_claude_usage.py tests/test_architecture.py tests/test_pr_report_discipline.py` | 161 passed |
 | 受影响族并发 3 份 | 三份 `pytest` 同时跑 `test_island_usage_polish / test_usage_dashboard / test_island_info_slot / test_claude_usage_monitor / test_island_metro` | 67 passed × 3（2.16 / 2.18 / 2.19 s） |
 | 合并运行分支 | 在 `island-run`（本分支 + PR #21）跑 `test_dynamic_island_panel_edges / test_island_usage_polish / test_dynamic_island_revamp / test_usage_dashboard` + ruff | 62 passed，ruff 干净 |
-| 全量 | `python -m pytest -q -p no:cacheprovider`（PowerShell 起，`APPDATA` 指到临时目录） | 见「全量结果」 |
+| 全量（第一轮 `2a660c26`） | `python -m pytest -q -p no:cacheprovider`（PowerShell 起，`APPDATA` 指到临时目录） | **6 failed, 5948 passed, 14 skipped in 523.56s**。6 个都不是本分支的：4 个环境基线（`test_image_directory_picker_opens_right_drawer…`、`test_festival_id_guard_survives_optimize`、`test_real_second_process_refused_on_overlay_topology`、`test_capture_window_rect_coordinates_and_clamping`）+ `test_host_icons_are_warmed_at_the_cards_size`（main 上原样失败）+ `test_modern_context_menu_has_compact_semantic_groups`（main `390af73e` 上同样红） |
+| 全量（第二轮 `535dd539`） | 同上 | **6 failed, 5951 passed, 14 skipped in 578.98s**，同一批 6 个已知无关项 |
+
+## 第二轮：岛本身的玻璃阴影（同日追加）
+
+用户看过第一轮后追加：岛本身也加玻璃阴影，Metro 风格保留，磁贴周围也加。提交 `535dd539`。
+
+### 修改文件说明（第二轮）
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/dynamic_island.py` | +18 / −3 | 两组常量 `_METRO_BAR_SHADOW = ((1, 1, 64), (2, 2, 36), (4, 2, 16))`（条底下三层：外扩 / 下移 / 不透明度，最远伸到 6px 内缩余量为止）与 `_METRO_BLOCK_SHADOW = ((1, 48), (2, 24))`（磁贴四周两层，≤ 2px = 磁贴与条边的间距）；`_paint_metro_capsule` 在画条之前、非展开态画条的阴影（跟着果冻形变后的矩形）；`_paint_metro_block` 在填色之前画磁贴阴影，和磁贴在同一个变换下（悬停那块的阴影跟着倾斜）。方角 / 实色 / 无描边一概不变 |
+| `tests/test_island_usage_polish.py` | +29 / −0 | `test_metro_bar_and_every_tile_cast_a_glass_shadow`：条底下 2px 半透明、窗口角仍透明、两块磁贴之间的缝比条本色暗、磁贴内部仍是实色、展开卡片时条底下不画阴影。改绘制前红（条底下 alpha 0）、改后绿 |
+
+### 实现要点（第二轮）
+
+- 余量都是现成的：窗口比条每边多 `_CAPSULE_INSET` = 6px（果冻形变的余量），条比磁贴上下各多 2px。阴影的
+  最大外扩按这两个数定，不扩窗口、不改布局，别的样式的绘制一行没动。
+- 磁贴阴影画在 `_paint_metro_block` 里而不是另起一层：非悬停磁贴随内容层缓存一起画（零新增每帧成本），
+  悬停那块本来就每帧现画，阴影跟着它的倾斜变换一起歪，像磁贴真的抬起来。
+- 展开卡片时条贴在卡片底板上，条的阴影会在底板上画出一道黑边，所以和圆角样式一样跳过。
+
+### 性能（第二轮）
+
+每次重建内容层缓存多画 2 × 磁贴数（6 块 → 12）个矩形，悬停每帧多 2 个，整条每帧多 3 个。
+**实测**（`bench_grab.py`：Metro、两个账号、悬停在用量磁贴上，`grab()` 300 次取均值，`QT_QPA_PLATFORM=offscreen`，
+同一台机器，先后换入改前 / 改后的 `dynamic_island.py`）：改前 0.200 ms / 帧 → 改后 0.350 ms / 帧（+0.15 ms）。
+这是悬停时每帧现画的路径（半透明矩形在透视变换下的抗锯齿填充）；不悬停时岛不重绘，内容层缓存命中则一个阴影
+矩形都不画。没有新线程 / 定时器 / 内存。
+
+### 实机（第二轮）
+
+桌宠从合并了本分支（含第二轮，合并提交 `e5f1cdde`）与 PR #21 的 `local/run-island-2026-11-05` 重启：
+
+```
+2026-11-05 15:03:57 acquired pid=49812 lock=...\overlay-instance.lock
+2026-11-05 15:03:57,764 INFO big-fat-fish 启动 (slot: 0, instance: )
+（启动段无 WARNING / ERROR）
+```
+
+真机截图（`QScreen.grabWindow(0)` 截岛所在区域，岛在 (3070, 605) 物理像素，598×55）：胶囊条底下一圈淡阴影落在
+壁纸上，每块磁贴（头像 / 用量 ⊞ 1.92M ◌ 156.8K / 链接 / 简报 / 个人助理 / 铃铛）四周一圈更紧的阴影把它与条分开，
+磁贴仍是方角实色、无描边。截图留在会话草稿目录，不入库。
 
 ## 七、已知限制与后续
 
