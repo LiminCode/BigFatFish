@@ -456,7 +456,7 @@
   "settings.dlg.animation": "Animation",
   "settings.dlg.island_becomes_static_collider_fish": "The island becomes a static collider: a fish thrown at it bounces off and the island wobbles in place. The island itself never gets pushed.",
   "settings.dlg.jelly_wall_collides": "Jelly wall (collides)",
-  "settings.dlg.drag_any_screen_edge_top": "Drag it to any screen edge (top, bottom, left or right) to tuck it into a thin strip that slides out when the mouse comes near; it can dock on a side when the top is taken.",
+  "settings.dlg.drag_any_screen_edge_top": "Drag it to any screen edge (top, bottom, left or right) to tuck it into a thin strip that slides out when the mouse comes near; the taskbar's side does not count as an edge, so the island can rest on top of the taskbar.",
   "settings.dlg.half_hide_at_edge": "Half-hide at the edge",
   "settings.dlg.jelly_bounce_when_ai_reply": "A jelly bounce when an AI reply arrives or the balance refreshes. No extra cost while idle.",
   "settings.dlg.event_animation": "Event animation",
