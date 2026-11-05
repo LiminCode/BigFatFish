@@ -147,6 +147,37 @@ def test_segments_do_not_leak_into_other_styles(tmp_path):
         island.deleteLater()
 
 
+# ---------------------------------------------------------------- 岛本身：玻璃阴影
+
+def test_metro_bar_and_every_tile_cast_a_glass_shadow(tmp_path):
+    """Metro 风格不变（方角、实色），条底下与每块磁贴四周多一圈半透明阴影。"""
+    island = _island(tmp_path, style="metro", info_mode="time")
+    try:
+        app.processEvents()
+        image = island.grab().toImage()
+        bar, _radius = island._squished_capsule_rect()
+        below = image.pixelColor(int(bar.center().x()), int(bar.bottom()) + 2)
+        assert 0 < below.alpha() < 255, "条底下 2px 是半透明的阴影"
+        assert image.pixelColor(1, 1).alpha() == 0, "阴影不越过窗口的内缩余量，角上仍透明"
+        items = {key: rect for key, _kind, rect in island._metro_layout()[0]}
+        icon = items["icon"]
+        reference = image.pixelColor(int(items["name"].center().x()), int(bar.top()) + 1)   # 条本色
+        gap = image.pixelColor(int(icon.right()) + 1, int(icon.center().y()))                # 两块磁贴之间的缝
+        assert gap.alpha() == reference.alpha() == 255
+        assert gap.lightness() < reference.lightness(), "缝里被磁贴的阴影压暗"
+        inside = image.pixelColor(int(icon.center().x()), int(icon.top()) + 2)
+        assert inside.name() == island._accent_color().name(), "磁贴本身还是实色"
+        island.expand_card()
+        island._finish_animations()
+        app.processEvents()
+        expanded = island.grab().toImage()
+        assert expanded.pixelColor(int(bar.center().x()), int(bar.bottom()) + 2).alpha() == 255, \
+            "展开卡片时条贴在底板上，不画条的阴影"
+    finally:
+        island.deleteLater()
+        app.processEvents()
+
+
 # ---------------------------------------------------------------- 仪表盘：透明底 + 阴影
 
 def test_dashboard_background_is_transparent_and_tiles_cast_a_shadow():

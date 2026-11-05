@@ -133,6 +133,10 @@ _ACCOUNT_ICON_PX = 14
 _ACCOUNT_ICON_GAP = 3        # 记号与数字之间
 _ACCOUNT_SEG_GAP = 10        # 两个账号之间
 _TOPMOST_WATCH_MS = 2000     # 置顶看门狗周期（与通知卡片同一口径）
+#: Metro 的玻璃阴影：条底下几层半透明黑（外扩 px, 下移 px, 不透明度），最远伸到窗口的内缩余量（6px）为止；
+#: 磁贴四周一圈更紧的（外扩 px, 不透明度），不超过磁贴与条边的 2px 间距
+_METRO_BAR_SHADOW = ((1, 1, 64), (2, 2, 36), (4, 2, 16))
+_METRO_BLOCK_SHADOW = ((1, 48), (2, 24))
 
 
 def metro_tilt_params(rect, degrees: tuple[float, float] = _METRO_TILT_DEG,
@@ -2064,6 +2068,10 @@ class DynamicIsland(QWidget):
         if hovered:
             painter.setTransform(self.metro_tilt(key), True)
         painter.setPen(Qt.PenStyle.NoPen)
+        # 磁贴四周一圈玻璃阴影（跟着倾斜一起变换，悬停的那块阴影也跟着歪）
+        for spread, alpha in _METRO_BLOCK_SHADOW:
+            painter.setBrush(QColor(0, 0, 0, alpha))
+            painter.drawRect(rect.adjusted(-spread, -spread, spread, spread))
         painter.setBrush(fill)
         painter.drawRect(rect)
         cx, cy = rect.center().x(), rect.center().y()
@@ -2137,7 +2145,10 @@ class DynamicIsland(QWidget):
         return pm
 
     def _paint_metro_capsule(self, painter: QPainter) -> None:
-        """Metro：方角平条（无描边、无阴影），卡片底板也是方角；鼠标下的那块磁贴现画并倾斜。"""
+        """Metro：方角平条（无描边）+ 条底下一圈玻璃阴影，卡片底板也是方角；鼠标下的那块磁贴现画并倾斜。
+
+        阴影跟着果冻形变后的条走；展开卡片时条贴在底板上，不画（与圆角样式同口径）。
+        """
         background, _p, _s = self._style_palette()
         if self._mode == "expanded":
             painter.setPen(Qt.PenStyle.NoPen)
@@ -2145,6 +2156,10 @@ class DynamicIsland(QWidget):
             painter.drawRect(QRectF(0, 0, self.width(), self.height()))
         rect, _radius = self._squished_capsule_rect()
         painter.setPen(Qt.PenStyle.NoPen)
+        if self._mode != "expanded":
+            for spread, dy, alpha in _METRO_BAR_SHADOW:
+                painter.setBrush(QColor(0, 0, 0, alpha))
+                painter.drawRect(rect.adjusted(-spread, -spread + dy, spread, spread + dy))
         painter.setBrush(background)
         painter.drawRect(rect)
         painter.drawPixmap(0, 0, self._metro_content_cache())
