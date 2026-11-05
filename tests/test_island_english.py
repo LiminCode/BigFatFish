@@ -93,7 +93,7 @@ def test_the_card_buttons_and_placeholders_follow_the_language(tmp_path, english
         island.set_pet_visible(False)
         assert island._card_toggle_btn.text() == "Show the fish"
         assert island._card_chat_btn.text() == "Chat" and island._card_settings_btn.text() == "Settings"
-        assert island._usage_text == "Today --" and island._balance_text == "Balance --"
+        assert island._usage_text == "--" and island._balance_text == "Balance --"
         island.set_briefing_state("unread")
         assert island.briefing_tooltip() == "Daily Briefing · a fresh one is in"
     finally:

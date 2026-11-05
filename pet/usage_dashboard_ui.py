@@ -5,7 +5,9 @@
 
 - 页面底色、小字的应用名、大而轻的页头，跟设置页同一套令牌（``METRO_TOKENS``），
   白天 / 黑夜跟「外观」里的主题（``apply_theme``）；
-- 每张磁贴一块实色、方角、无描边无阴影：左上小标题，大号细体数字（今天），一行副标题
+- 窗口底色透明，四张磁贴直接浮在桌面上、每张底下一圈柔和阴影（``_TILE_SHADOW_LAYERS``）；页头 / 页脚的文字
+  带一圈反色光晕（``_HaloLabel``），深浅壁纸上都读得出来；
+- 每张磁贴一块实色、方角、无描边：左上小标题，大号细体数字（今天），一行副标题
   （7 天合计 / 平均），底下 7 根柱子（最右是今天，实白；以前的天半透明白）。「上下班」是
   悬浮的区间柱，纵轴从上到下是一天里的钟点，右侧标出上下沿；用量 / 消息分账号时每天并排
   两根（Win 实心、WSL 空心，``part_rects``），大数字一行写不下时自动缩小字号；
@@ -28,6 +30,9 @@ from .usage_dashboard import Bar, Tile
 
 TILE_W, TILE_H = 236, 200
 TILE_GAP = 8
+#: 磁贴阴影：由内到外几层半透明黑（外扩 px, 下移 px, 不透明度）；最外一层外扩多少就是 TILE_SHADOW_SPREAD
+_TILE_SHADOW_LAYERS = ((1, 1, 70), (3, 2, 42), (5, 4, 26), (8, 6, 12))
+TILE_SHADOW_SPREAD = max(spread for spread, _dy, _alpha in _TILE_SHADOW_LAYERS)
 _PAD = 14
 _PART_GAP = 2.0               # 分账号时同一天两根柱子之间的缝
 _FAMILIES = ["Segoe UI", "SF Pro Text", "PingFang SC", "Microsoft YaHei UI"]
@@ -49,6 +54,47 @@ def _value_font(text: str, width: float) -> QFont:
         if QFontMetrics(font).horizontalAdvance(text) <= width:
             break
     return font
+
+
+def halo_color(ink: QColor) -> QColor:
+    """文字光晕的颜色：深色字配浅光晕、浅色字配深光晕（底色透明，字直接落在壁纸上）。"""
+    return QColor(255, 255, 255, 170) if ink.lightness() < 128 else QColor(0, 0, 0, 170)
+
+
+class _HaloLabel(QLabel):
+    """带反色光晕的文字标签：先在四周 1px 与下方 2px 画光晕，再画字。字色与字号由代码给（不走样式表）。"""
+
+    def __init__(self, text: str, parent: QWidget | None = None, *, px: int = 12,
+                 weight: QFont.Weight = QFont.Weight.Normal, spacing: float = 0.0) -> None:
+        super().__init__(text, parent)
+        font = _font(px, weight)
+        if spacing:
+            font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, spacing)
+        self.setFont(font)
+        self._ink = QColor("#111111")
+
+    def set_ink(self, color: QColor) -> None:
+        self._ink = QColor(color)
+        self.update()
+
+    def ink(self) -> QColor:
+        return QColor(self._ink)
+
+    def halo(self) -> QColor:
+        return halo_color(self._ink)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.setFont(self.font())
+        rect = self.contentsRect()
+        flags = int(self.alignment()) | (int(Qt.TextFlag.TextWordWrap) if self.wordWrap() else 0)
+        painter.setPen(self.halo())
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1), (0, 2)):
+            painter.drawText(rect.translated(dx, dy), flags, self.text())
+        painter.setPen(self._ink)
+        painter.drawText(rect, flags, self.text())
 
 
 def resolve_dark(theme: str) -> bool:
@@ -235,13 +281,14 @@ class UsageDashboardWindow(QWidget):
                          | Qt.WindowType.WindowStaysOnTopHint)
         self.setObjectName("usageDashboard")
         self.setWindowTitle(t("dashboard.title"))
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # 底色透明：磁贴直接浮在桌面上，阴影由 paintEvent 画在每张磁贴底下
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setProperty("coversIsland", True)      # 开着时岛不重申置顶（见 DynamicIsland.reassert_topmost）
-        self.app_label = QLabel(t("dashboard.app"), self)
+        self.app_label = _HaloLabel(t("dashboard.app"), self, px=12, weight=QFont.Weight.DemiBold, spacing=1.0)
         self.app_label.setObjectName("dashboardApp")
-        self.title_label = QLabel(t("dashboard.title"), self)
+        self.title_label = _HaloLabel(t("dashboard.title"), self, px=28, weight=QFont.Weight.Light)
         self.title_label.setObjectName("dashboardTitle")
-        self.status_label = QLabel("", self)
+        self.status_label = _HaloLabel("", self, px=11)
         self.status_label.setObjectName("dashboardStatus")
         self.close_btn = TiltButton("×", self)
         self.close_btn.setObjectName("dashboardClose")
@@ -250,7 +297,7 @@ class UsageDashboardWindow(QWidget):
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.clicked.connect(self.hide)
         self.tiles = [MetricTile(self) for _ in range(4)]
-        self.footer_label = QLabel("", self)
+        self.footer_label = _HaloLabel("", self, px=11)
         self.footer_label.setObjectName("dashboardFooter")
         self.footer_label.setWordWrap(True)
         self.footer_label.setFixedWidth(2 * TILE_W + TILE_GAP)
@@ -287,11 +334,11 @@ class UsageDashboardWindow(QWidget):
         # 先清空再设：窗口还没显示过时，第二次 setStyleSheet 的底色不生效（Qt 6 实测，
         # 普通 QWidget 也一样），构造时已经按 system 设过一次
         self.setStyleSheet("")
+        for label, key in ((self.app_label, "muted"), (self.title_label, "title"),
+                           (self.status_label, "muted"), (self.footer_label, "muted")):
+            label.set_ink(QColor(colors[key]))
         self.setStyleSheet(f"""
-            QWidget#usageDashboard {{ background: {colors['page']}; }}
-            QLabel#dashboardApp {{ color: {colors['muted']}; font-size: 12px; font-weight: 600; letter-spacing: 1px; }}
-            QLabel#dashboardTitle {{ color: {colors['title']}; font-size: 28px; font-weight: 300; }}
-            QLabel#dashboardStatus, QLabel#dashboardFooter {{ color: {colors['muted']}; font-size: 11px; }}
+            QWidget#usageDashboard {{ background: transparent; }}
             QPushButton#dashboardClose {{
                 background: transparent; color: {colors['text']}; border: 2px solid transparent; border-radius: 0;
                 font-size: 16px; min-width: 28px; min-height: 26px; padding: 0 4px;
@@ -305,6 +352,19 @@ class UsageDashboardWindow(QWidget):
             widget.set_tile(tile)
         self.footer_label.setText(footer)
         self.status_label.setText(t("dashboard.loading") if loading else "")
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """透明底上只画每张磁贴底下的阴影（磁贴自己画自己）。"""
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for tile in self.tiles:
+            if not tile.isVisible():
+                continue
+            geometry = QRectF(tile.geometry())
+            for spread, dy, alpha in _TILE_SHADOW_LAYERS:
+                painter.setBrush(QColor(0, 0, 0, alpha))
+                painter.drawRect(geometry.adjusted(-spread, -spread + dy, spread, spread + dy))
 
     # ------------------------------------------------------------ 收起
     def showEvent(self, event) -> None:  # noqa: N802

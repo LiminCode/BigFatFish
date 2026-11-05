@@ -48,7 +48,7 @@ def test_time_mode_shows_the_clock(tmp_path):
 def test_usage_mode_shows_todays_tokens(tmp_path):
     island = _island(tmp_path, info_mode="usage_today")
     try:
-        assert island._info_text() == "今日 --", "还没量出来之前不装作是 0"
+        assert island._info_text() == "--", "还没量出来之前不装作是 0"
         width, before = island.width(), island._content_cache()
 
         island.set_usage_info("今日 2.38M", "今日 Claude Code 用量 2.38M：输出 561.7K …")
@@ -187,16 +187,16 @@ def test_usage_is_measured_only_while_the_slot_shows_it(shell):
 
 def test_measurements_reach_the_island(shell):
     totals = UsageTotals(output=2_380_000)
-    shell._usage_monitor.usage_changed.emit(totals.headline, totals.detail)
-    assert shell.island._info_text() == "今日 2.38M"
+    shell._usage_monitor.usage_changed.emit(totals.headline, totals.detail, [])
+    assert shell.island._info_text() == "2.38M"
     assert totals.detail in shell.island.toolTip()
 
 
 def test_both_accounts_show_on_the_island_and_in_its_tooltip(shell):
     """Windows 账号和 WSL 账号各自的数字并排在岛上；WSL 读不到时写 --，悬停说明分两行。"""
     accounts = [AccountUsage("windows", UsageTotals(output=2_380_000)), AccountUsage("wsl", None)]
-    shell._usage_monitor.usage_changed.emit(headline(accounts), detail(accounts))
-    assert shell.island._info_text() == "今日 Win 2.38M · WSL --"
+    shell._usage_monitor.usage_changed.emit(headline(accounts), detail(accounts), [])
+    assert shell.island._info_text() == "Win 2.38M · WSL --"
     lines = shell.island.toolTip().splitlines()
     assert lines[-3].startswith("Win：2.38M（输出 2.38M")
     assert lines[-2].startswith("WSL：读不到")

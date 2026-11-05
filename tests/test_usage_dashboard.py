@@ -274,7 +274,9 @@ def test_switching_theme_before_the_first_show_takes_effect():
         window.apply_theme("light")
         window.show()
         app.processEvents()
-        assert window.grab().toImage().pixelColor(4, 4).name() == window.colors["page"] == "#f2f2f2"
+        # 底色透明（磁贴浮在桌面上），主题落在文字颜色上：先 dark 再 light，最终是浅色主题的字色
+        assert window.grab().toImage().pixelColor(4, 4).alpha() == 0 and window.colors["page"] == "#f2f2f2"
+        assert window.title_label.ink().name() == window.colors["title"] == "#111111"
     finally:
         window.deleteLater()
         app.processEvents()

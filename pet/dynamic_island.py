@@ -125,10 +125,29 @@ _METRO_TEXT_GAP = 8      # 磁贴与文字、文字与文字之间
 _METRO_PAD = 2           # 条的左右内边距
 _METRO_BLOCKS = ("icon", "usage", "link", "briefing", "personal", "bell")
 # 磁贴倾斜：设置页大磁贴的 ±4° / 900px 视距放到 28px 的小块上不到 1px，看不出来；小块要更大的角度、更近的视点
-_METRO_TILT_DEG = (24.0, 34.0)       # 悬停, 按下
+_METRO_TILT_DEG = (24.0, 34.0)       # 悬停, 按下（为 28px 方块调的；更大的磁贴按长边等比缩小，见 metro_tilt_params）
 _METRO_TILT_DISTANCE = 80.0
+#: 用量分账号时账号键 → 记号名（context_menus.icons 的手绘记号：Windows 四格窗 / Ubuntu 一环三点）
+_ACCOUNT_GLYPHS = {"windows": "windows", "wsl": "ubuntu"}
+_ACCOUNT_ICON_PX = 14
+_ACCOUNT_ICON_GAP = 3        # 记号与数字之间
+_ACCOUNT_SEG_GAP = 10        # 两个账号之间
+_TOPMOST_WATCH_MS = 2000     # 置顶看门狗周期（与通知卡片同一口径）
+
+
+def metro_tilt_params(rect, degrees: tuple[float, float] = _METRO_TILT_DEG,
+                      distance: float = _METRO_TILT_DISTANCE, base: int = _METRO_BLOCK) -> tuple[tuple[float, float], float]:
+    """这块磁贴该用的倾斜角与透视视点：角度按长边 / 方块边长反比缩小、视点等比拉远。
+
+    同一组角度在 28px 方块上是「轻轻一压」，在 150px 的用量磁贴上边缘会抬起十几像素、整块乱晃
+    （2026-11-05 用户反馈）。按长边反比缩角，边缘的位移就与方块相当；视点随之拉远，透视收敛
+    的程度也和方块一样。方块本身（长边 ≤ 基准）原样返回。
+    """
+    longest = max(rect.width(), rect.height(), base)
+    scale = longest / float(base)
+    return (degrees[0] / scale, degrees[1] / scale), distance * scale
 _PLACEHOLDER_KEYS = {"island.balance.placeholder": "余额 --", "island.tier.placeholder": "余额峰谷 --",
-                     "island.usage.placeholder": "今日 --"}
+                     "island.usage.placeholder": "--"}
 
 
 def _all_placeholder_texts(key: str) -> set[str]:
@@ -258,6 +277,18 @@ def _native_reassert_topmost(window) -> bool:
         return False
 
 
+def _native_topmost_hold_off() -> bool:
+    """看门狗该不该歇着（真全屏 / 系统外壳的面在前台）；非 Windows 恒 False。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        from .platform_win import topmost_hold_off
+
+        return bool(topmost_hold_off())
+    except Exception:
+        return False
+
+
 class DynamicIsland(QWidget):
     """胶囊形态的独立灵动岛窗口。"""
 
@@ -312,6 +343,8 @@ class DynamicIsland(QWidget):
         # 信息槽「今日用量」：文案与悬停说明由 claude_usage_monitor 喂进来
         self._usage_text = t("island.usage.placeholder")
         self._usage_detail = ""
+        self._usage_segments: tuple[tuple[str, str, str], ...] = ()   # 分账号：(账号键, 短名, 数字)
+        self._glyph_pixmaps: dict[tuple, QPixmap] = {}
         self._session_counts: list[tuple[str, str]] = []
         self._last_message = ""
         # 几何变化回调（果冻墙碰撞体挂这里跟踪拖拽/停靠滑动）：AppShell 注入。
@@ -376,6 +409,15 @@ class DynamicIsland(QWidget):
         self._info_timer.setInterval(30_000)
         self._info_timer.timeout.connect(self._refresh)
         self._info_timer.start()
+
+        # 置顶看门狗（见 _watch_topmost）：可见期间每 2 s 看一眼有没有被别的窗盖住，盖住才重插。
+        # 探测与「该不该歇着」都可注入（测试用假 z 序）。
+        self._topmost_watch = QTimer(self)
+        self._topmost_watch.setInterval(_TOPMOST_WATCH_MS)
+        self._topmost_watch.timeout.connect(self._watch_topmost)
+        self._occlusion_probe = self._native_occluder
+        self._shell_in_front = _native_topmost_hold_off
+        self._last_occluder = ""
 
         # 置顶保活接线（见 reassert_topmost）：本进程窗口被激活 = 某个 topmost
         # 窗（聊天窗/设置窗/岛气泡/托盘菜单 popup）刚插到岛上面，这是零轮询里
@@ -483,6 +525,39 @@ class DynamicIsland(QWidget):
         """
         if state == Qt.ApplicationState.ApplicationActive:
             self.reassert_topmost()
+
+    def _native_occluder(self) -> tuple[bool, str]:
+        """Windows：z 序里有没有别的可见窗口压在岛上面 → (是否, 那个窗口的类名)；非 Windows 恒 (False, "")。"""
+        if sys.platform != "win32":
+            return False, ""
+        try:
+            from .platform_win import occluder_above
+
+            klass = occluder_above(int(self.winId()))
+        except Exception:
+            logger.debug("灵动岛遮挡探测失败", exc_info=True)
+            return False, ""
+        return bool(klass), klass
+
+    def _watch_topmost(self) -> None:
+        """看门狗：只在真被别的窗盖住时重申置顶。
+
+        事件驱动的重申（见 reassert_topmost）只认得本进程的激活；第三方 topmost 窗（最大化的 Electron
+        被 Windows 当成全屏、置顶工具、别的应用的提示浮层）盖上来时没有任何事件，岛最迟要等 30 s 心跳。
+        这里每 2 s 看一眼 z 序：没人压着就什么都不做（不碰 SetWindowPos，不和别人抢）；真全屏、
+        或系统外壳的面（开始菜单 / 任务栏弹出层）在前台时也歇着。
+        """
+        if not self.isVisible():
+            return
+        if self._shell_in_front():
+            return
+        covered, klass = self._occlusion_probe()
+        if not covered:
+            self._last_occluder = ""
+            return
+        if self.reassert_topmost() and klass != self._last_occluder:
+            self._last_occluder = klass
+            logger.info("灵动岛被 %s 盖住，重新置顶", klass or "?")
 
     def set_icon_provider(self, fn) -> None:
         """注入"鱼本体头像"取图回调（AppShell 提供：取首个肥鱼窗的当前帧图标）。
@@ -683,7 +758,7 @@ class DynamicIsland(QWidget):
         if info:
             text_w = fm.horizontalAdvance(self._info_text())
             if self._info_mode() == "usage_today":
-                place("usage", "block", max(_METRO_BLOCK, text_w + 16))
+                place("usage", "block", self._usage_block_width())
             else:
                 place("time", "text", text_w)
         if status:
@@ -725,8 +800,9 @@ class DynamicIsland(QWidget):
         rect = self.metro_blocks().get(key)
         if rect is None or key != self._metro_hover or self._metro_hover_pos is None:
             return QTransform()
+        degrees, distance = metro_tilt_params(rect.toAlignedRect())
         return tilt_transform(rect.toAlignedRect(), self._metro_hover_pos, pressed=self._metro_pressed,
-                              degrees=_METRO_TILT_DEG, distance=_METRO_TILT_DISTANCE)
+                              degrees=degrees, distance=distance)
 
     def _metro_block_at(self, pos) -> str | None:
         if self._mode == "docked" and not self._hover_peek:
@@ -745,6 +821,57 @@ class DynamicIsland(QWidget):
             if key is None:
                 self._metro_pressed = False
             self.update()
+
+    def usage_segment_glyphs(self) -> list[tuple[str, str]]:
+        """Metro 用量磁贴里按账号画的几段：[(记号名, 数字)]；记号名空 = 画「短名 数字」文字。
+
+        非 Metro（别的样式没有磁贴可画记号）或没有分段（一个账号就是一个数）时为空列表，照旧画整段文字。
+        """
+        if not self._metro() or not self._usage_segments:
+            return []
+        return [(_ACCOUNT_GLYPHS[key], tokens) if key in _ACCOUNT_GLYPHS else ("", f"{label} {tokens}")
+                for key, label, tokens in self._usage_segments]
+
+    def _usage_block_width(self) -> float:
+        """用量磁贴的宽：整段文字 + 16，或分账号时「记号 + 数字」各段之和。"""
+        fm = self.fontMetrics()
+        glyphs = self.usage_segment_glyphs()
+        if not glyphs:
+            return max(_METRO_BLOCK, fm.horizontalAdvance(self._info_text()) + 16)
+        width = sum((_ACCOUNT_ICON_PX + _ACCOUNT_ICON_GAP if glyph else 0) + fm.horizontalAdvance(text)
+                    for glyph, text in glyphs)
+        return width + _ACCOUNT_SEG_GAP * (len(glyphs) - 1) + 16
+
+    def _glyph_pixmap(self, glyph: str, ink: QColor) -> QPixmap:
+        """账号记号的位图，按 (记号, 颜色, 缩放) 缓存（和磁贴文字同色）。"""
+        from .context_menus.icons import vector_widget_icon
+
+        dpr = float(self.devicePixelRatioF() or 1.0)
+        key = (glyph, ink.name(), dpr)
+        pm = self._glyph_pixmaps.get(key)
+        if pm is None:
+            icon = vector_widget_icon(self, glyph, _ACCOUNT_ICON_PX, ink.name())
+            pm = icon.pixmap(QSize(_ACCOUNT_ICON_PX, _ACCOUNT_ICON_PX), dpr)
+            self._glyph_pixmaps[key] = pm
+        return pm
+
+    def _paint_usage_segments(self, painter: QPainter, rect: QRectF, ink: QColor) -> None:
+        """分账号的用量：居中排「记号 数字   记号 数字」。"""
+        fm = painter.fontMetrics()
+        glyphs = self.usage_segment_glyphs()
+        x = rect.center().x() - (self._usage_block_width() - 16) / 2.0
+        cy = rect.center().y()
+        painter.setPen(ink)
+        for index, (glyph, text) in enumerate(glyphs):
+            if index:
+                x += _ACCOUNT_SEG_GAP
+            if glyph:
+                painter.drawPixmap(QPointF(x, cy - _ACCOUNT_ICON_PX / 2.0), self._glyph_pixmap(glyph, ink))
+                x += _ACCOUNT_ICON_PX + _ACCOUNT_ICON_GAP
+            width = fm.horizontalAdvance(text)
+            painter.drawText(QRectF(x, rect.top(), width + 2, rect.height()),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+            x += width
 
     def usage_rect(self) -> QRectF | None:
         """信息槽「今日用量」数字的可点区域（左右各延 4px，整条胶囊高度）；信息槽不显示用量时返回 None。"""
@@ -778,11 +905,13 @@ class DynamicIsland(QWidget):
                 return True
         return super().event(event)
 
-    def set_usage_info(self, text: str, detail: str = "") -> None:
-        """信息槽「今日用量」的文案（「今日 2.38M」）与悬停说明（各类 token 的明细）。"""
+    def set_usage_info(self, text: str, detail: str = "", segments=None) -> None:
+        """信息槽用量的文案（「2.38M」/「Win 2.38M · WSL 1.10M」）、悬停说明（各类 token 的明细）与
+        分账号的分段 ``[(账号键, 短名, 数字), ...]``（Metro 下按账号画记号；一个账号时为空）。"""
         text = str(text or t("island.usage.placeholder"))
-        changed = text != self._usage_text
-        self._usage_text, self._usage_detail = text, str(detail or "")
+        segments = tuple((str(key), str(label), str(tokens)) for key, label, tokens in (segments or ()))
+        changed = (text, segments) != (self._usage_text, self._usage_segments)
+        self._usage_text, self._usage_detail, self._usage_segments = text, str(detail or ""), segments
         self._sync_tooltip()
         if changed and self._info_mode() == "usage_today":
             self._refresh()
@@ -1946,8 +2075,11 @@ class DynamicIsland(QWidget):
                 painter.setPen(QColor(255, 255, 255))
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._icon_text())
         elif key == "usage":
-            painter.setPen(ink)
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._info_text())
+            if self.usage_segment_glyphs():
+                self._paint_usage_segments(painter, rect, ink)
+            else:
+                painter.setPen(ink)
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._info_text())
         elif key == "link":
             self._paint_link_icon(painter, cx - _LINK_ICON_W / 2.0, cy - _LINK_ICON_H / 2.0)
         elif key == "briefing":
@@ -1969,7 +2101,8 @@ class DynamicIsland(QWidget):
         items, _width = self._metro_layout()
         dpr = self.devicePixelRatioF()
         key = ("metro", tuple((k, kind, rect.getRect()) for k, kind, rect in items), self._metro_hover,
-               self._character_name(), self._info_text(), tuple(self._session_counts), self._api_state,
+               self._character_name(), self._info_text(), self._usage_segments, tuple(self._session_counts),
+               self._api_state,
                self._briefing_state, self._personal_state, self._notification_count, tuple(sorted(tokens.items())),
                self._accent_color().name(), self._icon_text(), self.font().toString(), dpr, self.width(),
                self._icon_pixmap_token)
@@ -2078,6 +2211,7 @@ class DynamicIsland(QWidget):
         隐藏态零定时器空转。"""
         super().hideEvent(event)
         self._info_timer.stop()
+        self._topmost_watch.stop()
         self._anim_timer.stop()
         self._dock_back_timer.stop()
         self._card_collapse_timer.stop()
@@ -2088,6 +2222,7 @@ class DynamicIsland(QWidget):
         super().showEvent(event)
         self._finish_animations()
         self._info_timer.start()
+        self._topmost_watch.start()
         self._refresh()
         # 原生窗口此刻已就绪；再延迟一拍重申一次 topmost——show 期间 Qt 还在
         # 收尾窗口排序，它可能覆盖同步那次（口径同 legacy window.py showEvent）

@@ -40,7 +40,7 @@ def _spawn_thread(target: Callable[[], None]) -> None:
 class ClaudeUsageMonitor(QObject):
     """今天用了多少 token：``usage_changed(信息槽文案, 悬停说明)``。"""
 
-    usage_changed = Signal(str, str)
+    usage_changed = Signal(str, str, object)    # 文案, 悬停说明, 分账号的分段 [(键, 短名, 数字)]
     _measured = Signal(int, object)         # worker 线程 → GUI 线程（跨线程自动排队）
 
     INTERVAL_MS = 60_000
@@ -107,7 +107,8 @@ class ClaudeUsageMonitor(QObject):
         if isinstance(totals, claude_usage.UsageTotals):        # 只给一份合计：就是本机那个账号
             totals = [claude_usage.AccountUsage(claude_usage.LOCAL_ACCOUNT, totals)]
         accounts = list(totals)
-        announced = (claude_usage.headline(accounts), claude_usage.detail(accounts))
+        announced = (claude_usage.headline(accounts), claude_usage.detail(accounts),
+                     claude_usage.headline_segments(accounts))
         if announced != self._last:
             self._last = announced
             self.usage_changed.emit(*announced)
