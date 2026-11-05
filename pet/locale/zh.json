@@ -448,7 +448,7 @@
   "settings.dlg.animation": "动画",
   "settings.dlg.island_becomes_static_collider_fish": "岛注册为静态碰撞体：肥鱼被甩到岛上会弹开，岛原地果冻摆动。岛的位置不会被撞动。",
   "settings.dlg.jelly_wall_collides": "果冻墙（参与碰撞）",
-  "settings.dlg.drag_any_screen_edge_top": "拖到屏幕任意边缘（上下左右）收成细条，鼠标靠近自动滑出；顶部被占时可停靠侧边。",
+  "settings.dlg.drag_any_screen_edge_top": "拖到屏幕任意边缘（上下左右）收成细条，鼠标靠近自动滑出；任务栏那一侧不算边缘，岛可以放在任务栏上面。",
   "settings.dlg.half_hide_at_edge": "靠边半隐藏",
   "settings.dlg.jelly_bounce_when_ai_reply": "AI 回复到达、余额刷新时果冻弹跳提示。静止时零额外开销。",
   "settings.dlg.event_animation": "事件动效",

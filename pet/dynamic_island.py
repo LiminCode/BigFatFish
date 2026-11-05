@@ -40,6 +40,10 @@ _CAPSULE_HEIGHT = 44
 _CAPSULE_INSET = 6  # 胶囊绘制内缩：给果冻形变/悬停放大/踢动留出窗口内余量
 _EDGE_MARGIN = 16
 _DOCK_THRESHOLD = 40
+# 工作区某一边比物理屏边向内缩进超过这么多像素，就当这一边被任务栏 /
+# 系统面板占住（Windows 任务栏 ≥ 40、macOS 菜单栏 24、MyDockFinder ≥ 30）；
+# 1~2px 的误差不算，免得自动隐藏任务栏的保留带夺走一条边
+_PANEL_MIN_INSET = 8
 _STRIP_THICKNESS = 16
 _STRIP_SIDE = 64  # 左右停靠时竖条的长度
 _CARD_WIDTH = 340
@@ -188,12 +192,34 @@ def ease_out_cubic(t: float) -> float:
     return 1.0 - (1.0 - t) ** 3
 
 
+def dockable_edges(available: QRect, screen_rect: QRect | None,
+                   min_inset: int = _PANEL_MIN_INSET) -> frozenset[str]:
+    """可停靠的边：工作区边与物理屏边重合的那几边。
+
+    任务栏 / 系统面板把工作区从某一边顶进来，那条工作区边就不是屏幕边缘——
+    岛收成细条贴在任务栏上沿没有意义，用户要的是把岛**放在任务栏上面**。
+    ``screen_rect`` 为 None（拿不到物理屏几何）时四边都算，保持旧行为。
+    """
+    if screen_rect is None:
+        return frozenset(_DOCK_EDGES[1:])
+    insets = {
+        "top": available.top() - screen_rect.top(),
+        "bottom": screen_rect.bottom() - available.bottom(),
+        "left": available.left() - screen_rect.left(),
+        "right": screen_rect.right() - available.right(),
+    }
+    return frozenset(edge for edge, inset in insets.items() if inset < min_inset)
+
+
 def dock_edge_for(
     rect: QRect, available: QRect, threshold: int = _DOCK_THRESHOLD,
+    edges: frozenset[str] | None = None,
 ) -> str:
     """按窗口矩形到屏幕可用区四边的距离判定停靠边，都不近则 "none"。
 
     四边等权、取最近者——顶部被系统栏/MyDockFinder 占用时用户可靠左右下。
+    ``edges`` 限定参与判定的边（``dockable_edges`` 的结果）：被任务栏占住
+    的边不参与，岛贴着它松手就按"不停靠"落位。None = 四边都参与。
     """
     distances = {
         "top": abs(rect.top() - available.top()),
@@ -201,6 +227,10 @@ def dock_edge_for(
         "left": abs(rect.left() - available.left()),
         "right": abs(available.right() - rect.right()),
     }
+    if edges is not None:
+        distances = {edge: d for edge, d in distances.items() if edge in edges}
+    if not distances:
+        return "none"
     edge, distance = min(distances.items(), key=lambda item: item[1])
     return edge if distance <= threshold else "none"
 
@@ -458,6 +488,13 @@ class DynamicIsland(QWidget):
 
     def _edge_dock_enabled(self) -> bool:
         return bool(self._cfg.get("edge_dock", True))
+
+    @staticmethod
+    def _dockable_edges(screen) -> frozenset[str]:
+        """当前屏上可停靠的边（任务栏 / 系统面板占住的那一侧除外）。"""
+        if screen is None:
+            return dockable_edges(QRect(), None)
+        return dockable_edges(screen.availableGeometry(), screen.geometry())
 
     def _opacity(self) -> float:
         """背景不透明度倍率（0.4~1.0），设置页可调；非法值回退 1.0。"""
@@ -1628,6 +1665,18 @@ class DynamicIsland(QWidget):
         self._update_size()
         screen = self._current_screen()
         available = screen.availableGeometry() if screen is not None else None
+        stale_edge = self.dock_edge
+        if stale_edge != "none" and stale_edge not in self._dockable_edges(screen):
+            # 存着的停靠边落在任务栏 / 系统面板占住的那一侧（本修法之前存下的，
+            # 或任务栏换了边 / 岛换了屏）：按不停靠复位并落盘，否则岛一启动就
+            # 收成细条贴在任务栏上沿
+            logger.info("灵动岛存储的停靠边 %s 被任务栏/系统面板占住，复位为不停靠",
+                        stale_edge)
+            self._save_dock_edge("none")
+            if self._mode == "docked":
+                self._mode = "normal"
+                self._hover_peek = False
+                self._apply_fixed_size()
         x = self._cfg.get("x")
         y = self._cfg.get("y")
         if isinstance(x, (int, float)) and isinstance(y, (int, float)):
@@ -2354,17 +2403,20 @@ class DynamicIsland(QWidget):
                 self.move(x, y)
             edge = "none"
             if available is not None and self._edge_dock_enabled():
-                edge = dock_edge_for(self.geometry(), available)
+                # 任务栏 / 系统面板占住的那一边不参与：岛贴着任务栏上沿松手
+                # 就停在那儿当完整胶囊，而不是收成细条
+                edges = self._dockable_edges(screen)
+                edge = dock_edge_for(self.geometry(), available, edges=edges)
                 rect = self.geometry()
                 logger.info(
                     "灵动岛拖拽落点 (%d,%d)：距四边 top=%d bottom=%d left=%d right=%d"
-                    "（阈值 %d）→ dock=%s",
+                    "（阈值 %d，可停靠 %s）→ dock=%s",
                     rect.x(), rect.y(),
                     abs(rect.top() - available.top()),
                     abs(available.bottom() - rect.bottom()),
                     abs(rect.left() - available.left()),
                     abs(available.right() - rect.right()),
-                    _DOCK_THRESHOLD, edge)
+                    _DOCK_THRESHOLD, "/".join(sorted(edges)) or "-", edge)
             self._save_dock_edge(edge)
             self._save_position()
             if edge != "none":
