@@ -154,7 +154,7 @@ DELL S2721DGF  geometry=(6000, -207, 1152, 2048) available=(6000, -207, 1152, 20
 | 断言有效性 | 临时把 `_dockable_edges` 改回"四边都算"再跑新文件 | 3 failed（三个松手 / 启动用例）/ 3 passed（纯函数），恢复后 0 处残留 |
 | 相关族 | `pytest -q tests/test_island_collision.py tests/test_island_bridge_velocity.py tests/test_island_chat.py tests/test_architecture.py tests/test_desktop_pet_features.py tests/test_pr_report_discipline.py tests/test_i18n.py tests/test_language_reload.py` | 2 failed：`test_image_directory_picker_opens_right_drawer_with_three_column_masonry`（基线，路径 > 260）、`test_modern_context_menu_has_compact_semantic_groups`（在未改动的 main 检出 `390af73e` 上同样失败，与本改动无关） |
 | 岛测试族并发 3 份 | 三份 `pytest` 同时跑同一组 38 例 | 38 passed × 3（1.35 / 1.37 / 1.38 s） |
-| 全量 | `python -m pytest -q`（PowerShell 起，`APPDATA` 指到临时目录） | 见下文「全量结果」 |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（PowerShell 起，`APPDATA` 指到临时目录） | **6 failed, 5941 passed, 14 skipped in 497.87s**。6 个都不是本分支的：4 个环境基线（`test_image_directory_picker_opens_right_drawer…`、`test_festival_id_guard_survives_optimize`、`test_real_second_process_refused_on_overlay_topology`、`test_capture_window_rect_coordinates_and_clamping`）+ `test_host_icons_are_warmed_at_the_cards_size`（main 上原样失败）+ `test_modern_context_menu_has_compact_semantic_groups`（main `390af73e` 上同样红） |
 
 ## 七、已知限制与后续
 
