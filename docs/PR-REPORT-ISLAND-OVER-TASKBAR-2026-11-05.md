@@ -104,7 +104,7 @@ final rect (2479, 1545, 598, 55) -> overlaps taskbar: True | pushed back: False
 | 聚焦（红） | `pytest -q tests/test_dynamic_island_panel_edges.py`（换回 main 的 `dynamic_island.py`） | 3 failed（压任务栏 / 左侧任务栏 / 旧停靠边复位）, 3 passed |
 | 聚焦 + 相关族 | `pytest -q tests/test_dynamic_island_panel_edges.py tests/test_dynamic_island_revamp.py tests/test_dynamic_island_multiscreen_release.py tests/test_island_collision.py tests/test_island_bridge_velocity.py tests/test_usage_dashboard.py tests/test_island_info_slot.py tests/test_architecture.py` | 123 passed |
 | 合并运行分支 | `island-run`（本分支 + #22 + #21）跑 `test_dynamic_island_panel_edges / test_island_usage_polish / test_pr_report_discipline` + ruff | 147 passed，ruff 干净 |
-| 全量 | `python -m pytest -q -p no:cacheprovider`（PowerShell 起，`APPDATA` 指到临时目录） | FULLSUITE_ROW |
+| 全量 | `python -m pytest -q -p no:cacheprovider`（PowerShell 起，`APPDATA` 指到临时目录） | **6 failed, 5943 passed, 14 skipped in 597.85s**。6 个都不是本分支的：4 个环境基线 + `test_host_icons_are_warmed_at_the_cards_size`（main 上原样失败）+ `test_modern_context_menu_has_compact_semantic_groups`（main 上同样红） |
 
 ## 七、已知限制与后续
 
