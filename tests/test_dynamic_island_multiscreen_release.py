@@ -51,6 +51,10 @@ class _FakeScreen:
     def availableGeometry(self) -> QRect:
         return QRect(self._available)
 
+    def geometry(self) -> QRect:
+        # 假屏没有任务栏：物理屏 = 工作区（停靠判定还要比这两块几何）
+        return QRect(self._available)
+
     def name(self) -> str:
         return self._name
 
