@@ -432,3 +432,97 @@ def _fg_fullscreen_win32() -> bool:
         return _fg_fullscreen_probe()[0]
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------- 置顶看门狗（灵动岛）
+_GW_HWNDPREV = 3
+_DWMWA_CLOAKED = 14
+#: 系统外壳的前台面（开始菜单 / 任务栏及其弹出层 / 通知中心）：它们在前台时岛不跟它们抢 topmost 带
+_SHELL_SURFACE_CLASSES = frozenset({
+    "Windows.UI.Core.CoreWindow", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "XamlExplorerHostIslandWindow",
+    "TopLevelWindowForOverflowXamlIsland", "Xaml_WindowedPopupClass", "ForegroundStaging",
+})
+_Z_USER32 = None
+
+
+def _z_user32():
+    """自己的一份 user32（不改进程共享那份的 argtypes / restype）：64 位下 HWND 是指针，按 int 收会截断。"""
+    global _Z_USER32
+    if _Z_USER32 is None:
+        u32 = ctypes.WinDLL("user32", use_last_error=True)
+        u32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+        u32.GetWindow.restype = wintypes.HWND
+        u32.GetForegroundWindow.restype = wintypes.HWND
+        u32.IsWindowVisible.argtypes = [wintypes.HWND]
+        u32.IsWindowVisible.restype = wintypes.BOOL
+        u32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        u32.GetWindowRect.restype = wintypes.BOOL
+        u32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        u32.GetClassNameW.restype = ctypes.c_int
+        u32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        u32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        _Z_USER32 = u32
+    return _Z_USER32
+
+
+def _window_class(hwnd: int) -> str:
+    buf = ctypes.create_unicode_buffer(256)
+    _z_user32().GetClassNameW(hwnd, buf, 256)
+    return buf.value
+
+
+def _window_info(hwnd: int) -> tuple[bool, bool, QRect, str, bool]:
+    """(可见, 被 DWM 隐藏(cloaked), 屏幕矩形(物理像素), 类名, 是不是本进程的窗口)。"""
+    u32 = _z_user32()
+    visible = bool(u32.IsWindowVisible(hwnd))
+    owner = wintypes.DWORD(0)
+    u32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+    cloaked = ctypes.c_int(0)
+    try:
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(wintypes.HWND(hwnd), _DWMWA_CLOAKED, ctypes.byref(cloaked),
+                                                   ctypes.sizeof(cloaked))
+    except Exception:
+        pass
+    rect = wintypes.RECT()
+    u32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return (visible, bool(cloaked.value),
+            QRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top), _window_class(hwnd),
+            owner.value == os.getpid())
+
+
+def _prev_window(hwnd: int) -> int:
+    return int(_z_user32().GetWindow(hwnd, _GW_HWNDPREV) or 0)
+
+
+def occluder_above(hwnd: int, rect: QRect | None = None, *, prev=None, info=None) -> str:
+    """z 序里压在 ``hwnd`` 上面、可见、没被 DWM 隐藏、又和它相交的第一个窗口的类名；没有返回 ""。
+
+    ``rect`` 缺省取 ``hwnd`` 自己的屏幕矩形；``prev`` / ``info`` 可注入（测试用假 z 序）。
+    岛在 topmost 带里，它上面的都是 topmost 窗，通常只有几个，一轮几十微秒。
+    **本进程的窗口不算盖住**：通知卡片有自己的看门狗、仪表盘说好了盖在岛上、气泡 / 菜单本来就该在岛上面——
+    把它们算进去，两个看门狗会每 2 s 互相压一次（2026-11-05 实机：岛正被自家的通知卡片压着）。
+    """
+    prev = prev or _prev_window
+    info = info or _window_info
+    if rect is None:
+        rect = info(hwnd)[2]
+    above = prev(hwnd)
+    while above:
+        visible, cloaked, other, klass, own = info(above)
+        if visible and not cloaked and not own and other.intersects(rect):
+            return klass or "?"
+        above = prev(above)
+    return ""
+
+
+def topmost_hold_off() -> bool:
+    """看门狗该不该歇着：真全屏（D3D / 演示）或系统外壳的面在前台。非 Windows 恒 False。"""
+    if os.name != "nt":
+        return False
+    try:
+        if _fs_user_busy_state()[0]:
+            return True
+        fg = _z_user32().GetForegroundWindow()
+        return bool(fg) and _window_class(int(fg)) in _SHELL_SURFACE_CLASSES
+    except Exception:
+        return False

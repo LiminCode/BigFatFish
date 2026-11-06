@@ -313,11 +313,18 @@ def _tokens_text(account: AccountUsage) -> str:
 
 
 def headline(accounts: list[AccountUsage]) -> str:
-    """信息槽文案：一个账号「今日 2.38M」（和从前一样）；两个「今日 Win 2.38M · WSL 1.10M」。"""
+    """信息槽文案：一个账号「2.38M」；两个「Win 2.38M · WSL 1.10M」（不再写「今日」，悬停说明里有）。"""
     if len(accounts) == 1 and accounts[0].totals is not None:
         return accounts[0].totals.headline
     items = _JOINER.join(t("usage.account_item", label=a.label, tokens=_tokens_text(a)) for a in accounts)
     return t("usage.headline.multi", accounts=items)
+
+
+def headline_segments(accounts: list[AccountUsage]) -> list[tuple[str, str, str]]:
+    """信息槽按账号画记号用的分段：[(账号键, 短名, 数字)]；一个账号时为空（那就是一个数，没有图标可配）。"""
+    if len(accounts) == 1:
+        return []
+    return [(a.key, a.label, _tokens_text(a)) for a in accounts]
 
 
 def detail(accounts: list[AccountUsage]) -> str:
