@@ -36,7 +36,7 @@ def _island(tmp_path, style: str = "metro", theme: str = "dark") -> DynamicIslan
     island.set_session_counts([("working", "1 工作中")])
     island.set_briefing_state("idle")
     island.set_personal_state("unread")
-    island.set_notification_count(2)
+    island.set_message_count(2)
     island.show()
     app.processEvents()
     return island
@@ -101,7 +101,7 @@ def test_clickable_blocks_keep_their_buttons(tmp_path):
     try:
         blocks = island.metro_blocks()
         for name, rect in (("briefing", island.briefing_button_rect()), ("personal", island.personal_button_rect()),
-                           ("bell", island.notification_button_rect()), ("usage", island.usage_rect())):
+                           ("bell", island.message_button_rect()), ("usage", island.usage_rect())):
             assert rect.contains(blocks[name].center()), name
             assert not rect.intersects(blocks["icon"]), "可点区不跨到别的磁贴上"
     finally:
@@ -158,7 +158,7 @@ def test_other_styles_have_no_blocks(tmp_path):
     island = _island(tmp_path, style="dark")
     try:
         assert island.metro_blocks() == {}
-        bell = island.notification_button_rect()
+        bell = island.message_button_rect()
         _move(island, bell.center())
         assert island.metro_hover() is None
     finally:

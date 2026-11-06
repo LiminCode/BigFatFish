@@ -85,19 +85,24 @@ class MultiWindowProxy:
         return [w for w in self._windows() if getattr(w, "isVisible", lambda: True)()]
 
     # ---- 呈现扇出（只发给可见窗）----
-    def show_bubble(self, text: str, duration_ms: int = 4500) -> None:
+    def show_bubble(self, text: str, duration_ms: int = 4500, **kwargs) -> None:
         # 联动气泡只发首个可见窗（与 show_alert 同策）：多窗同弹一条过程汇报
         # 既吵又重复，单窗展示即可；隐藏窗不弹的语义保持不变。
+        # ``kwargs``（如消息记录用的 origin）原样转交；窄签名的窗不认就不带。
         for w in self._visible_windows():
             if hasattr(w, "show_bubble"):
-                w.show_bubble(text, duration_ms=duration_ms)
+                try:
+                    w.show_bubble(text, duration_ms=duration_ms, **kwargs)
+                except TypeError:
+                    w.show_bubble(text, duration_ms=duration_ms)
                 return
 
     # ---- 提醒扇出（交互式提醒：审批/问题/控制级 Watchdog）----
     def show_alert(self, text: str, *, subtitle: str = "", duration_ms: int = 0,
                    buttons: list | None = None, sticky: bool = True,
                    alert_id: str = "", priority: int = 3,
-                   alert_type: str = "watchdog", metadata: dict | None = None) -> None:
+                   alert_type: str = "watchdog", metadata: dict | None = None,
+                   origin: dict | None = None) -> None:
         """把交互式提醒入队到**首个可见窗**（多窗只弹一处，避免每只肥鱼重复轰炸）。
 
         ``agent_link`` 会先 ``hasattr(win, "show_alert")`` 决定是否走队列提醒；本方法
@@ -108,9 +113,12 @@ class MultiWindowProxy:
         for w in self._visible_windows():
             method = getattr(w, "show_alert", None)
             if callable(method):
-                method(text, subtitle=subtitle, duration_ms=duration_ms,
-                       buttons=buttons, sticky=sticky, alert_id=alert_id,
-                       priority=priority, alert_type=alert_type, metadata=metadata)
+                kwargs = dict(subtitle=subtitle, duration_ms=duration_ms, buttons=buttons, sticky=sticky,
+                              alert_id=alert_id, priority=priority, alert_type=alert_type, metadata=metadata)
+                try:
+                    method(text, origin=origin, **kwargs)
+                except TypeError:
+                    method(text, **kwargs)
                 return
         # 可见窗都不支持 show_alert：退化到首个可见窗的 show_bubble
         for w in self._visible_windows():

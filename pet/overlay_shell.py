@@ -1079,6 +1079,9 @@ class OverlayShell(QObject):
         self._bubble_busy_until = 0.0
         self._bubble_suppressed = False
         self._last_sticky_restore = 0.0
+        # 消息记录（AppShell 注入）：show_bubble / show_alert 进来的每条通知都先记一笔，
+        # 再管显不显示——错过的气泡正是记录最有用的那部分（见 pet/message_log.py）。
+        self.message_sink = None
         # 飞行中的 sprite 集合（B1）：被撞飞的那只禁气泡，其余宠不受影响。
         # 由行为控制器的飞行边沿回调维护（见 _on_sprite_flight_changed），
         # **不**复用 _bubble_suppressed——那个位同时是 proactive/联动节流信号
@@ -1823,11 +1826,26 @@ class OverlayShell(QObject):
         window_alerts.restore_after_suppression(self)
 
     # ---- 气泡呈现（PetWindow.show_bubble / hold_bubble 等价）----
+    def _note_message(self, text, subtitle, kind: str, origin) -> None:
+        """把一条通知气泡交给消息记录（有注入才记；记录出错不影响冒泡）。"""
+        sink = self.message_sink
+        if sink is None or (isinstance(origin, dict) and origin.get("log") is False):
+            return
+        try:
+            sink(str(text), str(subtitle or ""), kind, origin if isinstance(origin, dict) else None)
+        except Exception:
+            logging.exception("overlay: 消息记录失败")
+
     def show_bubble(self, text: str, duration_ms: int = 3200,
                     subtitle: str | None = None, *, sticky: bool = False,
                     buttons: list | None = None, title_first: bool = False,
-                    width_locked: bool = False, **_ignored) -> None:
-        """向主 sprite 头顶冒泡（window.py:3850-3886 的 sprite 等价语义）。"""
+                    width_locked: bool = False, origin: dict | None = None, **_ignored) -> None:
+        """向主 sprite 头顶冒泡（window.py:3850-3886 的 sprite 等价语义）。
+
+        ``origin``（``{"agent", "session_id", "name"}``）只给消息记录用：说明这条来自哪个
+        Claude Code 会话；不传就记成大肥鱼自己的消息。
+        """
+        self._note_message(text, subtitle, "bubble", origin)
         if not self.isVisible() or self._bubble_blocked():
             return
         if self._speech_bubble is None:
@@ -1879,14 +1897,16 @@ class OverlayShell(QObject):
     def show_alert(self, text: str, *, subtitle: str = "", duration_ms: int = 0,
                    buttons: list | None = None, sticky: bool = True,
                    alert_id: str = "", priority: int = 3,
-                   alert_type: str = "watchdog", metadata: dict | None = None) -> None:
-        """提醒入队（审批/问题/硬失败/卡住提醒；一次只展示一个）。"""
+                   alert_type: str = "watchdog", metadata: dict | None = None,
+                   origin: dict | None = None) -> None:
+        """提醒入队（审批/问题/硬失败/卡住提醒；一次只展示一个）。``origin`` 见 ``show_bubble``。"""
+        self._note_message(text, subtitle, "alert", origin)
         if self._speech_bubble is None:
             return
         window_alerts.show_alert(
             self, text, subtitle=subtitle, duration_ms=duration_ms,
             buttons=buttons, sticky=sticky, alert_id=alert_id,
-            priority=priority, alert_type=alert_type, metadata=metadata)
+            priority=priority, alert_type=alert_type, metadata=metadata, origin=origin)
 
     def resolve_alert(self, alert_id: str) -> None:
         """按 alert_id 精确收起某条提醒（并发审批各自定位，不误关他人）。"""
