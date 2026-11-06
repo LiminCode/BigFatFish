@@ -3709,7 +3709,7 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
 
     def show_bubble(self, text: str, duration_ms: int = 3200, subtitle: str | None = None,
                     *, sticky: bool = False, buttons: list[tuple[str, object]] | None = None,
-                    title_first: bool = False, width_locked: bool = False) -> None:
+                    title_first: bool = False, width_locked: bool = False, **_ignored) -> None:
         """向肥鱼头顶冒泡提示（app 层反馈用，非侵入）。重要气泡会占用气泡位。
 
         ``sticky=True`` 显示「一直挂到主动关闭」的气泡（审批等）：不启动自动

@@ -131,10 +131,10 @@ class _FakeIsland:
     def set_personal_state(self, state):
         pass
 
-    def set_notification_count(self, count):
+    def set_message_count(self, count):
         pass
 
-    def set_notifications(self, rows, **kwargs):
+    def set_messages(self, rows, **kwargs):
         pass
 
 

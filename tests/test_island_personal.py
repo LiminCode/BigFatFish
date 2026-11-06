@@ -12,7 +12,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
-from tests.test_island_notifications import _island
+from tests.test_island_messages import _island
 
 app = QApplication.instance() or QApplication([])
 
@@ -32,13 +32,13 @@ def test_the_person_icon_sits_between_briefing_and_bell_and_takes_its_own_slot(t
         assert island._capsule_width() > base and island.personal_tooltip() == "个人助理"
         alone = island.personal_button_rect()
         island.set_briefing_state("idle")
-        island.set_notification_count(0)
-        brief, person, bell = island.briefing_button_rect(), island.personal_button_rect(), island.notification_button_rect()
+        island.set_message_count(0)
+        brief, person, bell = island.briefing_button_rect(), island.personal_button_rect(), island.message_button_rect()
         assert brief.right() <= person.left() < person.right() <= bell.left(), "简报 · 个人 · 铃铛，从左到右，可点区不重叠"
         assert person.left() > alone.left(), "简报出现后往右挪"
         island.set_personal_state("hidden")
         island.set_briefing_state("hidden")
-        island.set_notification_count(None)
+        island.set_message_count(None)
         assert island.personal_button_rect() is None and island._capsule_width() == base
     finally:
         island.deleteLater()

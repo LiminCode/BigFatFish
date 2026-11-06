@@ -134,18 +134,22 @@ def restore_after_suppression(host) -> None:
 
 
 def redirect_hidden_bubble(host, text: str, *, subtitle: str = "",
-                           duration_ms: int = 3200) -> bool:
+                           duration_ms: int = 3200, origin: dict | None = None) -> bool:
     """肥鱼隐藏时的气泡改道：交给注入的灵动岛反馈面（AppShell 经
     ``hidden_bubble_redirect`` 注入；island_chat 让岛在肥鱼隐藏时代理交互面）。
 
     返回是否已改道。无注入 / 岛不可用 / 注入方拒绝时返回 False，调用方
     维持原丢弃行为。仅覆盖非交互反馈气泡；审批/问题等带按钮的交互气泡
-    需要肥鱼可见（岛气泡暂不支持按钮），不走本改道。"""
+    需要肥鱼可见（岛气泡暂不支持按钮），不走本改道。``origin`` 原样交给注入方
+    （消息记录据此写明来自哪个会话；旧注入方不认这个参数就不带）。"""
     redirect = getattr(host, "hidden_bubble_redirect", None)
     if not callable(redirect):
         return False
     try:
-        return bool(redirect(str(text), subtitle=str(subtitle or ""), duration_ms=int(duration_ms)))
+        try:
+            return bool(redirect(str(text), subtitle=str(subtitle or ""), duration_ms=int(duration_ms), origin=origin))
+        except TypeError:
+            return bool(redirect(str(text), subtitle=str(subtitle or ""), duration_ms=int(duration_ms)))
     except Exception:
         logging.getLogger("big-fat-fish").exception("隐藏期气泡改道到灵动岛失败")
         return False
@@ -154,13 +158,16 @@ def redirect_hidden_bubble(host, text: str, *, subtitle: str = "",
 def show_alert(host, text: str, *, subtitle: str = "", duration_ms: int = 0,
                buttons: list[tuple[str, object]] | None = None,
                sticky: bool = True, alert_id: str = "", priority: int = 3,
-               alert_type: str = "watchdog", metadata: dict | None = None) -> None:
-    """提醒消息队列：需要用户注意的提醒统一入队，一次只展示一个。"""
+               alert_type: str = "watchdog", metadata: dict | None = None,
+               origin: dict | None = None) -> None:
+    """提醒消息队列：需要用户注意的提醒统一入队，一次只展示一个。
+
+    ``origin`` 只在隐藏期改道时传给岛（消息记录用），队列本身不看它。"""
     if not host.isVisible():
         # 肥鱼隐藏：非交互提醒（无按钮）改道灵动岛反馈面；交互气泡与
         # 设置页抑制期维持原丢弃行为。
         if not buttons and not bubble_blocked(host) and redirect_hidden_bubble(
-                host, text, subtitle=subtitle, duration_ms=duration_ms or 3200):
+                host, text, subtitle=subtitle, duration_ms=duration_ms or 3200, origin=origin):
             return
         return
     if bubble_blocked(host) and not alert_survives_suppression(

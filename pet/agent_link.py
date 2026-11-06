@@ -2770,6 +2770,9 @@ class AgentLinkManager(QObject):
         # 会话元数据缓存：sessionId → { sessionName, projectName, agentName }
         # 走有界写入（缺陷 23：key 是外部会话 ID，此前只增不减）
         self._session_meta_cache: dict[str, dict] = {}
+        # 每个通道最近一条记录的 sessionId：聚合态气泡（开始 / 完成 / 需要看一眼）本身不带
+        # 会话，消息记录按「刚刚是谁的记录触发的」归到那个会话（见 _bubble_origin）。
+        self._last_session_id: dict[str, str] = {}
 
         for mon in self.monitors.values():
             mon.raw_record.connect(self._remember_dialogue_record)
@@ -3257,7 +3260,7 @@ class AgentLinkManager(QObject):
             self._show_link_bubble(
                 self._dialogue("agent.attention", "主人，Agent 这边需要你看一眼～",
                                agent_key="dsh", name=self.AGENT_NAMES["dsh"]),
-                important=True,
+                important=True, agent_key="dsh",
             )
 
     def _on_dsh_converged_user_message(self, session_id: str, text: str) -> None:
@@ -3353,11 +3356,11 @@ class AgentLinkManager(QObject):
             # 避免「需要看一眼」和「完成通知」双气泡；独立出现的才立即提醒
             if prev_raw not in self._BUSY_STATES:
                 name = self.AGENT_NAMES.get(agent_key, agent_key)
-                self._show_link_bubble(self._dialogue("agent.attention", "主人，Agent 这边需要你看一眼～", agent_key=agent_key, name=name), important=True)
+                self._show_link_bubble(self._dialogue("agent.attention", "主人，Agent 这边需要你看一眼～", agent_key=agent_key, name=name), important=True, agent_key=agent_key)
         elif state == "error":
             if prev_raw not in self._BUSY_STATES:
                 name = self.AGENT_NAMES.get(agent_key, agent_key)
-                self._show_link_bubble(self._dialogue("agent.error", "Agent 执行好像遇到报错了…", agent_key=agent_key, name=name), important=True)
+                self._show_link_bubble(self._dialogue("agent.error", "Agent 执行好像遇到报错了…", agent_key=agent_key, name=name), important=True, agent_key=agent_key)
         elif state in ("sleeping", "idle"):
             # 回到待机：一次性动作播完自然回，待机/移动中立即回（隐藏中不切）
             if not hidden:
@@ -3461,8 +3464,29 @@ class AgentLinkManager(QObject):
         context.setdefault("agent", agent_key)
         context.setdefault("agent_name", self.agent_names.get(agent_key, agent_key))
         self._dialogue_context = context
+        session_id = str(record.get("sessionId") or "").strip()
+        if session_id:
+            self._last_session_id[agent_key] = session_id
         if str(context.get("tool") or "").strip() or str(context.get("event") or "") == "tool/call":
             self._last_tool_records[agent_key] = context
+
+    def _bubble_origin(self, agent_key: str, session_id: str = "") -> dict | None:
+        """消息记录用的来源：这条气泡属于哪个通道 / 会话（``{"agent", "session_id", "name"}``）。
+
+        ``session_id`` 给了就用它；没给就取该通道最近一条记录的会话（触发这条气泡的那条）。
+        没有 agent_key（全局场景）→ None，记成大肥鱼自己的消息。
+        """
+        if not agent_key:
+            return None
+        session_id = str(session_id or "").strip() or self._last_session_id.get(agent_key, "")
+        return {"agent": agent_key, "session_id": session_id, "name": self.agent_names.get(agent_key, agent_key)}
+
+    def _win_show_bubble(self, text: str, duration_ms: int, origin: dict | None) -> None:
+        """``win.show_bubble`` 带来源；旧桩 / 窄签名的窗不认 ``origin`` 就不带。"""
+        try:
+            self.win.show_bubble(text, duration_ms=duration_ms, origin=origin)
+        except TypeError:
+            self.win.show_bubble(text, duration_ms=duration_ms)
 
     def _dialogue(self, key: str, fallback: str, *, agent_key: str = "", **values) -> str:
         """Render an event with explicit aliases plus latest upstream fields.
@@ -3559,11 +3583,11 @@ class AgentLinkManager(QObject):
             return
         name = self.agent_names.get(agent_key, agent_key)
         if state == "thinking":
-            self._show_link_bubble(self._thinking_text(agent_key), important=False, duration_ms=3000)
+            self._show_link_bubble(self._thinking_text(agent_key), important=False, duration_ms=3000, agent_key=agent_key)
         else:
             self._show_link_bubble(
                 self._dialogue("start", f"{name} 开始干活啦～", agent_key=agent_key, name=name),
-                important=False, duration_ms=3000,
+                important=False, duration_ms=3000, agent_key=agent_key,
             )
 
     def _on_agent_activity(self, agent_key: str, tool: str, gen: int = 0) -> None:
@@ -3621,7 +3645,7 @@ class AgentLinkManager(QObject):
             self._dialogue(key, f"{name} {label}…", agent_key=agent_key, **values),
             self._ACTIVITY_TEXT_LIMIT,
         )
-        self._show_link_bubble(text, important=False, duration_ms=2600)
+        self._show_link_bubble(text, important=False, duration_ms=2600, agent_key=agent_key, record=False)
 
     def _on_approval_request(self, agent_key: str, payload: dict) -> None:
         """审批请求提醒：一直挂到审批结束的纯提示气泡（减法后无代点按钮）。
@@ -3949,6 +3973,7 @@ class AgentLinkManager(QObject):
         self._show_alert_compat(
             pending["text"], subtitle="", sticky=True,
             alert_id=pending.get("alert_id", ""), priority=0, alert_type=pending.get("kind", "approval"),
+            origin=self._bubble_origin(str(pending.get("agent_key") or ""), str(pending.get("session_id") or "")),
         )
 
     def _show_alert_compat(self, text: str, **kwargs) -> None:
@@ -3957,7 +3982,7 @@ class AgentLinkManager(QObject):
             self.win.show_alert(text, **kwargs)
         except TypeError:
             legacy = dict(kwargs)
-            for key in ("priority", "alert_type", "metadata"):
+            for key in ("priority", "alert_type", "metadata", "origin"):
                 legacy.pop(key, None)
             self.win.show_alert(text, **legacy)
 
@@ -3995,7 +4020,7 @@ class AgentLinkManager(QObject):
         self._show_link_bubble(
             self._dialogue("done.attention", f"{name} 那边停了，结果怎么样要主人自己看一眼哦",
                            agent_key=agent_key, name=name),
-            important=True,
+            important=True, agent_key=agent_key,
         )
 
     def _schedule_done_check(self, agent_key: str) -> None:
@@ -4062,7 +4087,7 @@ class AgentLinkManager(QObject):
             elif hasattr(self.win, "switch_clip") and getattr(self.win, "idles", None):
                 self.win.switch_clip(self.win.idles[0])
             self._last_applied[agent_key] = ("idle", now)
-        self._show_link_bubble(text, important=True)
+        self._show_link_bubble(text, important=True, agent_key=agent_key)
         self._cost_finish(agent_key)
 
     # ------------------------------------------------------------ 本轮消费
@@ -4199,13 +4224,18 @@ class AgentLinkManager(QObject):
         play_sound(path, volume=float(agent_cfg.get("sound_volume", 0.65)))
 
     def _show_link_bubble(self, text: str, *, important: bool, duration_ms: int = 4500,
-                          _retried: int = 0) -> None:
+                          _retried: int = 0, agent_key: str = "", record: bool = True) -> None:
         """联动气泡：提醒消息队列非空时一律让路（审批/问题/失败等常驻提醒优先）。
 
         无提醒队列时：普通气泡直接让路丢弃；重要气泡每 2.5s 重试至多 4 次
-        （约 10s 窗口），仍被占才放弃——主动识屏长答复可能占位 15-20s。"""
+        （约 10s 窗口），仍被占才放弃——主动识屏长答复可能占位 15-20s。
+        ``agent_key`` 只给消息记录定来源（哪个通道 / 会话）；``record=False`` 的不进消息记录
+        （过程汇报「正在读文件…」每次工具调用一条，记下来只会把记录淹掉）。"""
         if not hasattr(self.win, "show_bubble"):
             return
+        origin = self._bubble_origin(agent_key)
+        if not record:
+            origin = {**(origin or {}), "log": False}
         # 肥鱼隐藏时 show_bubble/show_alert 会静默丢弃：改道灵动岛反馈面
         # （AppShell 经 hidden_bubble_redirect 注入；无注入/岛不可用维持丢弃）。
         # 审批/问题等常驻提示气泡不经本函数（走 show_alert 队列），仍需肥鱼可见。
@@ -4213,7 +4243,7 @@ class AgentLinkManager(QObject):
         if callable(is_visible) and not is_visible():
             from . import window_alerts as _window_alerts
 
-            if _window_alerts.redirect_hidden_bubble(self.win, text, duration_ms=duration_ms):
+            if _window_alerts.redirect_hidden_bubble(self.win, text, duration_ms=duration_ms, origin=origin):
                 return
         # 提醒消息队列激活：任何其他弹窗（含重要气泡）都不覆盖提醒
         if getattr(self.win, "_alert_current", None) is not None or \
@@ -4232,9 +4262,9 @@ class AgentLinkManager(QObject):
                 return
             QTimer.singleShot(2500, self,
                               lambda t=text, n=_retried: self._show_link_bubble(
-                                  t, important=True, _retried=n + 1))
+                                  t, important=True, _retried=n + 1, agent_key=agent_key, record=record))
             return
-        self.win.show_bubble(text, duration_ms=duration_ms)
+        self._win_show_bubble(text, duration_ms, origin)
 
     # 阻塞交互兜底清理（approval / question / cordis 共用）。
     # 审批/问题等待期间 Agent 不会走到 turn/end（DSH 仍处于 running）；
@@ -4721,7 +4751,8 @@ class AgentLinkManager(QObject):
             text = self._dialogue("failure.tool", f"{name} 本轮运行失败——工具执行最终失败，需要检查或重新运行", name=name, **conditional)
         else:
             text = self._dialogue("failure.generic", f"{name} 本轮运行失败，需要检查或重新运行", name=name, **conditional)
+        origin = self._bubble_origin(agent_key, str(payload.get("sessionId") or ""))
         if hasattr(self.win, "show_alert"):
-            self.win.show_alert(text, duration_ms=self._FAIL_REMINDER_MS, sticky=False)
+            self._show_alert_compat(text, duration_ms=self._FAIL_REMINDER_MS, sticky=False, origin=origin)
         elif hasattr(self.win, "show_bubble"):
-            self.win.show_bubble(text, duration_ms=self._FAIL_REMINDER_MS)
+            self._win_show_bubble(text, self._FAIL_REMINDER_MS, origin)
