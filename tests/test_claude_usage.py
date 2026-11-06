@@ -83,10 +83,10 @@ def test_headline_counts_new_tokens_and_keeps_cache_reads_apart():
     """缓存读取是同一段上下文每一轮被重读一遍，量级是别的几十倍：算进去就只剩它了。"""
     totals = UsageTotals(input=848, output=561_677, cache_write=1_816_535, cache_read=188_072_546, messages=372)
     assert totals.tokens == 848 + 561_677 + 1_816_535
-    assert totals.headline == "今日 2.38M"
+    assert totals.headline == "2.38M"
     assert totals.detail == ("今日 Claude Code 用量 2.38M：输出 561.7K · 输入 848 · 缓存写入 1.82M"
                              "（另有缓存读取 188M，不计入）")
-    assert UsageTotals().headline == "今日 0"
+    assert UsageTotals().headline == "0"
 
 
 # ---------------------------------------------------------------- 统计
@@ -226,7 +226,7 @@ def test_the_two_accounts_are_counted_and_worded_apart(home):
     got = _accounts(home, lambda: [wsl]).refresh()
 
     assert [(a.key, a.label, a.totals.output) for a in got] == [("windows", "Win", 1000), ("wsl", "WSL", 300)]
-    assert headline(got) == "今日 Win 1.0K · WSL 305"
+    assert headline(got) == "Win 1.0K · WSL 305"
     assert detail(got).splitlines() == [
         "Win：1.0K（输出 1.0K · 输入 0 · 缓存写入 0；另有缓存读取 0，不计入）",
         "WSL：305（输出 300 · 输入 5 · 缓存写入 0；另有缓存读取 0，不计入）"]
@@ -236,7 +236,7 @@ def test_without_wsl_the_wording_is_the_old_single_number(home):
     _write(_projects(home) / "p" / "s.jsonl", [_reply("m1", output=2_380_000)])
     got = _accounts(home, lambda: None).refresh()
     assert [a.key for a in got] == ["windows"]
-    assert headline(got) == "今日 2.38M" and detail(got) == got[0].totals.detail
+    assert headline(got) == "2.38M" and detail(got) == got[0].totals.detail
 
 
 def test_an_unreachable_wsl_shows_dashes_then_recovers_and_keeps_todays_numbers(home):
@@ -246,7 +246,7 @@ def test_an_unreachable_wsl_shows_dashes_then_recovers_and_keeps_todays_numbers(
 
     got = accounts.refresh()
     assert got[1].totals is None
-    assert headline(got) == "今日 Win 0 · WSL --"
+    assert headline(got) == "Win 0 · WSL --"
     assert detail(got).splitlines()[1].startswith("WSL：读不到")
 
     _write(wsl / "q" / "s.jsonl", [_reply("w1", output=7)])
