@@ -1612,13 +1612,22 @@ class DynamicIsland(QWidget):
                 size = QSize(_STRIP_THICKNESS, _STRIP_SIDE)
         self.setFixedSize(size)
 
+    @staticmethod
+    def _placement_bounds(screen) -> QRect:
+        """岛可以摆在哪：整块物理屏幕，包括任务栏 / 系统面板占着的那一条。
+
+        岛是置顶窗，盖在任务栏上面是用户明确要的摆法（2026-11-05）；此前三处夹取都按工作区算，
+        拖进任务栏区域就被推回去。停靠判定仍按工作区（见 dockable_edges），两者不冲突。
+        """
+        return screen.geometry()
+
     def _clamp_rect(self, rect: QRect) -> QRect:
         screen = self._current_screen()
         if screen is None:
             return rect
-        available = screen.availableGeometry()
-        x = max(available.left(), min(rect.x(), available.right() - rect.width() + 1))
-        y = max(available.top(), min(rect.y(), available.bottom() - rect.height() + 1))
+        bounds = self._placement_bounds(screen)
+        x = max(bounds.left(), min(rect.x(), bounds.right() - rect.width() + 1))
+        y = max(bounds.top(), min(rect.y(), bounds.bottom() - rect.height() + 1))
         return QRect(QPoint(x, y), rect.size())
 
     def _target_rect(self) -> QRect:
@@ -1705,9 +1714,9 @@ class DynamicIsland(QWidget):
         screen = self._current_screen()
         if screen is None:
             return
-        available = screen.availableGeometry()
-        x = max(available.left(), min(self.x(), available.right() - self.width() + 1))
-        y = max(available.top(), min(self.y(), available.bottom() - self.height() + 1))
+        bounds = self._placement_bounds(screen)
+        x = max(bounds.left(), min(self.x(), bounds.right() - self.width() + 1))
+        y = max(bounds.top(), min(self.y(), bounds.bottom() - self.height() + 1))
         if (x, y) != (self.x(), self.y()):
             self.move(x, y)
             # 位置校正也要通知碰撞体重提交，否则碰撞体留在旧位置
@@ -2396,10 +2405,12 @@ class DynamicIsland(QWidget):
                 # 气泡，卡片就点不开了（2026-10-11 按用户要求去掉这条路由）。
                 self.expand_card()
         else:
-            # 先夹回屏幕再判定停靠：拖出屏外的落点按夹后位置算距离
-            if available is not None:
-                x = max(available.left(), min(self.x(), available.right() - self.width() + 1))
-                y = max(available.top(), min(self.y(), available.bottom() - self.height() + 1))
+            # 先夹回屏幕再判定停靠：拖出屏外的落点按夹后位置算距离。夹的是整块物理屏
+            # （岛可以盖在任务栏上），停靠距离仍按工作区算
+            if screen is not None:
+                bounds = self._placement_bounds(screen)
+                x = max(bounds.left(), min(self.x(), bounds.right() - self.width() + 1))
+                y = max(bounds.top(), min(self.y(), bounds.bottom() - self.height() + 1))
                 self.move(x, y)
             edge = "none"
             if available is not None and self._edge_dock_enabled():

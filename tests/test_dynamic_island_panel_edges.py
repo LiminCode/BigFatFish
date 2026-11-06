@@ -127,22 +127,30 @@ def test_dock_edge_for_skips_excluded_edges():
 
 
 # ------------------------------------------------------------ 真实松手路径
-def test_drop_above_taskbar_rests_on_it_instead_of_docking(tmp_path, monkeypatch):
-    """底部任务栏：拖到任务栏上沿 → 岛以完整胶囊停在工作区底边，不收细条。"""
+def test_drop_onto_the_taskbar_stays_there_without_docking(tmp_path, monkeypatch):
+    """底部任务栏：松手时岛有一半压在任务栏上 → 就留在那儿（不推回工作区），也不收细条。"""
     _qapp()
     _install_screen(monkeypatch, _FakeScreen(SCREEN, WORK_BOTTOM_BAR))
     island = _island(tmp_path)
     try:
         island.show()
-        # 松手光标在工作区最底一行：岛被夹回工作区，底边正好贴任务栏上沿
+        # 松手光标在工作区最底一行：岛的中心落在任务栏上沿，下半截盖在任务栏上
         _drag_to(island, QPoint(island.x() + 10, WORK_BOTTOM_BAR.bottom()))
         island._finish_animations()
         state = island._debug_state()
         assert state["mode"] == "normal"
         assert state["dock_edge"] == "none"
         assert island.height() != _STRIP_THICKNESS
-        assert island.geometry().bottom() == WORK_BOTTOM_BAR.bottom()
+        assert WORK_BOTTOM_BAR.bottom() < island.geometry().bottom() <= SCREEN.bottom(), \
+            "压在任务栏上的部分不被推回工作区"
         assert island.config.get("dynamic_island")["dock_edge"] == "none"
+
+        # 再往下拖到屏幕最底：夹在物理屏幕内，整个岛盖在任务栏上
+        _drag_to(island, QPoint(island.x() + 10, SCREEN.bottom() + 200))
+        island._finish_animations()
+        assert island.geometry().bottom() == SCREEN.bottom()
+        assert island.geometry().top() > WORK_BOTTOM_BAR.bottom(), "整个岛都在任务栏那一条里"
+        assert island._debug_state()["dock_edge"] == "none"
 
         # 顶边没有面板：照常停靠
         _drag_to(island, QPoint(island.x() + 10, WORK_BOTTOM_BAR.top() + 2))
@@ -162,12 +170,12 @@ def test_drop_beside_left_taskbar_does_not_dock(tmp_path, monkeypatch):
     island = _island(tmp_path)
     try:
         island.show()
-        _drag_to(island, QPoint(WORK_LEFT_BAR.left(), island.y() + 10))
+        _drag_to(island, QPoint(SCREEN.left() - 50, island.y() + 10))
         island._finish_animations()
         state = island._debug_state()
         assert state["mode"] == "normal"
         assert state["dock_edge"] == "none"
-        assert island.x() == WORK_LEFT_BAR.left()
+        assert island.x() == SCREEN.left(), "夹到物理屏左边，盖在左侧任务栏上"
         # 底边没有面板 → 仍能停靠到 bottom
         _drag_to(island, QPoint(island.x() + 10, WORK_LEFT_BAR.bottom()))
         island._finish_animations()
@@ -190,7 +198,8 @@ def test_stale_bottom_dock_is_demoted_when_taskbar_occupies_it(tmp_path, monkeyp
         assert state["dock_edge"] == "none"
         assert state["mode"] == "normal"
         assert island.height() != _STRIP_THICKNESS
-        assert island.geometry().bottom() == WORK_BOTTOM_BAR.bottom()
+        assert WORK_BOTTOM_BAR.bottom() < island.geometry().bottom() <= SCREEN.bottom(), \
+            "复位后留在任务栏上沿那一带，不被推回工作区"
         assert island.config.get("dynamic_island")["dock_edge"] == "none"
     finally:
         island.hide()
