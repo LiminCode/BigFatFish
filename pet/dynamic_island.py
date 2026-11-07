@@ -53,6 +53,8 @@ _CARD_HEADLINE_LINES = 2     # 标题行最多折几行
 _CARD_DETAIL_LINES = 3       # 详情行最多折几行（再多就省略，悬停看全文）
 _CARD_MESSAGE_LINES = 2      # 最近消息最多折几行
 _CARD_AUTO_COLLAPSE_MS = 15_000
+_CARD_FIT_MIN_ROWS = 2       # 卡片放不下时「消息记录」/「最近的对话」最少还露几行（多出的在框里滚动）
+_CARD_SCREEN_MARGIN = 16     # 展开的卡片离工作区上下边至少留这么多
 _DOCK_BACK_MS = 800
 _BREATHE_AFTER_EVENT_S = 5.0
 
@@ -1213,6 +1215,7 @@ class DynamicIsland(QWidget):
         self._hover_scale_target = 1.0
         self._card_box.show()
         self._sync_card_labels()
+        self._fit_card_to_screen()
         self._animate_to(self._target_rect())
         self._sync_collapse_timer()
         self.card_expanded.emit()
@@ -1600,6 +1603,8 @@ class DynamicIsland(QWidget):
         return max(120, width + _CAPSULE_INSET * 2)
 
     def _update_size(self) -> None:
+        if self._mode == "expanded":
+            self._fit_card_to_screen()       # 内容变了 / 换屏了：行数预算跟着重算
         self._set_free_geometry(QRect(self.pos(), self._rest_size()))
         self._apply_fixed_size()
 
@@ -1617,6 +1622,37 @@ class DynamicIsland(QWidget):
         """卡片高度：默认 ``_CARD_HEIGHT``；标题 / 详情折成多行时按内容长高。"""
         # 三行文字都是排好的显式多行（不靠 QLabel 自动换行），布局的 sizeHint 就是真实所需
         return max(_CARD_HEIGHT, self._card_box.layout().sizeHint().height())
+
+    def _fit_card_to_screen(self) -> None:
+        """展开的卡片要整块放进所在屏幕的工作区：放不下先压两个折叠框的可见行数。
+
+        实机卡片 1182 px、主屏工作区 1232：此前展开被 _clamp_rect 顶到顶边，1080 的屏直接截掉
+        卡片底部。预算 = 工作区高度 − 上下各 _CARD_SCREEN_MARGIN − 胶囊。先算「不限行数」时卡片
+        会有多高（现高 + 两框被预算压掉的行），超出多少就从更高的那个框一行一行拿，各自最少
+        _CARD_FIT_MIN_ROWS 行（多出的在框里滚动）；两框都到底还放不下就只能这样，_clamp_rect
+        兜底。放得下的屏预算撤掉、配置的行数原样回来，所以换屏也跟着变。只看开着且有行的框：
+        折着的不占高度，打开时 _on_*_toggled → _refresh 会再算。按 ROW_HEIGHT 直接算、不逐步
+        重排——面板每改一次预算都要重填全部行，预算不变时这里只是一次 sizeHint + 整数算术。
+        """
+        screen = self._current_screen()
+        if screen is None or not hasattr(self, "_card_box"):
+            return
+        budget = screen.availableGeometry().height() - 2 * _CARD_SCREEN_MARGIN - _CAPSULE_HEIGHT
+        panels = [panel for panel in (self._message_panel, self._history_panel)
+                  if not panel.isHidden() and panel.is_open() and panel.visible_rows() > 0]
+        rows = {panel: panel.unbudgeted_rows() for panel in panels}
+        unbudgeted_height = self._card_height() + sum(
+            (rows[panel] - panel.visible_rows()) * panel.ROW_HEIGHT for panel in panels)
+        excess = unbudgeted_height - budget
+        while excess > 0:
+            shrinkable = [panel for panel in panels if rows[panel] > _CARD_FIT_MIN_ROWS]
+            if not shrinkable:
+                break
+            tallest = max(shrinkable, key=lambda panel: rows[panel] * panel.ROW_HEIGHT)
+            rows[tallest] -= 1
+            excess -= tallest.ROW_HEIGHT
+        for panel in panels:
+            panel.set_row_budget(None if rows[panel] >= panel.unbudgeted_rows() else rows[panel])
 
     def _apply_fixed_size(self) -> None:
         size = self._rest_size()
@@ -1637,11 +1673,18 @@ class DynamicIsland(QWidget):
         """
         return screen.geometry()
 
+    def _clamp_bounds(self, screen) -> QRect:
+        """夹取用的边界：胶囊按 _placement_bounds（可以盖在任务栏上）；展开的卡片是阅读面，按工作区
+        夹——不盖任务栏，和 _fit_card_to_screen 的高度上限同一口径。"""
+        if self._mode == "expanded":
+            return screen.availableGeometry()
+        return self._placement_bounds(screen)
+
     def _clamp_rect(self, rect: QRect) -> QRect:
         screen = self._current_screen()
         if screen is None:
             return rect
-        bounds = self._placement_bounds(screen)
+        bounds = self._clamp_bounds(screen)
         x = max(bounds.left(), min(rect.x(), bounds.right() - rect.width() + 1))
         y = max(bounds.top(), min(rect.y(), bounds.bottom() - rect.height() + 1))
         return QRect(QPoint(x, y), rect.size())
@@ -1717,6 +1760,9 @@ class DynamicIsland(QWidget):
         if self._mode == "expanded":
             # 卡片开着时设置页改了位置：收起落在新位置，不回展开前的旧位置
             self._rest_anchor = QPoint(pos)
+            # 新位置可能在别的屏上：卡片高度按那块屏重算再夹一次
+            self._update_size()
+            self._clamp_to_screen()
         # 展开卡片态不被停靠劫持：卡片是用户当前的交互焦点，设置保存触发的
         # 位置应用不能把 _mode 改成 docked（卡片会留在 16px 细条上收不起来）；
         # 收起时 collapse_card 会按 dock_edge 自行决定是否停靠
@@ -1733,7 +1779,7 @@ class DynamicIsland(QWidget):
         screen = self._current_screen()
         if screen is None:
             return
-        bounds = self._placement_bounds(screen)
+        bounds = self._clamp_bounds(screen)
         x = max(bounds.left(), min(self.x(), bounds.right() - self.width() + 1))
         y = max(bounds.top(), min(self.y(), bounds.bottom() - self.height() + 1))
         if (x, y) != (self.x(), self.y()):
