@@ -214,6 +214,7 @@ class SessionHistoryPanel(QWidget):
     toggled = Signal(bool)                  # 用户折叠 / 展开了
     activated = Signal(object)              # 点了一行（key）
     action_requested = Signal(str, object)  # 右键菜单里选了一项（动作名, key）
+    ROW_HEIGHT = ROW_HEIGHT                 # 每行占的高度（岛按屏幕高度算行数预算用）
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -221,6 +222,7 @@ class SessionHistoryPanel(QWidget):
         self._row_widgets: list[_HistoryRow] = []
         self._open = False
         self._max_visible = MAX_VISIBLE_ROWS
+        self._row_budget: int | None = None    # 岛按屏幕高度给的额外上限（见 set_row_budget）
         self._width = 300
         self._colors = {"primary": "#e5eaf5", "secondary": "#a0aabe", "accent": "#40b8ff"}
         self._menu_appearance: dict = {}
@@ -338,13 +340,36 @@ class SessionHistoryPanel(QWidget):
             self._max_visible = count
             self._refill()
 
+    def set_row_budget(self, rows: int | None) -> None:
+        """岛按所在屏幕的高度给的额外上限（``None`` = 不限）：与 ``set_max_visible`` 的配置值取小。
+
+        配置值是用户想露几行，预算是这块屏放得下几行；两者分开存，换到高屏时预算一撤，
+        配置的行数原样回来。"""
+        budget = None if rows is None else max(1, int(rows))
+        if budget != self._row_budget:
+            self._row_budget = budget
+            self._refill()
+
+    def row_cap(self) -> int:
+        """现在最多露几行：配置值与屏幕预算取小。"""
+        return self._max_visible if self._row_budget is None else min(self._max_visible, self._row_budget)
+
+    def visible_rows(self) -> int:
+        """列表现在实际露出的行数（框折着也按开着算：是「开着时会露几行」）。"""
+        return min(len(self._rows), self.row_cap())
+
+    def unbudgeted_rows(self) -> int:
+        """不受屏幕预算限制时会露几行（只按配置值）。"""
+        return min(len(self._rows), self._max_visible)
+
     def _refill(self) -> None:
-        scroll = len(self._rows) > self._max_visible
+        cap = self.row_cap()
+        scroll = len(self._rows) > cap
         width = self._width - (_SCROLLBAR_PX + 2 if scroll else 0)
         for widget, row in zip(self._row_widgets, self._rows):
             widget.set_data(row, width, accent=self._colors["accent"], secondary=self._colors["secondary"])
             widget.title.setStyleSheet(f"color: {self._colors['primary']};")
-        self.body.setFixedHeight(min(len(self._rows), self._max_visible) * ROW_HEIGHT)
+        self.body.setFixedHeight(min(len(self._rows), cap) * ROW_HEIGHT)
         self.body.setVisible(self._open and bool(self._rows))
         self._update_header()
         self.updateGeometry()
