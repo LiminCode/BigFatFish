@@ -307,3 +307,34 @@ def test_main_fish_menu_offers_lineup_next_to_rally(shell):
     assert labels.index("列队") == labels.index("护驾") + 1, "紧跟在「护驾」下面"
     menu.deleteLater()
     assert "lineup_pets" not in MENU_ACTIONS.available_ids(SpriteMenuFacade(shell, shell._spawned[0])), "小肥鱼的菜单没有"
+
+
+def test_lineup_keeps_every_caption_fully_visible(shell, monkeypatch):
+    """用户 2026-11-06：列队的间距要让每只鱼头顶的信息（标签胶囊）都能显示，一行不够往上加行。
+    替身素材整张画布都是身体，标签被夹在身体框里看不出区别：把身体框改窄（标签比身体宽）。"""
+    from pet import catalog
+    from pet.overlay_session_pets import SessionPetController
+
+    monkeypatch.setattr(catalog, "character_body_box", lambda character_id: (232, 120, 312, 360))
+    monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
+    shell.sprite.set_pos(QPointF(1500, 300))
+    fish = [_session(shell, f"会话 {n}", "working", 1000.0 + n) for n in range(6)]
+    for sprite in fish:
+        _give_hang_clip(shell, sprite)
+    _scatter(shell, fish)
+    for sprite in fish:
+        assert sprite.caption and sprite.caption_rect().width() > sprite.body_rect().width(), "标签得比身体宽才测得到"
+
+    assert shell.lineup_pets() == 6
+    _fly(shell)
+
+    boxes = {id(s): s.body_rect().united(s.caption_rect()) for s in fish}
+    for i, a in enumerate(fish):
+        assert shell._bounds.contains(boxes[id(a)]), "标签也在屏内"
+        for b in fish[:i]:
+            assert _gap(boxes[id(a)], boxes[id(b)]) >= 12, "标签与标签、标签与身体之间都留了间隙"
+    rows = sorted({s.body_rect().bottom() for s in fish}, reverse=True)
+    assert rows[0] == shell._bounds.bottom()
+    if len(rows) > 1:
+        top_of_first = min(boxes[id(s)].top() for s in fish if s.body_rect().bottom() == rows[0])
+        assert rows[1] <= top_of_first - 12, "上一排的脚底在下一排标签顶的上方"

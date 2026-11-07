@@ -4052,11 +4052,17 @@ class OverlayShell(QObject):
         fish.sort(key=lambda s: (ranks[id(s)][0], -ranks[id(s)][1]))
         bounds, main_body = QRect(self._bounds), self.sprite.body_rect()
         bodies = [s.body_rect() for s in fish]
+        # 占位框 = 身体框 ∪ 头顶标签胶囊（相对身体框左上角）：间距按它算，每只鱼头顶的信息都站得下
+        halos = []
+        for sprite, body in zip(fish, bodies):
+            box = body.united(sprite.caption_rect()) if sprite.caption else body
+            halos.append((box.x() - body.x(), box.y() - body.y(), box.width(), box.height()))
         spots = sprite_rally.lineup_spots(
             [(b.width(), b.height()) for b in bodies],
             (bounds.left(), bounds.top(), bounds.right() + 1, bounds.bottom() + 1),
             obstacles=[(main_body.x(), main_body.y(), main_body.width(), main_body.height()),
-                       *self.collision.static_member_rects()])
+                       *self.collision.static_member_rects()],
+            halos=halos)
         moves = []
         for sprite, body, spot in zip(fish, bodies, spots):
             if spot is None:

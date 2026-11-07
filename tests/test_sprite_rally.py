@@ -289,3 +289,42 @@ def test_fixed_anchor_keeps_lineup_targets_absolute():
         world.tick([fish], 1 / 60)
     assert (round(fish.pos.x()), round(fish.pos.y())) == (12, 890)
     assert fish.interaction_state == INTERACTION_NORMAL and not world.active()
+
+
+# ---------------------------------------------------------------- 列队：头顶标签也要站得下（2026-11-06）
+
+def test_lineup_spaces_fish_by_their_caption_footprint_not_just_the_body():
+    """用户 2026-11-06：间距要让每只鱼头顶的信息都能显示——占位框 = 身体框 ∪ 标签胶囊。"""
+    sizes = [(120, 150)] * 3
+    halos = [(-60, -26, 240, 176)] * 3        # 标签比身体宽（左右各出 60）、高出头顶 26
+    spots = lineup_spots(sizes, BOUNDS, gap=12, halos=halos)
+    assert all(spot is not None for spot in spots)
+    xs = [x for x, _y in spots]
+    assert xs[0] == 12 + 60, "占位框左边贴着 gap，身体在占位框中间"
+    assert xs[1] - xs[0] == 240 + 12 and xs[2] - xs[1] == 240 + 12, "相邻占位框之间留 gap"
+    assert all(y + 150 == BOUNDS[3] for _x, y in spots), "脚底还是贴底边"
+
+
+def test_lineup_rows_leave_room_for_the_captions_above():
+    sizes = [(400, 100)] * 6
+    halos = [(0, -30, 400, 130)] * 6          # 标签高出头顶 30
+    spots = lineup_spots(sizes, BOUNDS, gap=12, halos=halos)
+    assert all(spot is not None for spot in spots)
+    rows = sorted({y for _x, y in spots}, reverse=True)
+    assert len(rows) == 2 and rows[0] == BOUNDS[3] - 100
+    assert rows[1] == rows[0] - 30 - 12 - 100, "上一排的脚底在这一排标签顶上方 gap"
+
+
+def test_lineup_caption_footprint_also_steps_over_obstacles():
+    main = (300, 890, 120, 150)
+    sizes = [(120, 150)] * 2
+    halos = [(-60, -26, 240, 176)] * 2
+    spots = lineup_spots(sizes, BOUNDS, obstacles=[main], gap=12, halos=halos)
+    assert spots[0] == (12 + 60, BOUNDS[3] - 150)
+    assert spots[1][0] == main[0] + main[2] + 12 + 60, "第二只的标签会压到主肥鱼：整个占位框让到它右侧"
+
+
+def test_lineup_without_halos_is_unchanged():
+    sizes = [(120, 150), (90, 100), (400, 100), (400, 100), (400, 100), (400, 100)]
+    plain = lineup_spots(sizes, BOUNDS, gap=12)
+    assert lineup_spots(sizes, BOUNDS, gap=12, halos=[(0, 0, w, h) for w, h in sizes]) == plain
