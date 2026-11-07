@@ -389,6 +389,8 @@ class DynamicIsland(QWidget):
         # ---- 模式与动效状态（静止时全部为稳态，_anim_timer 不运行）----
         self._mode = "normal"  # normal / docked / expanded
         self._hover_peek = False  # 停靠状态下鼠标靠近的临时滑出
+        # 展开卡片前胶囊的左上角：收起回到这里（卡片放不下被 _clamp_rect 顶走的位置不算数）
+        self._rest_anchor: QPoint | None = None
         # 位移弹跳（px）：事件下压回弹 / 受击定向踢动，绘制时整数化保持文字锐利
         self._kick_x = 0.0
         self._kick_y = 0.0
@@ -1199,6 +1201,11 @@ class DynamicIsland(QWidget):
             self.collapse_card()
             return
         self._dock_back_timer.stop()
+        # 记住胶囊现在的位置：卡片比屏幕剩余高度高时 _clamp_rect 会把整块窗口顶到屏幕
+        # 顶边（实机卡片高 1182、屏高 1280，几乎在哪展开都会被顶走），收起要回到这里，
+        # 不能留在卡片被推到的地方（2026-11-06 用户报「岛不见了」）。停靠态展开的收回
+        # 细条，由 _target_rect 的停靠分支自己算，不记。
+        self._rest_anchor = QPoint(self.pos()) if self._mode == "normal" else None
         self._mode = "expanded"
         self._hover_peek = False
         # 单击展开时鼠标多半已在岛内（enterEvent 已把悬停放大目标置 1.02），
@@ -1283,12 +1290,19 @@ class DynamicIsland(QWidget):
         self._card_box.hide()
         self._mode = "docked" if self.dock_edge != "none" else "normal"
         self._hover_peek = False
+        anchor, self._rest_anchor = self._rest_anchor, None
+        if anchor is not None and self._mode == "normal":
+            # 回展开前的胶囊位置（屏幕布局可能变了，仍夹一次），而不是 _target_rect
+            # 按当前左上角——那是卡片被顶到的位置
+            target = self._clamp_rect(QRect(anchor, self._rest_size()))
+        else:
+            target = self._target_rect()
         if animate:
-            self._animate_to(self._target_rect())
+            self._animate_to(target)
         else:
             self._geo_from = None
             self._geo_to = None
-            self._set_free_geometry(self._target_rect())
+            self._set_free_geometry(target)
             self._apply_fixed_size()
 
     # ------------------------------------------------------------ 动效核心
@@ -1411,6 +1425,10 @@ class DynamicIsland(QWidget):
     def _finish_animations(self) -> None:
         """立即跳到所有动画终点（测试与即需布局用）。"""
         self._anim_timer.stop()
+        if self._geo_to is not None:
+            # 先落到几何动画的终点再按模式重算：终点不一定是「当前左上角 + 尺寸」
+            # （收起卡片回的是展开前的位置），直接重算会把它丢掉
+            self._set_free_geometry(self._geo_to)
         self._geo_from = None
         self._geo_to = None
         self._kick_x = self._kick_y = 0.0
@@ -1696,6 +1714,9 @@ class DynamicIsland(QWidget):
             )
         self.move(pos)
         self._clamp_to_screen()
+        if self._mode == "expanded":
+            # 卡片开着时设置页改了位置：收起落在新位置，不回展开前的旧位置
+            self._rest_anchor = QPoint(pos)
         # 展开卡片态不被停靠劫持：卡片是用户当前的交互焦点，设置保存触发的
         # 位置应用不能把 _mode 改成 docked（卡片会留在 16px 细条上收不起来）；
         # 收起时 collapse_card 会按 dock_edge 自行决定是否停靠
