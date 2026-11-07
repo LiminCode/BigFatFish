@@ -154,3 +154,98 @@ collapsed rect=(2009, 1236, 482, 44)
 
 - 影响面：`DynamicIsland` 展开态的尺寸与夹屏边界、两个面板的可见行数上限；无配置键、无落盘格式变化。
 - 回滚：`git revert` 即可；`_row_budget` 只在内存里。
+
+---
+
+## 第二轮：岛靠下时卡片开在胶囊上方，胶囊几乎不动（2026-11-07）
+
+> **基线**：`5f597ee9`（main，含第一轮 #26 / #27）　**分支**：`claude/silly-knuth-a6a8db`
+> **范围**：3 个文件（实现 1、测试 2）+ 本报告追记
+
+### 一、核心特性（第二轮）
+
+用户 2026-11-07 直接要求：「效率优先，不必做复杂。岛在屏幕底部点开确实会被顶到顶部，但过程一卡一卡；
+岛靠近底部时让展开部分开在岛**上面**，岛本身就几乎不用动。」
+
+第一轮之后岛在任务栏上点开：卡片往下长、整块窗口被夹到工作区里，胶囊从 y=1236 飞到 y=50，180 ms 内挪
+1186 px；再加上展开瞬间 app 回推数据触发的那一帧整块闪现（第一轮第五节「边界」里记过的既有现象），就是
+用户看到的「一卡一卡」。
+
+| # | 能力 | 说明 |
+|---|---|---|
+| 1 | 方向判定 | `expand_card` 比较两个方向各自夹屏后胶囊要挪多远（向下按工作区夹、向上按整块物理屏夹——胶囊本来就可以在任务栏上，卡片在它上面、整块在工作区里），挪得少的赢，相同取向下（`_prefers_card_above`） |
+| 2 | 卡片在上 | 胶囊画在窗口底部那 44 px（`_capsule_top`，绘制 `painter.translate`），`_card_box` 放在上面（`resizeEvent`），按钮 / 磁贴命中与悬停倾斜都先经 `_capsule_point` 换到胶囊坐标；窗口尺寸变化时锚定胶囊底边（`_anchored_rect`），`_update_size` / `_target_rect` 都走它 |
+| 3 | 收起动画不跳 | `_card_above` 到收起动画走完才失效（`_card_is_above` = 卡片开着或几何动画进行中），所以收起时胶囊一直钉在底部、卡片往下缩回去 |
+| 4 | 动画中不闪现 | 几何动画进行中 `_update_size` 只改 `_geo_to`（按锚点重算、夹屏），不再 `setFixedSize` 直落终点——此前展开一发 `card_expanded`，app 回推数据 → `_refresh` → 整块卡片闪现一帧再从中途接着滑 |
+
+**红线 / 不变量**：第一轮的行数预算（`_fit_card_to_screen`）、停靠态、`_rest_anchor`（收起回原位）都不动；
+岛在屏幕上半部分时行为与第一轮完全一样（卡片在下、按工作区夹）；`_rest_size` 不变。
+
+### 二、修改文件说明（第二轮）
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/dynamic_island.py` | +74 / −12 | ① 模块级 `_clamp_into(rect, bounds)`（`_clamp_rect` 与方向判定共用）；② 字段 `_card_above`；③ `_card_is_above` / `_capsule_top` / `_capsule_point`；④ `_button_hit`、`_metro_block_at`、`mouseMoveEvent` 悬停改用胶囊坐标；⑤ `resizeEvent` 按方向放 `_card_box`；⑥ `expand_card` 在拟合行数之后、算目标矩形之前调 `_prefers_card_above`；⑦ `_anchored_rect(size)`，`_update_size` 与 `_target_rect` 普通分支都用它；`_update_size` 在几何动画进行中只改 `_geo_to`；⑧ `_clamp_bounds`：expanded 且卡片在下 → 工作区，否则物理屏；⑨ `_paint_metro_capsule` / `_paint_capsule` 胶囊部分包在 `save / translate(0, _capsule_top) / restore` 里（卡片底板仍画整窗）；⑩ `_debug_state` 增 `card_above` |
+| `tests/test_island_card_opens_upward.py` | +167 / −0（新） | ① 岛在任务栏上：卡片在上、胶囊底边不变、`_card_box` 在 y=0、`_capsule_top` = 高 − 44、收起回原位且 `card_above` 回 False；② 岛在顶部：仍向下、与第一轮一样；③ 两头都放不下时比位移（y=600 向上挪 256 < 向下 460 → 上；y=300 反过来 → 下）；④ 命中测试跟着胶囊到底部（铃铛在底部那 44 px 命中、顶部不命中；磁贴同理）；⑤ 开着时 `_refresh` 仍锚定胶囊底边；⑥ 展开动画进行中 `_refresh` 不直落整块、只改终点 |
+| `tests/test_island_card_fits_screen.py` | +24 / −15 | 第一轮的「底边 ≤ 工作区、顶边 > 0」断言按新语义分叉：卡片在上时只要求顶边不出工作区、整块在物理屏内；「岛在任务栏上」用例改成断言胶囊留在任务栏上、卡片在上方 |
+
+修前跑新测试：5 条红（`card_above` / `_capsule_top` 不存在；真机此前胶囊从 1236 飞到 50）。修后 6 passed。
+
+### 三、性能分析（第二轮）
+
+方法：`python -I <scratchpad>/bench_upward.py`（离屏假屏 3072×1280 / 工作区 1232，岛在任务栏上，消息 6 行 + 历史 10 行；
+同环境）。
+
+| 指标 | 实测 | 归属 |
+|---|---|---|
+| `_prefers_card_above`（两次 `_clamp_into` + 一次 `_rest_size`） | n=5000，p50 16.4 µs，p95 18.4 µs，max 355 µs | 新增，每次展开一次 |
+| 展开 + 收起一轮（卡片在上） | n=300，p50 2.8 ms，p95 3.5 ms，max 4.3 ms | 既有路径（第一轮同口径 12.8 ms 是 50 条消息的重填；这里 6 条） |
+| 绘制 | 多一对 `save / translate / restore` 与一次减法 | 每帧，纳秒级，不单独计 |
+
+结论：① 稳态开销无变化（胶囊态不走任何新代码；`_capsule_top` 在卡片在下时恒为 0）；② 新增路径只在展开那一刻
+多 16 µs；③ 动画中 `_update_size` 少了一次 `setFixedSize` + 一次直落 `setGeometry`，是省的；④ 无新系统调用 / 线程 /
+磁盘；内存多一个 bool。
+
+### 四、实机运行记录（第二轮）
+
+同一台机器（主屏 3072×1280 / 工作区 1232，任务栏在底）。用户现在把岛放在屏幕中部 (2283, 603)，探针先用
+`MoveWindow` 把岛挪到任务栏上 (2045, 1236)、测完挪回去（不经拖拽、不落盘），DPI 无关进程、逻辑坐标、逐 4 ms 记矩形。
+
+- **修前（第一轮代码，pid 57172）**：岛在任务栏上点开 → `(2009, 50, 482, 1182)`，胶囊从 y=1236 飞到 y=50。
+- **第二轮未含「动画中不闪现」时（pid 35720）**：
+  ```
+  moved to (2045, 1236, 397, 44)
+    + 31.6ms rect=(2045, 715, 397, 565)   ← 整块闪现一帧（app 回推 → _refresh 直落）
+    + 67.9ms rect=(2045, 975, 397, 305)   ← 再从中途接着滑
+    +212.2ms rect=(2045, 715, 397, 565)
+  expanded settled bottom=1279 capsule_bottom_before=1279  ← 胶囊底边没动
+  collapsed rect=(2045, 1236, 397, 44)
+  ```
+- **最终代码（pid 42188，13:48:48 acquired）**：
+  ```
+  moved to (2045, 1236, 397, 44)
+    + 57.6ms rect=(2045, 1057, 397, 223)   ← 从胶囊平滑长起，没有闪现帧
+    + 98.2ms rect=(2045, 856, 397, 424)
+    +206.7ms rect=(2045, 715, 397, 565)
+  expanded settled rect=(2045, 715, 397, 565) bottom=1279 capsule_bottom_before=1279
+  collapse: 565 → 440 → 332 → … → 44，+183.6ms rect=(2045, 1236, 397, 44)
+  restored to (2283, 603, 397, 44)
+  ```
+  岛在中部 (2283, 603) 时点开仍是向下（565 高放得下）：`(2283, 603, 397, 565)`，胶囊同样不动。
+- **日志**：pid 42188 一条 `tick 慢帧 54.2ms`（阈值 50），此刻两轮全量 pytest 在后台跑；pid 35720 一条语音端点握手 WARNING，与岛无关。
+- **用户可见行为**：岛在哪点开，胶囊就留在哪；靠下时卡片往上长、靠上时往下长；不再有整块闪现。
+- **没验证到的**：两头都放不下、按位移比大小的那条分支（本机 1232 的工作区放得下 565 的卡片），只有离屏测试 ③ 覆盖。
+
+### 五、测试与验证（第二轮）
+
+| 门 | 命令 | 结果 |
+|---|---|---|
+| 静态检查 | `python -m ruff check pet tests/test_island_card_fits_screen.py tests/test_island_card_opens_upward.py` | All checks passed |
+| 聚焦（修前 / 修后） | `pytest -q tests/test_island_card_opens_upward.py` | 5 failed → 6 passed |
+| 相关族 | 同第一轮的岛 / 多屏族 | 381 passed |
+| 全量 | `python -m pytest -q`（本工作区，offscreen，APPDATA 重定向） | 6 failed / 6004 passed / 14 skipped，8 min 39 s（与两轮全量并行时的中间版本同样 6 失败 / 6003 通过）。6 个与第一轮完全相同的既有基线失败，无新增 |
+
+### 六、已知限制（第二轮）
+
+- 方向只在展开那一刻定；开着时拖拽会先收起，所以没有「开着换方向」的情形。
+- 两头都放不下时仍要挪胶囊（挪得少的那边），这是卡片比半屏高的必然代价；第一轮的行数预算会先把卡片压矮。
