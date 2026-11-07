@@ -25,7 +25,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QTextLayout, QTextOption,
+    QPen, QPixmap, QRegion, QTextLayout, QTextOption,
 )
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton, QToolTip, QVBoxLayout, QWidget,
@@ -403,6 +403,11 @@ class DynamicIsland(QWidget):
         # 卡片开在胶囊上方（岛靠屏幕下半部分时）：胶囊画在窗口底部、_card_box 放在上面。
         # 只在 expand_card 决定；收起动画期间仍按它画，动画完才回到「胶囊在顶」
         self._card_above = False
+        # 展开 / 收起的「揭示式」动画：窗口一次到位（两头矩形的并集），逐帧只改画面上露出的那块
+        # （_reveal_rect，全局坐标）和卡片容器的遮罩。层叠窗逐帧改顶边会先按旧位图显示一帧，
+        # 胶囊看着上下跳（2026-11-07 用户反馈「向上展开时位置不稳定」）
+        self._geo_reveal = False
+        self._reveal_rect: QRect | None = None
         # 位移弹跳（px）：事件下压回弹 / 受击定向踢动，绘制时整数化保持文字锐利
         self._kick_x = 0.0
         self._kick_y = 0.0
@@ -874,7 +879,32 @@ class DynamicIsland(QWidget):
 
     def _capsule_top(self) -> int:
         """胶囊那 44px 在窗口里的纵向起点：卡片在上方时是窗口底部，否则 0。"""
-        return max(0, self.height() - _CAPSULE_HEIGHT) if self._card_is_above() else 0
+        panel = self._panel_rect()
+        return max(0, panel.bottom() - _CAPSULE_HEIGHT + 1) if self._card_is_above() else panel.top()
+
+    def _panel_rect(self) -> QRect:
+        """此刻画出来的那块（窗口坐标）：揭示动画中是虚拟矩形的纵向范围（横向用整窗——胶囊内容按
+        整窗宽排好，不随中途宽度变），否则整窗。卡片底板、胶囊位置、卡片遮罩都按它。"""
+        if self._reveal_rect is not None:
+            return QRect(0, self._reveal_rect.top() - self.y(), self.width(), self._reveal_rect.height())
+        return self.rect()
+
+    def _sync_reveal_mask(self) -> None:
+        """揭示动画中只露出虚拟矩形盖住的那部分卡片内容（子控件不受父窗 paintEvent 裁剪，用遮罩）。"""
+        panel = self._panel_rect()
+        top = panel.top() if self._card_is_above() else panel.top() + _CAPSULE_HEIGHT
+        visible = QRect(0, top - self._card_box.y(), self.width(), max(0, panel.height() - _CAPSULE_HEIGHT))
+        if visible.height() <= 0:
+            visible = QRect(0, -2, 1, 1)        # 空区域在 Qt 里等于「不遮」，用窗外 1px 表示「全遮」
+        self._card_box.setMask(QRegion(visible))
+
+    def _clear_geo_anim(self) -> None:
+        self._geo_from = None
+        self._geo_to = None
+        self._geo_reveal = False
+        if self._reveal_rect is not None:
+            self._reveal_rect = None
+            self._card_box.clearMask()
 
     def _capsule_point(self, pos) -> QPointF:
         """窗口坐标 → 胶囊坐标（按钮矩形 / 磁贴矩形都按胶囊在顶算）。"""
@@ -1239,7 +1269,7 @@ class DynamicIsland(QWidget):
         self._sync_card_labels()
         self._fit_card_to_screen()
         self._card_above = self._prefers_card_above()
-        self._animate_to(self._target_rect())
+        self._animate_to(self._target_rect(), reveal=self.dock_edge == "none")
         self._sync_collapse_timer()
         self.card_expanded.emit()
 
@@ -1324,10 +1354,9 @@ class DynamicIsland(QWidget):
         else:
             target = self._target_rect()
         if animate:
-            self._animate_to(target)
+            self._animate_to(target, reveal=self._mode == "normal")
         else:
-            self._geo_from = None
-            self._geo_to = None
+            self._clear_geo_anim()
             self._set_free_geometry(target)
             self._apply_fixed_size()
 
@@ -1409,10 +1438,15 @@ class DynamicIsland(QWidget):
                 round(self._geo_from.width() + (self._geo_to.width() - self._geo_from.width()) * k),
                 round(self._geo_from.height() + (self._geo_to.height() - self._geo_from.height()) * k),
             )
-            self._set_free_geometry(rect)
+            if self._geo_reveal:
+                self._reveal_rect = rect           # 窗口不动，只改画面上露出的那块
+                self._sync_reveal_mask()
+            else:
+                self._set_free_geometry(rect)
             if self._geo_t >= 1.0:
-                self._geo_from = None
-                self._geo_to = None
+                final = self._geo_to
+                self._clear_geo_anim()
+                self._set_free_geometry(final)
                 self._set_free_geometry(self._target_rect())
 
         # 位移踢动回位 / 微缩放 / 受击倾斜 / 果冻形变回弹
@@ -1455,8 +1489,7 @@ class DynamicIsland(QWidget):
             # 先落到几何动画的终点再按模式重算：终点不一定是「当前左上角 + 尺寸」
             # （收起卡片回的是展开前的位置），直接重算会把它丢掉
             self._set_free_geometry(self._geo_to)
-        self._geo_from = None
-        self._geo_to = None
+        self._clear_geo_anim()
         self._kick_x = self._kick_y = 0.0
         self._kick_vx = self._kick_vy = 0.0
         self._squish = 1.0
@@ -1471,13 +1504,21 @@ class DynamicIsland(QWidget):
         self._set_free_geometry(self._target_rect())
         self.update()
 
-    def _animate_to(self, target: QRect) -> None:
+    def _animate_to(self, target: QRect, *, reveal: bool = False) -> None:
+        """几何动画到 target。``reveal``：窗口立刻摆到两头矩形的并集、逐帧只改画面（展开 / 收起用），
+        不逐帧移动 / 改尺寸——顶边逐帧上移的层叠窗会先按旧位图显示一帧，胶囊看着上下跳。"""
         if target == self.geometry() and not self._anim_timer.isActive():
             self._set_free_geometry(target)
             return
+        self._clear_geo_anim()
         self._geo_from = self.geometry()
         self._geo_to = target
         self._geo_t = 0.0
+        self._geo_reveal = reveal
+        if reveal:
+            self._reveal_rect = QRect(self._geo_from)
+            self._set_free_geometry(self._geo_from.united(target))
+            self._sync_reveal_mask()           # 第一帧前就遮住，不让整块卡片先闪一下
         self._ensure_anim_timer()
 
     def _emit_geometry_changed(self) -> None:
@@ -1637,6 +1678,8 @@ class DynamicIsland(QWidget):
             anchored = QRect(QPoint(to.x(), to.bottom() - size.height() + 1), size) \
                 if self._card_is_above() else QRect(to.topLeft(), size)
             self._geo_to = self._clamp_rect(anchored)
+            if self._geo_reveal:
+                self._set_free_geometry(self._geo_from.united(self._geo_to))
             return
         self._set_free_geometry(self._anchored_rect(size))
         self._apply_fixed_size()
@@ -2331,7 +2374,7 @@ class DynamicIsland(QWidget):
         if self._mode == "expanded":
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(self._readable_card_background(background))
-            painter.drawRect(QRectF(0, 0, self.width(), self.height()))
+            painter.drawRect(QRectF(self._panel_rect()))
         painter.save()
         painter.translate(0, self._capsule_top())       # 卡片在上方时胶囊画在窗口底部
         rect, _radius = self._squished_capsule_rect()
@@ -2355,7 +2398,7 @@ class DynamicIsland(QWidget):
             return
         # 展开时先画卡片底板（胶囊下方一整块，圆角连续；内容区遵守同心圆角）
         if self._mode == "expanded":
-            panel = QRectF(0, 0, self.width(), self.height())
+            panel = QRectF(self._panel_rect())
             background, _p, _s = self._style_palette()
             # 卡片底板走可读性钳制（不随胶囊透明度降下去）
             background = self._readable_card_background(background)
@@ -2459,7 +2502,12 @@ class DynamicIsland(QWidget):
             # 只改 z 序不抢键盘焦点）
             self.reassert_topmost()
             self._press_global = event.globalPosition().toPoint()
-            self._drag_offset = self._press_global - self.pos()
+            # 抓取偏移按**胶囊**的左上角算、并夹进胶囊范围：卡片开在上方时窗口左上角是卡片顶，拖拽
+            # 起手先收起、再 move(光标 − 偏移)，按窗口左上角算胶囊会往上跳一个卡片高；按在卡片身体
+            # 上起拖，收起后只剩胶囊，让它来到光标下而不是离光标一个卡片远
+            offset = self._press_global - (self.pos() + QPoint(0, self._capsule_top()))
+            self._drag_offset = QPoint(max(0, min(self._capsule_width() - 1, offset.x())),
+                                      max(0, min(_CAPSULE_HEIGHT - 1, offset.y())))
             self._dragging = False
             if self._metro_hover is not None:
                 self._metro_pressed = True      # 按下：那块磁贴倾斜得更明显
@@ -2483,8 +2531,7 @@ class DynamicIsland(QWidget):
             # 抖动，且期间碰撞结算被 _geo_to 守卫全程跳过）。注意不停动画
             # 表：_on_anim_tick 只在 _geo_to 非 None 时插值几何，停表会把
             # squish/kick 弹簧冻在中途
-            self._geo_from = None
-            self._geo_to = None
+            self._clear_geo_anim()
             self._set_metro_hover(None, None)   # 拖起来就不再倾斜
             if self._mode == "expanded":
                 self.collapse_card(animate=False)  # 拖拽起手直接落位，不播收起动画

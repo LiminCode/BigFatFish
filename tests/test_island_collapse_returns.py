@@ -113,7 +113,7 @@ def test_dragging_the_card_still_follows_the_cursor(tmp_path: Path) -> None:
     island = _island(tmp_path)
     try:
         _expand_settled(island)
-        grab = QPoint(30, 20)
+        grab = QPoint(30, island._capsule_top() + 20)   # 按在胶囊上（岛靠下时卡片开在胶囊上方，胶囊在窗口底部）
         press_at = island.pos() + grab
         press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(grab), QPointF(grab), QPointF(press_at),
                             Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
@@ -123,7 +123,7 @@ def test_dragging_the_card_still_follows_the_cursor(tmp_path: Path) -> None:
                            Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
         island.mouseMoveEvent(move)
         assert island._debug_state()["mode"] == "normal"
-        assert island.pos() == far - grab, "拖拽中的胶囊应贴着光标"
+        assert island.pos() == far - QPoint(30, 20), "拖拽中的胶囊应贴着光标"
         assert island._rest_anchor is None, "拖拽起手后不再有「回原位」"
     finally:
         island.close()

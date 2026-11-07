@@ -10,9 +10,11 @@
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QPointF, QRect
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from pet.config import Config
@@ -147,21 +149,105 @@ def test_refresh_while_open_above_keeps_the_capsule_anchored(tmp_path):
         island.close()
 
 
-def test_refresh_during_the_expand_animation_does_not_snap_to_full_size(tmp_path):
-    """展开动画进行中 app 回推数据（_refresh）：窗口不直落整块尺寸，只改动画终点；动画走完落在终点。"""
+def test_refresh_during_the_expand_animation_only_retargets(tmp_path):
+    """展开动画进行中 app 回推数据（_refresh）：画面上露出的那块不跳到整块，只改动画终点；动画走完落在终点。"""
     start = QPoint(2045, MAIN.bottom() - _CAPSULE_HEIGHT + 1)
     island = _island(tmp_path, _FakeScreen(MAIN, MAIN_WORK), start)
     try:
         capsule = island.geometry()
-        island.expand_card()                                    # 动画起步，几何还是胶囊
-        assert island._geo_to is not None and island.geometry() == capsule
+        island.expand_card()                                    # 动画起步：窗口已到位，画面只露胶囊
+        assert island._geo_to is not None
+        assert island._panel_rect().height() == _CAPSULE_HEIGHT
         island._card_height = lambda: CARD + 120
         island._refresh()
-        assert island.geometry().height() < _CAPSULE_HEIGHT + CARD, "动画中不许整块闪现"
+        assert island._panel_rect().height() < _CAPSULE_HEIGHT + CARD, "动画中不许整块闪现"
         assert island._geo_to.height() == _CAPSULE_HEIGHT + CARD + 120, "终点跟着新尺寸"
         assert island._geo_to.bottom() == capsule.bottom()
         island._finish_animations()
-        assert island.geometry() == island._geo_to or island.geometry().height() == _CAPSULE_HEIGHT + CARD + 120
+        assert island.geometry().height() == _CAPSULE_HEIGHT + CARD + 120
         assert island.geometry().bottom() == capsule.bottom()
+        assert island._panel_rect() == island.rect()
+    finally:
+        island.close()
+
+
+def _tick(island: DynamicIsland, dt: float = 0.03) -> None:
+    island._anim_last = time.monotonic() - dt
+    island._on_anim_tick()
+
+
+def test_upward_expand_animates_without_moving_the_window(tmp_path):
+    """向上展开：窗口一次到位、动画中几何一帧都不改（逐帧上移顶边的层叠窗会先按旧位图显示一帧，胶囊上下跳）；
+    画面上露出的那块从胶囊往上长、底边贴着窗口底边，胶囊的像素位置全程不变。"""
+    start = QPoint(2045, MAIN.bottom() - _CAPSULE_HEIGHT + 1)
+    island = _island(tmp_path, _FakeScreen(MAIN, MAIN_WORK), start)
+    try:
+        capsule = island.geometry()
+        island.expand_card()
+        full = island.geometry()
+        assert full.height() == _CAPSULE_HEIGHT + CARD and full.bottom() == capsule.bottom(), "窗口一次到位"
+        capsule_top = island._capsule_top()
+        assert capsule_top == full.height() - _CAPSULE_HEIGHT
+        assert not island._card_box.mask().boundingRect().intersects(island._card_box.rect()), "第一帧前卡片全遮"
+        heights = []
+        for _ in range(4):
+            _tick(island)
+            assert island.geometry() == full, "动画中窗口不动"
+            panel = island._panel_rect()
+            assert panel.bottom() == full.height() - 1 and island._capsule_top() == capsule_top
+            heights.append(panel.height())
+            if island._geo_to is None:
+                break
+        assert heights == sorted(heights) and heights[0] < heights[-1], heights
+        island._finish_animations()
+        assert island.geometry() == full and island._panel_rect() == island.rect()
+        assert island._card_box.mask().isEmpty(), "动画完遮罩撤掉"
+        island.collapse_card()
+        assert island.geometry() == full, "收起动画同样不动窗口"
+        _tick(island)
+        assert island.geometry() == full and island._capsule_top() == capsule_top
+        island._finish_animations()
+        assert island.geometry() == capsule
+    finally:
+        island.close()
+
+
+def test_downward_expand_animates_without_moving_the_window(tmp_path):
+    start = QPoint(500, 100)
+    island = _island(tmp_path, _FakeScreen(MAIN, MAIN_WORK), start)
+    try:
+        island.expand_card()
+        full = island.geometry()
+        assert full.topLeft() == start and full.height() == _CAPSULE_HEIGHT + CARD
+        for _ in range(3):
+            _tick(island)
+            assert island.geometry() == full and island._capsule_top() == 0
+            assert island._panel_rect().top() == 0
+            if island._geo_to is None:
+                break
+        island._finish_animations()
+        assert island.geometry() == full and island._card_box.mask().isEmpty()
+    finally:
+        island.close()
+
+
+def test_dragging_the_capsule_of_an_upward_card_keeps_it_under_the_cursor(tmp_path):
+    """卡片在上方时窗口左上角是卡片顶：从胶囊起拖，胶囊要贴着光标走，不能往上跳一个卡片高。"""
+    start = QPoint(2045, MAIN.bottom() - _CAPSULE_HEIGHT + 1)
+    island = _island(tmp_path, _FakeScreen(MAIN, MAIN_WORK), start)
+    try:
+        _expand(island)
+        assert island._debug_state()["card_above"]
+        grab = QPoint(30, island._capsule_top() + 20)          # 按在胶囊上
+        press_at = island.pos() + grab
+        press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(grab), QPointF(grab), QPointF(press_at),
+                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        island.mousePressEvent(press)
+        far = press_at + QPoint(-300, -200)
+        move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(grab), QPointF(grab), QPointF(far),
+                           Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        island.mouseMoveEvent(move)
+        assert island._debug_state()["mode"] == "normal" and island.height() == _CAPSULE_HEIGHT
+        assert island.pos() == far - QPoint(30, 20), "胶囊左上角 = 光标 − 在胶囊里的抓取点"
     finally:
         island.close()
