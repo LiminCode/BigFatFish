@@ -131,6 +131,18 @@ PR #25 修了「收起不回原位」，但没管卡片本身：「消息记录�
 | 相关族 | `pytest -q tests/test_island*.py tests/test_dynamic_island*.py tests/test_multi_screen_interaction.py tests/test_settings_island_icon.py tests/test_work_briefing_links_and_island.py` | 375 passed |
 | 全量 | `python -m pytest -q`（本工作区，`QT_QPA_PLATFORM=offscreen`，APPDATA 重定向，PowerShell 启动） | 6 failed / 5989 passed / 14 skipped，8 min 14 s。6 个全是既有基线失败（与 #23 / #24 / #25 报告同一组：image_directory_picker、modern_context_menu_has_compact_semantic_groups、festival_id_guard_survives_optimize、real_second_process_refused_on_overlay_topology、capture_window_rect_coordinates_and_clamping、host_icons_are_warmed_at_the_cards_size），无新增 |
 
+### 追记：合并后从主检出重启（PR #26 squash `92727dde`）
+
+16:51:37 `acquired pid=57172`（主检出 `C:\Users\limin\Github\BigFatFish`，main），此时没有测试在跑；`pet-57172.log` **0 条 WARNING / ERROR**——第五节那两条「tick 慢帧」确是全量 pytest 占满 CPU 所致。探针（同一手法）：
+
+```
+capsule rect=(2009, 1236, 482, 44)
+expanded settled rect=(2009, 50, 482, 1182)   bottom=1231 work.bottom=1231  top_ok=True bottom_ok=True
+collapsed rect=(2009, 1236, 482, 44)
+```
+
+这一轮卡片回到上午量到的 1182（消息记录条数又满了）：总高 1182 ≤ 1232 − 2 × 16 = 1200，仍放得下、不压行，整块落在 y=50..1231。完成标准（1280 高的屏上卡片整块可见、不顶到 y=0、收起回原位）在 main 上复核通过。
+
 ## 七、已知限制与后续
 
 - 两框都压到 2 行仍放不下的屏（工作区高度不到约 480）只能顶到顶边、底部被截——卡片的固定部分（标题三行 + 按钮）
