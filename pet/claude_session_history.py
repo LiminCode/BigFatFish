@@ -28,7 +28,7 @@ import os
 import re
 import shutil
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable
 
@@ -59,6 +59,22 @@ _TRANSCRIPT_STEM_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F-]{2
 _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(/.*)?$")
 _DRIVE_RE = re.compile(r"^([A-Za-z]):(.*)$")
 _FIELDS = ("cwd", "title", "project", "entrypoint", "git_branch", "distro", "host_session")
+
+
+def normalize_workspace(value) -> dict:
+    """VS Code 工作区记录 → ``{"label", "target", "multi_root", "roots": [...]}``；认不出就是空。
+
+    记文件夹列表是因为**未命名**的多文件夹工作区关掉时 VS Code 会把它的工作区文件删掉，
+    之后只能靠这份列表原样重建（``code 目录1 目录2 …``）。"""
+    if not isinstance(value, dict):
+        return {}
+    target = str(value.get("target") or "").strip()
+    raw_roots = value.get("roots") if isinstance(value.get("roots"), (list, tuple)) else ()
+    roots = [str(item).strip() for item in raw_roots if str(item or "").strip()]
+    if not target and not roots:
+        return {}
+    return {"label": str(value.get("label") or "").strip()[:200], "target": target[:1000],
+            "multi_root": bool(value.get("multi_root")), "roots": roots[:50]}
 
 
 def normalize_cwd(agent: str, cwd: str) -> str:
@@ -111,6 +127,9 @@ class HistoryEntry:
     host_session: str = ""          # Claude 桌面版那边的会话 id（只有进程活着时拿得到；冻结后按它深链回去）
     last_seen: float = 0.0
     pinned: bool = False             # 用户置顶：一直排最前，直到取消
+    #: VS Code 插件里的会话开在哪个工作区（``normalize_workspace`` 的形状）。会话活着时记下，冻结后
+    #: 按它重开——只凭目录猜，原工作区关掉后会把对话重开到别的工作区、或只开文件夹（用户 2026-11-08）
+    workspace: dict = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -178,10 +197,11 @@ class SessionHistory:
         self.max_entries = _clamp(max_entries, DEFAULT_MAX_ENTRIES, 1, 200)
 
     # ---------------------------------------------------------------- 记录
-    def record(self, agent: str, session_id: str, *, seen: float | None = None, **fields) -> bool:
+    def record(self, agent: str, session_id: str, *, seen: float | None = None, workspace=None, **fields) -> bool:
         """记一笔（没有就新建，有就更新）。返回有没有值得落盘的变化。
 
         空字段不覆盖已知的值；``seen`` 是最后活动时间（缺省 = 现在），只会往后走。
+        ``workspace`` 见 ``normalize_workspace``：给了非空的就以新的为准。
         """
         agent, session_id = str(agent or ""), str(session_id or "")
         if not agent or not _SESSION_ID_RE.match(session_id):
@@ -190,20 +210,33 @@ class SessionHistory:
         seen = now if seen is None else float(seen)
         values = {name: str(fields.get(name) or "").strip() for name in _FIELDS}
         values["cwd"] = normalize_cwd(agent, values["cwd"])
+        workspace = normalize_workspace(workspace)
         entry = self._entries.get((agent, session_id))
         if entry is None:
             self._entries[(agent, session_id)] = HistoryEntry(
-                agent=agent, session_id=session_id, last_seen=seen, **values)
+                agent=agent, session_id=session_id, last_seen=seen, workspace=workspace, **values)
             return True
         changed = False
         for name, value in values.items():
             if value and getattr(entry, name) != value:
                 setattr(entry, name, value)
                 changed = True
+        if workspace and entry.workspace != workspace:
+            entry.workspace = workspace
+            changed = True
         if seen > entry.last_seen:
             changed = changed or seen - entry.last_seen >= SAVE_GRANULARITY_S
             entry.last_seen = seen
         return changed
+
+    def note_workspace(self, key: tuple[str, str], workspace) -> bool:
+        """给已有的一行记上（或更新）它的 VS Code 工作区；不动最后活动时间。返回有没有变化。"""
+        entry = self._entries.get(tuple(key))
+        workspace = normalize_workspace(workspace)
+        if entry is None or not workspace or entry.workspace == workspace:
+            return False
+        entry.workspace = workspace
+        return True
 
     def merge(self, found: Iterable[dict]) -> bool:
         """并入回填扫到的会话（``scan_local`` / ``scan_wsl`` 的结果）。"""
@@ -269,7 +302,7 @@ class SessionHistory:
             except (TypeError, ValueError):
                 continue
             agent, session_id = str(row.get("agent") or ""), str(row.get("session_id") or "")
-            self.record(agent, session_id, seen=seen,
+            self.record(agent, session_id, seen=seen, workspace=row.get("workspace"),
                         **{name: row.get(name) for name in _FIELDS if isinstance(row.get(name), str)})
             if row.get("pinned") is True:
                 self.set_pinned((agent, session_id), True)

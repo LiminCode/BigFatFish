@@ -118,7 +118,7 @@ def workspace_text(detail: SessionDetail) -> tuple[str, str, str]:
     workspace = detail.extra.get("workspace") if isinstance(detail.extra, dict) else None
     if not isinstance(workspace, dict) or not workspace.get("label"):
         return "", "", ""
-    folders = int(workspace.get("folders") or 0)
+    folders = int(workspace.get("folders") or len(workspace.get("roots") or ()))
     sub = (t("session_card.workspace_multi", n=folders) if workspace.get("multi_root")
            else t("session_card.workspace_single"))
     return (str(workspace["label"]), sub,
@@ -929,6 +929,7 @@ class SessionPetActions(QObject):
         self.opener = _open_path
         self.uri_opener = claude_session_jump.open_uri        # 冻结鱼：按深链让 Claude 桌面版重开对话
         self.vscode_resumer = claude_session_jump.resume_in_vscode   # 冻结鱼：开工作区 + 插件深链重开对话
+        self.workspace_finder = claude_session_jump.workspace_from_storage   # 老会话：从 VS Code 的状态库找回工作区
         self._history_actions = None                         # 冻结鱼：在终端里 claude --resume（懒建）
         QTimer.singleShot(_ICON_WARM_DELAY_MS, self, self._warm_host_icons)
 
@@ -977,6 +978,8 @@ class SessionPetActions(QObject):
                          "started_at", "alive", "distro", "model", "effort", "context_tokens", "extra"):
                 setattr(detail, name, getattr(cached, name))
             detail.cwd = detail.cwd or cached.cwd
+        if isinstance(info.get("workspace"), dict) and info["workspace"] and not detail.extra.get("workspace"):
+            detail.extra["workspace"] = dict(info["workspace"])   # 历史里记的：冻结鱼按它重开
         return detail
 
     def _load_async(self, key: tuple[str, str], signal) -> bool:
@@ -1034,6 +1037,10 @@ class SessionPetActions(QObject):
         self._controller.retitle(tuple(key), getattr(detail, "title", ""))
         self._controller.remodel(tuple(key), getattr(detail, "model", ""))
         self._cache[key] = detail
+        workspace = detail.extra.get("workspace") if isinstance(detail.extra, dict) else None
+        note = getattr(self._controller, "note_workspace", None)
+        if workspace and callable(note):
+            note(tuple(key), workspace)              # 活着时认出的工作区记进历史，冻结后按它重开
         card = self._card
         if (card is not None and shiboken6.isValid(card) and card.isVisible()
                 and card.key == key):
@@ -1125,6 +1132,13 @@ class SessionPetActions(QObject):
 
             def work() -> None:
                 try:
+                    if not detail.extra.get("workspace"):
+                        # 改之前就冻结的老会话没记工作区：VS Code 关掉的窗口留下的状态库里还能找到
+                        found = self.workspace_finder(detail.session_id, wsl=detail.is_wsl, distro=detail.distro)
+                        if found:
+                            detail.extra["workspace"] = found
+                            if shiboken6.isValid(self):
+                                self._detail_ready.emit(key, detail)        # 顺手记进历史
                     result = self.vscode_resumer(detail)      # 聚焦 / 开工作区要等一两秒
                 except Exception:
                     log.exception("在 VS Code 里重开会话失败")
@@ -1224,8 +1238,15 @@ class SessionPetActions(QObject):
 
 
 def load_detail(detail: SessionDetail) -> SessionDetail:
-    """读详情（会话记录 + 运行清单），VS Code 插件里的会话再认一下它开在哪个工作区。阻塞，后台线程里调。"""
-    return claude_session_jump.attach_workspace(claude_session_info.load(detail))
+    """读详情（会话记录 + 运行清单），VS Code 插件里的会话再认一下它开在哪个工作区；进程已不在、历史里
+    又没记的，从 VS Code 关掉的窗口留下的状态库里找。阻塞，后台线程里调。"""
+    loaded = claude_session_jump.attach_workspace(claude_session_info.load(detail))
+    if (loaded.entrypoint == claude_session_info.ENTRY_VSCODE and not loaded.extra.get("workspace")
+            and (loaded.alive is False or loaded.phase == "frozen")):
+        found = claude_session_jump.workspace_from_storage(loaded.session_id, wsl=loaded.is_wsl, distro=loaded.distro)
+        if found:
+            loaded.extra["workspace"] = found
+    return loaded
 
 
 def _open_path(path: str) -> bool:

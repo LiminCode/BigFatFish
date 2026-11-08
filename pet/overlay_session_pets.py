@@ -106,6 +106,18 @@ class SessionPetController(QObject):
         """这个会话在「最近的对话」里的那一行（冻结鱼恢复用）；没记录 / 没接历史 → None。"""
         return self._history.find(key) if self._history is not None else None
 
+    def note_workspace(self, key: tuple[str, str], workspace: dict) -> bool:
+        """详情里认出了这个 VS Code 会话开在哪个工作区：记进「最近的对话」，冻结后按它重开。"""
+        if self._history is None or not workspace:
+            return False
+        note = getattr(self._history, "note_workspace", None)
+        if not callable(note) or not note(key, workspace):
+            return False
+        entry = self.history_entry(key)
+        if key in self._frozen_info and entry is not None:
+            self._frozen_info[key]["workspace"] = dict(entry.workspace or {})   # 历史归一过的那份
+        return True
+
     def since(self, key: tuple[str, str]) -> float | None:
         """当前阶段（工作中 / 等批准 / 休息中）是从什么时候开始的（Unix 秒）。
 
@@ -282,7 +294,7 @@ class SessionPetController(QObject):
             self._frozen_info[key] = {"sessionId": key[1], "phase": "frozen", "title": entry.title,
                                       "project": entry.project or entry.folder, "cwd": entry.cwd,
                                       "entrypoint": entry.entrypoint, "host_session": entry.host_session,
-                                      "distro": entry.distro}
+                                      "distro": entry.distro, "workspace": dict(entry.workspace or {})}
             shell.set_session_pet_caption(
                 sprite, f"{claude_hooks.session_label(key[0], self._frozen_info[key])} · {self.PHASE_TEXT['frozen']}",
                 tone="frozen", host=entry.host)

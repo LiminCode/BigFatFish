@@ -259,7 +259,7 @@ def test_file_holds_paths_and_titles_only(tmp_path):
     data = json.loads((tmp_path / "history.json").read_text(encoding="utf-8"))
     assert set(data["entries"][0]) - {"host_session"} == {
         "agent", "session_id", "cwd", "title", "project", "entrypoint", "git_branch", "distro", "last_seen",
-        "pinned"}
+        "pinned", "workspace"}
 
 
 @pytest.mark.parametrize("content", ["", "not json", "[]", '{"entries": "x"}', '{"entries": [1, {"agent": 5}]}'])

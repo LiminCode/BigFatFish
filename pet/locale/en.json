@@ -1677,6 +1677,8 @@
   "session_jump.ui.could_not_find_terminal_window": "Could not find the terminal window for this session",
   "session_jump.ui.jumped_conversation_vs_code": "Jumped to this conversation in VS Code",
   "session_jump.ui.reopened_conversation_vs_code": "Asked VS Code to reopen this conversation",
+  "session_jump.ui.reopened_conversation_in_workspace": "Reopened this conversation in its workspace \u201c{label}\u201d",
+  "session_jump.ui.could_not_reopen_workspace": "Could not open its workspace \u201c{label}\u201d (no code command)",
   "session_jump.ui.jumped_conversation_claude_desktop": "Jumped to this conversation in Claude Desktop",
   "session_jump.ui.switched_vs_code_but_could": "Switched to VS Code, but could not open that conversation",
   "session_jump.ui.no_vs_code_window_has": "No VS Code window has this project open",

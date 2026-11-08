@@ -628,6 +628,7 @@ def test_frozen_vs_code_fish_reopens_the_conversation_in_its_wsl_workspace(shell
     actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
     handed: list = []
     actions.vscode_resumer = lambda detail: handed.append(detail) or JumpResult(True, "已让 VS Code 重开这个对话")
+    actions.workspace_finder = lambda *_args, **_kwargs: {}      # 不读真实的 VS Code 状态库
     menu = build_session_pet_menu(shell, sprite, actions)
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert "在 VS Code 里重开这个对话" in labels and "在 Claude 桌面版打开" not in labels
@@ -642,6 +643,80 @@ def test_frozen_vs_code_fish_reopens_the_conversation_in_its_wsl_workspace(shell
         "old-2222-bbbb", "/home/me/proj", "claude-vscode", "Ubuntu-24.04")
     assert detail.is_wsl
     menu.deleteLater()
+
+
+def test_a_frozen_vs_code_fish_carries_the_workspace_the_history_remembers(shell, persistent):
+    """用户 2026-11-08：原工作区关掉后，「跳到对话」把对话重开到了别的（恰好也包含这个目录的）工作区里。
+    历史记着它当时的工作区，冻结鱼交给重开那一路的详情里要带着它。"""
+    from PySide6.QtTest import QTest
+
+    from pet.claude_session_jump import JumpResult
+    from pet.session_pet_ui import SessionPetActions
+
+    workspace = {"label": "deploy", "target": "/home/me/ws/deploy.code-workspace", "multi_root": True,
+                 "roots": ["/home/me/proj", "/home/me/charts"]}
+    persistent.history_store.record("claude_wsl", "old-2222-bbbb", seen=NOW - 3600, cwd="/home/me/proj",
+                                    entrypoint="claude-vscode", distro="Ubuntu-24.04", workspace=workspace)
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    handed: list = []
+    looked: list = []
+    actions.vscode_resumer = lambda detail: handed.append(detail) or JumpResult(True, "ok")
+    actions.workspace_finder = lambda *args, **kwargs: looked.append(args) or {}
+    assert actions.jump(sprite) is True
+    for _ in range(100):
+        if handed:
+            break
+        QTest.qWait(20)
+    assert handed[0].extra["workspace"] == workspace
+    assert looked == [], "历史里有记录就不用去翻 VS Code 的状态库"
+
+
+def test_an_old_frozen_fish_without_a_record_is_backfilled_from_vscodes_state(shell, persistent):
+    from PySide6.QtTest import QTest
+
+    from pet.claude_session_jump import JumpResult
+    from pet.session_pet_ui import SessionPetActions
+
+    persistent.history_store.record("claude_wsl", "old-2222-bbbb", seen=NOW - 3600, cwd="/home/me/proj",
+                                    entrypoint="claude-vscode", distro="Ubuntu-24.04")
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    handed: list = []
+    found = {"label": "deploy", "target": "/home/me/ws/deploy.code-workspace", "multi_root": True,
+             "roots": ["/home/me/proj"], "folders": 1}
+    actions.vscode_resumer = lambda detail: handed.append(detail) or JumpResult(True, "ok")
+    actions.workspace_finder = lambda sid, **kwargs: found if (sid, kwargs) == (
+        "old-2222-bbbb", {"wsl": True, "distro": "Ubuntu-24.04"}) else {}
+    assert actions.jump(sprite) is True
+    for _ in range(100):
+        if handed and persistent.history_store.entries()[0].workspace:
+            break
+        QTest.qWait(20)
+    assert handed[0].extra["workspace"] == found
+    entry = persistent.history_store.entries()[0]
+    assert entry.workspace["target"] == "/home/me/ws/deploy.code-workspace", "找回来的顺手记进历史"
+    assert entry.last_seen == NOW - 3600, "补记不改最后活动时间"
+    assert persistent.describe(("claude_wsl", "old-2222-bbbb"))["workspace"] == entry.workspace
+
+
+def test_a_live_fish_s_detail_card_notes_the_workspace_into_the_history(shell, persistent):
+    """活着的会话打开详情卡 / 跳转时认出了工作区：记进「最近的对话」，将来冻结后按它重开。"""
+    from pet import claude_session_info
+    from pet.session_pet_ui import SessionPetActions
+
+    persistent.on_session_update("claude_wsl", _adopted("live-1111-aaaa", cwd="/home/me/proj"))
+    persistent.history_store.record("claude_wsl", "live-1111-aaaa", cwd="/home/me/proj", entrypoint="claude-vscode")
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    detail = claude_session_info.SessionDetail(agent="claude_wsl", session_id="live-1111-aaaa", cwd="/home/me/proj",
+                                               extra={"workspace": {"label": "ops", "target": "/home/me/ws/ops.code-workspace",
+                                                                    "multi_root": True, "roots": ["/home/me/proj"], "folders": 1}})
+    actions._on_detail_ready(("claude_wsl", "live-1111-aaaa"), detail)
+    (entry,) = [e for e in persistent.history_store.entries() if e.session_id == "live-1111-aaaa"]
+    assert entry.workspace == {"label": "ops", "target": "/home/me/ws/ops.code-workspace", "multi_root": True,
+                               "roots": ["/home/me/proj"]}
 
 
 def test_frozen_terminal_fish_says_it_resumes_in_a_terminal(shell, persistent):

@@ -32,6 +32,11 @@
 - 标题分不清时（几个窗口同名、或标题被自定义得不带名字）：看哪个窗口的当前标签页正是
   这个对话；还不行就让 ``code`` 命令按确切的文件夹 / 工作区文件去聚焦——VS Code 按它
   去重，已经开着的不会新开。
+- **进程已不在的会话**（冻结的小鱼、「最近的对话」里的一行）不按目录猜：「最近的对话」记着它
+  活着时开在哪个工作区（``recorded_workspace``），开着就聚焦那个窗口，关了就按记录把它开回来
+  （工作区文件还在开文件，未命名工作区的文件没了就把当时的文件夹一起开）；没记录的老会话去
+  VS Code 关掉的窗口留下的状态库里找（``workspace_from_storage``）。只凭目录猜，会把对话重开到
+  别的恰好也包含这个目录的工作区里、或只开文件夹（用户 2026-11-08 实机）。
 - 本机终端会话顺着进程链往上找第一个拥有可见窗口的祖先进程。
 - WSL 终端会话的进程链在发行版里，看不到 Windows 这一侧：用它环境变量里的
   ``TERM_PROGRAM`` / ``WT_SESSION`` 判断是 VS Code 终端还是 Windows Terminal。
@@ -290,7 +295,14 @@ def workspaces_from_state(state: dict, read_text: Callable[[str, str], str | Non
             if parsed is None:
                 continue
             kind, distro, path = parsed
-            text = read_text(path, distro)
+            authority = str(entry.get("remoteAuthority") or "")
+            if kind == "local" and authority.lower().startswith("wsl+"):
+                # 未命名的 WSL 工作区：工作区文件在 Windows 这边（Code/Workspaces/<id>/workspace.json），
+                # 里面的文件夹是 vscode-remote://wsl+<发行版>/… 的地址
+                kind, distro = "wsl", authority[4:]
+                text = read_text(path, "")
+            else:
+                text = read_text(path, distro)
             roots = _workspace_roots(text, path, distro) if text else ()
             if not roots:
                 continue
@@ -334,7 +346,8 @@ def opened_workspaces(appdata: str | os.PathLike | None = None,
         except (OSError, ValueError):
             continue
         index = _storage_index(user)
-        found.extend(replace(item, storage=tuple(index.get((item.wsl, item.target.lower()), ())))
+        found.extend(replace(item, storage=tuple(index.get((item.wsl, item.target.lower()))
+                                                 or index.get((False, item.target.lower()), ())))
                      for item in workspaces_from_state(state, read_text))
     return found
 
@@ -378,6 +391,89 @@ def _state_mentions(storage_dir: str, session_id: str) -> int:
         return 0
     keys = {row[0] for row in rows}
     return 2 if _STATE_KEYS[0] in keys else 1 if keys else 0
+
+
+#: 回填只看这么久以内动过的窗口状态库（和「最近的对话」最长保留期一致）
+_STORAGE_LOOKBACK_S = 30 * 24 * 3600
+
+
+def workspace_from_storage(session_id: str, *, wsl: bool, distro: str = "",
+                           appdata: str | os.PathLike | None = None,
+                           read_text: Callable[[str, str], str | None] = _read_workspace_file,
+                           mentions: Callable[[str, str], int] = _state_mentions,
+                           now: float | None = None) -> dict:
+    """历史里没记工作区的老会话：VS Code **关掉的窗口**也留着状态库（``workspaceStorage/<id>/``），
+    哪个最后把这个会话当作开着的标签页，它的 ``workspace.json`` 就指着当时的工作区。
+
+    返回 ``workspace_record`` 那种形状；找不到、或工作区文件已经没了（未命名工作区关掉即删，
+    文件夹列表无从得知）就是空。阻塞：每个状态库查一次小库，放后台线程里调。"""
+    if not session_id:
+        return {}
+    base = appdata if appdata is not None else os.environ.get("APPDATA")
+    if not base:
+        return {}
+    now = time.time() if now is None else now
+    candidates: list[tuple[int, float, Path]] = []
+    for name in _VSCODE_DATA_DIRS:
+        try:
+            folders = list((Path(base) / name / "User" / "workspaceStorage").iterdir())
+        except OSError:
+            continue
+        for folder in folders:
+            try:
+                stamp = (folder / "state.vscdb").stat().st_mtime
+            except OSError:
+                continue
+            if now - stamp > _STORAGE_LOOKBACK_S:
+                continue
+            score = mentions(str(folder), session_id)
+            if score:
+                candidates.append((score, stamp, folder))
+    # 「是开着的标签页」压过「只在插件状态里」，再按最后落盘时间从新到旧；头一个能还原出工作区的算数
+    for _score, _stamp, folder in sorted(candidates, key=lambda item: (-item[0], -item[1])):
+        record = _storage_workspace(folder, wsl=wsl, distro=distro, read_text=read_text)
+        if record:
+            return record
+    return {}
+
+
+def _storage_workspace(folder: Path, *, wsl: bool, distro: str,
+                       read_text: Callable[[str, str], str | None]) -> dict:
+    """一个状态库目录的 ``workspace.json`` → 它那个窗口开的工作区（``workspace_record`` 的形状）；
+    不是这一侧（本机 / WSL）的、发行版对不上的、工作区文件已经没了的都是空。"""
+    try:
+        meta = json.loads((folder / "workspace.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    uri, multi_root = meta.get("folder"), False
+    if not isinstance(uri, str):
+        workspace = meta.get("workspace")
+        uri, multi_root = (workspace.get("configPath") if isinstance(workspace, dict) else workspace), True
+    parsed = _split_uri(uri) if isinstance(uri, str) else None
+    if parsed is None:
+        return {}
+    kind, found_distro, path = parsed
+    target = _norm(path)
+    if not multi_root:
+        if (kind == "wsl") != wsl or (wsl and distro and found_distro.lower() != distro.lower()):
+            return {}
+        return workspace_record(OpenWorkspace(posixpath.basename(target), (target,), target, wsl=wsl))
+    if kind == "wsl":
+        if not wsl or (distro and found_distro.lower() != distro.lower()):
+            return {}
+        text, roots_distro = read_text(target, found_distro), found_distro
+    else:
+        # 工作区文件在 Windows 这边：本机工作区，或**未命名**的 WSL 工作区（文件夹是 WSL 里的地址；
+        # 状态库的记录里没有发行版名，按会话自己的发行版认）
+        text, roots_distro = read_text(target, ""), (distro if wsl else "")
+    roots = _workspace_roots(text, target, roots_distro) if text else ()
+    if not roots:
+        return {}
+    name = posixpath.basename(target)
+    label = name[:-len(_WORKSPACE_SUFFIX)] if name.endswith(_WORKSPACE_SUFFIX) else "Untitled"
+    return workspace_record(OpenWorkspace(label, roots, target, wsl=wsl, multi_root=True))
 
 
 def session_windows(workspaces: list[OpenWorkspace], session_id: str,
@@ -452,21 +548,86 @@ def session_workspace(detail: SessionDetail, known: list[OpenWorkspace],
 
 
 def attach_workspace(detail: SessionDetail,
-                     workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces) -> SessionDetail:
+                     workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces,
+                     mentions: Callable[[str, str], int] = _state_mentions) -> SessionDetail:
     """给 VS Code 插件里的会话记上它所在的工作区（``extra["workspace"]``）；别的入口不动。
+
+    活着的会话一定开在某个窗口里，按 VS Code 的记录 / 目录都能认。**进程已不在**的会话只认 VS Code
+    自己记着「这个会话是它的标签页」的窗口：现在开着的窗口里谁包含这个目录说明不了什么——那正是
+    把对话重开到别的工作区里的来由（用户 2026-11-08）；历史里记的那份照留。
 
     阻塞（读 VS Code 的几个小文件），在读详情的后台线程里调。读坏了只是少一行，不报错。"""
     if detail.entrypoint != ENTRY_VSCODE:
         return detail
     try:
-        owner = session_workspace(detail, list(workspaces()))
+        known = list(workspaces())
+        if detail.alive is False or detail.phase == "frozen":
+            recorded = [w for w in session_windows(known, detail.session_id, mentions) if w.wsl == detail.is_wsl]
+            owner = recorded[0] if len(recorded) == 1 else None
+        else:
+            owner = session_workspace(detail, known, mentions)
     except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
         log.debug("读取 VS Code 的窗口记录失败", exc_info=True)
         return detail
     if owner is not None:
-        detail.extra["workspace"] = {"label": owner.label, "target": owner.target,
-                                     "multi_root": owner.multi_root, "folders": len(owner.roots)}
+        detail.extra["workspace"] = workspace_record(owner)
     return detail
+
+
+def workspace_record(owner: OpenWorkspace) -> dict:
+    """一个窗口开的工作区 → 可以存进历史的那几样（``claude_session_history.normalize_workspace`` 的形状）。"""
+    return {"label": owner.label, "target": owner.target, "multi_root": owner.multi_root,
+            "roots": list(owner.roots), "folders": len(owner.roots)}
+
+
+def recorded_workspace(detail: SessionDetail) -> dict:
+    """历史 / 详情里记着的工作区（``extra["workspace"]``）；没有或没有可用的路径就是空。"""
+    record = detail.extra.get("workspace") if isinstance(detail.extra, dict) else None
+    if not isinstance(record, dict):
+        return {}
+    roots = ([str(r) for r in record.get("roots") or () if str(r or "").strip()]
+             if isinstance(record.get("roots"), (list, tuple)) else [])
+    target = str(record.get("target") or "").strip()
+    if not target and not roots:
+        return {}
+    return {"label": str(record.get("label") or ""), "target": target,
+            "multi_root": bool(record.get("multi_root")), "roots": roots}
+
+
+def open_workspace_matching(known: list[OpenWorkspace], record: dict, *, wsl: bool) -> OpenWorkspace | None:
+    """记录里的工作区现在开着的话是哪个窗口：按工作区文件 / 文件夹对；未命名工作区关掉重开后文件名
+    会变，那就按包含的文件夹集合对。"""
+    target = _norm(record.get("target") or "").lower() if record.get("target") else ""
+    roots = {_norm(r).lower() for r in record.get("roots") or ()}
+    by_roots = None
+    for workspace in known:
+        if workspace.wsl != wsl:
+            continue
+        if target and _norm(workspace.target).lower() == target:
+            return workspace
+        if (by_roots is None and roots and workspace.multi_root == bool(record.get("multi_root"))
+                and {_norm(r).lower() for r in workspace.roots} == roots):
+            by_roots = workspace
+    return by_roots
+
+
+def _workspace_file_exists(path: str, *, wsl: bool, distro: str) -> bool:
+    if wsl:
+        return bool(distro) and os.path.isfile("\\\\wsl.localhost\\" + distro + path.replace("/", "\\"))
+    return os.path.isfile(path)
+
+
+def reopen_targets(detail: SessionDetail, record: dict,
+                   exists: Callable[..., bool] = _workspace_file_exists) -> list[str]:
+    """记录里的工作区现在没开着：交给 ``code`` 命令的路径。工作区文件还在就开它；文件没了
+    （未命名工作区关掉时 VS Code 会删掉它）就把当时的文件夹一起开——VS Code 会把几个文件夹开成
+    一个未命名的多文件夹窗口；单文件夹的工作区就是那个文件夹。"""
+    target, roots = record.get("target") or "", list(record.get("roots") or ())
+    if record.get("multi_root"):
+        if target and exists(target, wsl=detail.is_wsl, distro=detail.distro):
+            return [target]
+        return roots or ([target] if target else [])
+    return [target] if target else roots[:1]
 
 
 def find_host_window(chain: list[tuple[int, str]], windows: list[Window], cwd: str,
@@ -684,38 +845,47 @@ def open_uri(uri: str) -> bool:
         return False
 
 
-def vscode_command(detail: SessionDetail, target: str = "", *, code: str = "code") -> list[str] | None:
-    """``code`` 命令的参数：打开 / 聚焦 ``target``（文件夹或工作区文件；空 = 会话的工作目录）。"""
-    path = target or detail.cwd
-    if not path:
+def vscode_command(detail: SessionDetail, target: str | list[str] = "", *, code: str = "code") -> list[str] | None:
+    """``code`` 命令的参数：打开 / 聚焦 ``target``（文件夹或工作区文件；空 = 会话的工作目录；
+    给一列文件夹就一起开成一个多文件夹窗口）。"""
+    paths = [p for p in (target if isinstance(target, (list, tuple)) else [target]) if p] or [detail.cwd]
+    if not paths[0]:
         return None
     args = [code]
     if detail.is_wsl:
         if not detail.distro:
             return None
         args += ["--remote", f"wsl+{detail.distro}"]
-    elif "/" in path and ntpath.splitdrive(path)[0]:
-        path = path.replace("/", "\\")
-    return [*args, path]
+    else:
+        paths = [p.replace("/", "\\") if "/" in p and ntpath.splitdrive(p)[0] else p for p in paths]
+    return [*args, *paths]
 
 
 def vscode_target(detail: SessionDetail,
-                  workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces) -> str:
-    """这个会话的目录正开在哪个窗口里，就返回那个窗口的文件夹 / 工作区文件；都不在返回空。"""
+                  workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces,
+                  exists: Callable[..., bool] = _workspace_file_exists) -> str | list[str]:
+    """交给 ``code`` 命令的路径：记录里有它的工作区就认记录——开着就是那个窗口的文件夹 / 工作区文件，
+    没开就是能把它重开出来的路径（见 ``reopen_targets``）；没记录就看它的目录正开在哪个窗口里；
+    都不是返回空。"""
     try:
-        owner = owning_workspace(list(workspaces()), detail.cwd, wsl=detail.is_wsl)
+        known = list(workspaces())
     except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
         log.exception("读取 VS Code 的窗口记录失败")
         return ""
+    record = recorded_workspace(detail)
+    if record:
+        match = open_workspace_matching(known, record, wsl=detail.is_wsl)
+        return match.target if match is not None else reopen_targets(detail, record, exists)
+    owner = owning_workspace(known, detail.cwd, wsl=detail.is_wsl)
     return owner.target if owner is not None else ""
 
 
-def open_in_vscode(detail: SessionDetail, target: str = "") -> bool:
+def open_in_vscode(detail: SessionDetail, target: str | list[str] = "") -> bool:
     """用 ``code`` 命令打开 / 聚焦一个窗口（标题认不出窗口时的退路）。
 
     VS Code 按文件夹 / 工作区文件去重：``target`` 正是某个窗口开着的那个时只会聚焦它。
     只给会话的工作目录、而它其实是某个多文件夹工作区的一员时，会**新开**一个窗口——
-    所以知道它属于哪个工作区时一定要把工作区文件传进来。"""
+    所以知道它属于哪个工作区时一定要把工作区文件传进来（``vscode_target`` 先认历史里记的）。"""
     code = shutil.which("code")
     args = vscode_command(detail, target or vscode_target(detail), code=code) if code else None
     if not args:
@@ -760,13 +930,15 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
 
 
 def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known,
-                 done: str = "session_jump.ui.jumped_conversation_vs_code") -> JumpResult:
+                 done: str = "session_jump.ui.jumped_conversation_vs_code",
+                 pinned: OpenWorkspace | None = None) -> JumpResult:
+    """``pinned``：已经知道它就在这个（开着的）工作区里——历史记着；不再按目录去猜。"""
     wsl = detail.is_wsl
-    owners = owning_workspaces(known, detail.cwd, wsl=wsl)
+    owners = [pinned] if pinned is not None else owning_workspaces(known, detail.cwd, wsl=wsl)
     recorded = [w for w in session_windows(known, detail.session_id) if w.wsl == wsl]
     if len(recorded) == 1:
         owners = recorded        # VS Code 自己记着它开在这个窗口里：比按路径推断的准
-    owner = None
+    owner = owners[0] if len(owners) == 1 else None
     if owners:      # 按从前到后的层叠顺序收：路径上分不出唯一一个时，几个窗口都是候选
         hits = {w.hwnd for o in owners for w in vscode_candidates(all_windows, detail.cwd, wsl=wsl, owner=o)}
         named = [w for w in all_windows if w.hwnd in hits]
@@ -815,7 +987,8 @@ def resume_in_vscode(detail: SessionDetail, *,
                      uri: Callable[[str], bool] = open_uri,
                      vscode: Callable[..., bool] = open_in_vscode,
                      workspaces: Callable[[], list[OpenWorkspace]] = opened_workspaces,
-                     sleep: Callable[[float], None] = time.sleep) -> JumpResult:
+                     sleep: Callable[[float], None] = time.sleep,
+                     exists: Callable[..., bool] = _workspace_file_exists) -> JumpResult:
     """重开一个**进程已不在**的 VS Code 会话（冻结的会话小鱼）：聚焦 / 打开它的工作区，再发
     ``vscode://anthropic.claude-code/open?session=<id>``——插件对已关掉的对话也认这个链接，会把它重开
     （实机 2026-11-02 探针：窗口标题随即变成那个对话的名字、运行清单里出现它的新进程）。
@@ -827,8 +1000,21 @@ def resume_in_vscode(detail: SessionDetail, *,
     except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
         log.exception("读取 VS Code 的窗口记录失败")
         known = []
-    return _jump_vscode(detail, windows(), focus, uri, vscode, sleep, known,
-                        done="session_jump.ui.reopened_conversation_vs_code")
+    done = "session_jump.ui.reopened_conversation_vs_code"
+    record = recorded_workspace(detail)
+    if not record:
+        return _jump_vscode(detail, windows(), focus, uri, vscode, sleep, known, done=done)
+    match = open_workspace_matching(known, record, wsl=detail.is_wsl)
+    if match is not None:
+        return _jump_vscode(detail, windows(), focus, uri, vscode, sleep, known, done=done, pinned=match)
+    # 当时的工作区现在没开着：按记录把它开回来，不去借别的恰好也包含这个目录的工作区
+    label = record.get("label") or folder_name(detail.cwd)
+    if not vscode(detail, reopen_targets(detail, record, exists)):
+        return JumpResult(False, t("session_jump.ui.could_not_reopen_workspace", label=label))
+    sleep(1.2 + _URI_DELAY_S)
+    if not uri(session_uri(detail.session_id)):
+        return JumpResult(True, t("session_jump.ui.switched_vs_code_but_could"))
+    return JumpResult(True, t("session_jump.ui.reopened_conversation_in_workspace", label=label))
 
 
 def _jump_terminal(detail, all_windows, focus, chain, wsl_env, owner=None,
