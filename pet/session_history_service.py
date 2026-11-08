@@ -52,16 +52,21 @@ class SessionHistoryService(QObject):
 
     changed = Signal()                  # 列表内容变了：界面刷新
     _scanned = Signal(object)           # worker 线程 → GUI 线程（跨线程自动排队）
+    _workspace_found = Signal(object, object)   # (key, 工作区记录)：worker 线程 → GUI 线程
 
     SAVE_DELAY_MS = 3_000
     RESCAN_MIN_INTERVAL_S = 60.0
     STARTUP_SCAN_DELAY_MS = 5_000
+    #: 同一个活着的 VS Code 会话隔这么久再认一次它开在哪个工作区（状态库是隔一阵才落盘的；
+    #: 用户也可能把文件夹加进 / 移出工作区）
+    WORKSPACE_RECHECK_S = 600.0
 
     def __init__(self, store: SessionHistory, *, enabled: Callable[[], bool] = lambda: True,
                  wsl_enabled: Callable[[], bool] = lambda: False,
                  limits: Callable[[], tuple] | None = None,
                  scan_local: Callable | None = None, scan_wsl: Callable | None = None,
                  spawn: Callable | None = None, clock: Callable[[], float] = time.monotonic,
+                 resolve_workspace: Callable | None = None,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._store = store
@@ -72,6 +77,8 @@ class SessionHistoryService(QObject):
         self._scan_wsl = scan_wsl
         self._spawn = spawn or _spawn_thread
         self._clock = clock
+        self._resolve_workspace = resolve_workspace or _default_resolve_workspace
+        self._workspace_checked: dict[tuple[str, str], float] = {}
         self._scanning = False
         self._last_scan: float | None = None
         self._save_timer = QTimer(self)
@@ -83,6 +90,7 @@ class SessionHistoryService(QObject):
         self._startup_timer.setInterval(self.STARTUP_SCAN_DELAY_MS)
         self._startup_timer.timeout.connect(self.rescan)
         self._scanned.connect(self._on_scanned)
+        self._workspace_found.connect(self.note_workspace)
 
     def start(self) -> None:
         """读入上次的记录，稍后做第一次回填（不和启动抢时间）。"""
@@ -129,8 +137,54 @@ class SessionHistoryService(QObject):
             return
         fields = {name: str(update.get(name) or "")
                   for name in ("cwd", "title", "project", "entrypoint", "host_session")}
-        if self._store.record(str(agent_key), str(update.get("sessionId") or ""), **fields):
+        key = (str(agent_key), str(update.get("sessionId") or ""))
+        if self._store.record(*key, **fields):
             self._touched()
+        self._maybe_resolve_workspace(key, update)
+
+    # ---------------------------------------------------------------- VS Code 工作区
+    def _maybe_resolve_workspace(self, key: tuple[str, str], update: dict) -> None:
+        """VS Code 插件里活着的会话：隔一阵认一次它开在哪个工作区，记下来（冻结后按它重开）。
+        读 VS Code 的几个小文件，放后台线程。"""
+        entry = self.find(key)
+        if (entry is None or entry.entrypoint != claude_session_info.ENTRY_VSCODE or not entry.cwd
+                or str(update.get("phase") or "") == "gone"):
+            return
+        now = self._clock()
+        last = self._workspace_checked.get(key)
+        if last is not None and now - last < self.WORKSPACE_RECHECK_S:
+            return
+        self._workspace_checked[key] = now
+        detail = claude_session_info.SessionDetail(
+            agent=entry.agent, session_id=entry.session_id, cwd=entry.cwd, entrypoint=entry.entrypoint,
+            distro=entry.distro, extra={"start_cwd": str(update.get("start_cwd") or "")})
+        resolve = self._resolve_workspace
+
+        def run() -> None:
+            try:
+                found = resolve(detail)
+            except Exception:  # noqa: BLE001 - VS Code 的记录读坏了只是少一条线索
+                log.debug("最近的对话：认 VS Code 工作区失败", exc_info=True)
+                return
+            if found:
+                try:
+                    self._workspace_found.emit(key, found)
+                except RuntimeError:
+                    pass  # 应用正在退出
+
+        try:
+            self._spawn(run)
+        except Exception:  # noqa: BLE001
+            log.debug("最近的对话：启动认工作区的线程失败", exc_info=True)
+
+    @Slot(object, object)
+    def note_workspace(self, key, workspace) -> bool:
+        """记下（或更新）一个会话的 VS Code 工作区（详情卡认出来的、后台认出来的、从 VS Code 状态库
+        找回来的都走这里）。有变化就安排落盘。"""
+        if not self._store.note_workspace(tuple(key), workspace):
+            return False
+        self._save_timer.start()
+        return True
 
     # ---------------------------------------------------------------- 回填
     def rescan(self, *, force: bool = False) -> bool:
@@ -212,6 +266,11 @@ class SessionHistoryService(QObject):
             self._store.save()
 
 
+def _default_resolve_workspace(detail) -> dict:
+    """这个（活着的）VS Code 会话开在哪个工作区（读 VS Code 自己的记录）；认不出就是空。"""
+    return dict(claude_session_jump.attach_workspace(detail).extra.get("workspace") or {})
+
+
 # ---------------------------------------------------------------- 点一行
 def _popen(argv: list[str]) -> bool:
     try:
@@ -236,19 +295,24 @@ class SessionHistoryActions:
 
     def __init__(self, *, popen: Callable = _popen, open_vscode: Callable = claude_session_jump.open_in_vscode,
                  open_path: Callable = _open_path, copy: Callable[[str], None] | None = None,
-                 which: Callable = shutil.which, wsl: str | None = None) -> None:
+                 which: Callable = shutil.which, wsl: str | None = None,
+                 find_workspace: Callable = claude_session_jump.workspace_from_storage,
+                 note_workspace: Callable | None = None) -> None:
         self._popen = popen
         self._open_vscode = open_vscode
         self._open_path = open_path
         self._copy = copy
         self._which = which
         self._wsl = wsl
+        self._find_workspace = find_workspace
+        self._note_workspace = note_workspace
 
     @staticmethod
     def _detail(entry: HistoryEntry) -> claude_session_info.SessionDetail:
         return claude_session_info.SessionDetail(
             agent=entry.agent, session_id=entry.session_id, title=entry.title, cwd=entry.cwd,
-            entrypoint=entry.entrypoint, distro=entry.distro)
+            entrypoint=entry.entrypoint, distro=entry.distro,
+            extra={"workspace": dict(entry.workspace)} if entry.workspace else {})
 
     def activate(self, entry: HistoryEntry) -> str:
         """点一行：VS Code 里开的打开那个工作区，其余在终端里恢复。"""
@@ -265,8 +329,21 @@ class SessionHistoryActions:
         return t("history.result.resumed", label=entry.label)
 
     def _do_vscode(self, entry: HistoryEntry) -> str:
-        if self._open_vscode(self._detail(entry)):
-            return t("history.result.opened_vscode", path=entry.folder or entry.cwd)
+        detail = self._detail(entry)
+        if not entry.workspace:
+            # 改之前记下的老会话没有工作区：VS Code 关掉的窗口留下的状态库里还能找到（几十毫秒）
+            try:
+                found = self._find_workspace(entry.session_id, wsl=entry.is_wsl, distro=entry.distro)
+            except Exception:  # noqa: BLE001 - 只是少一条线索
+                log.debug("最近的对话：从 VS Code 状态库找工作区失败", exc_info=True)
+                found = {}
+            if found:
+                detail.extra["workspace"] = found
+                if self._note_workspace is not None:
+                    self._note_workspace(entry.key, found)
+        if self._open_vscode(detail):
+            label = (detail.extra.get("workspace") or {}).get("label") or entry.folder or entry.cwd
+            return t("history.result.opened_vscode", path=label)
         if self._do_folder(entry) == "":
             return t("history.result.no_code_opened_folder")
         return t("history.result.no_code_no_folder")

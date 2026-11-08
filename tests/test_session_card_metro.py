@@ -149,7 +149,8 @@ def test_attach_workspace_only_touches_vscode_sessions_and_survives_bad_records(
     shop = _ws("shop", "C:/code/shop/web", "C:/code/shop/api", multi=True)
     detail = sj.attach_workspace(_vscode(), workspaces=lambda: [shop])
     assert detail.extra["workspace"] == {"label": "shop", "target": "C:/code/shop.code-workspace",
-                                         "multi_root": True, "folders": 2}
+                                         "multi_root": True, "folders": 2,
+                                         "roots": ["C:/code/shop/web", "C:/code/shop/api"]}   # 文件夹列表：历史要存
     terminal = sj.attach_workspace(_vscode(entrypoint="cli"), workspaces=lambda: [shop])
     assert "workspace" not in terminal.extra
 
