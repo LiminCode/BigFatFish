@@ -179,6 +179,9 @@ def _sink_value(stats: dict) -> str:
     entries = stats.get("entries") or {}
     vault = stats.get("vault") or {}
     text = t("distill.stage.sink_value", g=int(entries.get("global", 0)), p=int(entries.get("project", 0)))
+    work = stats.get("entries_work") or {}
+    if int(work.get("global", 0)) + int(work.get("project", 0)):
+        text += t("distill.stage.sink_work", n=int(work.get("global", 0)) + int(work.get("project", 0)))
     if vault.get("state") == "pushing":
         text += " · " + t("distill.vault.pushing")
     elif vault.get("state") == "failed":
@@ -186,9 +189,18 @@ def _sink_value(stats: dict) -> str:
     return text
 
 
-def run_line(stats: dict) -> str:
-    """提案页顶上那行：上次总结的模型 / 强度 / token / 秒 / 候选数 → 提案数，或失败原因。"""
-    state = stats.get("distill") or {}
+def run_lines(stats: dict) -> str:
+    """提案页顶上：个人侧一行；公司侧跑过（或正在跑、失败过）就再多一行，前面写明「公司侧」。"""
+    lines = [run_line(stats)]
+    work = stats.get("distill_work") or {}
+    if work.get("busy") or work.get("last_error") or work.get("last_run_at"):
+        lines.append(t("distill.work.prefix") + run_line(stats, "distill_work"))
+    return "\n".join(lines)
+
+
+def run_line(stats: dict, key: str = "distill") -> str:
+    """一侧的那行：上次总结的模型 / 强度 / token / 秒 / 候选数 → 提案数，或失败原因。"""
+    state = stats.get(key) or {}
     if state.get("busy"):
         return t("distill.run.busy")
     if state.get("last_error"):
@@ -203,6 +215,10 @@ def run_line(stats: dict) -> str:
              ) + dropped_note(int(last.get("dropped", 0) or 0), False)
 
 
+def _side_prefix(side: str) -> str:
+    return t("distill.work.prefix") if side == md.SIDE_WORK else ""
+
+
 def dropped_note(dropped: int, resend: bool) -> str:
     """模型输出里有项解不出来时跟在结果后面的那句（没丢就是空）：丢了几项、这批候选会不会重送。"""
     if not dropped:
@@ -211,8 +227,10 @@ def dropped_note(dropped: int, resend: bool) -> str:
 
 
 def proposal_label(item: run.Proposal) -> str:
+    """提案列表里的一行。公司侧的前面标「公司」（它接受后写进 WSL，不是这台 Windows 的 CLAUDE.md）。"""
     scope = t("distill.scope.global") if item.scope == "global" else md.posix_home_label(item.project) or t("distill.scope.project")
-    return f"{t(f'distill.action.{item.action}')} · {scope} · {item.title}"
+    side = f"{t(SIDE_KEYS[md.SIDE_WORK])} · " if getattr(item, "side", md.SIDE_PERSONAL) == md.SIDE_WORK else ""
+    return f"{side}{t(f'distill.action.{item.action}')} · {scope} · {item.title}"
 
 
 def side_text(row: dict, work_roots: Iterable[str]) -> str:
@@ -559,6 +577,7 @@ class MemoryDistillWindow(QWidget):
 
     refresh_requested = Signal()
     distill_requested = Signal()
+    distill_work_requested = Signal()
     settings_requested = Signal()
     place_requested = Signal(str)
     vscode_requested = Signal(str)                          # 在 WSL 里对这个入口的目录 code .
@@ -638,6 +657,10 @@ class MemoryDistillWindow(QWidget):
         self.distill_btn.setToolTip(t("distill.button.distill_hint"))
         self.distill_btn.setAccessibleDescription(t("distill.button.distill_hint"))
         self.distill_btn.clicked.connect(self.distill_requested)
+        self.distill_work_btn = TiltButton(t("distill.button.distill_work"), self)
+        self.distill_work_btn.setToolTip(t("distill.button.distill_work_hint"))
+        self.distill_work_btn.setAccessibleDescription(t("distill.button.distill_work_hint"))
+        self.distill_work_btn.clicked.connect(self.distill_work_requested)
         self.settings_btn = TiltButton(t("distill.button.settings"), self)
         self.settings_btn.clicked.connect(self.settings_requested)
         self.close_btn = TiltButton(t("briefing.button.close"), self)
@@ -647,6 +670,7 @@ class MemoryDistillWindow(QWidget):
         buttons.addWidget(self.status_label, 1)
         buttons.addWidget(self.refresh_btn)
         buttons.addWidget(self.distill_btn)
+        buttons.addWidget(self.distill_work_btn)
         buttons.addWidget(self.settings_btn)
         buttons.addWidget(self.close_btn)
         # 流程页内容比窗口高时整页滚动（底部的按钮行固定在滚动区外）
@@ -825,8 +849,9 @@ class MemoryDistillWindow(QWidget):
         self.stats_body.setHtml(stats_html(stats, self._colors))
         self.settings_label.setText(settings_html(settings, str(stats.get("root") or "")))
         self.sides_label.setText(sides_html(settings, stats))
-        self.run_label.setText(run_line(stats))
+        self.run_label.setText(run_lines(stats))
         self.distill_btn.setEnabled(not (stats.get("distill") or {}).get("busy"))
+        self.distill_work_btn.setEnabled(not (stats.get("distill_work") or {}).get("busy"))
         self.refresh_btn.setEnabled(not stats.get("busy"))
         if stats.get("error"):
             self.status_label.setText(t("distill.status.error", error=str(stats["error"])[-160:]))
@@ -913,7 +938,8 @@ class MemoryDistillWindow(QWidget):
             return
         item = self._proposals[index]
         where = t("distill.scope.global") if item.scope == "global" else item.project or t("distill.scope.project")
-        self.proposal_head.setText(t("distill.proposal.head", action=t(f"distill.action.{item.action}"), where=where,
+        side = t("distill.proposal.work_side") if getattr(item, "side", md.SIDE_PERSONAL) == md.SIDE_WORK else ""
+        self.proposal_head.setText(side + t("distill.proposal.head", action=t(f"distill.action.{item.action}"), where=where,
                                      kind=item.type, when=_when(item.run_at or "", "%m-%d %H:%M"))
                                    + (f"  ·  {t('distill.proposal.replaces', title=item.replaces)}" if item.replaces else ""))
         self.title_edit.setText(item.title)
@@ -1010,6 +1036,7 @@ class MemoryDistillController(QObject):
             self.window.place_requested.connect(self.open_place)
             self.window.settings_requested.connect(self.open_settings)
             self.window.distill_requested.connect(self.distill_now)
+            self.window.distill_work_requested.connect(lambda: self.distill_now(md.SIDE_WORK))
             self.window.review_requested.connect(self.review)
             self.window.vscode_requested.connect(self.open_in_vscode)
         self.service.probe_wsl()             # WSL 那条入口的路径要问 wsl.exe；抽取没开也得知道
@@ -1029,12 +1056,12 @@ class MemoryDistillController(QObject):
         self.window.show_candidates(self.service.recent())
         self.window.show_proposals(self.service.proposals().pending())
 
-    def distill_now(self) -> None:
-        if self.service.distilling:
+    def distill_now(self, side: str = md.SIDE_PERSONAL) -> None:
+        if self.service.is_distilling(side):
             return
         if self.window is not None:
-            self.window.show_status(t("distill.run.busy"))
-        self.service.distill_now(manual=True)
+            self.window.show_status(_side_prefix(side) + t("distill.run.busy"))
+        self.service.distill_now(manual=True, side=side)
 
     def review(self, pid: str, status: str, title: str, why: str, how: str) -> None:
         self.service.review(pid, status, title=title, why=why, how=how)
@@ -1047,14 +1074,15 @@ class MemoryDistillController(QObject):
             text += dropped_note(getattr(result, "dropped", 0), getattr(result, "resend", False))
         else:
             text = t("distill.run.error", error=result.error[-160:])
+        prefix = _side_prefix(getattr(result, "side", md.SIDE_PERSONAL))
         if self.window is not None:
-            self.window.show_status(text)
+            self.window.show_status(prefix + text)
             if manual and result.ok and result.added:
                 self.window.tabs.setCurrentIndex(2)
         if not manual and result.ok and result.added:
-            self._bubble(t("distill.bubble.proposals", n=result.added), 9000)
+            self._bubble(prefix + t("distill.bubble.proposals", n=result.added), 9000)
         elif not manual and not result.ok:
-            self._bubble(t("distill.run.error", error=result.error[-100:]), 6000)
+            self._bubble(prefix + t("distill.run.error", error=result.error[-100:]), 6000)
 
     def _on_reviewed(self, pid: str, applied) -> None:
         if self.window is None:
@@ -1063,6 +1091,13 @@ class MemoryDistillController(QObject):
             self.window.show_review_status(t("distill.review.noted"))
         elif applied.error:
             self.window.show_review_status(t("distill.review.failed", error=applied.error[-160:]))
+        elif getattr(applied, "side", md.SIDE_PERSONAL) == md.SIDE_WORK:
+            targets = []
+            if applied.claude_md:
+                targets.append(t("distill.review.to_wsl_claude_md"))
+            if applied.project_file:
+                targets.append(t("distill.review.wsl_removed" if applied.removed else "distill.review.to_wsl_project"))
+            self.window.show_review_status(t("distill.review.applied", targets="、".join(targets) or "—"))
         else:
             targets = []
             if applied.claude_md:

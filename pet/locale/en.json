@@ -1923,7 +1923,7 @@
   "distill.sides.rule_root": "② Working directory is under a \"work folder\" → work. Current work folders: {roots} (editable in settings, separate several with semicolons; whole path segments are compared, so WorkSpaceX is not under WorkSpace).",
   "distill.sides.rule_personal": "③ Neither → personal (for example personal repositories under Github, the desktop, temp folders).",
   "distill.sides.counts": "In the pool now: personal {personal}, work {work}. Every row on the Candidates page says which side and why.",
-  "distill.sides.where": "After the split the two never meet: personal-side text is distilled by the fish's own API key and written to AI-Base; work-side text is distilled only by the work account inside WSL and written to AI-Base-Memory, not one word reaches the personal key. (Distilling is phase 2 / 3.)",
+  "distill.sides.where": "After the split the two never meet: personal-side text is distilled by the fish's own API key and, once accepted, written to this Windows machine's ~/.claude and AI-Base; work-side text is distilled only by the work account inside WSL and, once accepted, written to ~/.claude inside WSL; not one word reaches the personal key.",
   "distill.settings.same_as_chat": "Same as AI chat",
   "distill.settings.custom_choice": "Custom…",
   "distill.settings.custom_model": "Custom model name",
@@ -1986,7 +1986,6 @@
   "distill.work.no_output": "Claude Code in WSL printed nothing (exit code {code})",
   "distill.work.failed": "Claude Code in WSL could not write it: {reason}",
   "distill.work.empty": "Claude Code in WSL returned empty content",
-  "distill.work.sink_pending": "Work-side entries are written to CLAUDE.md / memory inside WSL, which is not wired up yet; this one stays in the review queue",
   "distill.settings.work_distill_label": "Daily distill for the work side",
   "distill.settings.work_distill_hint": "Work-side candidates (sessions inside WSL or under a work folder) are only handed to the Claude Code signed in to the work account inside WSL (claude -p, with no tools); they never go through the pet's own API key. When this and \"Extract automatically\" are on, it runs once a day at the time below; each run is a real model call billed to that account. When off you can still summarise manually.",
   "distill.settings.work_daily_at_label": "Work-side distill time",
@@ -1997,5 +1996,15 @@
   "distill.settings.work_effort_label": "Work-side thinking effort",
   "distill.settings.work_effort_hint": "claude -p --effort.",
   "distill.settings.work_prompt": "Work-side distill prompt",
-  "distill.settings.work_prompt_hint": "The full text sent to the work account inside WSL (plain, editable), stored separately from the personal prompt. Leave the built-in to use the one below."
+  "distill.settings.work_prompt_hint": "The full text sent to the work account inside WSL (plain, editable), stored separately from the personal prompt. Leave the built-in to use the one below.",
+  "distill.work.prefix": "Work side · ",
+  "distill.button.distill_work": "Summarise work side",
+  "distill.button.distill_work_hint": "Hand the work-side candidates since the last run to the work account inside WSL (claude -p) and turn them into memory proposals; the pet's own API key is not involved",
+  "distill.proposal.work_side": "Work side (written into WSL) · ",
+  "distill.stage.sink_work": " · work side {n}",
+  "distill.review.to_wsl_claude_md": "the managed block of CLAUDE.md inside WSL",
+  "distill.review.to_wsl_project": "project memory inside WSL",
+  "distill.review.wsl_removed": "removed project memory inside WSL",
+  "distill.work.sink_read_failed": "Could not read {path} inside WSL",
+  "distill.work.sink_write_failed": "Could not write {path} inside WSL"
 }

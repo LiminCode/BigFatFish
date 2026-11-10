@@ -1915,7 +1915,7 @@
   "distill.sides.rule_root": "② 工作目录在「公司目录」之下 → 公司。当前公司目录：{roots}（设置里可改，多个用分号隔开；按整段目录名比，WorkSpaceX 不算 WorkSpace 下面）。",
   "distill.sides.rule_personal": "③ 都不是 → 个人（例如 Github 下的个人仓库、桌面、临时目录）。",
   "distill.sides.counts": "现在候选库里：个人 {personal} 条、公司 {work} 条。候选页每条后面都写着算哪一侧、因为什么。",
-  "distill.sides.where": "分开之后各走各的路：个人侧的话给肥鱼自己的 API key 蒸馏、写进 AI-Base；公司侧的话只给 WSL 里的公司账号蒸馏、写进 AI-Base-Memory，一个字都不进个人 key。（蒸馏是第二 / 三期。）",
+  "distill.sides.where": "分开之后各走各的路：个人侧的话给肥鱼自己的 API key 蒸馏，接受后写进这台 Windows 的 ~/.claude 和 AI-Base；公司侧的话只给 WSL 里的公司账号蒸馏，接受后写进 WSL 里的 ~/.claude，一个字都不进个人 key。",
   "distill.settings.same_as_chat": "跟 AI 对话一致",
   "distill.settings.custom_choice": "自定义…",
   "distill.settings.custom_model": "自定义模型名",
@@ -1978,7 +1978,6 @@
   "distill.work.no_output": "WSL 里的 Claude Code 没有任何输出（退出码 {code}）",
   "distill.work.failed": "WSL 里的 Claude Code 没写出来：{reason}",
   "distill.work.empty": "WSL 里的 Claude Code 返回了空内容",
-  "distill.work.sink_pending": "公司侧的条目要写到 WSL 里的 CLAUDE.md / memory，这一步还没接上；这条先留在待审里",
   "distill.settings.work_distill_label": "公司侧每日蒸馏",
   "distill.settings.work_distill_hint": "公司侧候选（WSL 里的会话、公司目录下的会话）只交给 WSL 里登录着工作账号的 Claude Code 总结（claude -p，不给任何工具），不经过肥鱼自己的 API key。开着且「自动抽取」开着，每天到下面的时刻跑一次；每次是一次真实的模型调用，走那个账号的额度。关着仍可手动总结。",
   "distill.settings.work_daily_at_label": "公司侧蒸馏时刻",
@@ -1989,5 +1988,15 @@
   "distill.settings.work_effort_label": "公司侧思考强度",
   "distill.settings.work_effort_hint": "claude -p --effort。",
   "distill.settings.work_prompt": "公司侧蒸馏提示词",
-  "distill.settings.work_prompt_hint": "发给 WSL 里公司账号的全文（明文、可改），和个人侧的提示词分开存。留内置就按下面这份。"
+  "distill.settings.work_prompt_hint": "发给 WSL 里公司账号的全文（明文、可改），和个人侧的提示词分开存。留内置就按下面这份。",
+  "distill.work.prefix": "公司侧 · ",
+  "distill.button.distill_work": "总结公司侧",
+  "distill.button.distill_work_hint": "把上次之后的公司侧候选交给 WSL 里的公司账号（claude -p），总结成记忆提案；不经过肥鱼自己的 API key",
+  "distill.proposal.work_side": "公司侧（写进 WSL） · ",
+  "distill.stage.sink_work": " · 公司侧 {n} 条",
+  "distill.review.to_wsl_claude_md": "WSL 里的 CLAUDE.md 受管块",
+  "distill.review.to_wsl_project": "WSL 里的项目 memory",
+  "distill.review.wsl_removed": "删除 WSL 里的项目 memory",
+  "distill.work.sink_read_failed": "读不到 WSL 里的 {path}",
+  "distill.work.sink_write_failed": "写不进 WSL 里的 {path}"
 }
