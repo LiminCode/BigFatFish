@@ -20,11 +20,11 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from . import claude_hooks
-from .i18n import t
 from . import memory_distill as md
 from . import memory_distill_run as run
 from . import memory_distill_sink as sink
 from . import memory_distill_wsl as mdw
+from . import memory_distill_wsl_sink as wsink
 from . import personal_vault as pv
 from . import vscode_workspaces as vw
 from . import work_notes as wn
@@ -109,6 +109,7 @@ class MemoryDistillService(QObject):
     vscode_done = Signal(bool, str, str)     # 「用 VS Code 打开」的结果：开成没有, 路径, 失败原因
     _vscode_done = Signal(bool, str, str)    # 同上，线程 → GUI
     _distill_done = Signal(int, object, bool, str)   # generation, RunResult, 手动?, 哪一侧
+    _review_done = Signal(int, object, object)       # generation, 提案, Applied（公司侧落盘在线程里，线程 → GUI）
     _sync_done = Signal(int, bool, str)
 
     STARTUP_DELAY_MS = 40_000                # 比个人助理 / 工作笔记再晚一点，别和它们挤在启动那几秒
@@ -132,6 +133,7 @@ class MemoryDistillService(QObject):
         self._generation = 0                 # 只在 stop() 时加一：停了之后才回来的线程结果一律不要
         self._busy = False
         self._distilling: set[str] = set()   # 正在蒸馏的侧（两侧各走各的模型，可以同时跑）
+        self._applying: set[str] = set()     # 正在往 WSL 里写的公司侧提案 id
         self._syncing = False
         self._wsl_dir: str | None = None     # None = 还没问过
         self._probing_wsl = False
@@ -147,6 +149,7 @@ class MemoryDistillService(QObject):
         self._wsl_done.connect(self._on_wsl_done)
         self._vscode_done.connect(self.vscode_done)
         self._distill_done.connect(self._on_distill_done)
+        self._review_done.connect(self._on_review_done)
         self._sync_done.connect(self._on_sync_done)
         app = QApplication.instance()
         if app is not None:
@@ -177,6 +180,7 @@ class MemoryDistillService(QObject):
         self._generation += 1
         self._busy = False
         self._distilling.clear()
+        self._applying.clear()
         self._syncing = False
 
     def check(self) -> None:
@@ -291,9 +295,10 @@ class MemoryDistillService(QObject):
                           "last_error": state.get("last_error", ""), "last_result": state.get("last_result") or {},
                           "attempts": int(state.get("attempts") or 0)}
         stats["proposals"] = self.proposals().counts()
-        stats["entries"] = {"global": sum(1 for e in entries if not e.retired and e.scope == "global"),
-                            "project": sum(1 for e in entries if not e.retired and e.scope == "project"),
-                            "retired": sum(1 for e in entries if e.retired)}
+        for key, items in (("entries", entries), ("entries_work", self.entries(md.SIDE_WORK).load())):
+            stats[key] = {"global": sum(1 for e in items if not e.retired and e.scope == "global"),
+                          "project": sum(1 for e in items if not e.retired and e.scope == "project"),
+                          "retired": sum(1 for e in items if e.retired)}
         stats["vault"] = {"state": self.sync_state, "error": self.sync_error, "dir": self.vault_dir()}
         return stats
 
@@ -308,8 +313,8 @@ class MemoryDistillService(QObject):
     def proposals(self) -> run.ProposalStore:
         return run.ProposalStore(self.root)
 
-    def entries(self) -> sink.EntriesStore:
-        return sink.EntriesStore(self.root)
+    def entries(self, side: str = md.SIDE_PERSONAL) -> sink.EntriesStore:
+        return sink.EntriesStore(self.root, side)
 
     def vault_dir(self) -> str:
         return pv.normalize(self._config.get(pv.CONFIG_KEY))["repo_dir"]
@@ -346,13 +351,15 @@ class MemoryDistillService(QObject):
         settings = md.side_settings(self.settings(), side)
         state = self.distill_state(side)
         root, home = self.root, self._home
-        provider, memory_fn, entries_text = None, None, ""
+        provider, memory_fn = None, None
+        entries_text = "\n".join(f"- [{e.scope}{' ' + e.project if e.project else ''}] {e.title} — {e.how or e.why}"
+                                 for e in self.entries(side).active())      # 只带这一侧已落盘的条目
         if side == md.SIDE_WORK:
             runner = self._wsl_runner
             complete = mdw.make_complete(runner)
 
             def memory_fn(picked: list[dict]) -> str:
-                return mdw.memory_context(picked, runner=runner)
+                return mdw.memory_context(picked, runner=runner, entries_text=entries_text)
         else:
             try:
                 provider = self._resolve_provider()
@@ -365,8 +372,6 @@ class MemoryDistillService(QObject):
                 self.distilled.emit(result, manual)
                 self.changed.emit()
                 return False
-            entries_text = "\n".join(f"- [{e.scope}{' ' + e.project if e.project else ''}] {e.title} — {e.how or e.why}"
-                                     for e in self.entries().active())
         self._distilling.add(side)
         generation = self._generation
         rows = self.store.read_all()
@@ -400,10 +405,13 @@ class MemoryDistillService(QObject):
 
     def review(self, pid: str, status: str, *, title: str | None = None, why: str | None = None,
                how: str | None = None) -> sink.Applied | None:
-        """用户审一条：接受就立刻落盘（文件写入很快，在 GUI 线程），镜像推送另起线程；拒 / 跳过只记状态。"""
+        """用户审一条：接受就立刻落盘（文件写入很快，在 GUI 线程），镜像推送另起线程；拒 / 跳过只记状态。
+
+        公司侧的提案接受后落在 WSL 里，要起几次 wsl.exe（发行版冷启动要几秒）：放后台线程，这里立刻返回 None，
+        结果从 ``reviewed`` 信号回来。两侧的落点完全分开——公司侧不碰个人侧的 CLAUDE.md / 项目 memory / 知识库。"""
         store = self.proposals()
         proposal = store.get(pid)
-        if proposal is None or status not in run.STATUSES:
+        if proposal is None or status not in run.STATUSES or pid in self._applying:
             return None
         if title is not None and title.strip():
             edited = " ".join(title.split())
@@ -419,10 +427,9 @@ class MemoryDistillService(QObject):
         proposal.reviewed_at = now.isoformat(timespec="seconds")
         applied = None
         if status == run.STATUS_ACCEPTED and proposal.side == md.SIDE_WORK:
-            # 公司侧的落点在 WSL 里（那边的 CLAUDE.md / memory），还没接上：绝不能写到个人侧的文件和个人知识库里
-            applied = sink.Applied(error=t("distill.work.sink_pending"))
-            proposal.status = run.STATUS_PENDING
-        elif status == run.STATUS_ACCEPTED:
+            self._apply_work(proposal, now)
+            return None
+        if status == run.STATUS_ACCEPTED:
             settings = self.settings()
             applied = sink.apply_proposal(proposal, now, entries=self.entries(), home=self._home,
                                           backup_dir=self.root / sink.BACKUP_DIR, vault_dir=self.vault_dir(),
@@ -436,6 +443,35 @@ class MemoryDistillService(QObject):
         self.reviewed.emit(pid, applied)
         self.changed.emit()
         return applied
+
+    def _apply_work(self, proposal: run.Proposal, now: dt.datetime) -> None:
+        """公司侧提案落盘（后台线程）。提案库在这里先不动：落成了才记「已接受」，没落成还留在待审里。"""
+        self._applying.add(proposal.id)
+        generation = self._generation
+        entries, runner, backup_dir = self.entries(md.SIDE_WORK), self._wsl_runner, self.root / sink.BACKUP_DIR
+
+        def work() -> None:
+            try:
+                applied = wsink.apply_proposal(proposal, now, entries=entries, runner=runner, backup_dir=backup_dir)
+            except Exception as exc:  # noqa: BLE001 - 不让线程静默死掉
+                log.exception("会话记忆蒸馏：公司侧落盘失败")
+                applied = sink.Applied(error=f"{type(exc).__name__}: {exc}", side=md.SIDE_WORK)
+            try:
+                self._review_done.emit(generation, proposal, applied)
+            except RuntimeError:
+                pass
+
+        self._spawn(work)
+
+    def _on_review_done(self, generation: int, proposal, applied) -> None:
+        if generation != self._generation:
+            return
+        self._applying.discard(proposal.id)
+        proposal.applied = applied.to_dict()
+        proposal.status = run.STATUS_PENDING if applied.error else run.STATUS_ACCEPTED
+        self.proposals().update(proposal)
+        self.reviewed.emit(proposal.id, applied)
+        self.changed.emit()
 
     def sync_vault(self) -> bool:
         """把知识库里那篇 commit + push（后台线程）。"""

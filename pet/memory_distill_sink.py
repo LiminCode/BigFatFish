@@ -23,11 +23,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
+from . import memory_distill as md
 from . import memory_distill_run as run
 from .i18n import t
 from . import personal_vault as pv
 
 ENTRIES_FILE = "entries.json"
+WORK_ENTRIES_FILE = "entries-work.json"
 BACKUP_DIR = "backups"
 BLOCK_START = "<!-- big-fat-fish:memory-distill:start -->"
 BLOCK_END = "<!-- big-fat-fish:memory-distill:end -->"
@@ -80,10 +82,12 @@ class Entry:
 
 
 class EntriesStore:
-    """``<root>/entries.json``：接受了的条目（含作废的，留历史）。"""
+    """``<root>/entries.json``：接受了的条目（含作废的，留历史）。公司侧另有一份 ``entries-work.json``——
+    个人侧的 CLAUDE.md 块和知识库那篇都是从条目库整篇渲染的，两侧的条目不能放在一个文件里。"""
 
-    def __init__(self, root: Path | str) -> None:
-        self.path = Path(root) / ENTRIES_FILE
+    def __init__(self, root: Path | str, side: str = md.SIDE_PERSONAL) -> None:
+        self.side = side
+        self.path = Path(root) / (WORK_ENTRIES_FILE if side == md.SIDE_WORK else ENTRIES_FILE)
 
     def load(self) -> list[Entry]:
         try:
@@ -246,17 +250,22 @@ def remove_project_entry(memory_dir: Path | str, entry: Entry) -> bool:
     return existed
 
 
+def index_text(text: str, entry: Entry, *, remove: bool) -> str:
+    """MEMORY.md 的新全文：拿掉这条条目原来的那行索引，``remove`` 为假时在末尾补上现在的。别的行不动。"""
+    stem = entry.file_name[:-3]
+    lines = [line for line in text.splitlines() if not (_INDEX_LINE_RE.match(line) and f"({stem}.md)" in line)]
+    if not remove:
+        lines.append(f"- [{entry.title}]({entry.file_name}) — {entry.description}")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
 def _update_index(folder: Path, entry: Entry, *, remove: bool) -> None:
     index = folder / INDEX_FILE
     try:
         text = index.read_text(encoding="utf-8")
     except FileNotFoundError:
         text = ""
-    stem = entry.file_name[:-3]
-    lines = [line for line in text.splitlines() if not (_INDEX_LINE_RE.match(line) and f"({stem}.md)" in line)]
-    if not remove:
-        lines.append(f"- [{entry.title}]({entry.file_name}) — {entry.description}")
-    index.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8", newline="\n")
+    index.write_text(index_text(text, entry, remove=remove), encoding="utf-8", newline="\n")
 
 
 # ---------------------------------------------------------------- 知识库镜像
@@ -317,6 +326,7 @@ class Applied:
     removed: bool = False
     vault_written: bool = False
     error: str = ""
+    side: str = md.SIDE_PERSONAL      # 写到了哪一侧（公司侧 = WSL 里的文件）
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)

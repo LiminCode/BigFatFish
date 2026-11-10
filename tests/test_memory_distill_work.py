@@ -334,16 +334,3 @@ def test_work_side_can_be_switched_off(tmp_path):
     service.check()
     assert runner.claude == []
     assert service.distill_now(side=md.SIDE_WORK) is True and len(runner.claude) == 1, "手动仍然可以"
-
-
-def test_accepting_a_work_proposal_is_refused_until_the_work_sink_exists(tmp_path):
-    """公司侧的落盘（WSL 里的 CLAUDE.md / memory）还没接上：接受公司侧提案不能写到个人侧的任何文件里。"""
-    service, _personal, home = _service(tmp_path, _Wsl())
-    service.distill_now(side=md.SIDE_WORK)
-    first = service.proposals().pending()[0]
-    before = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
-    applied = service.review(first.id, run.STATUS_ACCEPTED)
-    assert applied is not None and applied.error and not applied.claude_md
-    assert (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8") == before
-    assert service.proposals().get(first.id).status == run.STATUS_PENDING, "留在待审里"
-    assert service.entries().load() == []
