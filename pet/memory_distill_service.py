@@ -20,6 +20,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from . import claude_hooks
+from .i18n import t
 from . import memory_distill as md
 from . import memory_distill_run as run
 from . import memory_distill_sink as sink
@@ -107,7 +108,7 @@ class MemoryDistillService(QObject):
     _wsl_done = Signal(str)                  # 单独探 WSL 目录的结果（线程 → GUI）
     vscode_done = Signal(bool, str, str)     # 「用 VS Code 打开」的结果：开成没有, 路径, 失败原因
     _vscode_done = Signal(bool, str, str)    # 同上，线程 → GUI
-    _distill_done = Signal(int, object, bool)
+    _distill_done = Signal(int, object, bool, str)   # generation, RunResult, 手动?, 哪一侧
     _sync_done = Signal(int, bool, str)
 
     STARTUP_DELAY_MS = 40_000                # 比个人助理 / 工作笔记再晚一点，别和它们挤在启动那几秒
@@ -128,9 +129,9 @@ class MemoryDistillService(QObject):
         self._home = home                        # None = Path.home()
         self._token = token or pv.github_token
         self._git = git
-        self._generation = 0
+        self._generation = 0                 # 只在 stop() 时加一：停了之后才回来的线程结果一律不要
         self._busy = False
-        self._distilling = False
+        self._distilling: set[str] = set()   # 正在蒸馏的侧（两侧各走各的模型，可以同时跑）
         self._syncing = False
         self._wsl_dir: str | None = None     # None = 还没问过
         self._probing_wsl = False
@@ -175,7 +176,7 @@ class MemoryDistillService(QObject):
         self._timer.stop()
         self._generation += 1
         self._busy = False
-        self._distilling = False
+        self._distilling.clear()
         self._syncing = False
 
     def check(self) -> None:
@@ -183,8 +184,9 @@ class MemoryDistillService(QObject):
         settings = self.settings()
         if settings["enabled"]:
             self.refresh_now(manual=False)
-        if run.is_due(settings, self.distill_state(), self._now()):
-            self.distill_now(manual=False)
+        for side in md.SIDES:                # 两侧各有各的时刻（公司侧还有自己的开关）
+            if run.is_due(md.side_settings(settings, side), self.distill_state(side), self._now()):
+                self.distill_now(manual=False, side=side)
 
     def probe_wsl(self) -> bool:
         """开流程页时单独问一次 WSL 里 ``~/.claude`` 在哪（抽取没开的话没人会顺便问）。问过 / 正在问就不再问。"""
@@ -220,7 +222,6 @@ class MemoryDistillService(QObject):
         if self._busy:
             return False
         self._busy = True
-        self._generation += 1
         generation = self._generation
         store = self.store
         roots = self.transcript_roots()
@@ -283,11 +284,12 @@ class MemoryDistillService(QObject):
         stats["error"] = self.last_error
         stats["wsl"] = {"state": self.wsl_scan_state if self.settings()["scan_wsl"] else WSL_OFF,
                         "files": int(stats.get("files_remote", 0))}
-        state = self.distill_state()
         entries = self.entries().load()
-        stats["distill"] = {"busy": self._distilling, "last_run_at": state.get("last_run_at", ""),
-                            "last_error": state.get("last_error", ""), "last_result": state.get("last_result") or {},
-                            "attempts": int(state.get("attempts") or 0)}
+        for key, side in (("distill", md.SIDE_PERSONAL), ("distill_work", md.SIDE_WORK)):
+            state = self.distill_state(side)
+            stats[key] = {"busy": side in self._distilling, "last_run_at": state.get("last_run_at", ""),
+                          "last_error": state.get("last_error", ""), "last_result": state.get("last_result") or {},
+                          "attempts": int(state.get("attempts") or 0)}
         stats["proposals"] = self.proposals().counts()
         stats["entries"] = {"global": sum(1 for e in entries if not e.retired and e.scope == "global"),
                             "project": sum(1 for e in entries if not e.retired and e.scope == "project"),
@@ -300,8 +302,8 @@ class MemoryDistillService(QObject):
     def root(self) -> Path:
         return md.store_root(self._config.dir)
 
-    def distill_state(self) -> dict:
-        return run.load_state(self.root)
+    def distill_state(self, side: str = md.SIDE_PERSONAL) -> dict:
+        return run.load_state(self.root, side)
 
     def proposals(self) -> run.ProposalStore:
         return run.ProposalStore(self.root)
@@ -314,7 +316,10 @@ class MemoryDistillService(QObject):
 
     @property
     def distilling(self) -> bool:
-        return self._distilling
+        return bool(self._distilling)
+
+    def is_distilling(self, side: str) -> bool:
+        return side in self._distilling
 
     def _resolve_provider(self):
         if self._provider is not None:
@@ -330,42 +335,54 @@ class MemoryDistillService(QObject):
 
         return ap.complete
 
-    def distill_now(self, manual: bool = True) -> bool:
-        """把上次之后的个人侧候选交给模型，提案进提案库。后台线程；忙着不叠加。"""
-        if self._distilling:
+    def distill_now(self, manual: bool = True, side: str = md.SIDE_PERSONAL) -> bool:
+        """把上次之后这一侧的候选交给模型，提案进提案库。后台线程；这一侧忙着不叠加。
+
+        两侧走的路完全分开：个人侧用「AI 对话」里的服务商（个人 key）；公司侧只经 ``wsl.exe`` 交给 WSL 里登录着
+        公司账号的 Claude Code，现有记忆也读 WSL 那份——公司会话的原话、公司侧的记忆与拒过的标题都不进个人 key。"""
+        if side in self._distilling:
             return False
         now = self._now()
-        settings = self.settings()
-        state = self.distill_state()
-        try:
-            provider = self._resolve_provider()
-            complete = self._resolve_complete()
-        except Exception as exc:  # noqa: BLE001 - 没装聊天模块 / 没配 key
-            result = run.RunResult(error=str(exc) or type(exc).__name__, run_at=now.isoformat(timespec="seconds"))
-            run.save_state(self.root, {**run.mark_attempt(state, now), "last_error": result.error})
-            self.last_run = result
-            self.distilled.emit(result, manual)
-            self.changed.emit()
-            return False
-        self._distilling = True
-        self._generation += 1
+        settings = md.side_settings(self.settings(), side)
+        state = self.distill_state(side)
+        root, home = self.root, self._home
+        provider, memory_fn, entries_text = None, None, ""
+        if side == md.SIDE_WORK:
+            runner = self._wsl_runner
+            complete = mdw.make_complete(runner)
+
+            def memory_fn(picked: list[dict]) -> str:
+                return mdw.memory_context(picked, runner=runner)
+        else:
+            try:
+                provider = self._resolve_provider()
+                complete = self._resolve_complete()
+            except Exception as exc:  # noqa: BLE001 - 没装聊天模块 / 没配 key
+                result = run.RunResult(error=str(exc) or type(exc).__name__, run_at=now.isoformat(timespec="seconds"),
+                                       side=side)
+                run.save_state(root, {**run.mark_attempt(state, now), "last_error": result.error}, side)
+                self.last_run = result
+                self.distilled.emit(result, manual)
+                self.changed.emit()
+                return False
+            entries_text = "\n".join(f"- [{e.scope}{' ' + e.project if e.project else ''}] {e.title} — {e.how or e.why}"
+                                     for e in self.entries().active())
+        self._distilling.add(side)
         generation = self._generation
         rows = self.store.read_all()
         store = self.proposals()
-        entries_text = "\n".join(f"- [{e.scope}{' ' + e.project if e.project else ''}] {e.title} — {e.how or e.why}"
-                                 for e in self.entries().active())
-        root, home = self.root, self._home
 
         def work() -> None:
             try:
                 result, new_state = run.run_once(now, settings, rows, state, provider, store=store, complete=complete,
-                                                 home=home, entries_text=entries_text)
-                run.save_state(root, new_state)
+                                                 home=home, entries_text=entries_text, side=side, memory_fn=memory_fn)
+                run.save_state(root, new_state, side)
             except Exception as exc:  # noqa: BLE001 - 不让线程静默死掉
                 log.exception("会话记忆蒸馏：蒸馏失败")
-                result = run.RunResult(error=f"{type(exc).__name__}: {exc}", run_at=now.isoformat(timespec="seconds"))
+                result = run.RunResult(error=f"{type(exc).__name__}: {exc}", run_at=now.isoformat(timespec="seconds"),
+                                       side=side)
             try:
-                self._distill_done.emit(generation, result, manual)
+                self._distill_done.emit(generation, result, manual, side)
             except RuntimeError:
                 pass
 
@@ -373,10 +390,10 @@ class MemoryDistillService(QObject):
         self._spawn(work)
         return True
 
-    def _on_distill_done(self, generation: int, result, manual: bool) -> None:
+    def _on_distill_done(self, generation: int, result, manual: bool, side: str) -> None:
         if generation != self._generation:
             return
-        self._distilling = False
+        self._distilling.discard(side)
         self.last_run = result
         self.changed.emit()                  # 先重摆数字（会清状态行），再报这一次的结果
         self.distilled.emit(result, manual)
@@ -401,7 +418,11 @@ class MemoryDistillService(QObject):
         proposal.status = status
         proposal.reviewed_at = now.isoformat(timespec="seconds")
         applied = None
-        if status == run.STATUS_ACCEPTED:
+        if status == run.STATUS_ACCEPTED and proposal.side == md.SIDE_WORK:
+            # 公司侧的落点在 WSL 里（那边的 CLAUDE.md / memory），还没接上：绝不能写到个人侧的文件和个人知识库里
+            applied = sink.Applied(error=t("distill.work.sink_pending"))
+            proposal.status = run.STATUS_PENDING
+        elif status == run.STATUS_ACCEPTED:
             settings = self.settings()
             applied = sink.apply_proposal(proposal, now, entries=self.entries(), home=self._home,
                                           backup_dir=self.root / sink.BACKUP_DIR, vault_dir=self.vault_dir(),
@@ -425,7 +446,6 @@ class MemoryDistillService(QObject):
             return False
         self._syncing = True
         self.sync_state = "pushing"
-        self._generation += 1
         generation = self._generation
         now, git, token = self._now(), self._git, self._token
 

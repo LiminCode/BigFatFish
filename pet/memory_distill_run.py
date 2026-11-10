@@ -25,6 +25,7 @@ from . import work_briefing as wb
 from .i18n import t
 
 STATE_FILE = "distill-state.json"
+WORK_STATE_FILE = "distill-state-work.json"      # 公司侧自己的一份：两侧各有各的时刻、各推各的候选游标
 PROPOSALS_FILE = "proposals.json"
 MAX_ATTEMPTS_PER_DAY = 3
 RETRY_AFTER_S = 20 * 60
@@ -69,16 +70,20 @@ def is_due(settings: dict, state: dict, now: dt.datetime) -> bool:
     return True
 
 
-def load_state(root: Path | str) -> dict:
+def _state_file(side: str) -> str:
+    return WORK_STATE_FILE if side == md.SIDE_WORK else STATE_FILE
+
+
+def load_state(root: Path | str, side: str = md.SIDE_PERSONAL) -> dict:
     try:
-        data = json.loads((Path(root) / STATE_FILE).read_text(encoding="utf-8"))
+        data = json.loads((Path(root) / _state_file(side)).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
-def save_state(root: Path | str, state: dict) -> None:
-    path = Path(root) / STATE_FILE
+def save_state(root: Path | str, state: dict, side: str = md.SIDE_PERSONAL) -> None:
+    path = Path(root) / _state_file(side)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -212,6 +217,7 @@ class Proposal:
     run_at: str = ""
     reviewed_at: str = ""
     applied: dict = field(default_factory=dict)
+    side: str = md.SIDE_PERSONAL      # 哪一侧的候选蒸出来的：决定落到哪（公司侧 → WSL 里的 CLAUDE.md / memory）
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -230,11 +236,16 @@ class Proposal:
             clean["evidence"] = []
         if not isinstance(clean.get("applied"), dict):
             clean["applied"] = {}
+        if clean.get("side") not in md.SIDES:
+            clean["side"] = md.SIDE_PERSONAL
         return cls(**clean)
 
 
-def proposal_id(action: str, scope: str, project: str, title: str) -> str:
+def proposal_id(action: str, scope: str, project: str, title: str, side: str = md.SIDE_PERSONAL) -> str:
+    """个人侧的算法不变（旧提案的 id 还认得）；公司侧多掺一个侧名，两侧标题相同的提案不撞 id。"""
     key = "|".join((action, scope, project.lower(), " ".join(title.split()).lower()))
+    if side != md.SIDE_PERSONAL:
+        key = f"{side}|{key}"
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
 
 
@@ -305,7 +316,8 @@ def _json_array(text: str):
     return parse_array(text)[0]
 
 
-def parse_proposals(text: str, *, projects: Iterable[str] = (), run_at: str = "") -> list[Proposal]:
+def parse_proposals(text: str, *, projects: Iterable[str] = (), run_at: str = "",
+                    side: str = md.SIDE_PERSONAL) -> list[Proposal]:
     """解析模型输出；不合法的项丢掉。``projects`` 是本次候选涉及的 cwd：模型写的项目名对回完整路径。"""
     data, _dropped = parse_array(text)
     if data is None:
@@ -333,13 +345,14 @@ def parse_proposals(text: str, *, projects: Iterable[str] = (), run_at: str = ""
         evidence = item.get("evidence")
         evidence = [str(e).strip() for e in evidence if str(e).strip()] if isinstance(evidence, list) else (
             [str(evidence).strip()] if evidence else [])
-        pid = proposal_id(action, scope, project, title)
+        pid = proposal_id(action, scope, project, title, side)
         if pid in seen:
             continue
         seen.add(pid)
         out.append(Proposal(id=pid, action=action, scope=scope, project=project, type=kind if kind in TYPES else "feedback",
                             title=title, why=str(item.get("why") or "").strip(), how=str(item.get("how") or "").strip(),
-                            evidence=evidence, replaces=" ".join(str(item.get("replaces") or "").split()), run_at=run_at))
+                            evidence=evidence, replaces=" ".join(str(item.get("replaces") or "").split()), run_at=run_at,
+                            side=side))
     return out
 
 
@@ -394,8 +407,9 @@ class ProposalStore:
             items.append(proposal)
         self.save(items)
 
-    def dismissed_titles(self) -> list[str]:
-        return [p.title for p in self.load() if p.status == STATUS_REJECTED]
+    def dismissed_titles(self, side: str = md.SIDE_PERSONAL) -> list[str]:
+        """这一侧拒掉的标题。按侧分：它们会拼进提示词，公司侧的标题不能进个人侧（个人 key）的提示词。"""
+        return [p.title for p in self.load() if p.status == STATUS_REJECTED and p.side == side]
 
     def counts(self) -> dict:
         items = self.load()
@@ -423,6 +437,7 @@ class RunResult:
     truncated: bool = False       # 输出到了 max_tokens，只抢救到了前面几条
     dropped: int = 0              # 模型输出里解不出来、被丢掉的项数（截断的那半项不算）
     resend: bool = False          # 因为丢了项，这批候选下次整批重送
+    side: str = md.SIDE_PERSONAL
 
 
 def build_prompt(settings: dict, rows: list[dict], memory: str, dismissed: Iterable[str], language: str | None = None) -> str:
@@ -434,14 +449,19 @@ def build_prompt(settings: dict, rows: list[dict], memory: str, dismissed: Itera
 
 def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, provider, *,
              store: ProposalStore, complete: Callable, memory: str | None = None, home: Path | None = None,
-             entries_text: str = "", clock: Callable[[], float] | None = None) -> tuple[RunResult, dict]:
-    """阻塞：挑候选 → 拼提示词 → 调模型 → 解析 → 并入提案库。返回 (结果, 新状态)。任何失败折成 ok=False。"""
+             entries_text: str = "", clock: Callable[[], float] | None = None, side: str = md.SIDE_PERSONAL,
+             memory_fn: Callable[[list[dict]], str] | None = None) -> tuple[RunResult, dict]:
+    """阻塞：挑候选 → 拼提示词 → 调模型 → 解析 → 并入提案库。返回 (结果, 新状态)。任何失败折成 ok=False。
+
+    ``side``：只挑这一侧的候选、只带这一侧拒过的标题、提案记上这一侧。调用方按侧给 ``settings``
+    （``md.side_settings``）、``complete``（公司侧 = WSL 里的 ``claude -p``）和 ``memory_fn``（公司侧的现有记忆在
+    WSL 里，得经 wsl.exe 读）；公司侧没有 ``provider``。"""
     import time
 
     clock = clock or time.monotonic
     run_at = now.isoformat(timespec="seconds")
-    result = RunResult(run_at=run_at)
-    picked, newest = select_candidates(rows, state)
+    result = RunResult(run_at=run_at, side=side)
+    picked, newest = select_candidates(rows, state, side=side)
     result.candidates = len(picked)
     result.newest_candidate = newest
     new_state = mark_attempt(state, now)
@@ -455,8 +475,8 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     result.model, result.effort = model, effort
     projects = sorted({repo_root(str(r.get("project") or "")) for r in picked if r.get("project")})
     if memory is None:
-        memory = memory_context(picked, home=home, entries_text=entries_text)
-    prompt = build_prompt(settings, picked, memory, store.dismissed_titles())
+        memory = memory_fn(picked) if memory_fn is not None else memory_context(picked, home=home, entries_text=entries_text)
+    prompt = build_prompt(settings, picked, memory, store.dismissed_titles(side))
     started = clock()
     try:
         completion = complete(prompt, "", provider, model=model, effort=effort, timeout=TIMEOUT_S, max_tokens=MAX_TOKENS)
@@ -469,7 +489,7 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     result.tokens_in = int(getattr(completion, "input_tokens", 0) or 0)
     result.tokens_out = int(getattr(completion, "output_tokens", 0) or 0)
     result.raw_text = str(getattr(completion, "text", "") or "")
-    proposals = parse_proposals(result.raw_text, projects=projects, run_at=run_at)
+    proposals = parse_proposals(result.raw_text, projects=projects, run_at=run_at, side=side)
     data, dropped, tail_cut = _parse(result.raw_text)
     if data is None:
         result.error = t("distill.run.bad_json")

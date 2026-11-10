@@ -1980,5 +1980,22 @@
   "distill.settings.scan_wsl_on": "Sessions inside WSL: scanned (work side)",
   "distill.settings.scan_wsl_off": "Sessions inside WSL: not scanned",
   "distill.settings.scan_wsl_label": "Also scan sessions inside WSL",
-  "distill.settings.scan_wsl_hint": "Claude Code run from a WSL terminal or VS Code Remote writes its transcripts to WSL's own ~/.claude/projects, which the Windows side cannot see. When on, extraction reads them too (lists the files inside WSL, then reads only the ones that grew) and always files them under the work side. The scheduled pass only goes there when the default distro is already running, so it never wakes WSL for this; \"Extract now\" always goes."
+  "distill.settings.scan_wsl_hint": "Claude Code run from a WSL terminal or VS Code Remote writes its transcripts to WSL's own ~/.claude/projects, which the Windows side cannot see. When on, extraction reads them too (lists the files inside WSL, then reads only the ones that grew) and always files them under the work side. The scheduled pass only goes there when the default distro is already running, so it never wakes WSL for this; \"Extract now\" always goes.",
+  "distill.work.no_wsl": "This machine has no WSL: the work side is summarised by the Claude Code signed in to the work account inside WSL",
+  "distill.work.no_result": "Claude Code in WSL returned no result: {tail}",
+  "distill.work.no_output": "Claude Code in WSL printed nothing (exit code {code})",
+  "distill.work.failed": "Claude Code in WSL could not write it: {reason}",
+  "distill.work.empty": "Claude Code in WSL returned empty content",
+  "distill.work.sink_pending": "Work-side entries are written to CLAUDE.md / memory inside WSL, which is not wired up yet; this one stays in the review queue",
+  "distill.settings.work_distill_label": "Daily distill for the work side",
+  "distill.settings.work_distill_hint": "Work-side candidates (sessions inside WSL or under a work folder) are only handed to the Claude Code signed in to the work account inside WSL (claude -p, with no tools); they never go through the pet's own API key. When this and \"Extract automatically\" are on, it runs once a day at the time below; each run is a real model call billed to that account. When off you can still summarise manually.",
+  "distill.settings.work_daily_at_label": "Work-side distill time",
+  "distill.settings.work_daily_at_hint": "Separate from the personal side; the two can run at the same time.",
+  "distill.settings.work_model_label": "Work-side model",
+  "distill.settings.work_model_hint": "A Claude Code model alias (claude -p --model), not an API model id.",
+  "distill.settings.work_custom_model": "Custom work-side model name",
+  "distill.settings.work_effort_label": "Work-side thinking effort",
+  "distill.settings.work_effort_hint": "claude -p --effort.",
+  "distill.settings.work_prompt": "Work-side distill prompt",
+  "distill.settings.work_prompt_hint": "The full text sent to the work account inside WSL (plain, editable), stored separately from the personal prompt. Leave the built-in to use the one below."
 }
