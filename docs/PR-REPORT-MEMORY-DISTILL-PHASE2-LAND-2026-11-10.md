@@ -174,6 +174,17 @@ run_label: 上次总结 2026-11-10 13:58 · claude-sonnet-5 · high · 28,103 �
 踩过）。同一条链路 10-31 在第二期分支上由本人实机点过两次（全局 1 条、项目 1 条，见原报告），这次代码相对那时只多了 4 行。
 合并后从 main 重启桌宠的记录追加在本节末尾。
 
+**追记：合并后从 main 重启**（2026-11-10）。PR #30 squash 为 `0b438914`，主检出快进到它；结束旧进程 pid 32156（没有开着的设置窗口），
+从主检出 `BigFish.exe -m pet` 重启：
+
+```
+before: 2026-11-08 05:34:21 acquired pid=32156 …
+after:  2026-11-10 14:11:03 acquired pid=59480 …
+pet-59480.log  WARNING/ERROR lines: 0   「会话记忆蒸馏接线失败」: 0
+```
+
+启动 9 秒内日志 0 条 WARNING / ERROR，蒸馏服务接线没有报错。真机窗口里点「接受」仍未做（见上）。
+
 ## 六、测试与验证
 
 - **红 → 绿**：`tests/test_memory_distill_phase2_ui.py::test_retire_with_a_title_edited_in_review_still_finds_the_old_entry`
