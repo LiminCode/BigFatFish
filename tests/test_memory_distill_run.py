@@ -242,6 +242,68 @@ def test_truncated_run_keeps_half_the_batch_for_next_time(tmp_path):
     assert [r["text"] for r in picked] == ["以后 4", "以后 5", "以后 6"]
 
 
+#: 五项里第二项的标题有没转义的引号（实机 2026-11-10：模型在标题里引了一句带引号的话），整段不是合法 JSON
+BROKEN_MIDDLE = """```json
+[
+ {"action": "add", "scope": "global", "title": "第一条"},
+ {"action": "add", "scope": "global", "title": "说 "别这样" 的时候要停", "why": "x"},
+ {"action": "add", "scope": "global", "title": "第三条"},
+ {"action": "add", "scope": "global", "title": "第四条"},
+ {"action": "add", "scope": "global", "title": "第五条"}
+]
+```"""
+
+
+def test_a_broken_item_in_the_middle_only_loses_itself_and_is_counted():
+    data, dropped = run.parse_array(BROKEN_MIDDLE)
+    assert [item["title"] for item in data] == ["第一条", "第三条", "第四条", "第五条"], "坏的那项后面的不能跟着丢"
+    assert dropped == 1
+    assert [p.title for p in run.parse_proposals(BROKEN_MIDDLE)] == ["第一条", "第三条", "第四条", "第五条"]
+    assert run.parse_array(RAW)[1] == 0 and run.parse_array("[]") == ([], 0)
+    assert run.parse_array("不是 JSON") == (None, 0)
+    tail = BROKEN_MIDDLE.replace('"title": "第五条"}\n]', '"title": "第五')
+    data, dropped = run.parse_array(tail)
+    assert [item["title"] for item in data] == ["第一条", "第三条", "第四条"] and dropped == 2, "中间坏一项 + 末尾断一项"
+    assert run.parse_array('[ {"action": "add", "title": "说 "不" 的') == (None, 1), "一项都没救回来仍算没按约定输出"
+
+
+def test_run_once_reports_dropped_items_and_resends_the_batch_once(tmp_path):
+    """丢了项：结果里看得到丢了几项；这批候选再送一次（提案按 id 去重，重送无害），第二次还丢就放行，不无限重送。"""
+    rows = [_row(f"以后 {i}", n=i, tag=md.TAG_RULE) for i in range(1, 4)]
+    store = run.ProposalStore(tmp_path)
+    result, state = run.run_once(NOW, SETTINGS, rows, {}, SimpleNamespace(model="m"), store=store,
+                                 complete=_complete(BROKEN_MIDDLE), memory="")
+    assert result.ok and result.dropped == 1 and result.resend and not result.truncated
+    assert result.proposals == 4 and result.added == 4, "救回来的照常入库"
+    assert state["last_candidate_time"] == "", "游标不推：下次整批重送"
+    assert state["last_result"]["dropped"] == 1 and state["done_date"] == "2026-10-31"
+    assert len(run.select_candidates(rows, state)[0]) == 3
+    result, state = run.run_once(NOW, SETTINGS, rows, state, SimpleNamespace(model="m"), store=store,
+                                 complete=_complete(BROKEN_MIDDLE), memory="")
+    assert result.ok and result.dropped == 1 and not result.resend and result.added == 0
+    assert state["last_candidate_time"] == "2026-10-31T10:03:00Z", "连着两次都丢：放行"
+    result, state = run.run_once(NOW, SETTINGS, [*rows, _row("以后 9", n=9, tag=md.TAG_RULE)], state,
+                                 SimpleNamespace(model="m"), store=store, complete=_complete(RAW), memory="")
+    assert result.dropped == 0 and not result.resend and state["last_result"]["dropped"] == 0
+    result, state = run.run_once(NOW, SETTINGS, [*rows, _row("以后 9", n=9, tag=md.TAG_RULE), _row("以后 10", n=10, tag=md.TAG_RULE)],
+                                 state, SimpleNamespace(model="m"), store=store, complete=_complete(BROKEN_MIDDLE), memory="")
+    assert result.resend, "中间有过一次干净的，重送的额度就回来了"
+
+
+def test_truncation_is_not_double_counted_as_a_dropped_item(tmp_path):
+    """输出到顶时末尾那半项是「截断」，已经有它自己的说法和游标规则，不再算进丢项。"""
+    rows = [_row(f"以后 {i}", n=i, tag=md.TAG_RULE) for i in range(1, 7)]
+    cut = RAW.split("```json")[1].split("```")[0]
+    cut = "```json" + cut[:cut.index('{"action": "retire"') + 30]
+
+    def fake(prompt, system, provider, *, model="", effort="", timeout=None, max_tokens=0):
+        return SimpleNamespace(text=cut, model="m", input_tokens=1, output_tokens=max_tokens, stop_reason="max_tokens")
+
+    result, state = run.run_once(NOW, SETTINGS, rows, {}, SimpleNamespace(model="m"), store=run.ProposalStore(tmp_path),
+                                 complete=fake, memory="")
+    assert result.truncated and result.dropped == 0 and not result.resend
+
+
 def test_build_prompt_keeps_user_template_and_fills_three_placeholders():
     settings = {**SETTINGS, "prompt_zh": "候选：{candidates}\n记忆：{memory}\n别提：{dismissed}\n示例 {\"a\": 1}"}
     text = run.build_prompt(settings, [_row("x", n=1)], "M", ["旧条目"], "zh")

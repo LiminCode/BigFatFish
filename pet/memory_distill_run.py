@@ -44,6 +44,7 @@ STATUSES = (STATUS_PENDING, STATUS_ACCEPTED, STATUS_REJECTED, STATUS_SKIPPED)
 
 _PRIORITY = {md.TAG_RULE: 0, md.TAG_DECISION: 0, md.TAG_CORRECTION: 1, md.TAG_TASK: 2}
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_ITEM_BOUNDARY_RE = re.compile(r"\}\s*,\s*(?=\{)")
 _WORKTREE_RE = re.compile(r"[\\/]\.claude[\\/]worktrees[\\/][^\\/]+", re.IGNORECASE)
 
 
@@ -237,9 +238,8 @@ def proposal_id(action: str, scope: str, project: str, title: str) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
 
 
-def _json_array(text: str):
-    """模型输出里的那个 JSON 数组：优先代码围栏里的，否则第一个 ``[`` 起。输出被截断（max_tokens 到顶）时
-    抢救已经完整的那几项：从后往前找最后一个完整对象的 ``}``，补上 ``]``。"""
+def _array_body(text: str) -> str | None:
+    """模型输出里数组开始的那一段：优先代码围栏里的，否则第一个 ``[`` 起。没有 ``[`` 返回 None。"""
     body = str(text or "")
     fenced = _FENCE_RE.search(body)
     if fenced:
@@ -248,35 +248,66 @@ def _json_array(text: str):
         body = body.lstrip()[3:]
         body = body[4:] if body.lower().startswith("json") else body
     start = body.find("[")
-    if start < 0:
-        return None
-    end = body.rfind("]")
-    if end > start:
+    return body[start:] if start >= 0 else None
+
+
+def _recover(body: str) -> tuple[list, int, bool]:
+    """整段不是合法 JSON 时一项一项解：解得出的留下；解不出的那项跳到下一个 ``}, {`` 接着解。
+
+    返回 (解出来的项, 丢了几项, 最后一项是不是断在末尾)。一项里碰巧有 ``}, {`` 时会在它中间重试、再失败，
+    连着的失败只算一项——宁可少报，不把一项报成几项。"""
+    decoder = json.JSONDecoder()
+    items: list = []
+    dropped, failing, pos = 0, False, 1
+    while True:
+        while pos < len(body) and (body[pos].isspace() or body[pos] == ","):
+            pos += 1
+        if pos >= len(body) or body[pos] == "]":
+            return items, dropped, False
         try:
-            data = json.loads(body[start:end + 1])
-            return data if isinstance(data, list) else None
+            item, pos = decoder.raw_decode(body, pos)
+        except ValueError:
+            if not failing:
+                dropped += 1
+            failing = True
+            boundary = _ITEM_BOUNDARY_RE.search(body, pos)
+            if boundary is None:
+                return items, dropped, True
+            pos = boundary.end()
+            continue
+        failing = False
+        items.append(item)
+
+
+def _parse(text: str) -> tuple[list | None, int, bool]:
+    body = _array_body(text)
+    if body is None:
+        return None, 0, False
+    end = body.rfind("]")
+    if end > 0:
+        try:
+            data = json.loads(body[:end + 1])
+            return (data, 0, False) if isinstance(data, list) else (None, 0, False)
         except ValueError:
             pass
-    return _salvage(body[start:])
+    items, dropped, tail_cut = _recover(body)
+    return (items or None), dropped, tail_cut
 
 
-def _salvage(body: str):
-    """``[ {...}, {...}, {截断`` → 逐个 ``}`` 往回试，直到补 ``]`` 能解析。"""
-    cut = len(body)
-    while True:
-        cut = body.rfind("}", 0, cut)
-        if cut <= 0:
-            return None
-        try:
-            data = json.loads(body[:cut + 1].rstrip().rstrip(",") + "]")
-        except ValueError:
-            continue
-        return data if isinstance(data, list) and data else None
+def parse_array(text: str) -> tuple[list | None, int]:
+    """模型输出里的那个 JSON 数组 + 丢了几项。输出被截断、或中间某一项不合法（实机见过标题里没转义的引号）时，
+    别的项照样留下；一项都没有就是 None（没按约定输出）。"""
+    data, dropped, _tail_cut = _parse(text)
+    return data, dropped
+
+
+def _json_array(text: str):
+    return parse_array(text)[0]
 
 
 def parse_proposals(text: str, *, projects: Iterable[str] = (), run_at: str = "") -> list[Proposal]:
     """解析模型输出；不合法的项丢掉。``projects`` 是本次候选涉及的 cwd：模型写的项目名对回完整路径。"""
-    data = _json_array(text)
+    data, _dropped = parse_array(text)
     if data is None:
         return []
     cwds = {md.posix_home_label(p).lower(): p for p in projects}
@@ -390,6 +421,8 @@ class RunResult:
     newest_candidate: str = ""
     raw_text: str = ""
     truncated: bool = False       # 输出到了 max_tokens，只抢救到了前面几条
+    dropped: int = 0              # 模型输出里解不出来、被丢掉的项数（截断的那半项不算）
+    resend: bool = False          # 因为丢了项，这批候选下次整批重送
 
 
 def build_prompt(settings: dict, rows: list[dict], memory: str, dismissed: Iterable[str], language: str | None = None) -> str:
@@ -437,21 +470,31 @@ def run_once(now: dt.datetime, settings: dict, rows: list[dict], state: dict, pr
     result.tokens_out = int(getattr(completion, "output_tokens", 0) or 0)
     result.raw_text = str(getattr(completion, "text", "") or "")
     proposals = parse_proposals(result.raw_text, projects=projects, run_at=run_at)
-    if _json_array(result.raw_text) is None:
+    data, dropped, tail_cut = _parse(result.raw_text)
+    if data is None:
         result.error = t("distill.run.bad_json")
         return result, {**new_state, "last_error": result.error}
     stop = str(getattr(completion, "stop_reason", "") or "")
+    if stop == "max_tokens" and tail_cut:
+        dropped -= 1                                    # 末尾那半项是截断，下面有它自己的规则
+    result.dropped = dropped
     if stop == "max_tokens" and len(picked) > 1:
         # 输出到顶：模型只写完了前面几条。游标只推到这批的一半，后一半下次重送（提案按 id 去重，重送无害）
         result.truncated = True
         newest = str(picked[len(picked) // 2 - 1].get("time") or "")
         result.newest_candidate = newest
+    elif dropped and not int(state.get("dropped_streak") or 0):
+        # 中间有项解不出来：不知道它讲的是哪几条候选，这批整批再送一次；连着两次都丢就放行，不无限重送
+        result.resend = True
+        newest = str(state.get("last_candidate_time") or "")
+        result.newest_candidate = newest
     result.proposals = len(proposals)
     result.added = store.add(proposals)
     result.ok = True
     new_state = {**new_state, "done_date": now.date().isoformat(), "last_run_at": run_at, "last_error": "",
-                 "last_candidate_time": newest,
+                 "last_candidate_time": newest, "dropped_streak": 1 if result.resend else 0,
                  "last_result": {"candidates": result.candidates, "proposals": result.proposals, "added": result.added,
+                                 "dropped": result.dropped,
                                  "model": result.model, "effort": result.effort, "tokens_in": result.tokens_in,
                                  "tokens_out": result.tokens_out, "seconds": result.seconds}}
     return result, new_state
