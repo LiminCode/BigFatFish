@@ -222,6 +222,7 @@ def _service(tmp_path, runner, *, spawn=lambda target: target()):
     vault = tmp_path / "vault"
     vault.mkdir()
     config.set("personal", {"repo_dir": str(vault)})
+    config.set("work_notes", {"repo_dir": str(tmp_path / "no-work-vault")})    # 不然默认值是本机真实的知识库副本
     git_calls: list = []
 
     def personal(prompt, system, provider, *, model="", effort="", timeout=None, max_tokens=0):

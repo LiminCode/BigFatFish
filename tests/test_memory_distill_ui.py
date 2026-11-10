@@ -486,7 +486,7 @@ def test_settings_rows_round_trip(tmp_path):
     rows = sd.distill_rows(dialog)
     assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
         "enabled", "scan_wsl", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt",
-        "work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort", "work_prompt")]
+        "work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort", "work_mirror", "work_prompt")]
     assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
     assert dialog.distill_keep_days_select.currentData() == 60
     assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"

@@ -34,6 +34,11 @@ BACKUP_DIR = "backups"
 BLOCK_START = "<!-- big-fat-fish:memory-distill:start -->"
 BLOCK_END = "<!-- big-fat-fish:memory-distill:end -->"
 VAULT_NOTE = "User/Claude Memory.md"
+WORK_VAULT_DIR = "memory"                         # 公司侧知识库副本（AI-Base-Memory）里放这篇的目录
+WORK_VAULT_NOTE = f"{WORK_VAULT_DIR}/Claude Memory.md"
+_VAULT_INTRO = "同一份内容写在 `~/.claude/CLAUDE.md` 的受管块（全局）和各项目的 memory 目录（项目）里，这篇是镜像，供回看与检索。"
+WORK_VAULT_INTRO = ("这些是公司侧的条目：同一份内容写在 WSL 里 `~/.claude/CLAUDE.md` 的受管块（全局）和 WSL 里各项目的 "
+                    "memory 目录（项目）里，这篇是镜像，供回看与检索。")
 INDEX_FILE = "MEMORY.md"
 FILE_PREFIX = "distill-"
 MAX_DESCRIPTION = 120
@@ -271,13 +276,13 @@ def _update_index(folder: Path, entry: Entry, *, remove: bool) -> None:
 # ---------------------------------------------------------------- 知识库镜像
 
 
-def render_vault_note(entries: Iterable[Entry], now: dt.datetime) -> str:
-    """AI-Base 里那篇：全局一节、每个项目一节；作废的单列在最后。整篇重新生成。"""
+def render_vault_note(entries: Iterable[Entry], now: dt.datetime, *, intro: str = _VAULT_INTRO) -> str:
+    """知识库里那篇：全局一节、每个项目一节；作废的单列在最后。整篇重新生成。``intro``：说明条目落在哪的那句。"""
     items = list(entries)
     lines = ["---", "updated: " + now.strftime("%Y-%m-%d %H:%M"), "source: 大肥鱼 · 会话记忆蒸馏", "---", "",
              "# Claude Memory", "",
              "我在 Claude Code 里说过的话，经大肥鱼每日蒸馏、我逐条审核后留下的记忆条目。",
-             "同一份内容写在 `~/.claude/CLAUDE.md` 的受管块（全局）和各项目的 memory 目录（项目）里，这篇是镜像，供回看与检索。", ""]
+             intro, ""]
     lines += ["## 全局", ""]
     lines += [_note_line(e) for e in items if not e.retired and e.scope == "global"] or ["（还没有）"]
     projects = sorted({e.project for e in items if not e.retired and e.scope == "project"}, key=str.lower)
@@ -303,10 +308,11 @@ def _note_line(entry: Entry) -> str:
     return line
 
 
-def write_vault_note(repo_dir: Path | str, entries: Iterable[Entry], now: dt.datetime) -> Path:
-    path = Path(repo_dir) / VAULT_NOTE
+def write_vault_note(repo_dir: Path | str, entries: Iterable[Entry], now: dt.datetime, *, note: str = VAULT_NOTE,
+                     intro: str = _VAULT_INTRO) -> Path:
+    path = Path(repo_dir) / note
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_vault_note(entries, now), encoding="utf-8", newline="\n")
+    path.write_text(render_vault_note(entries, now, intro=intro), encoding="utf-8", newline="\n")
     return path
 
 

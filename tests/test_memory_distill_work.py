@@ -194,7 +194,8 @@ def test_settings_page_has_a_work_side_block_that_round_trips(tmp_path):
     dialog.config = config
     rows = sd.distill_rows(dialog)
     names = [row.objectName().removeprefix("settingRow_distill_") for row in rows]
-    assert names[-6:] == ["work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort", "work_prompt"]
+    assert names[-7:] == ["work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort",
+                          "work_mirror", "work_prompt"]
     assert dialog.distill_work_check.isChecked() and dialog.distill_work_model_select.currentData() == "sonnet"
     assert "{candidates}" in dialog.distill_work_prompt_editor.edit.toPlainText(), "提示词明文摆出来"
     dialog.distill_work_check.setChecked(False)
@@ -230,6 +231,7 @@ class _Personal:
 def _service(tmp_path, runner, *, now=NOW, work_distill: bool = True, spawn=lambda target: target()):
     config = Config(tmp_path / "appdata")
     config.set(md.CONFIG_KEY, {**md.normalize(None), "enabled": True, "scan_wsl": False, "work_distill": work_distill})
+    config.set("work_notes", {"repo_dir": str(tmp_path / "no-work-vault")})    # 不然默认值是本机真实的知识库副本
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     (home / ".claude" / "CLAUDE.md").write_text("## 个人的全局记忆\n", encoding="utf-8")

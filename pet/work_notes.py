@@ -620,9 +620,10 @@ def wsl_path(path: str) -> str:
     return text.replace("\\", "/")
 
 
-def sync_command(repo_dir: str, message: str) -> str:
+def sync_command(repo_dir: str, message: str, paths: tuple[str, ...] = SYNC_PATHS) -> str:
+    """``paths``：只把这些目录的改动加进提交（默认是笔记那几个；别的功能往这个仓库写别的目录时传自己的）。"""
     repo = wb._sq(wsl_path(repo_dir))
-    paths = " ".join(wb._sq(path) for path in SYNC_PATHS)
+    paths = " ".join(wb._sq(path) for path in paths)
     return (f"cd {repo} && git add -A -- {paths}"
             f" && (git diff --cached --quiet || git commit -q -m {wb._sq(message)})"
             f" && git pull -q --rebase && git push -q")
@@ -650,9 +651,10 @@ def describe_sync_failure(out: str) -> str:
     return t("notes.sync.push_failed", error=tail[-160:] or t("notes.sync.no_output"))
 
 
-def sync(settings: dict, message: str, *, run: wb.WslRunner | None = None) -> tuple[bool, str]:
-    """提交 ``note/`` 下的改动并推送（阻塞，几秒到几十秒）。返回 (成功?, 输出尾巴)。"""
-    return _run_git(sync_command(settings["repo_dir"], message), run)
+def sync(settings: dict, message: str, *, run: wb.WslRunner | None = None,
+         paths: tuple[str, ...] = SYNC_PATHS) -> tuple[bool, str]:
+    """提交 ``note/`` 下（或 ``paths`` 指的目录）的改动并推送（阻塞，几秒到几十秒）。返回 (成功?, 输出尾巴)。"""
+    return _run_git(sync_command(settings["repo_dir"], message, paths), run)
 
 
 def pull(settings: dict, *, run: wb.WslRunner | None = None) -> tuple[bool, str]:

@@ -1998,5 +1998,8 @@
   "distill.review.to_wsl_project": "WSL 里的项目 memory",
   "distill.review.wsl_removed": "删除 WSL 里的项目 memory",
   "distill.work.sink_read_failed": "读不到 WSL 里的 {path}",
-  "distill.work.sink_write_failed": "写不进 WSL 里的 {path}"
+  "distill.work.sink_write_failed": "写不进 WSL 里的 {path}",
+  "distill.review.to_work_vault": "AI-Base-Memory 的 memory/Claude Memory.md（推送中）",
+  "distill.settings.work_mirror_label": "公司侧镜像进知识库",
+  "distill.settings.work_mirror_hint": "接受的公司侧条目同时写进 AI-Base-Memory 副本的 memory/Claude Memory.md 并推送（目录用工作笔记那一项；git 在 WSL 里跑，只提交 memory/）。不进个人知识库。"
 }
