@@ -92,6 +92,10 @@ def distill_rows(dialog) -> list[SettingRow]:
     effort = effort_select(dialog, settings["effort"])
     dialog.distill_effort_select = effort
 
+    mirror = ToggleSwitch(dialog)
+    mirror.setChecked(bool(settings["mirror_to_vault"]))
+    dialog.distill_mirror_check = mirror
+
     language = md.wb.prompt_language()
     prompt = PromptEditor(dialog, default=md.default_prompt_template(language), stored=settings[f"prompt_{language}"],
                           accessible_name=t("distill.settings.prompt"))
@@ -106,6 +110,7 @@ def distill_rows(dialog) -> list[SettingRow]:
         SettingRow("distill_model", t("distill.settings.model_label"), t("distill.settings.model_hint"), model_select),
         SettingRow("distill_model_custom", t("distill.settings.custom_model"), "", model_edit, stacked=True),
         SettingRow("distill_effort", t("distill.settings.effort_label"), t("distill.settings.effort_hint"), effort),
+        SettingRow("distill_mirror", t("distill.settings.mirror_label"), t("distill.settings.mirror_hint"), mirror),
         SettingRow("distill_prompt", t("distill.settings.prompt"), t("distill.settings.prompt_hint"), prompt, stacked=True),
     ]
 
@@ -131,5 +136,6 @@ def save_distill_settings(dialog) -> None:
         "daily_at": dialog.distill_time_select.currentData(),
         "model": chosen_model(dialog),
         "effort": dialog.distill_effort_select.currentData(),
+        "mirror_to_vault": dialog.distill_mirror_check.isChecked(),
         f"prompt_{dialog.distill_prompt_language}": dialog.distill_prompt_editor.value(),
     }))
