@@ -1972,5 +1972,7 @@
   "distill.review.to_vault": "AI-Base User/Claude Memory.md (pushing)",
   "distill.settings.mirror_label": "Mirror to vault",
   "distill.settings.mirror_hint": "Accepted entries are also written to AI-Base's User/Claude Memory.md and pushed (using the personal assistant's repo folder and token).",
-  "distill.run.truncated": "(the model hit its output limit; only the complete items were kept, the rest will come next run)"
+  "distill.run.truncated": "(the model hit its output limit; only the complete items were kept, the rest will come next run)",
+  "distill.run.dropped": "({n} item(s) in the model's output were malformed and could not be parsed; they were dropped)",
+  "distill.run.dropped_resend": "({n} item(s) in the model's output were malformed and could not be parsed; this batch of candidates will be sent again next run)"
 }

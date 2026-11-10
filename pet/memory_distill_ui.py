@@ -191,7 +191,15 @@ def run_line(stats: dict) -> str:
     return t("distill.run.line", when=_when(str(state["last_run_at"]), "%Y-%m-%d %H:%M"), model=last.get("model") or "?",
              effort=last.get("effort") or "?", tokens_in=f"{int(last.get('tokens_in', 0)):,}",
              tokens_out=f"{int(last.get('tokens_out', 0)):,}", seconds=f"{float(last.get('seconds', 0)):.0f}",
-             candidates=int(last.get("candidates", 0)), proposals=int(last.get("proposals", 0)))
+             candidates=int(last.get("candidates", 0)), proposals=int(last.get("proposals", 0))
+             ) + dropped_note(int(last.get("dropped", 0) or 0), False)
+
+
+def dropped_note(dropped: int, resend: bool) -> str:
+    """模型输出里有项解不出来时跟在结果后面的那句（没丢就是空）：丢了几项、这批候选会不会重送。"""
+    if not dropped:
+        return ""
+    return " " + t("distill.run.dropped_resend" if resend else "distill.run.dropped", n=dropped)
 
 
 def proposal_label(item: run.Proposal) -> str:
@@ -1027,6 +1035,7 @@ class MemoryDistillController(QObject):
             text = t("distill.run.done", candidates=result.candidates, proposals=result.proposals, added=result.added)
             if getattr(result, "truncated", False):
                 text += " " + t("distill.run.truncated")
+            text += dropped_note(getattr(result, "dropped", 0), getattr(result, "resend", False))
         else:
             text = t("distill.run.error", error=result.error[-160:])
         if self.window is not None:

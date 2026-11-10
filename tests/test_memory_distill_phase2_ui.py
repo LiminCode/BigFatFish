@@ -330,6 +330,27 @@ def test_proposals_tab_lists_edits_and_reviews(tmp_path):
         window.deleteLater()
 
 
+def test_page_says_how_many_items_the_model_garbled(tmp_path):
+    """模型输出中间一项不是合法 JSON：页面上要看得到丢了几项、这批会重送，而不是悄悄少一条。"""
+    broken = '[{"action": "add", "scope": "global", "title": "第一条"},\n {"action": "add", "title": "说 "不" 就停"},\n' \
+             ' {"action": "add", "scope": "global", "title": "第三条"}]'
+    service, _, _ = _service(tmp_path, _Fakes(broken))
+    controller = ui.MemoryDistillController(_Host(), service)
+    controller.open_window()
+    window = controller.window
+    try:
+        window.distill_btn.click()
+        assert window.proposal_list.count() == 2, "坏的那项后面的照样进来"
+        assert window.status_label.text() == ("总结完成：2 条候选 → 2 条提案，新增 2 条待审 "
+                                              "（模型输出里有 1 项格式不对，没解析出来；这批候选下次总结会再送一遍）")
+        assert window.run_label.text().endswith("（模型输出里有 1 项格式不对，没解析出来，已丢掉）")
+        i18n.set_language("en")
+        assert ui.dropped_note(2, True).startswith(" (2 item(s)") and ui.dropped_note(0, True) == ""
+    finally:
+        window.close()
+        window.deleteLater()
+
+
 def test_scheduled_run_bubbles_and_review_tile_opens_the_tab(tmp_path):
     fakes = _Fakes()
     service, _, _ = _service(tmp_path, fakes)
