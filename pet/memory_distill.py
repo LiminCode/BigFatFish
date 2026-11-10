@@ -589,6 +589,7 @@ def normalize(value) -> dict:
         "work_effort": wb.normalize_effort(data.get("work_effort", wb.EFFORT)),
         "work_prompt_zh": wb.normalize_text(data.get("work_prompt_zh")),
         "work_prompt_en": wb.normalize_text(data.get("work_prompt_en")),
+        "work_mirror_to_vault": bool(data.get("work_mirror_to_vault", True)),   # 公司侧条目镜像进 AI-Base-Memory
     }
 
 

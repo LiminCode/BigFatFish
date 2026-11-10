@@ -28,6 +28,7 @@ from . import memory_distill_wsl_sink as wsink
 from . import personal_vault as pv
 from . import vscode_workspaces as vw
 from . import work_notes as wn
+from .work_notes_service import _GIT_LOCK as WORK_GIT_LOCK      # 和工作笔记 / Slack 关注共用：同一个仓库不并发跑 git
 
 log = logging.getLogger("big-fat-fish")
 
@@ -111,6 +112,7 @@ class MemoryDistillService(QObject):
     _distill_done = Signal(int, object, bool, str)   # generation, RunResult, 手动?, 哪一侧
     _review_done = Signal(int, object, object)       # generation, 提案, Applied（公司侧落盘在线程里，线程 → GUI）
     _sync_done = Signal(int, bool, str)
+    _work_sync_done = Signal(int, bool, str)
 
     STARTUP_DELAY_MS = 40_000                # 比个人助理 / 工作笔记再晚一点，别和它们挤在启动那几秒
     REFRESH_INTERVAL_MS = 60 * 60 * 1000     # 每小时增量扫一次（实测无变化 11 ms、首扫 104 MB 0.9 s）
@@ -143,6 +145,9 @@ class MemoryDistillService(QObject):
         self.last_run: run.RunResult | None = None
         self.sync_state = ""                 # "" / pushing / pushed / failed
         self.sync_error = ""
+        self._work_syncing = False
+        self.work_sync_state = ""            # 公司侧知识库副本那篇的推送：同上四种
+        self.work_sync_error = ""
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.check)
         self._done.connect(self._on_done)
@@ -151,6 +156,7 @@ class MemoryDistillService(QObject):
         self._distill_done.connect(self._on_distill_done)
         self._review_done.connect(self._on_review_done)
         self._sync_done.connect(self._on_sync_done)
+        self._work_sync_done.connect(self._on_work_sync_done)
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.stop)
@@ -182,6 +188,7 @@ class MemoryDistillService(QObject):
         self._distilling.clear()
         self._applying.clear()
         self._syncing = False
+        self._work_syncing = False
 
     def check(self) -> None:
         """定时：开着才自动抽；到了每日时刻就蒸馏一次。"""
@@ -300,6 +307,7 @@ class MemoryDistillService(QObject):
                           "project": sum(1 for e in items if not e.retired and e.scope == "project"),
                           "retired": sum(1 for e in items if e.retired)}
         stats["vault"] = {"state": self.sync_state, "error": self.sync_error, "dir": self.vault_dir()}
+        stats["vault_work"] = {"state": self.work_sync_state, "error": self.work_sync_error, "dir": self.work_vault_dir()}
         return stats
 
     # ---------------------------------------------------------- 蒸馏（第二期）
@@ -318,6 +326,10 @@ class MemoryDistillService(QObject):
 
     def vault_dir(self) -> str:
         return pv.normalize(self._config.get(pv.CONFIG_KEY))["repo_dir"]
+
+    def work_vault_dir(self) -> str:
+        """公司侧知识库副本（AI-Base-Memory 在本机的克隆）：和工作笔记用同一个目录设置。"""
+        return wn.normalize(self._config.get(wn.CONFIG_KEY))["repo_dir"]
 
     @property
     def distilling(self) -> bool:
@@ -449,10 +461,12 @@ class MemoryDistillService(QObject):
         self._applying.add(proposal.id)
         generation = self._generation
         entries, runner, backup_dir = self.entries(md.SIDE_WORK), self._wsl_runner, self.root / sink.BACKUP_DIR
+        vault_dir, mirror = self.work_vault_dir(), bool(self.settings()["work_mirror_to_vault"])
 
         def work() -> None:
             try:
-                applied = wsink.apply_proposal(proposal, now, entries=entries, runner=runner, backup_dir=backup_dir)
+                applied = wsink.apply_proposal(proposal, now, entries=entries, runner=runner, backup_dir=backup_dir,
+                                               vault_dir=vault_dir, mirror=mirror)
             except Exception as exc:  # noqa: BLE001 - 不让线程静默死掉
                 log.exception("会话记忆蒸馏：公司侧落盘失败")
                 applied = sink.Applied(error=f"{type(exc).__name__}: {exc}", side=md.SIDE_WORK)
@@ -471,6 +485,44 @@ class MemoryDistillService(QObject):
         proposal.status = run.STATUS_PENDING if applied.error else run.STATUS_ACCEPTED
         self.proposals().update(proposal)
         self.reviewed.emit(proposal.id, applied)
+        self.changed.emit()
+        if applied.vault_written:
+            self.sync_work_vault()               # 先报「已写入」，再推：推送的结果（失败原因）后到、不被盖掉
+
+    def sync_work_vault(self) -> bool:
+        """把公司侧知识库副本里那篇 commit + push：git 在 WSL 里跑（SSH 密钥、公司 GitHub 登录只在那边），
+        只提交 ``memory/``。后台线程；和工作笔记共用一把锁。提交说明只写时间，不写条目内容。"""
+        if self._work_syncing:
+            return False
+        repo_dir = self.work_vault_dir()
+        if not repo_dir or not Path(repo_dir).is_dir():
+            return False
+        self._work_syncing = True
+        self.work_sync_state = "pushing"
+        generation = self._generation
+        runner, message = self._wsl_runner, f"claude memory: {self._now():%Y-%m-%d %H:%M}"
+
+        def work() -> None:
+            with WORK_GIT_LOCK:
+                try:
+                    ok, out = wn.sync({"repo_dir": repo_dir}, message, run=runner, paths=(sink.WORK_VAULT_DIR,))
+                except Exception as exc:  # noqa: BLE001
+                    ok, out = False, f"{type(exc).__name__}: {exc}"
+            try:
+                self._work_sync_done.emit(generation, ok, out)
+            except RuntimeError:
+                pass
+
+        self._spawn(work)
+        return True
+
+    def _on_work_sync_done(self, generation: int, ok: bool, out: str) -> None:
+        if generation != self._generation:
+            return
+        self._work_syncing = False
+        self.work_sync_state = "pushed" if ok else "failed"
+        self.work_sync_error = "" if ok else wn.describe_sync_failure(out)
+        self.synced.emit(ok, self.work_sync_error)
         self.changed.emit()
 
     def sync_vault(self) -> bool:

@@ -182,9 +182,10 @@ def _sink_value(stats: dict) -> str:
     work = stats.get("entries_work") or {}
     if int(work.get("global", 0)) + int(work.get("project", 0)):
         text += t("distill.stage.sink_work", n=int(work.get("global", 0)) + int(work.get("project", 0)))
-    if vault.get("state") == "pushing":
+    states = {vault.get("state"), (stats.get("vault_work") or {}).get("state")}      # 两侧的知识库，任一在推 / 没推上
+    if "pushing" in states:
         text += " · " + t("distill.vault.pushing")
-    elif vault.get("state") == "failed":
+    elif "failed" in states:
         text += " · " + t("distill.vault.failed")
     return text
 
@@ -1097,6 +1098,8 @@ class MemoryDistillController(QObject):
                 targets.append(t("distill.review.to_wsl_claude_md"))
             if applied.project_file:
                 targets.append(t("distill.review.wsl_removed" if applied.removed else "distill.review.to_wsl_project"))
+            if applied.vault_written:
+                targets.append(t("distill.review.to_work_vault"))
             self.window.show_review_status(t("distill.review.applied", targets="、".join(targets) or "—"))
         else:
             targets = []

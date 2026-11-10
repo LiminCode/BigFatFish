@@ -2006,5 +2006,8 @@
   "distill.review.to_wsl_project": "project memory inside WSL",
   "distill.review.wsl_removed": "removed project memory inside WSL",
   "distill.work.sink_read_failed": "Could not read {path} inside WSL",
-  "distill.work.sink_write_failed": "Could not write {path} inside WSL"
+  "distill.work.sink_write_failed": "Could not write {path} inside WSL",
+  "distill.review.to_work_vault": "memory/Claude Memory.md in AI-Base-Memory (pushing)",
+  "distill.settings.work_mirror_label": "Mirror the work side to its vault",
+  "distill.settings.work_mirror_hint": "Accepted work-side entries are also written to memory/Claude Memory.md in the AI-Base-Memory clone and pushed (the folder is the one set for work notes; git runs inside WSL and commits memory/ only). Never written to the personal vault."
 }

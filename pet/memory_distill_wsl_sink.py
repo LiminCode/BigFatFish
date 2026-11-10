@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """会话记忆蒸馏·第三期（公司侧）——落盘：接受了的公司侧提案写到 WSL 里的 Claude Code 一定会读的地方。
 
-和个人侧（``memory_distill_sink``）同样的两个落点、同样的格式，只是文件在 WSL 默认发行版里：
+和个人侧（``memory_distill_sink``）同样的三个落点、同样的格式，只是前两个在 WSL 默认发行版里：
 
 1. **全局**：WSL 的 ``~/.claude/CLAUDE.md`` 里的受管块（同样的起止标记）。机器只改块内，块外逐字不动；改之前把
    整个文件备份到本机候选库目录下的 ``backups/``（``CLAUDE.md.wsl.<时间>.bak``）。
 2. **项目**：WSL 的 ``~/.claude/projects/<编码>/memory/distill-<id>.md`` + ``MEMORY.md`` 一行索引。
+
+3. **镜像**：公司侧知识库副本（AI-Base-Memory 在本机的克隆）里的 ``memory/Claude Memory.md``，整篇由公司侧条目库
+   重新生成；提交推送经 WSL 跑 git（和工作笔记同一条通道），不进个人知识库。
 
 条目库是公司侧自己的一份（``entries-work.json``）：个人侧的 CLAUDE.md 块和个人知识库那篇都是从 ``entries.json``
 整篇渲染的，公司侧的条目混进去就会被写进个人侧。
@@ -91,8 +94,10 @@ def _write(path: str, text: str, runner) -> None:
 
 
 def apply_proposal(proposal, now: dt.datetime, *, entries: sink.EntriesStore,
-                   runner: mdw.WslRunner = claude_hooks.run_wsl, backup_dir: Path | str | None = None) -> sink.Applied:
-    """接受了的公司侧提案 → 公司侧条目库 → WSL 里的 CLAUDE.md 受管块 / 项目 memory 文件。
+                   runner: mdw.WslRunner = claude_hooks.run_wsl, backup_dir: Path | str | None = None,
+                   vault_dir: str | Path = "", mirror: bool = True) -> sink.Applied:
+    """接受了的公司侧提案 → 公司侧条目库 → WSL 里的 CLAUDE.md 受管块 / 项目 memory 文件 → 公司侧知识库副本里那篇
+    （``vault_dir`` 是 AI-Base-Memory 在本机的克隆；只写文件，提交推送由调用方另起线程经 WSL 跑 git）。
 
     WSL 那边任何一步没成：报原因、把条目库退回这次之前的样子（再接受一次不会多出重复条目）。已经写成的文件不回滚
     ——它们是从条目库渲染的，下次成功时会被整块重写。"""
@@ -130,10 +135,13 @@ def apply_proposal(proposal, now: dt.datetime, *, entries: sink.EntriesStore,
                 _write(path, sink.render_memory_file(entry), runner)
             _write(index_path, sink.index_text(index, entry, remove=entry.retired), runner)
             outcome.project_file = path
+        if mirror and vault_dir and Path(vault_dir).is_dir():
+            sink.write_vault_note(vault_dir, all_entries, now, note=sink.WORK_VAULT_NOTE, intro=sink.WORK_VAULT_INTRO)
+            outcome.vault_written = True
     except (_Failed, OSError) as exc:
         entries.save(before)
         outcome.error = str(exc) or type(exc).__name__
-        outcome.claude_md = False
+        outcome.claude_md = outcome.vault_written = False
     return outcome
 
 

@@ -158,6 +158,11 @@ def _work_rows(dialog, settings: dict, language: str) -> list[SettingRow]:
     effort = effort_select(dialog, settings["work_effort"])
     dialog.distill_work_effort_select = effort
 
+    mirror = ToggleSwitch(dialog)
+    mirror.setChecked(bool(settings["work_mirror_to_vault"]))
+    mirror.setAccessibleName(t("distill.settings.work_mirror_label"))
+    dialog.distill_work_mirror_check = mirror
+
     prompt = PromptEditor(dialog, default=md.default_prompt_template(language), stored=settings[f"work_prompt_{language}"],
                           accessible_name=t("distill.settings.work_prompt"))
     dialog.distill_work_prompt_editor = prompt
@@ -168,6 +173,7 @@ def _work_rows(dialog, settings: dict, language: str) -> list[SettingRow]:
         SettingRow("distill_work_model", t("distill.settings.work_model_label"), t("distill.settings.work_model_hint"), model_select),
         SettingRow("distill_work_model_custom", t("distill.settings.work_custom_model"), "", model_edit, stacked=True),
         SettingRow("distill_work_effort", t("distill.settings.work_effort_label"), t("distill.settings.work_effort_hint"), effort),
+        SettingRow("distill_work_mirror", t("distill.settings.work_mirror_label"), t("distill.settings.work_mirror_hint"), mirror),
         SettingRow("distill_work_prompt", t("distill.settings.work_prompt"), t("distill.settings.work_prompt_hint"), prompt, stacked=True),
     ]
 
@@ -207,5 +213,6 @@ def save_distill_settings(dialog) -> None:
         "work_daily_at": dialog.distill_work_time_select.currentData(),
         "work_model": chosen_work_model(dialog),
         "work_effort": dialog.distill_work_effort_select.currentData(),
+        "work_mirror_to_vault": dialog.distill_work_mirror_check.isChecked(),
         f"work_prompt_{dialog.distill_prompt_language}": dialog.distill_work_prompt_editor.value(),
     }))
