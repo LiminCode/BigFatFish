@@ -142,7 +142,7 @@ def stage_values(stats: dict) -> dict[str, str]:
     today, total = int(stats.get("today", 0)), int(stats.get("total", 0))
     by_tag = stats.get("by_tag") or {}
     return {
-        "source": t("distill.stage.source_value", files=int(stats.get("files", 0))),
+        "source": _source_value(stats),
         "extract": (t("distill.stage.extract_busy") if stats.get("busy")
                     else t("distill.stage.extract_value", when=_when(stats.get("last_refresh") or "")
                            if stats.get("last_refresh") else t("distill.never"))),
@@ -154,6 +154,14 @@ def stage_values(stats: dict) -> dict[str, str]:
                                                    for k in ("pending", "accepted", "rejected")}),
         "sink": _sink_value(stats),
     }
+
+
+def _source_value(stats: dict) -> str:
+    """「会话记录」那格：读过多少个 transcript；有来自 WSL（公司侧）的就写明其中几个。"""
+    files, remote = int(stats.get("files", 0)), int((stats.get("wsl") or {}).get("files", 0))
+    if remote:
+        return t("distill.stage.source_value_wsl", files=files, wsl=remote)
+    return t("distill.stage.source_value", files=files)
 
 
 def _distill_value(state: dict) -> str:
@@ -293,6 +301,7 @@ def settings_html(settings: dict, root: str) -> str:
     lines = [
         f"<b>{esc(t('distill.settings.title'))}</b>",
         esc(t("distill.settings.enabled_on") if settings["enabled"] else t("distill.settings.enabled_off")),
+        esc(t("distill.settings.scan_wsl_on") if settings.get("scan_wsl", True) else t("distill.settings.scan_wsl_off")),
         esc(t("distill.settings.daily_at", time=settings["daily_at"])),
         esc(t("distill.settings.keep_days", days=settings["keep_days"])),
         esc(t("distill.settings.work_roots", roots="; ".join(breakable(r) for r in settings["work_roots"]))),
@@ -1070,7 +1079,10 @@ class MemoryDistillController(QObject):
 
     def _on_refreshed(self, added: int) -> None:
         if self.window is not None:
-            self.window.show_status(t("distill.status.refreshed", n=added))
+            text = t("distill.status.refreshed", n=added)
+            if self.service.wsl_scan_state == svc.WSL_FAILED:
+                text += t("distill.status.wsl_failed")
+            self.window.show_status(text)
 
     def _on_failed(self, error: str) -> None:
         if self.window is not None:
