@@ -107,3 +107,55 @@ WSL 那步没成就不写镜像；没有知识库副本目录不算失败；工�
   （改它会同时改变工作笔记的报错文案）；建议后续单独修成 `{ …; } 2>&1`，并考虑 `pull --rebase --autostash`。
 - 推送失败后没有自动重推：提交留在本地，下一次接受公司侧提案（或工作笔记的任一次同步）会一并推上去。
 - Obsidian 里要先把这个副本登记成库才能直接打开那篇（工作笔记的既有前提）。
+
+## 八、追记：第三期五个 PR 合并后的重启与真实库验收（2026-11-10）
+
+**合并**：#32（丢项修复，`ad22a24a`）→ #33（WSL 抽取，`ab7ff36c`）→ #34（公司侧蒸馏通道，`671a88a6`）→
+#35（分侧 + 公司侧落盘，`e3eadd56`）→ #36（公司侧镜像，`5163dfb7`）。每个 PR 都是「从 main 开分支、只带自己那一个提交」，
+没有叠放；合并后 `git diff origin/main <本地累积提交>` 为空。
+
+**全量 pytest**（隔离 worktree、PowerShell、offscreen、`APPDATA` 重定向、`-X faulthandler`，每个提交各跑一遍）：
+
+| 提交 | 结果 |
+|---|---|
+| 丢项修复 | 6 failed / 6088 passed / 14 skipped，10:01 |
+| WSL 抽取 | 6 failed / 6101 passed / 14 skipped，7:47 |
+| 公司侧蒸馏通道 | 第一遍原生崩溃（约 2.5 分钟处，全量套件既有的间歇性崩溃）；重跑 6 failed / 6121 passed / 14 skipped，8:55 |
+| 分侧 + 公司侧落盘 | 6 failed / 6133 passed / 14 skipped，7:42 |
+| 公司侧镜像 | 6 failed / 6143 passed / 14 skipped，7:45 |
+
+6 个失败每次都是同一组既有基线（`modern_context_menu_has_compact_semantic_groups`、`image_directory_picker…`、
+`festival_id_guard_survives_optimize`、`real_second_process_refused_on_overlay_topology`、
+`capture_window_rect_coordinates_and_clamping`、`host_icons_are_warmed_at_the_cards_size`）。
+
+**重启**：主检出 `git pull --ff-only` 到 `5163dfb7`；结束旧进程 pid 59480（14:11 起），`Start-Process .venv\Scripts\BigFish.exe -m pet`；
+`pet-overlay-gate.log` 新增 `2026-11-10 15:45:18 acquired pid=25360`；`pet-25360.log` 启动后 72 行、WARNING / ERROR 0 行。
+重启时没有设置窗口进程、没有 pytest 在跑。
+
+**真实库验收**（main 上的代码、真实 `%APPDATA%\big-fat-fish`（配置只读）、真实 `wsl.exe`、真实公司账号；跑之前把
+`memory-distill` 整个目录备份了一份；只有计数）：
+
+```
+before: 420 候选 {'personal': 357, 'work': 63}；WSL 文件 0；提案 {个人: 已接受 4 / 跳过 3 / 待审 2}
+extract: added 819 in 5.4 s; wsl state ok        → 1239 候选 {'work': 868, 'personal': 371}；WSL 文件 91
+second extract: added 0 in 105 ms
+work distill #1: ok candidates=150 proposals=6 added=6 dropped=0 model=claude-sonnet-5-5 effort=high
+                 tokens_in=135561 tokens_out=8342 seconds=67.6
+proposals page: tab = '提案 8' | rows 8 | work-side rows 6 | run label lines 2 | source tile mentions WSL
+work distill #2: ok candidates=150 proposals=8 added=8 dropped=0 tokens_in=135729 tokens_out=10828 seconds=83.8
+proposals: {个人: 已接受 4 / 跳过 3 / 待审 2, 公司: 待审 14}
+```
+
+- **公司侧计数上升**：63 → 868（WSL 里的 91 个 transcript 第一次被抽进来）。
+- **提案页看得到**：用真实窗口类读真实提案库，待审列表 8 行，其中 6 行带「公司」前缀；「上次总结」两行。
+- **验收用例**：第 1 次蒸馏的 6 条提案里**没有**那条英文文档写作规范——它已经作为一条项目记忆存在于 WSL 里，模型这次按
+  「现有记忆里已有的不重复提」处理了（在候选库副本上的那一次，模型则提了「升为全局」）。把公司侧的候选游标退回、
+  对同一批候选再蒸馏一次（第 2 次），它出现了：**命中 1 条**（全局、修改）。原文不入报告。
+- **副作用，需要用户知道**：两次蒸馏送的是同一批 150 条候选，提案按「标题哈希」去重，而两次的措辞不同，所以待审里现在有
+  14 条公司侧提案，其中有内容相近的；每条详情头上的「提于」时间能分出是哪一次的。
+- **没有替用户做的事**：没有接受任何提案。运行前后 WSL 的 `~/.claude/CLAUDE.md` 都是 5,248 字节、没有受管块标记；
+  `entries-work.json` 不存在；公司侧知识库副本里没有 `memory/`；桌宠 pid 运行前后都是 25360。
+- **两次真实模型输出的 `dropped` 都是 0**（「丢项」修复的逐项解析在真实输出上没有误报）。
+
+**这次暴露的一个事实**：同一批候选、同一份提示词，模型两次给出的提案集合不同（6 条 vs 8 条，措辞也不同）。「一条规矩有没有
+被提出来」因此不是确定的；想提高稳定性要改提示词（例如要求对「以后 / always」类的话逐条表态），那是用户的提示词决定，没有动。
