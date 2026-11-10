@@ -52,6 +52,11 @@ def distill_rows(dialog) -> list[SettingRow]:
     check.setChecked(bool(settings["enabled"]))
     dialog.distill_enabled_check = check
 
+    scan_wsl = ToggleSwitch(dialog)
+    scan_wsl.setChecked(bool(settings["scan_wsl"]))
+    scan_wsl.setAccessibleName(t("distill.settings.scan_wsl_label"))
+    dialog.distill_scan_wsl_check = scan_wsl
+
     keep = ModernSelect(dialog, width=120)
     for days in sorted({*KEEP_DAYS_CHOICES, settings["keep_days"]}):
         keep.addItem(t("distill.settings.days", days=days), days)
@@ -104,6 +109,7 @@ def distill_rows(dialog) -> list[SettingRow]:
 
     return [
         SettingRow("distill_enabled", t("distill.settings.enabled"), t("distill.settings.enabled_hint"), check),
+        SettingRow("distill_scan_wsl", t("distill.settings.scan_wsl_label"), t("distill.settings.scan_wsl_hint"), scan_wsl),
         SettingRow("distill_keep_days", t("distill.settings.keep_days_label"), t("distill.settings.keep_days_hint"), keep),
         SettingRow("distill_work_roots", t("distill.settings.work_roots_label"), t("distill.settings.work_roots_hint"), roots),
         SettingRow("distill_daily_at", t("distill.settings.daily_at_label"), t("distill.settings.daily_at_hint"), time_select),
@@ -131,6 +137,7 @@ def save_distill_settings(dialog) -> None:
     dialog.config.set(md.CONFIG_KEY, md.normalize({
         **current,
         "enabled": check.isChecked(),
+        "scan_wsl": dialog.distill_scan_wsl_check.isChecked(),
         "keep_days": dialog.distill_keep_days_select.currentData(),
         "work_roots": roots,
         "daily_at": dialog.distill_time_select.currentData(),

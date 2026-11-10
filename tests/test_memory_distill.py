@@ -201,7 +201,7 @@ def test_store_truncated_transcript_rescans_from_start(tmp_path):
     path = _write_transcript(home, "s1", _lines(_rec("user", "以后用 A", n=1)))
     store = md.CandidateStore(tmp_path / "store")
     store.refresh([home / "projects"], work_roots=())
-    path.write_text(_lines(_rec("user", "换了一个", n=1)), encoding="utf-8")   # 文件被重写、变短
+    path.write_text(_lines(_rec("user", "换了一个", n=2)), encoding="utf-8")   # 文件被重写、变短（同一条记录不会存两遍，所以是另一条）
     assert store.refresh([home / "projects"], work_roots=()) == 1
     assert [r["text"] for r in store.read_all()] == ["以后用 A", "换了一个"]
 

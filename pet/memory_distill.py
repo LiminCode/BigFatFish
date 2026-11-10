@@ -246,17 +246,19 @@ def _ask_answers(record: dict) -> list[tuple[str, str]]:
 
 
 def _candidate_from(record: dict, *, text: str, tag: str, before: str, work_roots: Iterable[str],
-                    suffix: str = "", question: str = "", answer: str = "") -> Candidate:
+                    suffix: str = "", question: str = "", answer: str = "", side: str | None = None) -> Candidate:
     cwd = str(record.get("cwd") or "")
     return Candidate(
         id=str(record.get("uuid") or "") + suffix, time=str(record.get("timestamp") or ""),
-        side=classify_side(cwd, work_roots), project=cwd, session_id=str(record.get("sessionId") or ""),
+        side=side or classify_side(cwd, work_roots), project=cwd, session_id=str(record.get("sessionId") or ""),
         entrypoint=str(record.get("entrypoint") or ""), branch=str(record.get("gitBranch") or ""),
         before=before, text=text, tag=tag, question=question, answer=answer)
 
 
-def extract(text: str, *, work_roots: Iterable[str], state: ScanState | None = None) -> tuple[list[Candidate], ScanState]:
-    """从 transcript 全文（或其前缀）抽候选。``state`` 是上次读到的位置：只处理新字节、只处理以换行结尾的整行。"""
+def extract(text: str, *, work_roots: Iterable[str], state: ScanState | None = None,
+            side: str | None = None) -> tuple[list[Candidate], ScanState]:
+    """从 transcript 全文（或其前缀）抽候选。``state`` 是上次读到的位置：只处理新字节、只处理以换行结尾的整行。
+    ``side`` 给了就不再按 cwd 判：这份 transcript 来自哪一侧调用方已经知道（WSL 里的一律公司侧）。"""
     state = state or ScanState()
     data = text.encode("utf-8")
     end = data.rfind(b"\n", state.offset) + 1
@@ -287,7 +289,7 @@ def extract(text: str, *, work_roots: Iterable[str], state: ScanState | None = N
             for index, (question, answer) in enumerate(_ask_answers(record)):
                 found.append(_candidate_from(record, text=f"{question} → {answer}", tag=TAG_DECISION, before=before,
                                              work_roots=work_roots, suffix=f"#{index}" if index else "",
-                                             question=question, answer=answer))
+                                             question=question, answer=answer, side=side))
             continue
         if not is_human_turn(record):
             continue
@@ -295,7 +297,7 @@ def extract(text: str, *, work_roots: Iterable[str], state: ScanState | None = N
         if is_noise(spoken):
             continue
         found.append(_candidate_from(record, text=_clip(spoken, MAX_TEXT_CHARS), tag=tag_for(spoken), before=before,
-                                     work_roots=work_roots))
+                                     work_roots=work_roots, side=side))
     return found, ScanState(offset=end, size=len(data), before=before)
 
 
@@ -316,6 +318,20 @@ def iter_transcripts(roots: Iterable[Path]) -> Iterable[Path]:
 
 
 HEAD_BYTES = 256
+#: WSL 里的 transcript 在游标表里的键前缀（后面跟 ``<项目目录>/<会话>.jsonl``）。不用 UNC 路径当键：
+#: 清理游标时本机文件会 ``exists()`` 一下，UNC 在发行版没起来时一 stat 就卡。
+REMOTE_PREFIX = "wsl:"
+
+
+@dataclass(frozen=True)
+class RemoteListing:
+    """另一处（WSL 默认发行版）的 transcript 清单：在那边一次 ``find`` 列出来的 (相对路径, 字节数)。
+
+    ``root`` 是能从本机读到那些文件的目录（``\\\\wsl.localhost\\<发行版>\\home\\<用户>\\.claude\\projects``）。
+    有了大小，没变的文件连打开都不用——经共享逐个打开 91 个文件实测要 2.5 s，列清单只要 0.1 s。"""
+    root: str
+    files: tuple[tuple[str, int], ...] = ()
+    side: str = SIDE_WORK
 
 
 def _fingerprint(data: bytes) -> str:
@@ -342,6 +358,7 @@ class CandidateStore:
         self.cursors_path = self.root / CURSORS_FILE
         self.last_refresh: str = ""
         self.last_added: int = 0
+        self._known: set[str] | None = None      # 一次 refresh 里已在库的候选 id（用到才读）
 
     # -- 游标 --
     def load_cursors(self) -> dict[str, ScanState]:
@@ -363,10 +380,13 @@ class CandidateStore:
         os.replace(tmp, self.cursors_path)
 
     # -- 抽取 --
-    def refresh(self, roots: Iterable[Path], *, work_roots: Iterable[str]) -> int:
-        """增量扫所有 transcript，新候选追加进当天文件；返回新增条数。阻塞：读文件。"""
+    def refresh(self, roots: Iterable[Path], *, work_roots: Iterable[str], remote: RemoteListing | None = None) -> int:
+        """增量扫所有 transcript，新候选追加进当天文件；返回新增条数。阻塞：读文件。
+
+        ``remote``：WSL 那边的清单（这一轮没问 / 没问到就是 None——那边的游标原样留着，下次接着读）。"""
         cursors = self.load_cursors()
         work_roots = tuple(work_roots)
+        self._known: set[str] | None = None
         added = 0
         seen: set[str] = set()
         for path in iter_transcripts(roots):
@@ -376,32 +396,64 @@ class CandidateStore:
                 size = path.stat().st_size
             except OSError:
                 continue
-            state = cursors.get(key, ScanState())
-            try:
-                with path.open("rb") as handle:
-                    head = _fingerprint(handle.read(HEAD_BYTES))
-                    if size < state.offset or head != state.head:     # 变短或开头变了 = 文件被重写：从头再来
-                        state = ScanState()
-                    if size == state.offset:
-                        cursors[key] = ScanState(offset=state.offset, size=size, before=state.before, head=head)
-                        continue
-                    handle.seek(state.offset)
-                    chunk = handle.read()
-            except OSError:
-                continue
-            found, tail = extract(chunk.decode("utf-8", errors="replace"), work_roots=work_roots,
-                                  state=ScanState(offset=0, size=0, before=state.before))
-            cursors[key] = ScanState(offset=state.offset + tail.offset, size=size, before=tail.before, head=head)
-            if found:
-                self.append(found)
-                added += len(found)
+            added += self._scan(path, key, size, cursors, work_roots=work_roots)
+        if remote is not None:
+            base = Path(remote.root)
+            for rel, size in remote.files:
+                key = REMOTE_PREFIX + rel
+                seen.add(key)
+                if size == cursors.get(key, ScanState()).offset:
+                    continue                                          # 没长：不打开（那是一次经共享的往返）
+                added += self._scan(base.joinpath(*rel.split("/")), key, size, cursors, work_roots=work_roots,
+                                    side=remote.side)
         for key in list(cursors):
-            if key not in seen and not Path(key).exists():
+            if key in seen:
+                continue
+            if key.startswith(REMOTE_PREFIX):
+                if remote is not None:                                # 列过清单、里面没有它了才清；没列就不知道
+                    cursors.pop(key)
+            elif not Path(key).exists():
                 cursors.pop(key)
+        self._known = None
         self.last_refresh = dt.datetime.now().astimezone().isoformat(timespec="seconds")
         self.last_added = added
         self.save_cursors(cursors)
         return added
+
+    def _scan(self, path: Path, key: str, size: int, cursors: dict[str, ScanState], *, work_roots: tuple[str, ...],
+              side: str | None = None) -> int:
+        """读一个 transcript 的新字节、把没见过的候选存下、推进它的游标；返回新增条数。读不了就什么都不动。"""
+        state = cursors.get(key, ScanState())
+        try:
+            with path.open("rb") as handle:
+                head = _fingerprint(handle.read(HEAD_BYTES))
+                if size < state.offset or head != state.head:         # 变短或开头变了 = 文件被重写：从头再来
+                    state = ScanState()
+                if size == state.offset:
+                    cursors[key] = ScanState(offset=state.offset, size=size, before=state.before, head=head)
+                    return 0
+                handle.seek(state.offset)
+                chunk = handle.read()
+        except OSError:
+            return 0
+        found, tail = extract(chunk.decode("utf-8", errors="replace"), work_roots=work_roots,
+                              state=ScanState(offset=0, size=0, before=state.before), side=side)
+        cursors[key] = ScanState(offset=state.offset + tail.offset, size=size, before=tail.before, head=head)
+        if not found:
+            return 0
+        if self._known is None:
+            # 同一条记录会从两处读到（桌面版开的 WSL 会话在 Windows 的 projects/ssh-* 和 WSL 里各有一份），
+            # 被重写的文件也会整份重扫：按记录 id 只存一次。有新候选时才读一遍库。
+            self._known = {str(row.get("id") or "") for row in self.read_all()}
+        fresh = []
+        for item in found:
+            if item.id and item.id in self._known:
+                continue
+            self._known.add(item.id)
+            fresh.append(item)
+        if fresh:
+            self.append(fresh)
+        return len(fresh)
 
     def append(self, candidates: Iterable[Candidate]) -> None:
         self.candidates_dir.mkdir(parents=True, exist_ok=True)
@@ -470,9 +522,9 @@ class CandidateStore:
                 today_count = len(rows)
             by_side.update(r.get("side", SIDE_PERSONAL) for r in rows)
             by_tag.update(r.get("tag", TAG_TASK) for r in rows)
-        if not self.last_refresh:
-            self.load_cursors()
-        return {"total": total, "today": today_count, "days": len(files), "files": len(self.load_cursors()),
+        cursors = self.load_cursors()
+        return {"total": total, "today": today_count, "days": len(files), "files": len(cursors),
+                "files_remote": sum(1 for key in cursors if key.startswith(REMOTE_PREFIX)),
                 "by_side": dict(by_side), "by_tag": dict(by_tag), "last_refresh": self.last_refresh,
                 "first_day": files[0].stem if files else "", "root": str(self.root)}
 
@@ -526,6 +578,7 @@ def normalize(value) -> dict:
         "prompt_zh": wb.normalize_text(data.get("prompt_zh")),
         "prompt_en": wb.normalize_text(data.get("prompt_en")),
         "mirror_to_vault": bool(data.get("mirror_to_vault", True)),      # 接受的条目镜像进 AI-Base（第二期）
+        "scan_wsl": bool(data.get("scan_wsl", True)),                    # 抽取时也扫 WSL 默认发行版里的会话（第三期）
     }
 
 

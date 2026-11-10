@@ -23,6 +23,7 @@ from . import claude_hooks
 from . import memory_distill as md
 from . import memory_distill_run as run
 from . import memory_distill_sink as sink
+from . import memory_distill_wsl as mdw
 from . import personal_vault as pv
 from . import vscode_workspaces as vw
 from . import work_notes as wn
@@ -37,6 +38,8 @@ PLACE_WSL_CLAUDE = "wsl_claude"
 PLACE_GLOBAL_CLAUDE_MD = "global_claude_md"
 PLACE_CANDIDATES = "candidates"
 PLACE_TRANSCRIPTS = "transcripts"
+#: 一趟抽取里 WSL 那半的结果：扫了 / 发行版没在跑所以没去（只有定时那趟会这样）/ 去了没问到 / 设置里关了
+WSL_OK, WSL_ASLEEP, WSL_FAILED, WSL_OFF = "ok", "asleep", "failed", "off"
 PLACE_ORDER = (PLACE_PERSONAL_VAULT, PLACE_WORK_VAULT, PLACE_WINDOWS_CLAUDE, PLACE_WSL_CLAUDE,
                PLACE_GLOBAL_CLAUDE_MD, PLACE_TRANSCRIPTS, PLACE_CANDIDATES)
 
@@ -100,7 +103,7 @@ class MemoryDistillService(QObject):
     distilled = Signal(object, bool)         # RunResult, 手动?（第二期）
     reviewed = Signal(str, object)           # 提案 id, Applied
     synced = Signal(bool, str)               # 知识库镜像推送的结果
-    _done = Signal(int, int, str, str)       # generation, added, error, wsl_dir（线程 → GUI）
+    _done = Signal(int, int, str, str, str)  # generation, added, error, wsl_dir, WSL 那半的结果（线程 → GUI）
     _wsl_done = Signal(str)                  # 单独探 WSL 目录的结果（线程 → GUI）
     vscode_done = Signal(bool, str, str)     # 「用 VS Code 打开」的结果：开成没有, 路径, 失败原因
     _vscode_done = Signal(bool, str, str)    # 同上，线程 → GUI
@@ -132,6 +135,7 @@ class MemoryDistillService(QObject):
         self._wsl_dir: str | None = None     # None = 还没问过
         self._probing_wsl = False
         self.last_error = ""
+        self.wsl_scan_state = ""             # 上一趟抽取里 WSL 那半：""（还没抽过）/ ok / asleep / failed / off
         self.last_refresh_at = ""
         self.last_run: run.RunResult | None = None
         self.sync_state = ""                 # "" / pushing / pushed / failed
@@ -178,7 +182,7 @@ class MemoryDistillService(QObject):
         """定时：开着才自动抽；到了每日时刻就蒸馏一次。"""
         settings = self.settings()
         if settings["enabled"]:
-            self.refresh_now()
+            self.refresh_now(manual=False)
         if run.is_due(settings, self.distill_state(), self._now()):
             self.distill_now(manual=False)
 
@@ -208,8 +212,11 @@ class MemoryDistillService(QObject):
         self.changed.emit()                  # 入口按钮按新路径重摆
 
     # ---------------------------------------------------------- 抽取
-    def refresh_now(self) -> bool:
-        """手动 / 定时都走这：后台线程里增量扫 + 清理过期日文件。忙着就不叠加。"""
+    def refresh_now(self, manual: bool = True) -> bool:
+        """手动 / 定时都走这：后台线程里增量扫 + 清理过期日文件。忙着就不叠加。
+
+        WSL 里的会话（公司侧）也在这一趟里扫：先在那边列清单，再经共享只读长了的文件。定时那趟只在默认发行版
+        本来就在跑时才去（不为每小时一次的增量把它叫醒）；手动那趟一定去。WSL 那半失败不影响 Windows 这半。"""
         if self._busy:
             return False
         self._busy = True
@@ -217,16 +224,25 @@ class MemoryDistillService(QObject):
         generation = self._generation
         store = self.store
         roots = self.transcript_roots()
-        work_roots = tuple(self.settings()["work_roots"])
+        settings = self.settings()
+        work_roots = tuple(settings["work_roots"])
+        scan_wsl = bool(settings["scan_wsl"])
         need_wsl = self._wsl_dir is None and not self._probing_wsl
         if need_wsl:
             self._probing_wsl = True
         runner = self._wsl_runner
 
         def work() -> None:
-            added, error, wsl_dir = 0, "", ""
+            added, error, wsl_dir, wsl_state = 0, "", "", WSL_OFF
             try:
-                added = store.refresh(roots, work_roots=work_roots)
+                remote = None
+                if scan_wsl:
+                    if not manual and not mdw.default_distro_running(runner):
+                        wsl_state = WSL_ASLEEP
+                    else:
+                        remote = mdw.list_transcripts(runner)
+                        wsl_state = WSL_OK if remote is not None else WSL_FAILED
+                added = store.refresh(roots, work_roots=work_roots, remote=remote)
                 store.prune()
                 if need_wsl:
                     wsl_dir = wsl_claude_dir(runner)
@@ -234,17 +250,18 @@ class MemoryDistillService(QObject):
                 log.exception("会话记忆蒸馏：抽取失败")
                 error = f"{type(exc).__name__}: {exc}"
             try:
-                self._done.emit(generation, added, error, wsl_dir if need_wsl else "\0")
+                self._done.emit(generation, added, error, wsl_dir if need_wsl else "\0", wsl_state)
             except RuntimeError:
                 pass
 
         self._spawn(work)
         return True
 
-    def _on_done(self, generation: int, added: int, error: str, wsl_dir: str) -> None:
+    def _on_done(self, generation: int, added: int, error: str, wsl_dir: str, wsl_state: str) -> None:
         if generation != self._generation:
             return
         self._busy = False
+        self.wsl_scan_state = wsl_state
         if wsl_dir != "\0":
             self._wsl_dir = wsl_dir
             self._probing_wsl = False
@@ -264,6 +281,8 @@ class MemoryDistillService(QObject):
         stats["enabled"] = self.settings()["enabled"]
         stats["busy"] = self._busy
         stats["error"] = self.last_error
+        stats["wsl"] = {"state": self.wsl_scan_state if self.settings()["scan_wsl"] else WSL_OFF,
+                        "files": int(stats.get("files_remote", 0))}
         state = self.distill_state()
         entries = self.entries().load()
         stats["distill"] = {"busy": self._distilling, "last_run_at": state.get("last_run_at", ""),

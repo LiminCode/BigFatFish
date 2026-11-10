@@ -1966,5 +1966,11 @@
   "distill.settings.mirror_hint": "接受的条目同时写进 AI-Base 的 User/Claude Memory.md 并推送（用的是个人助理的仓库目录与 Token）。",
   "distill.run.truncated": "（模型输出到了上限，只抢救到前面这几条；下次总结会把剩下的补上）",
   "distill.run.dropped": "（模型输出里有 {n} 项格式不对，没解析出来，已丢掉）",
-  "distill.run.dropped_resend": "（模型输出里有 {n} 项格式不对，没解析出来；这批候选下次总结会再送一遍）"
+  "distill.run.dropped_resend": "（模型输出里有 {n} 项格式不对，没解析出来；这批候选下次总结会再送一遍）",
+  "distill.stage.source_value_wsl": "~/.claude/projects · {files} 个文件（其中 WSL {wsl} 个）",
+  "distill.status.wsl_failed": "（WSL 那边没问到，这次只扫了 Windows 这边）",
+  "distill.settings.scan_wsl_on": "WSL 里的会话：扫（公司侧）",
+  "distill.settings.scan_wsl_off": "WSL 里的会话：不扫",
+  "distill.settings.scan_wsl_label": "也扫 WSL 里的会话",
+  "distill.settings.scan_wsl_hint": "在 WSL 终端 / VS Code Remote 里跑的 Claude Code 把会话记录写在 WSL 自己的 ~/.claude/projects，Windows 这边看不到。开着就在抽取时一并读（先在 WSL 里列清单，再只读长了的文件），一律算公司侧。定时那趟只在默认发行版本来就在跑时才去，不会为此把 WSL 叫醒；点「现在抽取」一定去。"
 }

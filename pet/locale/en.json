@@ -1974,5 +1974,11 @@
   "distill.settings.mirror_hint": "Accepted entries are also written to AI-Base's User/Claude Memory.md and pushed (using the personal assistant's repo folder and token).",
   "distill.run.truncated": "(the model hit its output limit; only the complete items were kept, the rest will come next run)",
   "distill.run.dropped": "({n} item(s) in the model's output were malformed and could not be parsed; they were dropped)",
-  "distill.run.dropped_resend": "({n} item(s) in the model's output were malformed and could not be parsed; this batch of candidates will be sent again next run)"
+  "distill.run.dropped_resend": "({n} item(s) in the model's output were malformed and could not be parsed; this batch of candidates will be sent again next run)",
+  "distill.stage.source_value_wsl": "~/.claude/projects · {files} files ({wsl} from WSL)",
+  "distill.status.wsl_failed": " (WSL did not answer; only the Windows side was scanned this time)",
+  "distill.settings.scan_wsl_on": "Sessions inside WSL: scanned (work side)",
+  "distill.settings.scan_wsl_off": "Sessions inside WSL: not scanned",
+  "distill.settings.scan_wsl_label": "Also scan sessions inside WSL",
+  "distill.settings.scan_wsl_hint": "Claude Code run from a WSL terminal or VS Code Remote writes its transcripts to WSL's own ~/.claude/projects, which the Windows side cannot see. When on, extraction reads them too (lists the files inside WSL, then reads only the ones that grew) and always files them under the work side. The scheduled pass only goes there when the default distro is already running, so it never wakes WSL for this; \"Extract now\" always goes."
 }

@@ -126,7 +126,13 @@ def test_wsl_place_is_probed_when_window_opens_even_if_extraction_is_off(tmp_pat
     """抽取没开、这个进程里一次也没抽过：开流程页也要去问 WSL 的 ~/.claude，入口按钮才能亮；只问一次。"""
     calls: list[int] = []
     service = _service(tmp_path, enabled=False)
-    service._wsl_runner = lambda *_a, **_k: calls.append(1) or (0, r"\\wsl.localhost\Ubuntu\home\me\.claude")
+
+    def runner(args, **_k):
+        if "find" not in args[-1]:           # 只数「~/.claude 在哪」那一问；抽取时列 WSL 清单是另一回事
+            calls.append(1)
+        return 0, r"\\wsl.localhost\Ubuntu\home\me\.claude"
+
+    service._wsl_runner = runner
     assert service.place(svc.PLACE_WSL_CLAUDE).path == ""
     controller = ui.MemoryDistillController(_Host(), service)
     controller.open_window()
@@ -479,7 +485,7 @@ def test_settings_rows_round_trip(tmp_path):
     dialog.config = config
     rows = sd.distill_rows(dialog)
     assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
-        "enabled", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt")]
+        "enabled", "scan_wsl", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt")]
     assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
     assert dialog.distill_keep_days_select.currentData() == 60
     assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"
