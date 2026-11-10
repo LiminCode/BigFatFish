@@ -370,7 +370,10 @@ class MemoryDistillService(QObject):
         if proposal is None or status not in run.STATUSES:
             return None
         if title is not None and title.strip():
-            proposal.title = " ".join(title.split())
+            edited = " ".join(title.split())
+            if edited != proposal.title and proposal.action in ("change", "retire") and not proposal.replaces:
+                proposal.replaces = proposal.title     # 没写 replaces 时标题就是「指哪条」；改了措辞也得还指着它
+            proposal.title = edited
         if why is not None:
             proposal.why = why.strip()
         if how is not None:

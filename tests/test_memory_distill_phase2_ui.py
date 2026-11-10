@@ -219,6 +219,75 @@ def test_distill_without_a_provider_fails_softly(tmp_path):
         ps.resolve_chat_provider = original
 
 
+RAW_FOLLOW_UP = json.dumps([
+    {"action": "change", "scope": "global", "type": "feedback", "title": "回复用中文，术语保留英文", "replaces": "回复用中文",
+     "how": "解释用中文，术语不翻", "evidence": ["2026-11-01 Pet：术语别翻译"]},
+    {"action": "retire", "scope": "project", "project": "Pet", "title": "候选库放本地"},
+], ensure_ascii=False)
+
+
+def _second_round(tmp_path, fakes):
+    """先接受两条 add，再来一轮：改全局那条、作废项目那条。返回 (service, home, vault, 改, 作废)。"""
+    service, home, vault = _service(tmp_path, fakes)
+    service.distill_now()
+    for proposal in service.proposals().pending():
+        service.review(proposal.id, run.STATUS_ACCEPTED)
+    folder = home / ".claude" / "projects" / "C--Users-me-Github-Pet"
+    row = {"type": "user", "isSidechain": False, "uuid": "u9", "sessionId": "t", "timestamp": "2026-11-01T10:00:00Z",
+           "cwd": r"C:\Users\me\Github\Pet", "entrypoint": "cli", "gitBranch": "main",
+           "message": {"role": "user", "content": "术语别翻译，以后候选库也不用放本地了"}}
+    (folder / "s2.jsonl").write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    service._clock["now"] = NOW + dt.timedelta(days=1)
+    service.refresh_now()
+    fakes.text = RAW_FOLLOW_UP
+    service.distill_now()
+    change, retire = service.proposals().pending()
+    assert (change.action, retire.action) == ("change", "retire")
+    return service, home, vault, change, retire
+
+
+def test_accepting_change_and_retire_rewrites_every_target_in_place(tmp_path):
+    fakes = _Fakes()
+    service, home, vault, change, retire = _second_round(tmp_path, fakes)
+    memory = home / ".claude" / "projects" / "C--Users-me-Github-Pet" / "memory"
+    old_file = next(memory.glob("distill-*.md"))
+    assert "- **回复用中文**" in fakes.prompts[-1], "第二轮提示词里带着上一轮写进 CLAUDE.md 的那条"
+
+    applied = service.review(change.id, run.STATUS_ACCEPTED)
+    assert applied.error == "" and applied.claude_md and applied.vault_written
+    text = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
+    assert text.startswith("## mine\n- keep\n\n" + sink.BLOCK_START), "块外原样"
+    assert "- **回复用中文，术语保留英文** — 解释用中文，术语不翻" in text and "- **回复用中文** " not in text
+    assert text.count("\n- **") == 1, "改的是原来那条，不是又添一条"
+    assert service.stats()["entries"] == {"global": 1, "project": 1, "retired": 0}
+
+    applied = service.review(retire.id, run.STATUS_ACCEPTED)
+    assert applied.error == "" and applied.removed and applied.project_file == str(old_file) and not applied.claude_md
+    assert not old_file.exists() and "候选库放本地" not in (memory / "MEMORY.md").read_text(encoding="utf-8")
+    note = (vault / "User" / "Claude Memory.md").read_text(encoding="utf-8")
+    assert "~~候选库放本地~~" in note and "## 项目" not in note and "回复用中文，术语保留英文" in note
+    assert service.stats()["entries"] == {"global": 1, "project": 0, "retired": 1}
+    assert service.proposals().pending() == []
+
+
+def test_retire_with_a_title_edited_in_review_still_finds_the_old_entry(tmp_path):
+    service, _, _, _change, retire = _second_round(tmp_path, _Fakes())
+    applied = service.review(retire.id, run.STATUS_ACCEPTED, title="候选库不用放本地了")
+    assert applied.error == "" and applied.removed, "审核时改了措辞，作废的还是模型指的那条"
+    assert service.stats()["entries"]["retired"] == 1
+
+
+def test_retire_of_something_distill_never_wrote_stays_pending_with_a_reason(tmp_path):
+    fakes = _Fakes(json.dumps([{"action": "retire", "scope": "global", "title": "keep"}], ensure_ascii=False))
+    service, home, _ = _service(tmp_path, fakes)
+    service.distill_now()
+    orphan = service.proposals().pending()[0]
+    applied = service.review(orphan.id, run.STATUS_ACCEPTED)
+    assert applied.error and not applied.claude_md
+    assert (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8") == "## mine\n- keep\n", "手写的那行不归它管"
+    assert [p.id for p in service.proposals().pending()] == [orphan.id], "没落成就留在待审里"
+
+
 # ---------------------------------------------------------------- 页面
 
 
