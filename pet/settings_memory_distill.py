@@ -118,7 +118,65 @@ def distill_rows(dialog) -> list[SettingRow]:
         SettingRow("distill_effort", t("distill.settings.effort_label"), t("distill.settings.effort_hint"), effort),
         SettingRow("distill_mirror", t("distill.settings.mirror_label"), t("distill.settings.mirror_hint"), mirror),
         SettingRow("distill_prompt", t("distill.settings.prompt"), t("distill.settings.prompt_hint"), prompt, stacked=True),
+        *_work_rows(dialog, settings, language),
     ]
+
+
+def _work_rows(dialog, settings: dict, language: str) -> list[SettingRow]:
+    """公司侧那一组：每日蒸馏开关、时刻、模型、强度、提示词——都和个人侧分开存（``work_*``）。挂在 ``dialog`` 上：
+    ``distill_work_check``、``distill_work_time_select``、``distill_work_model_select`` / ``_edit``、
+    ``distill_work_effort_select``、``distill_work_prompt_editor``。"""
+    check = ToggleSwitch(dialog)
+    check.setChecked(bool(settings["work_distill"]))
+    check.setAccessibleName(t("distill.settings.work_distill_label"))
+    dialog.distill_work_check = check
+
+    time_select = ModernSelect(dialog, width=120)
+    for choice in sorted({*TIME_CHOICES, settings["work_daily_at"]}):
+        time_select.addItem(choice, choice)
+    time_select.setCurrentIndex(max(0, time_select.findData(settings["work_daily_at"])))
+    dialog.distill_work_time_select = time_select
+
+    # 公司侧的模型名是 Claude Code 的别名（claude -p --model <名>），不是 API 模型 id
+    model_select = ModernSelect(dialog, width=200)
+    for value in md.WORK_MODEL_CHOICES:
+        model_select.addItem(value, value)
+    model_select.addItem(t("distill.settings.custom_choice"), CUSTOM)
+    model_edit = QLineEdit(dialog)
+    model_edit.setPlaceholderText(md.WORK_DEFAULT_MODEL)
+    model_edit.setAccessibleName(t("distill.settings.work_custom_model"))
+    if settings["work_model"] in md.WORK_MODEL_CHOICES:
+        model_select.setCurrentIndex(max(0, model_select.findData(settings["work_model"])))
+    else:
+        model_select.setCurrentIndex(max(0, model_select.findData(CUSTOM)))
+        model_edit.setText(settings["work_model"])
+    model_edit.setVisible(model_select.currentData() == CUSTOM)
+    model_select.currentIndexChanged.connect(lambda _index: model_edit.setVisible(model_select.currentData() == CUSTOM))
+    dialog.distill_work_model_select = model_select
+    dialog.distill_work_model_edit = model_edit
+
+    effort = effort_select(dialog, settings["work_effort"])
+    dialog.distill_work_effort_select = effort
+
+    prompt = PromptEditor(dialog, default=md.default_prompt_template(language), stored=settings[f"work_prompt_{language}"],
+                          accessible_name=t("distill.settings.work_prompt"))
+    dialog.distill_work_prompt_editor = prompt
+
+    return [
+        SettingRow("distill_work_distill", t("distill.settings.work_distill_label"), t("distill.settings.work_distill_hint"), check),
+        SettingRow("distill_work_daily_at", t("distill.settings.work_daily_at_label"), t("distill.settings.work_daily_at_hint"), time_select),
+        SettingRow("distill_work_model", t("distill.settings.work_model_label"), t("distill.settings.work_model_hint"), model_select),
+        SettingRow("distill_work_model_custom", t("distill.settings.work_custom_model"), "", model_edit, stacked=True),
+        SettingRow("distill_work_effort", t("distill.settings.work_effort_label"), t("distill.settings.work_effort_hint"), effort),
+        SettingRow("distill_work_prompt", t("distill.settings.work_prompt"), t("distill.settings.work_prompt_hint"), prompt, stacked=True),
+    ]
+
+
+def chosen_work_model(dialog) -> str:
+    value = dialog.distill_work_model_select.currentData()
+    if value == CUSTOM:
+        value = dialog.distill_work_model_edit.text()
+    return str(value or "").strip()
 
 
 def chosen_model(dialog) -> str:
@@ -145,4 +203,9 @@ def save_distill_settings(dialog) -> None:
         "effort": dialog.distill_effort_select.currentData(),
         "mirror_to_vault": dialog.distill_mirror_check.isChecked(),
         f"prompt_{dialog.distill_prompt_language}": dialog.distill_prompt_editor.value(),
+        "work_distill": dialog.distill_work_check.isChecked(),
+        "work_daily_at": dialog.distill_work_time_select.currentData(),
+        "work_model": chosen_work_model(dialog),
+        "work_effort": dialog.distill_work_effort_select.currentData(),
+        f"work_prompt_{dialog.distill_prompt_language}": dialog.distill_work_prompt_editor.value(),
     }))

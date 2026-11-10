@@ -42,6 +42,9 @@ DEFAULT_DAILY_AT = "21:30"
 DEFAULT_MODEL = ""                       # 空 = 跟「AI 对话」里的模型一致（个人助理同一约定）；第二期才真的调用
 #: 设置页模型下拉里的几个常用名
 MODEL_CHOICES = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")
+#: 公司侧走 WSL 里的 Claude Code（``claude -p --model <名>``），认的是它的别名；默认和工作简报 / 笔记一样
+WORK_DEFAULT_MODEL = wb.DEFAULT_MODEL
+WORK_MODEL_CHOICES = ("sonnet", "opus", "haiku")
 MAX_BEFORE_CHARS = 500                   # 「我问了什么」只留这么多
 MAX_TEXT_CHARS = 4000                    # 用户一条话超过这个长度（多半是粘贴）只留开头
 
@@ -579,7 +582,28 @@ def normalize(value) -> dict:
         "prompt_en": wb.normalize_text(data.get("prompt_en")),
         "mirror_to_vault": bool(data.get("mirror_to_vault", True)),      # 接受的条目镜像进 AI-Base（第二期）
         "scan_wsl": bool(data.get("scan_wsl", True)),                    # 抽取时也扫 WSL 默认发行版里的会话（第三期）
+        # 公司侧（第三期）：候选只交给 WSL 里的公司账号蒸馏，时刻 / 模型 / 强度 / 提示词和个人侧分开存
+        "work_distill": bool(data.get("work_distill", True)),
+        "work_daily_at": normalize_time(data.get("work_daily_at", DEFAULT_DAILY_AT)),
+        "work_model": wb.normalize_model(data.get("work_model") or WORK_DEFAULT_MODEL),   # 会拼进 shell 命令
+        "work_effort": wb.normalize_effort(data.get("work_effort", wb.EFFORT)),
+        "work_prompt_zh": wb.normalize_text(data.get("work_prompt_zh")),
+        "work_prompt_en": wb.normalize_text(data.get("work_prompt_en")),
     }
+
+
+def side_settings(settings: dict, side: str) -> dict:
+    """蒸馏这一步按侧看到的设置：公司侧把 ``work_*`` 那几项换到通用的键上（``daily_at`` / ``model`` / ``effort`` /
+    ``prompt_*``），``enabled`` = 总开关开着且公司侧每日蒸馏开着。个人侧原样。这样 ``memory_distill_run`` 不用分侧。"""
+    if side != SIDE_WORK:
+        return dict(settings)
+    return {**settings,
+            "enabled": bool(settings.get("enabled")) and bool(settings.get("work_distill", True)),
+            "daily_at": settings.get("work_daily_at", DEFAULT_DAILY_AT),
+            "model": settings.get("work_model", WORK_DEFAULT_MODEL),
+            "effort": settings.get("work_effort", wb.EFFORT),
+            "prompt_zh": settings.get("work_prompt_zh", ""),
+            "prompt_en": settings.get("work_prompt_en", "")}
 
 
 def store_root(config_dir: Path) -> Path:
