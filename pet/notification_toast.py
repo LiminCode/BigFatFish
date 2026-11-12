@@ -14,8 +14,10 @@
 - **同一来源叠成一摞**（``notification_center.source_key``，规则在设置「通知 → 叠放」里按应用选：Slack 按
   频道、Chrome 按网站……）：标题是来源名，下面列最近 3 条「发送人: 消息」，更早的写「还有 N 条」，卡片
   底下露出两层纸边。这个来源再来新消息：更新内容、挪回最靠角的位置、重新倒计时。
-  **点一摞 = 展开**（每条一行，带时间；展开着不倒计时）；展开后点某一行跳到那条、只拿掉那一条，其余留着；
-  点标题那一块收起。关掉 / 划走是整摞。
+  **点一摞 = 展开**（展开着不倒计时）：这一摞的每条消息各占一张小卡片——发送人 + 时间一行，下面正文折行
+  显示全文，不省略；整张卡片跟着内容长高，最高到屏幕可用区（上下各让 ``MARGIN``），再多就在标题下面那块里
+  用滚轮滚（右边一条细滚动条）。展开后点某张小卡片跳到那条、只拿掉那一条，其余留着；点标题那一块收起。
+  关掉 / 划走是整摞。
 - **停留**：``seconds`` 秒后自己走；0 = 一直留着，直到用户关掉。
 - 每张卡片是一个独立的置顶、不抢焦点的无边框窗口，画在一张缓存的位图上再按动画变换贴出来。
 - **置顶要自己守**（实机 2026-11-02「中间空一块」）：Qt 只在建窗时写一次 ``WS_EX_TOPMOST``，带内先后由
@@ -23,7 +25,7 @@
   回来，屏幕上就缺一块。每次重排、以及在场期间每隔 ``_TOPMOST_EVERY_MS`` 一次看门狗，把在场的卡按老→新重新
   插回 topmost 带最上（``platform_win._set_windows_topmost``，灵动岛同一招）；有真全屏应用时不插。
 
-纯函数 ``stack_positions`` / ``resolve_screen`` / ``normalize`` 不碰窗口，测试直接用。
+纯函数 ``stack_positions`` / ``resolve_screen`` / ``normalize`` / ``wrap_full`` / ``message_blocks`` 不碰窗口，测试直接用。
 """
 
 from __future__ import annotations
@@ -36,7 +38,8 @@ from PySide6.QtCore import (
     Property, QEasingCurve, QObject, QPoint, QPointF, QPropertyAnimation, QRect, QRectF, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter, QPen, QPixmap, QTextLayout, QTransform,
+    QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter, QPen, QPixmap, QTextLayout, QTextOption,
+    QTransform,
 )
 from PySide6.QtWidgets import QWidget
 
@@ -67,9 +70,17 @@ _ROW_H = 19              # 正文 / 对话卡每行的高
 _GROUP_ROWS = 3          # 对话卡最多列几条
 _LAYER = 4               # 对话卡底下每层纸边露出多少
 _MAX_GROUP = 30          # 一组最多记这么多条
-_XROW_H = 26             # 展开后每行的高（要点得准）
-_EXPANDED_ROWS = 8       # 展开后最多列几条
+_MSG_GAP = 6             # 展开后小卡片之间
+_MSG_PAD_X = 10          # 小卡片里文字离左右边
+_MSG_PAD_Y = 7           # 小卡片里文字离上下边
+_MSG_HEAD_H = 18         # 小卡片第一行：发送人 + 时间
+_MSG_SHADOW = 2          # 小卡片底下那道玻璃阴影露出多少
+_MSG_WIDTH = CARD_WIDTH - 2 * _PAD
+_MSG_TEXT_W = _MSG_WIDTH - 2 * _MSG_PAD_X
+_SCROLL_BAR_W = 3        # 展开后内容比视口高时右边的滚动条
+_WHEEL_STEP = 3 * _ROW_H  # 滚轮一格滚三行字
 _HEADER_H = _PAD + 42    # 标题区（展开时点这里收起）
+_MSG_TOP = _HEADER_H + 6  # 展开后第一张小卡片从这开始（让开应用磁贴的下沿）
 _ENTER_MS = 280
 _LEAVE_MS = 200
 _MOVE_MS = 180
@@ -170,14 +181,77 @@ def wrap_lines(text: str, font: QFont, width: int, max_lines: int) -> list[str]:
     return lines
 
 
-def card_height(notices, expanded: bool = False) -> int:
+def wrap_full(text: str, font: QFont, width: int, first_width: int | None = None) -> list[str]:
+    """把一段字按 ``width`` 折行，**全文**都留着（不限行数、不省略）。原文的换行保留成分段，段内空白压成
+    一个空格；没有空格的长串（网址）在任意字符处折开。``first_width``：第一行另给的宽度（右边要让出时间）。"""
+    option = QTextOption()
+    option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    lines: list[str] = []
+    for paragraph in str(text or "").splitlines():
+        paragraph = " ".join(paragraph.split())
+        if not paragraph:
+            continue
+        layout = QTextLayout(paragraph, font)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(first_width if first_width is not None and not lines else width)
+            lines.append(paragraph[line.textStart():line.textStart() + line.textLength()].strip())
+        layout.endLayout()
+    return lines
+
+
+class MessageBlock:
+    """展开的一摞里一条消息的小卡片：在内容区里的位置（``top`` 从 0 起）、高度、发送人、时间、折好行的正文。"""
+
+    __slots__ = ("top", "height", "sender", "when", "lines")
+
+    def __init__(self, top: int, height: int, sender: str, when: str, lines: list[str]) -> None:
+        self.top, self.height, self.sender, self.when, self.lines = top, height, sender, when, lines
+
+
+def message_blocks(notices) -> list[MessageBlock]:
+    """展开后每条消息排成一张小卡片（最新的在上）。有发送人：第一行「发送人 … 时间」，正文从第二行起占满宽；
+    没有发送人：正文从第一行起，第一行右边让出时间。"""
+    plain, small = _font(13), QFontMetrics(_font(11))
+    blocks: list[MessageBlock] = []
+    top = 0
+    for notice in notices:
+        sender, message = nc.split_body(getattr(notice, "body", ""))
+        created = getattr(notice, "created", 0)
+        when = dt.datetime.fromtimestamp(created).strftime("%H:%M") if created else ""
+        if sender:
+            lines = wrap_full(message, plain, _MSG_TEXT_W)
+            text_h = _MSG_HEAD_H + len(lines) * _ROW_H
+        else:
+            lines = wrap_full(message, plain, _MSG_TEXT_W,
+                              first_width=_MSG_TEXT_W - small.horizontalAdvance(when) - 8)
+            text_h = max(_MSG_HEAD_H, len(lines) * _ROW_H)
+        height = _MSG_PAD_Y + text_h + _MSG_PAD_Y
+        blocks.append(MessageBlock(top, height, sender, when, lines))
+        top += height + _MSG_GAP
+    return blocks
+
+
+def _blocks_height(blocks: list[MessageBlock]) -> int:
+    return blocks[-1].top + blocks[-1].height + _MSG_SHADOW if blocks else 0
+
+
+def _expanded_height(blocks: list[MessageBlock], max_height: int | None) -> int:
+    height = _MSG_TOP + _blocks_height(blocks) + _PAD
+    return height if max_height is None else min(height, max(_MSG_TOP + 2 * _ROW_H + _PAD, int(max_height)))
+
+
+def card_height(notices, expanded: bool = False, max_height: int | None = None) -> int:
     """一张卡片多高。一条：标题一行 + 正文最多两行。一摞：标题 + 最多三行 + 「还有 N 条」+ 底下的纸边；
-    展开的一摞：标题 + 每条一行（最多 ``_EXPANDED_ROWS``）+「还有 N 条」，没有纸边。"""
+    展开的一摞：标题 + 每条消息一张全文小卡片（``message_blocks``），没有纸边、没有「还有 N 条」，
+    最高到 ``max_height``（屏幕可用区给的上限；超出的在卡片里滚）。收起的卡片不受 ``max_height`` 影响。"""
     notices = list(notices) if isinstance(notices, (list, tuple)) else [notices]
     if len(notices) > 1 and expanded:
-        rows = min(_EXPANDED_ROWS, len(notices))
-        more = 1 if len(notices) > _EXPANDED_ROWS else 0
-        return _HEADER_H + rows * _XROW_H + more * _ROW_H + _PAD
+        return _expanded_height(message_blocks(notices), max_height)
     if len(notices) <= 1:
         body = len(wrap_lines(getattr(notices[0], "body", "") if notices else "", _font(13), _TEXT_WIDTH,
                               _BODY_LINES))
@@ -216,10 +290,13 @@ class ToastCard(QWidget):
     resized = Signal()            # 展开 / 收起 / 换内容后高度变了（叠放管理器重排）
 
     def __init__(self, notices, *, logo: bytes = b"", corner: str = "top_right", theme: str = "system",
-                 seconds: int = DEFAULTS["seconds"], animate: bool = True) -> None:
+                 seconds: int = DEFAULTS["seconds"], animate: bool = True, max_height: int | None = None) -> None:
         super().__init__(None)
         self.notices = list(notices) if isinstance(notices, (list, tuple)) else [notices]
         self.expanded = False
+        self._max_height = max_height       # 展开后最高到这（叠放管理器按屏幕可用区给）；None = 不限
+        self._blocks: list[MessageBlock] | None = None      # 展开后的小卡片排版，内容不变就复用
+        self._scroll = 0                    # 展开后内容往上滚了多少像素
         self._hover_row = -1
         self._corner = corner
         self._animate = animate
@@ -259,14 +336,31 @@ class ToastCard(QWidget):
     def is_group(self) -> bool:
         return len(self.notices) > 1
 
-    def _resize(self) -> None:
+    def _resize(self, *, notify: bool = True) -> None:
         self._cache = None
+        self._blocks = None
         self._hover_row = -1
-        height = card_height(self.notices, self.expanded)
-        if height != self.height():
+        height = (_expanded_height(self._message_blocks(), self._max_height) if self.expanded
+                  else card_height(self.notices))
+        changed = height != self.height()
+        if changed:
             self.setFixedSize(CARD_WIDTH, height)
+        self._scroll = min(self._scroll, self.scroll_max())
+        if changed and notify:
             self.resized.emit()
         self.update()
+
+    def set_max_height(self, limit: int | None) -> None:
+        """展开后的高度上限（换屏 / 换角 / 任务栏变了由叠放管理器重给）。不发 ``resized``：调用方正在重排。"""
+        if limit != self._max_height:
+            self._max_height = limit
+            if self.expanded:
+                self._resize(notify=False)
+
+    def _message_blocks(self) -> list[MessageBlock]:
+        if self._blocks is None:
+            self._blocks = message_blocks(self.notices)
+        return self._blocks
 
     def set_notices(self, notices) -> None:
         """这一摞变了（来了新的 / 跳走了一条）：换内容、改高度、重新倒计时（展开着就不倒计时）。"""
@@ -280,7 +374,7 @@ class ToastCard(QWidget):
         self._resize()
 
     def set_expanded(self, expanded: bool) -> None:
-        """展开（每条一行，一直留着）/ 收起（接着倒计时，从头算）。只有一摞才能展开。"""
+        """展开（每条一张全文小卡片，一直留着）/ 收起（接着倒计时，从头算）。只有一摞才能展开。"""
         expanded = bool(expanded) and self.is_group()
         if expanded == self.expanded:
             return
@@ -294,27 +388,64 @@ class ToastCard(QWidget):
     def close_rect(self) -> QRect:
         return QRect(CARD_WIDTH - _PAD // 2 - _CLOSE, _PAD // 2, _CLOSE, _CLOSE)
 
-    def _shown_rows(self) -> int:
-        return _EXPANDED_ROWS if self.expanded else _GROUP_ROWS
-
     def row_count(self) -> int:
-        """一摞列出来的行数（一条通知的卡片没有行）。"""
-        return min(self._shown_rows(), len(self.notices)) if self.is_group() else 0
+        """一摞列出来的条数（一条通知的卡片没有行）：收起最多 ``_GROUP_ROWS``，展开全列。"""
+        if not self.is_group():
+            return 0
+        return len(self.notices) if self.expanded else min(_GROUP_ROWS, len(self.notices))
 
     def more_count(self) -> int:
-        return max(0, len(self.notices) - self._shown_rows()) if self.is_group() else 0
+        """收起时没列出来的条数（「还有 N 条更早的」）；展开后全列了，是 0。"""
+        return max(0, len(self.notices) - _GROUP_ROWS) if self.is_group() and not self.expanded else 0
 
     def row_rect(self, index: int) -> QRect:
-        """第几行。展开后整行（从卡片左边到右边）都能点，行也高一些。"""
+        """第几条。收起：一行字。展开：那条消息的小卡片（按当前滚动位置，可能在视口外）。"""
         if self.expanded:
-            return QRect(_PAD, _HEADER_H + index * _XROW_H, CARD_WIDTH - 2 * _PAD, _XROW_H)
+            block = self._message_blocks()[index]
+            return QRect(_PAD, _MSG_TOP + block.top - self._scroll, _MSG_WIDTH, block.height)
         return QRect(_TEXT_LEFT, _HEADER_H + index * _ROW_H, _TEXT_WIDTH, _ROW_H)
 
+    def row_lines(self, index: int) -> list[str]:
+        """展开后第几条消息折好行的正文（全文）。"""
+        return list(self._message_blocks()[index].lines)
+
     def row_at(self, pos: QPoint) -> int:
+        if self.expanded and not self.viewport_rect().contains(pos):
+            return -1
         for index in range(self.row_count()):
             if self.row_rect(index).contains(pos):
                 return index
         return -1
+
+    # ------------------------------------------------------------ 展开后的滚动
+    def viewport_rect(self) -> QRect:
+        """展开后标题下面放小卡片的那一块（内容比它高就在里面滚）。"""
+        return QRect(0, _MSG_TOP, CARD_WIDTH, max(0, self.height() - _MSG_TOP - _PAD))
+
+    def scroll_max(self) -> int:
+        if not self.expanded:
+            return 0
+        return max(0, _blocks_height(self._message_blocks()) - self.viewport_rect().height())
+
+    def scroll_offset(self) -> int:
+        return self._scroll
+
+    def scroll_to(self, offset: int) -> None:
+        offset = max(0, min(int(offset), self.scroll_max()))
+        if offset != self._scroll:
+            self._scroll = offset
+            self._cache = None
+            self._hover_row = self.row_at(self.mapFromGlobal(QCursor.pos())) if self._hovered else -1
+            self.update()
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        if not self.expanded or not self.scroll_max():
+            return super().wheelEvent(event)
+        pixels = event.pixelDelta().y()
+        delta = -pixels if pixels else -event.angleDelta().y() * _WHEEL_STEP / 120.0
+        self.scroll_to(self._scroll + round(delta))
+        event.accept()
+        return None
 
     # ------------------------------------------------------------ 计时
     def start_timer(self) -> None:
@@ -513,7 +644,9 @@ class ToastCard(QWidget):
         p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5))
         self._paint_tile(p, dpr)
         self._paint_header(p)
-        if self.is_group():
+        if self.is_group() and self.expanded:
+            self._paint_blocks(p)
+        elif self.is_group():
             self._paint_rows(p)
         else:
             p.setFont(_font(13))
@@ -571,26 +704,54 @@ class ToastCard(QWidget):
             p.drawLine(QPointF(cx - 5, cy - d / 2), QPointF(cx, cy + d / 2))
             p.drawLine(QPointF(cx, cy + d / 2), QPointF(cx + 5, cy - d / 2))
 
+    def _paint_blocks(self, p: QPainter) -> None:
+        """展开的一摞：每条消息一张小卡片（Metro 实色块，比卡面深一档；底下一道半透明的玻璃阴影），
+        第一行发送人（加粗）+ 右边时间，下面正文全文。鼠标下那张换成淡强调色。只画视口里的。"""
+        tok = self._tokens
+        bold, plain, small = _font(13, QFont.Weight.DemiBold), _font(13), _font(11)
+        left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        view = self.viewport_rect()
+        shadow = QColor(0, 0, 0, 70 if QColor(tok["tile"]).lightness() < 128 else 26)
+        p.save()
+        p.setClipRect(view)
+        for index, block in enumerate(self._message_blocks()):
+            rect = QRectF(self.row_rect(index))
+            if rect.bottom() + _MSG_SHADOW < view.top() or rect.top() > view.bottom():
+                continue
+            p.fillRect(rect.translated(0, _MSG_SHADOW), shadow)
+            p.fillRect(rect, QColor(tok["match" if index == self._hover_row else "page"]))
+            x, y, width = rect.left() + _MSG_PAD_X, rect.top() + _MSG_PAD_Y, _MSG_TEXT_W
+            p.setFont(small)
+            p.setPen(QColor(tok["muted"]))
+            p.drawText(QRectF(x, y, width, _MSG_HEAD_H), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       block.when)
+            if block.sender:
+                room = width - QFontMetrics(small).horizontalAdvance(block.when) - 8
+                p.setFont(bold)
+                p.setPen(QColor(tok["title"]))
+                p.drawText(QRectF(x, y, room, _MSG_HEAD_H), left,
+                           QFontMetrics(bold).elidedText(block.sender, Qt.TextElideMode.ElideRight, int(room)))
+                y += _MSG_HEAD_H
+            p.setFont(plain)
+            p.setPen(QColor(tok["text"]))
+            for n, line in enumerate(block.lines):
+                p.drawText(QRectF(x, y + n * _ROW_H, width, _ROW_H), left, line)
+        p.restore()
+        reach = self.scroll_max()
+        if reach:                # 内容比视口高：右边一条细滚动条，告诉人下面还有
+            total = reach + view.height()
+            bar_h = max(24.0, view.height() * view.height() / total)
+            bar_y = view.top() + (view.height() - bar_h) * self._scroll / reach
+            p.fillRect(QRectF(CARD_WIDTH - _SCROLL_BAR_W - 3, bar_y, _SCROLL_BAR_W, bar_h), QColor(tok["muted"]))
+
     def _paint_rows(self, p: QPainter) -> None:
-        """一摞：每条一行「发送人: 消息」（发送人加粗），超出的写「还有 N 条」。展开后行更高、整行可点、
-        右边写时间，鼠标下那行垫一层底色。"""
+        """收起的一摞：每条一行「发送人: 消息」（发送人加粗，放不下的省略），超出的写「还有 N 条」。"""
         tok = self._tokens
         bold, plain = _font(13, QFont.Weight.DemiBold), _font(13)
         align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        small = _font(11)
         for index in range(self.row_count()):
             notice = self.notices[index]
             rect = QRectF(self.row_rect(index))
-            if self.expanded:
-                if index == self._hover_row:
-                    p.fillRect(rect, QColor(tok["tile_hover"]))
-                when = dt.datetime.fromtimestamp(notice.created).strftime("%H:%M") if notice.created else ""
-                p.setFont(small)
-                p.setPen(QColor(tok["muted"]))
-                p.drawText(rect.adjusted(0, 0, -6, 0), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                           when)
-                rect = QRectF(_TEXT_LEFT, rect.top(), _TEXT_WIDTH - QFontMetrics(small).horizontalAdvance(when) - 4,
-                              rect.height())
             sender, message = nc.split_body(notice.body)
             x = rect.left()
             if sender:
@@ -743,21 +904,30 @@ class ToastStack(QObject):
     def _make_card(self, entry: "_Entry") -> ToastCard:
         s = self._settings
         card = ToastCard(entry.notices, logo=entry.logo, corner=s["corner"], theme=s["theme"],
-                         seconds=s["seconds"], animate=self._animate)
+                         seconds=s["seconds"], animate=self._animate, max_height=self._height_limit())
         card.clicked.connect(lambda notice, c=card: self._on_clicked(c, notice))
         card.leaving_started.connect(lambda reason, c=card: self._on_leaving(c, reason))
         card.resized.connect(self._reflow)
         card.finished.connect(card.deleteLater)
         return card
 
+    def _height_limit(self) -> int | None:
+        """一张卡最高多高：屏幕可用区上下各让出 ``MARGIN``（展开的一摞到这就不再长，改成在里面滚）。"""
+        screen = self.target_screen()
+        return None if screen is None else screen.availableGeometry().height() - 2 * MARGIN
+
     def _reflow(self) -> None:
         """前面放得下的（且不超过 ``max_visible``）摆到位，后面的藏起来等位置。"""
         screen = self.target_screen()
         if screen is None:
             return
+        limit = self._height_limit()
+        for entry in self._entries:
+            if entry.card is not None:
+                entry.card.set_max_height(limit)
         head = self._entries[:self._settings["max_visible"]]
         positions = stack_positions(screen.availableGeometry(), self._settings["corner"], CARD_WIDTH,
-                                    [card_height(e.notices, bool(e.card is not None and e.card.expanded)) for e in head])
+                                    [e.card.height() if e.card is not None else card_height(e.notices) for e in head])
         for entry, pos in zip(head, positions):
             if entry.card is None:
                 entry.card = self._make_card(entry)
