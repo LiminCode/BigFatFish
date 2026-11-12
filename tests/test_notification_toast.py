@@ -97,7 +97,8 @@ def test_wrap_lines_elides_the_last_line():
 @pytest.fixture
 def stack():
     s = nt.ToastStack(animate=False)
-    s.apply_settings({"corner": "top_right", "screen": "primary", "seconds": 5, "max_visible": 3})
+    s.apply_settings({"corner": "top_right", "screen": "primary", "seconds": 5, "max_visible": 3,
+                      "stack": {"other": "off"}})      # 摆放 / 排队这些用例要每条一张卡；按应用叠另有用例
     yield s
     s.clear()
     app.processEvents()
@@ -276,10 +277,38 @@ def test_group_card_shows_three_rows_and_counts_the_rest(stack):
     assert card.row_count() == 3 and card.more_count() == 2
 
 
-def test_other_apps_are_not_grouped(stack):
+def test_other_apps_set_to_off_are_not_grouped(stack):
     stack.push(_notice(1))
     stack.push(_notice(2))
     assert [_uids(c) for c in stack.visible_cards()] == [[2], [1]]
+
+
+def test_other_apps_stack_by_app_by_default(stack):
+    """2026-11-12：Slack / Chrome 以外的应用（Claude……）默认整个应用叠成一摞。"""
+    stack.apply_settings({"stack": nc.STACK_DEFAULTS})
+    stack.push(_notice(1))
+    stack.push(_notice(2, app="Other App", app_id="Other.App!App"))
+    stack.push(_notice(3))
+    assert [_uids(c) for c in stack.visible_cards()] == [[3, 1], [2]], "同一个应用一摞，别的应用各自一张"
+
+
+def test_a_stack_with_mixed_titles_is_headed_by_the_app_and_labels_each_row_with_its_title(stack):
+    """按应用叠的一摞里每条的标题不一样（不同会话 / 不同邮件）：卡片标题写应用名，每条前面带自己的标题，
+    不然标题只剩最新那条的，别的几条不知道是谁的。同一标题的一摞（Slack 频道）照旧：标题 + 「发送人: 消息」。"""
+    stack.apply_settings({"stack": nc.STACK_DEFAULTS})
+    stack.push(_notice(1, title="Garden plan", body="Ann: water the tomatoes"))
+    stack.push(_notice(2, title="Trip notes", body="pack the tent"))
+    card = stack.visible_cards()[0]
+    assert card.title_text() == "Demo App"
+    assert [card.row_label(i) for i in range(2)] == ["Trip notes", "Garden plan"]
+    card.set_expanded(True)
+    assert card.row_lines(1) == ["Ann: water the tomatoes"], "正文原样（发送人留在正文里）"
+    for uid in (11, 12):
+        stack.push(_slack(uid))
+    channel = next(c for c in stack.visible_cards() if c.notice.app == "Slack")
+    assert channel.title_text() == "#general" and channel.row_label(0) == "Ann"
+    channel.set_expanded(True)
+    assert channel.row_lines(0) == ["message 12"]
 
 
 def _click(card, pos):

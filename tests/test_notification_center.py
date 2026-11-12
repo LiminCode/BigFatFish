@@ -70,21 +70,31 @@ _CHROME_EXTENSION = nc.Notice(uid=8, app="Google Chrome", app_id="Chrome", title
     (_CHROME_GMAIL, "chrome:mail.google.com"),
     (_CHROME_BARE, "chrome"),
     (_CHROME_EXTENSION, f"chrome:{_EXTENSION_ID}"),
-    (nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1), ""),
+    (nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1), "app:mail!app"),
+    (nc.Notice(uid=5, app="Claude", app_id="Claude.Desktop", title="Session A", body="x", created=1),
+     "app:claude.desktop"),
+    (nc.Notice(uid=6, app="Notes", app_id="", title="t", body="x", created=1), "app:notes"),
+    (nc.Notice(uid=7, app="", app_id="", title="t", body="x", created=1), ""),
 ])
-def test_source_key_by_default_groups_slack_by_channel_and_chrome_by_site(notice, key):
+def test_source_key_by_default_groups_slack_by_channel_chrome_by_site_and_the_rest_by_app(notice, key):
     assert nc.source_key(notice) == key
 
 
 def test_stacking_choices_per_app():
-    assert nc.STACK_DEFAULTS == {"slack": "channel", "chrome": "site"}
+    assert nc.STACK_DEFAULTS == {"slack": "channel", "chrome": "site", "other": "app"}
     assert nc.source_key(_SLACK_C123, {"slack": "app"}) == "slack", "整个 Slack 叠成一张"
     assert nc.source_key(_SLACK_C123, {"slack": "off"}) == "", "每条单独"
     assert nc.source_key(_CHROME_GMAIL, {"chrome": "app"}) == "chrome"
     assert nc.source_key(_CHROME_GMAIL, {"chrome": "off"}) == ""
-    assert nc.normalize_stack({"slack": "weird", "chrome": "off"}) == {"slack": "channel", "chrome": "off"}
+    assert nc.normalize_stack({"slack": "weird", "chrome": "off"}) == {"slack": "channel", "chrome": "off",
+                                                                        "other": "app"}, "旧配置没有 other：补默认"
+    mail = nc.Notice(uid=4, app="Mail", app_id="Mail!App", title="Inbox", body="x", created=1)
+    assert nc.source_key(mail, {"other": "off"}) == "", "其他应用也能设成每条单独"
+    assert nc.source_key(_SLACK_C123, {"other": "off"}) == "slack:T9:C123", "other 不管 Slack / Chrome"
+    assert nc.normalize_stack({"other": "channel"})["other"] == "app"
     assert nc.normalize_stack("junk") == nc.STACK_DEFAULTS
-    assert set(nc.STACK_CHOICES) == {"slack", "chrome"}
+    assert set(nc.STACK_CHOICES) == {"slack", "chrome", "other"}
+    assert nc.STACK_CHOICES["other"] == ("off", "app")
     assert nc.STACK_CHOICES["slack"] == ("off", "channel", "app")
     assert nc.STACK_CHOICES["chrome"] == ("off", "site", "app")
 

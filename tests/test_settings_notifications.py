@@ -118,7 +118,8 @@ def test_notifications_have_their_own_first_level_page(make_dialog):
     labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
     assert labels.index("通知") == labels.index("桌面组件") + 1
     for key in ("notifications_enabled", "notifications_apps", "notifications_stack_slack",
-                "notifications_stack_chrome", "notifications_toast", "notifications_toast_corner"):
+                "notifications_stack_chrome", "notifications_stack_other", "notifications_toast",
+                "notifications_toast_corner"):
         assert _page_of(dialog, key) == "通知", key
     assert dialog.select_page("通知")
 
@@ -131,4 +132,9 @@ def test_stacking_choices_round_trip(make_dialog):
     slack.setCurrentData("app")
     chrome.setCurrentData("off")
     settings_notifications.save_notification_settings(dialog)
-    assert nc.normalize(dialog.config.get(nc.CONFIG_KEY))["stack"] == {"slack": "app", "chrome": "off"}
+    other = dialog.notifications_stack_other_select
+    assert _datas(other) == list(nc.STACK_CHOICES["other"]) and other.currentData() == "app"
+    assert nc.normalize(dialog.config.get(nc.CONFIG_KEY))["stack"] == {"slack": "app", "chrome": "off", "other": "app"}
+    other.setCurrentData("off")
+    settings_notifications.save_notification_settings(dialog)
+    assert nc.normalize(dialog.config.get(nc.CONFIG_KEY))["stack"] == {"slack": "app", "chrome": "off", "other": "off"}
