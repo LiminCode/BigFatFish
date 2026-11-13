@@ -39,6 +39,8 @@ _STACK_KEYS = {
     ("chrome", "off"): "settings.notifications.stack_off",
     ("chrome", "site"): "settings.notifications.stack_site",
     ("chrome", "app"): "settings.notifications.stack_app_chrome",
+    ("other", "off"): "settings.notifications.stack_off",
+    ("other", "app"): "settings.notifications.stack_app_other",
 }
 
 
@@ -62,7 +64,8 @@ def notification_sections(dialog, parent) -> list[SettingsSection]:
         SettingsSection(t("settings.dlg.notifications_read"),
                         pick("notifications_enabled", "notifications_poll_seconds", "notifications_apps"), parent),
         SettingsSection(t("settings.dlg.notifications_stack"),
-                        pick("notifications_stack_slack", "notifications_stack_chrome"), parent),
+                        pick("notifications_stack_slack", "notifications_stack_chrome",
+                             "notifications_stack_other"), parent),
         SettingsSection(t("settings.dlg.notifications_toast"),
                         pick("notifications_toast", "notifications_toast_corner", "notifications_toast_screen",
                              "notifications_toast_seconds", "notifications_toast_max"), parent),
@@ -113,6 +116,8 @@ def notification_rows(dialog) -> list[SettingRow]:
     dialog.notifications_stack_slack_select = stack_slack
     stack_chrome = _stack_select(dialog, "chrome", settings["stack"]["chrome"])
     dialog.notifications_stack_chrome_select = stack_chrome
+    stack_other = _stack_select(dialog, "other", settings["stack"]["other"])
+    dialog.notifications_stack_other_select = stack_other
 
     toast = settings["toast"]
     toast_check = ToggleSwitch(dialog)
@@ -154,6 +159,7 @@ def notification_rows(dialog) -> list[SettingRow]:
         SettingRow("notifications_apps", t("settings.notifications.which_apps"), t(_APPS_HINT), edit, stacked=True),
         SettingRow("notifications_stack_slack", t("settings.notifications.stack_slack"), t("settings.notifications.stack_slack_hint"), stack_slack),
         SettingRow("notifications_stack_chrome", t("settings.notifications.stack_chrome"), t("settings.notifications.stack_chrome_hint"), stack_chrome),
+        SettingRow("notifications_stack_other", t("settings.notifications.stack_other"), t("settings.notifications.stack_other_hint"), stack_other),
         SettingRow("notifications_toast", t("settings.notifications.toast"), t("settings.notifications.toast_hint"), toast_check),
         SettingRow("notifications_toast_corner", t("settings.notifications.toast_corner"), t("settings.notifications.toast_corner_hint"), corner),
         SettingRow("notifications_toast_screen", t("settings.notifications.toast_screen"), t("settings.notifications.toast_screen_hint"), screen),
@@ -175,6 +181,7 @@ def save_notification_settings(dialog) -> None:
         "stack": {
             "slack": dialog.notifications_stack_slack_select.currentData(),
             "chrome": dialog.notifications_stack_chrome_select.currentData(),
+            "other": dialog.notifications_stack_other_select.currentData(),
         },
         "toast": {
             "enabled": dialog.notifications_toast_check.isChecked(),

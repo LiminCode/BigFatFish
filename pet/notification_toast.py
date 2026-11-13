@@ -12,7 +12,8 @@
   进场像 WP 的 toast 一样绕着靠屏幕边的那条边翻下来；悬停朝光标倾斜（``tilt_transform``）、
   停止倒计时；往屏幕边划走就关掉；点一下发 ``activated``（跳回原应用由调用方做）。
 - **同一来源叠成一摞**（``notification_center.source_key``，规则在设置「通知 → 叠放」里按应用选：Slack 按
-  频道、Chrome 按网站……）：标题是来源名，下面列最近 3 条「发送人: 消息」，更早的写「还有 N 条」，卡片
+  频道、Chrome 按网站、其他应用按应用）。一摞里每条的标题不一样时（按应用叠的：不同会话 / 不同邮件），卡片标题
+  写应用名、每条前面带它自己的标题（``row_label``）；标题都一样时（一个频道）：标题是来源名，下面列最近 3 条「发送人: 消息」，更早的写「还有 N 条」，卡片
   底下露出两层纸边。这个来源再来新消息：更新内容、挪回最靠角的位置、重新倒计时。
   **点一摞 = 展开**（展开着不倒计时）：这一摞的每条消息各占一张小卡片——发送人 + 时间一行，下面正文折行
   显示全文，不省略；整张卡片跟着内容长高，最高到屏幕可用区（上下各让 ``MARGIN``），再多就在标题下面那块里
@@ -213,14 +214,29 @@ class MessageBlock:
         self.top, self.height, self.sender, self.when, self.lines = top, height, sender, when, lines
 
 
+def mixed_titles(notices) -> bool:
+    """这一摞里每条的标题是不是不一样（按应用叠的一摞；一个 Slack 频道的一摞标题都一样）。"""
+    return len({" ".join(str(getattr(n, "title", "") or "").split()) for n in notices}) > 1
+
+
+def label_and_message(notice, mixed: bool) -> tuple[str, str]:
+    """一摞里一条消息前面加粗的那截和后面的正文。标题都一样的一摞：「发送人」+ 消息（``split_body``）；
+    标题不一样的一摞：这条自己的标题 + 整段正文（发送人留在正文里）。"""
+    body = getattr(notice, "body", "")
+    if not mixed:
+        return nc.split_body(body)
+    return " ".join(str(getattr(notice, "title", "") or "").split()), str(body or "").strip()
+
+
 def message_blocks(notices) -> list[MessageBlock]:
-    """展开后每条消息排成一张小卡片（最新的在上）。有发送人：第一行「发送人 … 时间」，正文从第二行起占满宽；
-    没有发送人：正文从第一行起，第一行右边让出时间。"""
+    """展开后每条消息排成一张小卡片（最新的在上）。有发送人（或自己的标题，见 ``label_and_message``）：
+    第一行「发送人 … 时间」，正文从第二行起占满宽；没有：正文从第一行起，第一行右边让出时间。"""
     plain, small = _font(13), QFontMetrics(_font(11))
     blocks: list[MessageBlock] = []
     top = 0
+    mixed = mixed_titles(notices)
     for notice in notices:
-        sender, message = nc.split_body(getattr(notice, "body", ""))
+        sender, message = label_and_message(notice, mixed)
         created = getattr(notice, "created", 0)
         when = dt.datetime.fromtimestamp(created).strftime("%H:%M") if created else ""
         if sender:
@@ -404,6 +420,15 @@ class ToastCard(QWidget):
             block = self._message_blocks()[index]
             return QRect(_PAD, _MSG_TOP + block.top - self._scroll, _MSG_WIDTH, block.height)
         return QRect(_TEXT_LEFT, _HEADER_H + index * _ROW_H, _TEXT_WIDTH, _ROW_H)
+
+    def title_text(self) -> str:
+        """卡片标题那一行：这条（这一摞）的标题；一摞里标题不一样时写应用名。"""
+        source = self.notice.app if self.is_group() and mixed_titles(self.notices) else self.notice.title
+        return " ".join(str(source or "").split())
+
+    def row_label(self, index: int) -> str:
+        """一摞里第几条前面加粗的那截：发送人，或（标题不一样的一摞）它自己的标题。"""
+        return label_and_message(self.notices[index], mixed_titles(self.notices))[0]
 
     def row_lines(self, index: int) -> list[str]:
         """展开后第几条消息折好行的正文（全文）。"""
@@ -692,8 +717,8 @@ class ToastCard(QWidget):
         title_font = _font(15, QFont.Weight.DemiBold)
         p.setFont(title_font)
         p.setPen(QColor(tok["title"]))
-        title = QFontMetrics(title_font).elidedText(" ".join((self.notice.title or "").split()),
-                                                    Qt.TextElideMode.ElideRight, width - (16 if self.is_group() else 0))
+        title = QFontMetrics(title_font).elidedText(self.title_text(), Qt.TextElideMode.ElideRight,
+                                                    width - (16 if self.is_group() else 0))
         p.drawText(QRectF(left, _PAD + 20, width, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    title)
         if self.is_group():
@@ -749,10 +774,10 @@ class ToastCard(QWidget):
         tok = self._tokens
         bold, plain = _font(13, QFont.Weight.DemiBold), _font(13)
         align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        mixed = mixed_titles(self.notices)
         for index in range(self.row_count()):
-            notice = self.notices[index]
             rect = QRectF(self.row_rect(index))
-            sender, message = nc.split_body(notice.body)
+            sender, message = label_and_message(self.notices[index], mixed)
             x = rect.left()
             if sender:
                 label = QFontMetrics(bold).elidedText(sender + ": ", Qt.TextElideMode.ElideRight,

@@ -68,8 +68,9 @@ TOAST_DEFAULTS = {"enabled": False, "corner": "top_right", "screen": TOAST_SCREE
                   "max_visible": 5}
 #: 同一来源的通知怎么叠（弹窗里并成一张）：每个应用一个选择。off = 每条单独；app = 整个应用叠成一张；
 #: Slack 的 channel = 按频道（私聊也是频道）；Chrome 的 site = 按发通知的网站。
-STACK_CHOICES = {"slack": ("off", "channel", "app"), "chrome": ("off", "site", "app")}
-STACK_DEFAULTS = {"slack": "channel", "chrome": "site"}
+#: 叠放规则：Slack / Chrome 各有自己的；``other`` 管其余所有应用（Claude、邮件……）
+STACK_CHOICES = {"slack": ("off", "channel", "app"), "chrome": ("off", "site", "app"), "other": ("off", "app")}
+STACK_DEFAULTS = {"slack": "channel", "chrome": "site", "other": "app"}
 DEFAULTS = {"enabled": True, "poll_seconds": 3, "keep": 50, "apps": list(DEFAULT_APPS), "toast": TOAST_DEFAULTS,
             "stack": STACK_DEFAULTS}
 
@@ -226,11 +227,16 @@ def source_key(notice: Notice, stack: dict | None = None) -> str:
       退回频道名（通知标题），再没有就整个 Slack 一组。
     - Chrome ``site``：发通知的网站。Chrome 的启动参数里带着来源网址（``…|https://mail.google.com/|…``），
       取它的主机名（扩展发的取扩展 id）；取不到就整个 Chrome 一组。
-    - ``app``：整个应用一组；``off``：不归组。别的应用暂不归组；要加规则就加在这里和 ``STACK_CHOICES``。
+    - ``app``：整个应用一组；``off``：不归组。
+    - 其余应用（``other`` 这条规则，含 Claude）：``app`` 时每个应用各一组，键取 AUMID（没有就取应用名）；
+      两样都没有的不归组。要给某个应用单独的规则就加在这里和 ``STACK_CHOICES``。
     """
     kind = notice.kind
-    if kind not in STACK_CHOICES:
-        return ""
+    if kind not in ("slack", "chrome"):
+        if normalize_stack(stack)["other"] == "off":
+            return ""
+        app = (notice.app_id or notice.app or "").strip().lower()
+        return f"app:{app}" if app else ""
     mode = normalize_stack(stack)[kind]
     if mode == "off":
         return ""
