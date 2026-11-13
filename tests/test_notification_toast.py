@@ -368,3 +368,96 @@ def test_zero_seconds_means_stay_until_dismissed(stack):
     card.set_hovered(True)
     card.set_hovered(False)
     assert not card.timer_active(), "一直留着，直到关掉"
+
+
+# ---------------------------------------------------------------- 展开后每条消息一张小卡片、全文
+_LONG = ("Ann: The quarterly picnic moved to the lakeside pavilion because the old meadow is flooded; "
+         "bring a folding chair, a hat and something to share, and tell Bo whether you need a ride from the station.")
+_LONG_ZH = "阿青: 周六的野餐改到湖边凉亭了，原来的草地积水没法用；请自带折叠椅和帽子，再带一样能分着吃的东西，需要从车站搭车的话提前跟小波说一声。"
+
+
+def _squash(text: str) -> str:
+    return "".join(str(text).split())
+
+
+def test_wrap_full_keeps_every_character_and_breaks_long_tokens():
+    font = nt._font(13)
+    text = "see https://example.invalid/" + "a" * 200 + " then come back"
+    lines = nt.wrap_full(text, font, 200)
+    assert _squash("".join(lines)) == _squash(text), "全文都在，没有省略"
+    assert len(lines) > 3 and not any("…" in line for line in lines)
+    from PySide6.QtGui import QFontMetrics
+    assert all(QFontMetrics(font).horizontalAdvance(line) <= 200 for line in lines), "没有空格的长串也要折开"
+    assert nt.wrap_full("one\ntwo", font, 200) == ["one", "two"], "原文的换行保留"
+    assert nt.wrap_full("", font, 200) == []
+
+
+def test_expanded_stack_shows_every_message_in_full_in_its_own_block(stack):
+    """实机 2026-11-12：展开后每条仍是单行、被省略号截断。展开 = 每条一张小卡片，正文折行显示全文。"""
+    bodies = {1: _LONG, 2: _LONG_ZH, 3: "Bo: ok"}
+    for uid, body in bodies.items():
+        stack.push(_slack(uid, body=body))
+    card = stack.visible_cards()[0]
+    collapsed_h = card.height()
+    _click(card, card.rect().center())
+    assert card.expanded
+    for index, notice in enumerate(card.notices):
+        lines = card.row_lines(index)
+        assert _squash("".join(lines)) == _squash(nc.split_body(bodies[notice.uid])[1]), "正文一个字不少"
+        assert not any("…" in line for line in lines)
+    assert len(card.row_lines(card.notices.index(next(n for n in card.notices if n.uid == 1)))) >= 3
+    rects = [card.row_rect(i) for i in range(card.row_count())]
+    assert all(a.bottom() < b.top() for a, b in zip(rects, rects[1:])), "小卡片一张接一张，不重叠"
+    assert all(r.height() >= len(card.row_lines(i)) * nt._ROW_H for i, r in enumerate(rects)), "卡片随行数长高"
+    assert card.height() > collapsed_h + 3 * nt._ROW_H
+    assert card.height() == nt.card_height(card.notices, True), "不超屏时高度 = 内容高度"
+    _click(card, QPoint(nt.CARD_WIDTH // 2, 20))
+    assert not card.expanded and card.height() == collapsed_h, "收起态不变"
+
+
+def test_expanded_stack_lists_every_message_without_a_more_line(stack):
+    for uid in range(1, 13):
+        stack.push(_slack(uid))
+    card = stack.visible_cards()[0]
+    assert (card.row_count(), card.more_count()) == (3, 9)
+    card.set_expanded(True)
+    assert (card.row_count(), card.more_count()) == (12, 0), "展开后全列出来，不再写「还有 N 条」"
+
+
+def test_expanded_stack_never_outgrows_the_work_area_and_scrolls_instead(stack):
+    activated = []
+    stack.activated.connect(lambda notice: activated.append(notice.uid))
+    for uid in range(1, nt._MAX_GROUP + 1):
+        stack.push(_slack(uid, body=_LONG))
+    card = stack.visible_cards()[0]
+    card.set_expanded(True)
+    app.processEvents()
+    area = _area(stack)
+    assert nt.card_height(card.notices, True) > area.height(), "这组内容本身比屏幕高"
+    assert card.height() == area.height() - 2 * nt.MARGIN
+    assert area.contains(card.geometry()), "卡片整个在工作区里"
+    last = card.row_count() - 1
+    assert card.scroll_max() > 0 and card.row_at(card.row_rect(last).center()) == -1, "最后一条在视口外，点不到"
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtCore import QPointF
+    centre = QPointF(card.rect().center())
+    wheel = QWheelEvent(centre, card.mapToGlobal(centre), QPoint(0, 0), QPoint(0, -120), Qt.MouseButton.NoButton,
+                        Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    app.sendEvent(card, wheel)
+    assert 0 < card.scroll_offset() < card.scroll_max(), "滚轮往下：内容上移"
+    card.scroll_to(10 ** 6)
+    assert card.scroll_offset() == card.scroll_max()
+    assert card.viewport_rect().contains(card.row_rect(last)), "滚到底：最后一条完整可见"
+    _click(card, card.row_rect(last).center())
+    assert activated == [1], "滚动后点到的还是那一条（最旧的在最下面）"
+    assert card.scroll_offset() <= card.scroll_max(), "少了一条：滚动位置收回范围内"
+    card.set_expanded(False)
+    assert card.scroll_offset() == 0
+
+
+def test_card_height_takes_a_ceiling_only_when_expanded():
+    notices = [_slack(uid, body=_LONG) for uid in range(1, 11)]
+    full = nt.card_height(notices, True)
+    assert nt.card_height(notices, True, max_height=300) == 300 < full
+    assert nt.card_height(notices, True, max_height=10 ** 6) == full
+    assert nt.card_height(notices, False, max_height=10) == nt.card_height(notices, False), "收起态不受限高影响"
