@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -75,11 +75,13 @@ class _AiSettingsPage(QWidget):
         self.test_done.connect(self._on_test_done)
         self.kb_sync_done.connect(self._on_kb_sync_done)
 
-        self.provider_combo = ModernSelect(self, width=230)
+        self.provider_combo = ModernSelect(self, width=300)
         self.add_provider_btn = QPushButton(t("settings.ai.add"), self)
         self.delete_provider_btn = QPushButton(t("settings.ai.delete"), self)
+        #: 聊天在用的那一项（盘上的 active_provider）：下拉框里标「使用中」，保存后跟着选中项走
+        self._in_use_provider = self.settings.active_provider
         for pid, provider_item in self.settings.providers.items():
-            self.provider_combo.addItem(self._provider_label(provider_item), pid)
+            self.provider_combo.addItem(self._combo_label(provider_item), pid)
         self.provider_combo.setCurrentData(self.settings.active_provider)
 
         self.name = _line_edit(provider.name)
@@ -202,13 +204,12 @@ class _AiSettingsPage(QWidget):
             self.provider_combo,
             [self.add_provider_btn, self.delete_provider_btn],
         )
-        root.addWidget(SettingsSection(t("settings.ai.api_list"), [
-            SettingRow(
-                "provider_list", t("settings.ai.api_list"),
-                t("settings.ai.pick_model_service_edit_switch"),
-                provider_row,
-            ),
-        ], self))
+        self._provider_list_row = SettingRow(
+            "provider_list", t("settings.ai.api_list"),
+            t("settings.ai.pick_model_service_edit_switch"),
+            provider_row,
+        )
+        root.addWidget(SettingsSection(t("settings.ai.api_list"), [self._provider_list_row], self))
         root.addWidget(SettingsSection(t("settings.ai.model_connection"), [
             SettingRow("provider_name", t("settings.ai.provider_name"), t("settings.ai.tells_model_services_apart"), self.name),
             SettingRow("api_url", t("settings.ai.api_address"), t("settings.ai.address_openai_chat_completions_compatib"), self.url),
@@ -296,6 +297,9 @@ class _AiSettingsPage(QWidget):
             SettingRow("skip_ssl", t("settings.ai.skip_ssl_certificate_verification"), t("settings.ai.only_local_gateways_self_signed"), self.skip_ssl),
         ], self, advanced=True))
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        # 下拉框里那一项跟着名称 / 模型的编辑走（2026-11-13：「添加了模型，保存后看不到在哪里」）
+        self.name.textChanged.connect(self._refresh_current_label)
+        self.model.textChanged.connect(self._refresh_current_label)
         self.add_provider_btn.clicked.connect(self._add_provider)
         self.delete_provider_btn.clicked.connect(self._delete_provider)
         self._update_provider_buttons()
@@ -507,6 +511,31 @@ class _AiSettingsPage(QWidget):
         model = str(p.model or '').strip()
         return f"{name} · {model}" if model else name
 
+    def _combo_label(self, p, *, name: str | None = None, model: str | None = None) -> str:
+        """下拉框里的一项：「名称 · 模型」，聊天在用的那一项后面加「（使用中）」。"""
+        name = (p.name if name is None else name) or p.provider_id
+        model = ((p.model if model is None else model) or "").strip()
+        label = f"{name} · {model}" if model else str(name)
+        return label + t("settings.ai.in_use") if p.provider_id == self._in_use_provider else label
+
+    def _refresh_current_label(self, _text: str = "") -> None:
+        pid = self.provider_combo.currentData()
+        p = self.settings.providers.get(pid)
+        if p is None:
+            return
+        self.provider_combo.setItemText(
+            self.provider_combo.currentIndex(),
+            self._combo_label(p, name=self.name.text().strip(), model=self.model.text().strip()))
+
+    def _relabel_providers(self) -> None:
+        for index in range(self.provider_combo.count()):
+            p = self.settings.providers.get(self.provider_combo.itemData(index))
+            if p is not None:
+                self.provider_combo.setItemText(index, self._combo_label(p))
+
+    def _set_provider_hint(self, text: str) -> None:
+        self._provider_list_row.hint_label.setText(text)
+
     def _capture_current_draft(self) -> None:
         pid = self.settings.active_provider
         if not pid or pid not in self.settings.providers:
@@ -560,6 +589,7 @@ class _AiSettingsPage(QWidget):
         pid = self.provider_combo.currentData()
         if pid and pid in self.settings.providers:
             self._load_provider_ui(pid)
+        self._set_provider_hint(t("settings.ai.pick_model_service_edit_switch"))
 
     def _new_provider_id(self) -> str:
         # 避免复用已删除的 provider_id：否则保存合并时新建项会被删除集合过滤掉。
@@ -608,13 +638,17 @@ class _AiSettingsPage(QWidget):
         }
         self._loading_provider = True
         try:
-            self.provider_combo.addItem(self._provider_label(new), new_id)
+            self.provider_combo.addItem(self._combo_label(new), new_id)
             self.provider_combo.setCurrentIndex(self.provider_combo.count() - 1)
         finally:
             self._loading_provider = False
         self.settings.active_provider = new_id
         self._load_provider_ui(new_id)
         self._update_provider_buttons()
+        # 告诉用户下一步，并把名称全选：直接打字就替换掉「副本」
+        self._set_provider_hint(t("settings.ai.added_next_step", name=self.name.text()))
+        self.name.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.name.selectAll()
 
     def _delete_provider(self) -> None:
         if len(self.settings.providers) <= 1:
@@ -629,7 +663,7 @@ class _AiSettingsPage(QWidget):
         try:
             self.provider_combo.clear()
             for p in self.settings.providers.values():
-                self.provider_combo.addItem(self._provider_label(p), p.provider_id)
+                self.provider_combo.addItem(self._combo_label(p), p.provider_id)
             self.settings.active_provider = next(iter(self.settings.providers))
             self.provider_combo.setCurrentData(self.settings.active_provider)
         finally:
@@ -741,6 +775,10 @@ class _AiSettingsPage(QWidget):
             self.settings.active_provider = next(iter(self.settings.providers))
         for pid in list(self.settings.providers):
             self._apply_draft_to_provider(pid)
+        # 保存后选中的那一项就是聊天在用的：「使用中」标记跟过去，各项文字换成存下的值
+        self._in_use_provider = self.settings.active_provider
+        self._relabel_providers()
+        self._set_provider_hint(t("settings.ai.pick_model_service_edit_switch"))
         self.settings.default_system_prompt = self.prompt.toPlainText().strip()
         self.settings.about_user = self.about_user.toPlainText().strip()
         github_enabled = self.github_connector.isChecked()

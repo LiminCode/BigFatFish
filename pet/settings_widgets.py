@@ -986,6 +986,15 @@ class ModernSelect(QAbstractButton):
     def itemText(self, index: int) -> str:  # noqa: N802
         return self._items[index][0] if 0 <= index < len(self._items) else ""
 
+    def setItemText(self, index: int, text: str) -> None:  # noqa: N802
+        """改某一项的显示文字（QComboBox 同名同义）；改的是当前项就立刻重画。"""
+        if not 0 <= index < len(self._items):
+            return
+        self._items[index] = (str(text), self._items[index][1])
+        if index == self._index:
+            self.setText(self._items[index][0])
+            self.update()
+
     def setItemData(self, index: int, value, role=None) -> None:  # noqa: N802
         # Foreground roles are unnecessary because the custom popup owns its
         # palette; other calls update the stored data payload.
@@ -1069,7 +1078,10 @@ class ModernSelect(QAbstractButton):
         inset = 1.0 if self.hasFocus() else 0.5
         painter.drawRect(QRectF(inset, inset, self.width() - 2 * inset, self.height() - 2 * inset))   # 方角：Metro
         painter.setPen(QColor(fg))
-        painter.drawText(QRectF(10, 0, self.width() - 34, self.height()), Qt.AlignmentFlag.AlignVCenter, self.currentText())
+        text_width = self.width() - 34
+        # 放不下就右侧省略（以前直接截断，看不出后面还有字）
+        shown = self.fontMetrics().elidedText(self.currentText(), Qt.TextElideMode.ElideRight, max(0, text_width))
+        painter.drawText(QRectF(10, 0, text_width, self.height()), Qt.AlignmentFlag.AlignVCenter, shown)
         painter.end()
         _draw_chevron(self, self.height() / 2.0, down=True)
 

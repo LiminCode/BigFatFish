@@ -141,3 +141,103 @@ def test_modern_ai_page_provider_list_add_switch_delete(tmp_path, monkeypatch):
     finally:
         dlg.close()
         _app().processEvents()
+
+
+# ---------------------------------------------------------------- 现代设置 AI 页：列表看得见自己的改动
+# 2026-11-13 用户反馈：「添加了一个模型，保存后看不到在哪里」——下拉框里那一项一直显示添加时的
+# 「DeepSeek 副本 · deepseek-v4-flash」，不跟名称 / 模型的编辑走，也看不出聊天在用哪一项。
+
+def _modern_dialog(tmp_path, monkeypatch):
+    import pet.modern_settings_dialog as settings_mod
+
+    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
+    _app()
+    return settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=True)
+
+
+def _labels(page) -> list[str]:
+    return [page.provider_combo.itemText(i) for i in range(page.provider_combo.count())]
+
+
+def test_modern_provider_label_follows_name_and_model_edits(tmp_path, monkeypatch):
+    from pet.i18n import t
+
+    dlg = _modern_dialog(tmp_path, monkeypatch)
+    try:
+        page = dlg.ai_page
+        page._add_provider()
+        page.name.setText("Claude")
+        page.model.setText("claude-sonnet-5-5")
+        assert page.provider_combo.currentText().startswith("Claude · claude-sonnet-5-5"), _labels(page)
+        assert t("settings.ai.in_use") not in page.provider_combo.currentText(), "新加的那项还没保存，不是在用的"
+    finally:
+        dlg.close()
+        _app().processEvents()
+
+
+def test_modern_provider_in_use_marker_moves_on_save(tmp_path, monkeypatch):
+    from pet.i18n import t
+
+    in_use = t("settings.ai.in_use")
+    dlg = _modern_dialog(tmp_path, monkeypatch)
+    try:
+        page = dlg.ai_page
+        assert in_use in _labels(page)[0], "聊天在用的那一项要标出来"
+        page._add_provider()
+        page.name.setText("Claude")
+        page.model.setText("claude-sonnet-5-5")
+        dlg.save_button.click()                       # 「保存」：写盘不关窗
+        labels = _labels(page)
+        assert in_use not in labels[0] and in_use in labels[1], labels
+        assert labels[1].startswith("Claude · claude-sonnet-5-5")
+        row = dlg.findChild(type(page._test_row), "settingRow_provider_list")
+        assert row.hint_label.text() == t("settings.ai.pick_model_service_edit_switch"), "保存后提示复原"
+        reloaded = dlg.config.chat_settings()
+        assert reloaded.providers[reloaded.active_provider].name == "Claude"
+    finally:
+        dlg.close()
+        _app().processEvents()
+
+
+def test_modern_add_provider_says_what_to_do_next(tmp_path, monkeypatch):
+    from pet.i18n import t
+
+    dlg = _modern_dialog(tmp_path, monkeypatch)
+    try:
+        page = dlg.ai_page
+        row = dlg.findChild(type(page._test_row), "settingRow_provider_list")   # 设置窗口会把行搬进自己的页面
+        before = row.hint_label.text()
+        page._add_provider()
+        assert row.hint_label.text() == t("settings.ai.added_next_step", name=page.name.text())
+        assert row.hint_label.text() != before
+        assert page.name.selectedText() == page.name.text(), "名称已全选：直接打字就替换掉「副本」"
+        page.provider_combo.setCurrentData("openai-main")
+        assert row.hint_label.text() == before, "切走后提示复原"
+    finally:
+        dlg.close()
+        _app().processEvents()
+
+
+def test_modern_provider_section_uses_plain_words():
+    """用户问「API 列表是什么」：分节名和提示不再用 API 列表 / Provider / active_provider 这类内部词。"""
+    import json
+    from pathlib import Path
+
+    zh = json.loads((Path(__file__).resolve().parents[1] / "pet" / "locale" / "zh.json").read_text(encoding="utf-8"))
+    for key in ("settings.ai.api_list", "settings.dlg.api_list", "settings.ai.provider_name",
+                "settings.ai.pick_model_service_edit_switch", "settings.ai.check_current_provider_api_address"):
+        text = zh[key]
+        assert "API 列表" not in text and "Provider" not in text and "active_provider" not in text, (key, text)
+
+
+def test_modern_select_item_text_can_change():
+    from pet.settings_widgets import ModernSelect
+
+    _app()
+    select = ModernSelect()
+    select.addItem("a", 1)
+    select.addItem("b", 2)
+    select.setItemText(0, "a2")
+    select.setItemText(1, "b2")
+    assert select.currentText() == "a2" and select.text() == "a2"
+    assert select.itemText(1) == "b2"
