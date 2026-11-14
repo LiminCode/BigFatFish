@@ -166,7 +166,7 @@ bak == previous True / tmp leftovers []`。
 | 静态检查 | `python -m ruff check pet tests` | All checks passed |
 | 聚焦 | `pytest -q tests/test_config_crash_safe_save.py` | 修前 4 红（①②③④）、⑥ 红；修后 6 passed |
 | 相关 | 引用 `Config(` / `config.json` / `.save()` 的 203 个测试文件 | 3756 passed；5 failed 均与本改动无关（见下） |
-| 全量（最终版） | `python -m pytest -q --ignore=tests/manual_ssl_proxy_check.py` | FULL_SUITE_RESULT |
+| 全量（最终版） | `python -m pytest -q --ignore=tests/manual_ssl_proxy_check.py` | 7 failed / 6162 passed / 14 skipped（8 分 12 秒）；7 个失败见下 |
 
 全量里的失败全部与本改动无关：本机已知的 5 个环境性基线
 （`test_image_directory_picker_opens_right_drawer_with_three_column_masonry`、
