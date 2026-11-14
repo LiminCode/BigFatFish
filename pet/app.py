@@ -277,6 +277,9 @@ def _setup_logging(config: Config) -> None:
         format='%(asctime)s %(levelname)s %(message)s',
         encoding='utf-8',
     )
+    recovered = getattr(config, 'recovered_from', None)
+    if recovered:   # 构造 Config 时日志还没装上，这件事在这里补记
+        logging.warning('配置文件损坏，已退回上一份完好配置: %s', recovered)
     _cleanup_old_pet_logs(config.dir)
 
 

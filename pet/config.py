@@ -801,6 +801,74 @@ def atomic_replace_with_retry(temp, target, attempts: int = 5) -> None:
             delay = min(delay * 2, _REPLACE_RETRY_MAX_DELAY)
 
 
+#: 配置模块自己的 logger。Config 在 app._setup_logging 之前就会构造：这时调根 logger 的
+#: ``logging.warning`` 会顺手给根 logger 装上控制台 handler，之后 basicConfig 成了空操作，
+#: 整个进程的日志都不进 pet-<pid>.log（2026-11-13 真机首轮踩到）。具名 logger 没有这个副作用。
+_LOG = logging.getLogger(__name__)
+
+
+def _read_json_dict(path: Path) -> dict | None:
+    """读出一个 JSON 对象；读不到、解析不了或不是对象都返回 None。"""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _write_durably(path: Path, data: bytes) -> None:
+    """临时文件写完**刷到磁盘**再原子替换 ``path``。
+
+    2026-11-13 实机事故：只 write + os.replace 不刷盘，NTFS 先把改名记进日志、数据还在
+    缓存里，两分钟后蓝屏，config.json 落成「长度对、内容全零」，桌宠按默认值重建，
+    用户的设置全丢。刷盘之后崩溃只会留下旧文件或新文件之一。临时文件名带 PID，任何
+    出口都清掉。
+    """
+    temp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(temp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        atomic_replace_with_retry(temp, path)
+        if os.name != "nt":                 # POSIX 上改名本身也要刷目录才算落盘
+            fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def keep_last_good_copy(path: Path) -> None:
+    """把盘上那份配置留作 ``<name>.bak``（上一份完好配置）。**调用方保证它完好**
+    （``Config`` 用内存里的 ``_disk_intact`` 判断）——这里不读盘校验：Windows 上先读目标
+    文件、紧接着替换它，替换要多等约 4 ms（实测），每次保存都付不值得。
+
+    用硬链接：只加一个目录项，不复制、不再刷一次盘；之后 ``os.replace`` 换掉的是
+    ``path`` 这个目录项，``.bak`` 仍指着旧内容。文件系统不支持硬链接时退回复制。
+    失败只记 warning，不挡保存。
+    """
+    if not path.is_file():
+        return
+    backup = path.with_name(f"{path.name}.bak")
+    link = backup.with_name(f"{backup.name}.{os.getpid()}.tmp")
+    try:
+        link.unlink(missing_ok=True)
+        try:
+            os.link(path, link)
+        except OSError:
+            shutil.copyfile(path, link)
+            with open(link, "r+b") as fh:
+                os.fsync(fh.fileno())
+        atomic_replace_with_retry(link, backup)
+    except OSError as exc:
+        _LOG.warning("保留上一份配置失败: %s (%s)", backup, exc)
+    finally:
+        link.unlink(missing_ok=True)
+
+
 #: ``reload()`` 里**采纳盘上显式 null** 的键白名单（缺陷 15）。
 #:
 #: 背景：设置页「恢复默认」是靠写 ``null`` 表达"撤掉覆写"（modern_settings_dialog
@@ -830,6 +898,11 @@ class Config:
         # 的）一律不动——「生小肥鱼」复用旧槽位时同样保留原槽设置。
         if self.instance_id and not self.path.exists():
             self._seed_slot_config_from_main()
+        #: 启动时 config 损坏、退回了 .bak 就记下 .bak 的路径（日志里要能看到这件事）
+        self.recovered_from: Path | None = None
+        #: 盘上的配置文件是否完好：重载解析成功、或本进程刚安全写完才算。只有完好时
+        #: save 才把它留作 .bak——坏文件不许顶掉好的 .bak。
+        self._disk_intact = False
         self.data = {
             "version": 4,
             "rx": None,
@@ -1059,17 +1132,25 @@ class Config:
         if not self.path.is_file():
             return
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = self.path.read_text(encoding="utf-8")
+        except OSError:
             from . import slot_manager as slot_manager_mod
 
+            self._disk_intact = False
             slot_manager_mod.backup_corrupt_config(self.path)
             return
+        try:
+            raw = json.loads(text)
+        except ValueError:
+            raw = None
+        self._disk_intact = isinstance(raw, dict)
         if not isinstance(raw, dict):
             from . import slot_manager as slot_manager_mod
 
             slot_manager_mod.backup_corrupt_config(self.path)
-            return
+            raw = self._recover_from_last_good_copy()
+            if raw is None:
+                return
         try:
             old_version = int(raw.get("version", 1) or 1)
         except (TypeError, ValueError):
@@ -1806,27 +1887,40 @@ class Config:
                         provider.pop("vision_api_key", None)
         return write_data
 
+    def _recover_from_last_good_copy(self) -> dict | None:
+        """配置文件损坏时退回 ``.bak``，并立刻写回原文件（免得下次重载又判一次损坏、
+        也免得之后的保存把默认值写上去）。没有可用的 ``.bak`` 返回 None。"""
+        backup = self.path.with_name(f"{self.path.name}.bak")
+        raw = _read_json_dict(backup)
+        if raw is None:
+            return None
+        _LOG.warning("配置文件损坏，已退回上一份完好配置: %s", backup)
+        self.recovered_from = backup          # 日志初始化后由 app._setup_logging 补记一条
+        try:
+            _write_durably(self.path, backup.read_bytes())
+            self._disk_intact = True
+        except OSError as exc:
+            _LOG.warning("写回上一份完好配置失败: %s (%s)", self.path, exc)
+        return raw
+
     def save(self) -> bool:
         """把配置写入磁盘；成功返回 True，失败返回 False（并记录 warning）。
 
         写盘使用 _redacted_data() 的副本，self.data 本身不动，保证运行期
         key 在内存可见而不会明文落盘。
-        临时文件名加入 PID 后缀，避免错误并发写入撞名；替换走
-        ``atomic_replace_with_retry``（骑过 Windows 读句柄造成的瞬时共享
-        冲突），任何出口都必须把临时文件清掉（失败残留会污染配置目录）。
+        先把盘上那份完好配置留作 ``.bak``（``keep_last_good_copy``），再由
+        ``_write_durably`` 写临时文件、刷盘、替换（``atomic_replace_with_retry``
+        骑过 Windows 读句柄造成的瞬时共享冲突；临时文件名带 PID，任何出口都清掉）。
         """
         try:
             self._normalize_pet_settings()
             self.dir.mkdir(parents=True, exist_ok=True)
-            temp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
-            try:
-                temp.write_text(
-                    json.dumps(self._redacted_data(), ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                atomic_replace_with_retry(temp, self.path)
-            finally:
-                temp.unlink(missing_ok=True)
+            text = json.dumps(self._redacted_data(), ensure_ascii=False, indent=2)
+            if self._disk_intact:
+                keep_last_good_copy(self.path)
+            # 与旧的 write_text 字节一致：文本模式按平台换行
+            _write_durably(self.path, text.replace("\n", os.linesep).encode("utf-8"))
+            self._disk_intact = True
         except OSError as exc:
             logging.warning("保存配置失败: %s (%s)", self.path, exc)
             return False
