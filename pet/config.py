@@ -19,6 +19,7 @@ from . import catalog
 from .session_card_themes import DEFAULT_CARD_THEME, DEFAULT_TEXT_SIZE, normalize_text_size, normalize_theme_id
 from .speech_bubble_text import SELF_TALK_IMAGE_MAX_EDGE_DEFAULT, clamp_image_max_edge
 from . import i18n
+from . import config_backup
 from .memory_distill import normalize as normalize_memory_distill
 from .notification_center import normalize as normalize_notifications
 from .personal_vault import normalize as normalize_personal
@@ -899,7 +900,7 @@ class Config:
         if self.instance_id and not self.path.exists():
             self._seed_slot_config_from_main()
         #: 启动时 config 损坏、退回了 .bak 就记下 .bak 的路径（日志里要能看到这件事）
-        self.recovered_from: Path | None = None
+        self.recovered_from: Path | str | None = None
         #: 盘上的配置文件是否完好：重载解析成功、或本进程刚安全写完才算。只有完好时
         #: save 才把它留作 .bak——坏文件不许顶掉好的 .bak。
         self._disk_intact = False
@@ -933,6 +934,8 @@ class Config:
             "personal": normalize_personal(None),
             # 会话记忆蒸馏（把我在 Claude Code 里说过的决定 / 偏好抽进本地候选库，定期总结），见 pet/memory_distill.py
             "memory_distill": normalize_memory_distill(None),
+            # 配置备份到 GitHub（用户自己的私有仓库；坏了能拉回来），见 pet/config_backup.py
+            "config_backup": config_backup.normalize(None),
             "no_move": False,
             "character": catalog.DEFAULT_CHARACTER,
             "playback_speed": 1.0,
@@ -1081,7 +1084,12 @@ class Config:
             "settings_process_isolation": True,
             "chat": _default_chat_data(),
         }
-        self.reload()
+        #: 只有构造时那次加载允许去 GitHub 拉备份（运行期重载在 GUI 线程上，不许卡网络）
+        self._startup_load = True
+        try:
+            self.reload()
+        finally:
+            self._startup_load = False
         self._normalize_pet_settings()
 
     def _migrate_legacy_config(self, base) -> None:
@@ -1148,8 +1156,10 @@ class Config:
             from . import slot_manager as slot_manager_mod
 
             slot_manager_mod.backup_corrupt_config(self.path)
-            raw = self._recover_from_last_good_copy()
+            raw = self._recover_from_last_good_copy() or self._recover_from_github_backup()
             if raw is None:
+                if not self.instance_id:
+                    config_backup.mark_rebuilt(self.dir)   # 按默认值重建：自动备份暂停
                 return
         try:
             old_version = int(raw.get("version", 1) or 1)
@@ -1223,6 +1233,7 @@ class Config:
             "work_notes",
             "personal",
             "memory_distill",
+            "config_backup",
             "no_move",
             "character",
             "spawn_inherit_size",
@@ -1622,6 +1633,7 @@ class Config:
         self.data["work_notes"] = normalize_work_notes(self.data.get("work_notes"))
         self.data["personal"] = normalize_personal(self.data.get("personal"))
         self.data["memory_distill"] = normalize_memory_distill(self.data.get("memory_distill"))
+        self.data["config_backup"] = config_backup.normalize(self.data.get("config_backup"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
         # 里登记、没进归一化——手改成脏值后数值键会让设置页构造直接抛
         # ValueError（float('abc') 打死整个设置页），字符串布尔键被 bool() 误开
@@ -1813,6 +1825,7 @@ class Config:
             "work_notes",
             "personal",
             "memory_distill",
+            "config_backup",
         }:
             self._normalize_pet_settings()
 
@@ -1902,6 +1915,23 @@ class Config:
         except OSError as exc:
             _LOG.warning("写回上一份完好配置失败: %s (%s)", self.path, exc)
         return raw
+
+    def _recover_from_github_backup(self) -> dict | None:
+        """``.bak`` 也用不了时的最后一层：启动时按备份状态拉 GitHub 上那份（只管主配置）。"""
+        if not getattr(self, "_startup_load", False) or self.instance_id:
+            return None
+        got = config_backup.recover_at_startup(self.dir)
+        if got is None:
+            return None
+        data, source = got
+        _LOG.warning("配置文件损坏，已从 %s 恢复", source)
+        self.recovered_from = source          # 日志初始化后由 app._setup_logging 补记一条
+        try:
+            _write_durably(self.path, data)
+            self._disk_intact = True
+        except OSError as exc:
+            _LOG.warning("写回 GitHub 备份失败: %s (%s)", self.path, exc)
+        return json.loads(data.decode("utf-8"))
 
     def save(self) -> bool:
         """把配置写入磁盘；成功返回 True，失败返回 False（并记录 warning）。

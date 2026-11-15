@@ -1978,6 +1978,7 @@ class AppShell:
         self.instance._apply_spawn_offset()
         self._apply_balance_timer()
         self._start_knowledge_sync()
+        self._start_config_backup()
         self._sync_todo_service()
         # 先同步节日服务：报时服务在 start() 里会立刻 tick 一次，那一刻就需要能问到
         # "本分钟是否让位"。顺序反了会出现"报时先响、节日后响"从而两者都出声。
@@ -3447,6 +3448,18 @@ class AppShell:
             self._knowledge_sync.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("知识库同步接线失败")
+
+    def _start_config_backup(self) -> None:
+        """配置的每日自动备份到 GitHub（开关在设置 → 常规 → 配置备份；默认关时只是空转检查）。"""
+        if getattr(self, "_config_backup_sync", None) is not None:
+            return
+        try:
+            from .config_backup_sync import ConfigBackupSync
+
+            self._config_backup_sync = ConfigBackupSync(self.config, parent=self.app)
+            self._config_backup_sync.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("配置自动备份接线失败")
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""
