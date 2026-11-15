@@ -126,4 +126,4 @@ macOS / Linux 没有真机，只有共享代码路径（这次没有平台分支
 - ruff：`All checks passed!`。
 - 相关族（架构预算、设置页各测试、岛测试、i18n、`test_desktop_pet_features.py`）：339 过 2 失败，两个都在干净的 `6c15a540` 上原样失败、与本改动无关：
   `test_modern_context_menu_has_compact_semantic_groups`（菜单多了「列队」，期望表没更新）、`test_image_directory_picker_opens_right_drawer_with_three_column_masonry`（本机路径超 260 的基线）。
-- 全量 `python -m pytest -q`：见 PR 描述。
+- 全量 `python -m pytest -q -p no:cacheprovider`（`QT_QPA_PLATFORM=offscreen`、临时 `APPDATA`）：**6179 passed、6 failed、14 skipped，618.62 s**。6 个失败全是本机既有基线、与本改动无关：上面两个，加 `test_festival_id_guard_survives_optimize`、`test_real_second_process_refused_on_overlay_topology`（子进程 cp1252 解码）、`test_capture_window_rect_coordinates_and_clamping`（多显示器负原点）、`test_session_card_metro.py::test_host_icons_are_warmed_at_the_cards_size`（main 上原样失败）。这一轮全量是在加 manifest 名缓存之前起跑的；缓存改动之后重跑了岛相关族（`test_island_display_name` / `test_island_content_cache` / `test_dynamic_island_revamp` / `test_island_english`，48 过）与 `test_pr_report_discipline`。
