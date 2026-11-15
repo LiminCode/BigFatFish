@@ -25,6 +25,8 @@ def _disabled_config(tmp_path):
     island["enabled"] = False
     cfg.set("dynamic_island", island)
     cfg.set("auto_hide_fullscreen", False)
+    # Claude Code 联动默认开（2026-11-14）：「全关」的配置要把它们也关上
+    cfg.set("agent_link", {**cfg.get("agent_link"), "claude": False, "claude_wsl": False})
     return cfg
 
 

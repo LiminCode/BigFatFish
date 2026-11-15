@@ -156,6 +156,9 @@ def _no_real_session_history_scan(monkeypatch):
     except Exception:
         return
     monkeypatch.setattr(overlay_shell, "_local_run_list", lambda: {})
+    # Claude Code 联动默认开：测试里建的管理器都会起监视器，同样不许认领真机清单上的会话
+    from pet import agent_link
+    monkeypatch.setattr(agent_link.ClaudeCodeMonitor, "ADOPT_FROM_REGISTRY", False)
 
 
 @pytest.fixture(autouse=True)

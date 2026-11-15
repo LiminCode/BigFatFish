@@ -114,3 +114,48 @@ Focused + affected families (offscreen, temporary `APPDATA`): `test_overlay_sess
 The full suite was skipped per the user's standing rule (2026-11-14: run only the new tests plus the families the change affects). The change is confined to the session-fish controller, its UI actions, the desktop jump helper, two locale strings and one shell wiring line. No shared config schema, persisted format, threading model or platform branch changed. The conftest change only extends an existing fixture's body, so the fixture count, the known trigger of the latent full-suite crash, stays the same.
 
 **Not verified here**: WSL sessions. `claude_wsl` is also off on this machine, and the run-list pass reads only the local list (WSL needs `wsl.exe`), so a running WSL conversation still shows as frozen while that link is off. The `claude://` launch fallback (no Claude window up) was not exercised live, because the desktop app is always running on this machine.
+
+---
+
+## 第二轮：Claude Code 两个联动默认打开（2026-11-14）
+
+User, after seeing the root cause: "WSL 联动也需要打开，并默认打开". The local link had already been turned back on in this machine's config. This round turns the WSL one on too and changes the product default, so that a config rebuilt from defaults (the 11-13 incident) no longer silently drops both links.
+
+### 一、核心特性
+
+| # | Change | Note |
+|---|---|---|
+| 1 | `_default_agent_link_data()`: `claude` → `True`, `claude_wsl` → `sys.platform == "win32"` | The WSL link only means something on Windows |
+| 2 | Hooks are still written only with consent | The default only starts the monitors (tail the events file, adopt from the run list). Injecting hooks into `~/.claude/settings.json` still happens only through the menu toggle plus the consent dialog (`AgentLinkManager.set_enabled`), and `apply_config` never writes it. A fresh install without hooks therefore gets live/resting fish from the run list, and working/waiting reminders appear once the user turns hooks on |
+| 3 | Explicit choices are kept | A stored `false` stays `false` (`_clean_agent_link_data` only fills missing keys) |
+
+### 二、修改文件说明
+
+| 文件 | 增删 | 改动意图 |
+|---|---|---|
+| `pet/config.py` | +5 / −2 | The new defaults, with a comment saying why and what they don't do (no hook writes) |
+| `pet/agent_link.py` | +4 / −1 | `ClaudeCodeMonitor.ADOPT_FROM_REGISTRY` class switch read by `__init__`, so tests can stop every monitor from reading this machine's run list now that tests start monitors by default |
+| `tests/conftest.py` | +3 / 0 | The same existing `_no_real_session_history_scan` fixture also sets `ClaudeCodeMonitor.ADOPT_FROM_REGISTRY = False` (fixture count unchanged) |
+| `tests/test_claude_link.py` | +36 / 0 | New `test_claude_code_links_are_on_by_default_but_an_explicit_choice_is_kept` (red before: `assert False is True`). File-level autouse `_links_start_off`: the event-replay tests send generation-0 events by hand and assume no monitor is running; the defaults test opts out |
+| `tests/test_agent_link.py` | +28 / −6 | Same file-level fixture. `test_default_all_disabled` → `test_default_agent_link_shape`, which asserts the new real defaults and that exactly the enabled monitors run, then shuts the manager down |
+| `tests/test_island_shell_wiring.py` | +1 / 0 | "Link off" now means both channels off (`auto` card mode treats either one as Claude mode, which is correct product behavior) |
+| `tests/test_sprite_menu_parity.py` | +2 / 0 | Start with `claude` off so that checking the menu item still means "turn on" |
+
+### 四、性能分析
+
+- Steady state for users who had the links off and now have them on: the same cost as turning them on from the menu (existing monitors, nothing new). For the local channel that means one events-file tail and a 60 s run-list adoption (≈2 ms, measured in round one). For the WSL channel, adoption and liveness probes go through `wsl.exe` on the monitor's own thread, as before.
+- Users with an explicit `false` keep it: no change.
+- No new threads, system calls or files compared with turning the links on from the menu.
+
+### 五、实机运行记录
+
+- This machine's config: `agent_link.claude` was set back to `true` at 20:08 at the user's request (a copy of the file before the change is at `config.json.before-claude-link-on`), and `claude_wsl` → `true` at 20:59. Hooks were already present on both sides (`grep -c big-fat-fish ~/.claude/settings.json` → 9 on Windows, 9 inside WSL), so nothing was injected.
+- Pet restarted from this branch (gate log `acquired pid=61888`). `pet-61888.log`: `Agent 监视器 [claude_wsl] 已启动`. The local monitor adopted 5 sessions from the run list, and 4 live fish came up (`在场 4 只`); the fifth, c1ece736, is one the user had closed (`session-fish.json`).
+- No live WSL Claude Code process existed at the time: all 80+ files in WSL's `~/.claude/sessions` belonged to dead pids (`/proc/<pid>` missing). The three WSL fish therefore correctly stay frozen, and a new WSL conversation will be adopted by the now-running monitor.
+- The pet I stopped for this restart was pid 62212, started 20:40 from the main checkout, apparently by another session's restart. The settings window, pid 14884, was left alone.
+
+### Tests
+
+- Red first: `test_claude_code_links_are_on_by_default_but_an_explicit_choice_is_kept` → `assert False is True`. Green after the change.
+- **Full suite** (offscreen, PowerShell, 11 min): **6189 passed, 8 failed, 14 skipped**. The 8 are all pre-existing: the 4 environment baselines (`test_image_directory_picker_…`, `test_festival_id_guard_survives_optimize`, `test_real_second_process_refused_on_overlay_topology`, `test_capture_window_rect_coordinates_and_clamping`), `test_host_icons_are_warmed_at_the_cards_size` and `test_modern_context_menu_has_compact_semantic_groups` (both re-run on a clean checkout of base `177b256c`, where they fail the same way), plus the two `test_feature_gating` tests. Those two were caused by this change: their "all optional services disabled" config relied on the links defaulting off, so the helper now turns them off explicitly, and the file then passes (`test_feature_gating` + link + island + menu + fish files: 324 passed).
+- Why the full suite this round, against the user's affected-only rule: a shared config default changed, and every test that builds a pet window now starts the Claude monitors, so the affected family is effectively the whole suite. No native crash occurred.

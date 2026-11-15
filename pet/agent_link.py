@@ -2101,11 +2101,14 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
     HOOK_MARKER = "claude_event_hook"  # 识别本肥鱼注入条目的标记
     HOOK_FLAG = claude_hooks.HOOK_FLAG  # 结构化字段标识
     _TRIM_BYTES = 1_000_000
+    #: 新建的监视器是否从运行清单认领会话。联动默认开之后，测试里建的每个管理器都会起监视器：
+    #: conftest 把它关掉，免得测试读到这台机器真实的 ~/.claude/sessions（要测认领的用例按实例打开）
+    ADOPT_FROM_REGISTRY = True
 
     def __init__(self, agent_key: str, config_dir: Path, parent=None) -> None:
         super().__init__(agent_key, config_dir, parent)
         self._sessions = claude_hooks.ClaudeSessionTracker()
-        self.adopt_from_registry = True      # 从运行清单认领还没出场的会话（测试里关掉，别读真机的清单）
+        self.adopt_from_registry = self.ADOPT_FROM_REGISTRY   # 从运行清单认领还没出场的会话（测试里关掉，别读真机的清单）
 
     def start(self) -> bool:
         """启动时刷新 hook 脚本（脚本整体归本肥鱼所有，升级版本自动覆盖旧版）。"""

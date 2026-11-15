@@ -257,9 +257,12 @@ def _default_proactive_screen_data() -> dict:
 def _default_agent_link_data() -> dict:
     return {
         "dsh": False,
-        "claude": False,
+        # Claude Code 联动默认开（用户 2026-11-14）：配置被崩溃清零重建后联动是关的，正在用的对话全成了
+        # 冻结的小鱼。只开监视器（读事件文件 + 运行清单认领），不写 hooks——注入 ~/.claude/settings.json
+        # 仍然只在用户从菜单打开、点了同意之后（AgentLinkManager.set_enabled）。存着 false 的照旧是 false。
+        "claude": True,
         # WSL 发行版里的 Claude Code（仅 Windows 有意义；与本机那份是两个独立通道）
-        "claude_wsl": False,
+        "claude_wsl": sys.platform == "win32",
         "cursor": False,
         "opencode": False,
         # 自定义联动 Agent（协议见 docs/AGENT_LINK_PROTOCOL.md §4）：只读监听
