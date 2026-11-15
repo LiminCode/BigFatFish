@@ -26,7 +26,7 @@ def home(*, hooks=None, connectors=None, wsl=False) -> dict:
         "projects": 4, "memory_count": 1,
         "memory_projects": [{"name": "C--Users-dev-tomato", "path": claude + sep + "projects", "mtime": "2026-01-02 03:04", "files": 2}],
         "distilled_files": 1, "credentials_path": claude + sep + ".credentials.json", "credentials_file": True,
-        "tools": [".config/gh"] if wsl else [".codex"], "ssh_hosts": ["github.com", "10.0.0.1"] if wsl else [],
+        "tools": [".config/gh"] if wsl else [".cursor"], "ssh_hosts": ["github.com", "10.0.0.1"] if wsl else [],
         "connectors": connectors, "mcp_probe_seconds": 6.1 if connectors is not None else None,
     }
 

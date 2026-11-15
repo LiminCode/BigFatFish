@@ -96,6 +96,7 @@ class ConnectionsPanel(QObject):
     调 ``check()``）；``probe`` / ``spawn`` / ``clock`` 供测试注入。"""
 
     settings_requested = Signal()             # 点了「去设置修改」
+    panorama_requested = Signal()             # 点了「配置全景」
     _probed = Signal(str, int, bool, str)     # worker 线程 → GUI 线程：(服务, 代号, 通过?, 说明)
 
     RECHECK_AFTER_S = 30 * 60
@@ -123,6 +124,7 @@ class ConnectionsPanel(QObject):
             self.window = ConnectionsWindow()
             self.window.recheck_requested.connect(self.recheck)
             self.window.settings_requested.connect(self._open_settings)
+            self.window.panorama_requested.connect(self._open_panorama)
         return self.window
 
     def is_open(self) -> bool:
@@ -152,6 +154,11 @@ class ConnectionsPanel(QObject):
         if self.window is not None:
             self.window.hide()
         self.settings_requested.emit()
+
+    def _open_panorama(self) -> None:
+        if self.window is not None:
+            self.window.hide()
+        self.panorama_requested.emit()
 
     def _theme(self) -> str:
         appearance = self.config.get("context_menu_appearance") if self.config is not None else None

@@ -474,6 +474,7 @@ class PetInstance:
             self._slot_wrap(self.shell.clear_spawned_pets)
             if not self.config.instance_id else None)
         win.on_open_todo_panel = self._slot_wrap(self.shell.open_todo_panel)
+        win.on_open_config_panorama = self._slot_wrap(self.shell.open_config_panorama)
         win.on_voice_chime_now = self._slot_wrap(self.shell.trigger_voice_chime_now)
         win.on_toggle_voice_chime = self._slot_wrap(self.shell.toggle_voice_chime)
         # 点击自言自语的朗读走同一条音频通道（AppShell 持有，进程内唯一）。
@@ -3191,6 +3192,7 @@ class AppShell:
             monitor = self._live_api_key_monitor()
             panel = self._connections_panel = ConnectionsPanel(self.config, monitor=monitor, parent=self.app)
             panel.settings_requested.connect(self._open_settings_from_island)
+            panel.panorama_requested.connect(self.open_config_panorama)
             if monitor is not None:
                 monitor.status_changed.connect(panel.on_monitor_changed)
         anchor = island.geometry()
@@ -3479,6 +3481,20 @@ class AppShell:
             self._config_backup_sync.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("配置自动备份接线失败")
+
+    def open_config_panorama(self) -> None:
+        """打开「配置全景」：后台采一轮本机的 AI 配置，写成本地页面，用默认浏览器打开。"""
+        service = getattr(self, "_panorama_service", None)
+        if service is None or not shiboken6.isValid(service):
+            from .panorama.service import PanoramaService
+
+            service = self._panorama_service = PanoramaService(self.config, health=self._panorama_health, parent=self.app)
+        service.open()
+
+    def _panorama_health(self) -> tuple[str, str]:
+        """岛上那个体检器对「使用中的模型服务」的最近结论；没有体检器（没开岛）就是不知道。"""
+        monitor = self._live_api_key_monitor()
+        return (str(monitor.state), str(monitor.detail)) if monitor is not None else ("unknown", "")
 
     def _live_api_key_monitor(self):
         """API 体检器；没建过或已随岛销毁返回 None。"""

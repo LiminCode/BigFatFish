@@ -111,6 +111,9 @@ class _StubAppShell:
     def open_todo_panel(self):
         self._record("open_todo_panel")
 
+    def open_config_panorama(self):
+        self._record("open_config_panorama")
+
     def trigger_voice_chime_now(self, text=""):
         self._record("trigger_voice_chime_now", text)
 
@@ -194,6 +197,7 @@ def _reference_window(config, *, chat=True):
     win.on_spawn_pet = lambda: None
     win.on_clear_spawned_pets = lambda: None
     win.on_open_todo_panel = lambda: None
+    win.on_open_config_panorama = lambda: None
     win.on_voice_chime_now = lambda text="": None
     win.on_toggle_voice_chime = lambda: None
     win.on_festival_now = lambda: None

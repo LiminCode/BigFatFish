@@ -61,6 +61,7 @@ ACTION_LABELS = {
     "quick_launch": "快捷启动",
     "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
     "proactive_screen": "主动识屏", "todo_panel": "待办提醒",
+    "config_panorama": "配置全景",
     "modern_settings": "肥鱼设置", "quit": "退出",
 }
 
@@ -83,6 +84,7 @@ ACTION_ICONS = {
     "claude_desktop": "sparkle", "wsl_claude_code": "ubuntu",
     "quick_launch": "application", "github_project": "web", "agent_link": "automation",
     "proactive_screen": "screen", "todo_panel": "todo",
+    "config_panorama": "branch",
     "modern_settings": "settings", "quit": "quit",
     "voice_chime_now": "chat", "voice_chime_toggle": "chat",
     "festival_now": "todo", "festival_toggle": "todo",
@@ -142,6 +144,10 @@ def _build_settings(menu, pet):
 
 def _build_todo_panel(menu, pet):
     return add_action(menu, t("menu.registry.do_reminders"), "todo", pet.on_open_todo_panel, close_on_trigger=True)
+
+
+def _build_config_panorama(menu, pet):
+    return add_action(menu, t("menu.registry.config_panorama"), "branch", pet.on_open_config_panorama, close_on_trigger=True)
 
 
 def _build_voice_chime_now(menu, pet):
@@ -262,6 +268,9 @@ class MenuActionRegistry:
             ),
             "todo_panel": MenuActionSpec(
                 _build_todo_panel, _callback_available("on_open_todo_panel")
+            ),
+            "config_panorama": MenuActionSpec(
+                _build_config_panorama, _callback_available("on_open_config_panorama")
             ),
             "voice_chime_now": MenuActionSpec(
                 _build_voice_chime_now, _callback_available("on_voice_chime_now")

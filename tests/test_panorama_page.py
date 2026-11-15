@@ -27,7 +27,7 @@ function _el() {
 }
 var document = {getElementById: function (id) { return _els[id] || (_els[id] = _el()); },
   querySelectorAll: function () { return []; }, body: _el()};
-var addEventListener = function () {}, setTimeout = function () {}, location = {reload: function () {}}, navigator = {};
+var addEventListener = function () {}, setTimeout = function () {}, location = {reload: function () {}, hash: ''}, navigator = {};
 """
 
 
