@@ -97,6 +97,7 @@
 
 | 文档 | 一句话内容 | 何时必读 |
 |---|---|---|
+| [`PR-REPORT-MODEL-SERVICE-LIST-2026-11-14.md`](PR-REPORT-MODEL-SERVICE-LIST-2026-11-14.md) | 「保存后 API Key 下次打开显示不出来」：Key 一直在系统钥匙串里，只是输入框打开永远为空。「模型服务」换成一行一个的列表 `ProviderList`（与 `ModernSelect` 同名接口，增删改保存逻辑不动），点一行在下面查看 / 修改它的模型与 Key；Key 打开即遮着填好、可「显示」，换行重新遮上；原样 Key 不重写钥匙串，清空仍是「不改」。含真机只读探针与 1100 / 720 浅深截图。 | 改 AI 设置页的服务列表、Key 输入框的显示 / 保存语义，或 `ProviderList` 之前必读；旧 `ChatSettingsDialog` 没改。 |
 | [`PR-REPORT-ISLAND-API-STATUS-2026-11-14.md`](PR-REPORT-ISLAND-API-STATUS-2026-11-14.md) | 「连接测试成功，岛还是红的」：根因是设置表单里的 Claude 没保存——「测试连接」测表单，岛体检盘上的 `active_provider`（保存后重读、重查本来就通，加了端到端测试守住）。岛的体检说明前面加服务名（`ApiKeyMonitor.service_name`），测试通过而连接字段与在用的不同时提醒「还没保存」。含日志 / 配置 / 表单三方对照与真实环境探针。 | 改岛的连接图标 / `ApiKeyMonitor` 的说明文字，或设置里「测试连接」的结果提示之前必读。 |
 | [`PR-REPORT-ISLAND-DISPLAY-NAME-2026-11-14.md`](PR-REPORT-ISLAND-DISPLAY-NAME-2026-11-14.md) | 灵动岛名字能在设置里改：岛以前自己拼「别名 or 角色 id」，跳过 manifest name，没起名时显示 `shenshen` / 小写 `claude`；改走 `Config.character_display_name`（manifest 名按角色 id 缓存，不缓存实测每帧多约 0.46 ms 读盘）。设置「桌面组件 → 灵动岛」加一行「名字」（`settings_island_name.py`），写的就是右键菜单「重命名当前角色」那个 `character_aliases[当前角色]`；没动这一栏保存时不写，不冲掉菜单改名。 | 改岛上名字的取法、角色显示名 / 别名，或给角色包定默认 `name` 之前必读。 |
 | [`PR-REPORT-AI-PROVIDER-LIST-UX-2026-11-13.md`](PR-REPORT-AI-PROVIDER-LIST-UX-2026-11-13.md) | 设置「AI 与对话 → 模型服务」（原「API 列表」）看得见自己的改动：下拉框当前项跟着名称 / 模型的编辑实时改字，聊天在用的那项标「（使用中）」、保存后标记跟到选中项，添加后行提示说下一步并全选名称；「Provider 名称」等内部词改成人话；`ModernSelect.setItemText` 与文字右侧省略。含复现输出、1100 / 720 浅深截图。 | 改 AI 设置页的服务列表（添加 / 切换 / 删除 / 保存后哪一项生效）或 `ModernSelect` 的文字显示之前必读；旧的 `ChatSettingsDialog` 没改。 |

@@ -1085,6 +1085,95 @@ class ModernSelect(QAbstractButton):
         painter.end()
         _draw_chevron(self, self.height() / 2.0, down=True)
 
+class ProviderList(QListWidget):
+    """模型服务列表：每个服务一行，点一行就选中它（2026-11-14 取代下拉框）。
+
+    接口与 ``ModernSelect`` 同名同义（``addItem(文字, 数据)`` / ``currentData`` / ``setCurrentData`` /
+    ``setItemText`` / ``currentIndexChanged``……），AI 设置页的增删改逻辑不用跟着换。高度随行数增长到
+    ``MAX_VISIBLE_ROWS`` 行，再多才出滚动条。
+    """
+
+    currentIndexChanged = Signal(int)
+    MAX_VISIBLE_ROWS = 6
+
+    def __init__(self, parent=None, *, width: int = 300):
+        super().__init__(parent)
+        self.setObjectName("providerList")
+        self.setMinimumWidth(width)
+        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.setUniformItemSizes(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.currentRowChanged.connect(self.currentIndexChanged)
+
+    # ---- ModernSelect 同名接口
+    def addItem(self, text: str, data=None) -> None:  # noqa: N802 - Qt 命名
+        item = QListWidgetItem(str(text))
+        item.setData(Qt.ItemDataRole.UserRole, data)
+        super().addItem(item)
+        self._fit_height()
+
+    def clear(self) -> None:
+        super().clear()
+        self._fit_height()
+
+    def itemData(self, index: int):  # noqa: N802
+        item = self.item(index)
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def itemText(self, index: int) -> str:  # noqa: N802
+        item = self.item(index)
+        return item.text() if item is not None else ""
+
+    def setItemText(self, index: int, text: str) -> None:  # noqa: N802
+        item = self.item(index)
+        if item is not None:
+            item.setText(str(text))
+
+    def setItemToolTip(self, index: int, text: str) -> None:  # noqa: N802
+        item = self.item(index)
+        if item is not None:
+            item.setToolTip(str(text))
+
+    def findData(self, data) -> int:  # noqa: N802
+        for index in range(self.count()):
+            if self.itemData(index) == data:
+                return index
+        return -1
+
+    def currentIndex(self) -> int:  # noqa: N802
+        return self.currentRow()
+
+    def setCurrentIndex(self, index: int) -> None:  # noqa: N802
+        self.setCurrentRow(index)
+
+    def currentData(self):  # noqa: N802
+        return self.itemData(self.currentRow())
+
+    def setCurrentData(self, data) -> None:  # noqa: N802
+        index = self.findData(data)
+        if index >= 0:
+            self.setCurrentRow(index)
+
+    def currentText(self) -> str:  # noqa: N802
+        return self.itemText(self.currentRow())
+
+    # ---- 高度
+    def _row_height(self) -> int:
+        hinted = self.sizeHintForRow(0) if self.count() else -1
+        return max(hinted, self.fontMetrics().height() + 14)
+
+    def _fit_height(self) -> None:
+        rows = max(1, min(self.count(), self.MAX_VISIBLE_ROWS))
+        self.setFixedHeight(rows * self._row_height() + 2 * self.frameWidth() + 6)
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._fit_height()
+
+
 class BrowserSpinBox(QSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)

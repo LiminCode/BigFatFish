@@ -10,7 +10,9 @@ import threading
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -21,12 +23,12 @@ from PySide6.QtWidgets import (
 
 from ..settings_widgets import (
     ModernSelect,
+    ProviderList,
     _line_edit,
     BrowserSpinBox,
     BrowserDoubleSpinBox,
     ToggleSwitch,
     ResourcePathPicker,
-    ResponsiveActionRow,
     SettingsSection,
     SettingRow,
     SettingsCard,
@@ -76,19 +78,27 @@ class _AiSettingsPage(QWidget):
         self.test_done.connect(self._on_test_done)
         self.kb_sync_done.connect(self._on_kb_sync_done)
 
-        self.provider_combo = ModernSelect(self, width=300)
+        # 模型服务一行一个（2026-11-14：「每添加一个模型 API，都放在一个列表中」）
+        self.provider_combo = ProviderList(self, width=300)
         self.add_provider_btn = QPushButton(t("settings.ai.add"), self)
         self.delete_provider_btn = QPushButton(t("settings.ai.delete"), self)
         #: 聊天在用的那一项（盘上的 active_provider）：下拉框里标「使用中」，保存后跟着选中项走
         self._in_use_provider = self.settings.active_provider
         for pid, provider_item in self.settings.providers.items():
-            self.provider_combo.addItem(self._combo_label(provider_item), pid)
+            self._add_provider_row(provider_item)
         self.provider_combo.setCurrentData(self.settings.active_provider)
 
         self.name = _line_edit(provider.name)
         self.url = _line_edit(provider.base_url)
         self.model = _line_edit(provider.model)
-        self.key = _line_edit(password=True)
+        # 保存过的 Key 打开时就填好（遮着）；「显示」看明文。2026-11-14：用户以为 Key 没存上——
+        # 其实一直在系统钥匙串里，只是输入框打开时永远是空的。
+        self.key = _line_edit(self._stored_key(provider), password=True)
+        self.key_reveal = QPushButton(t("settings.ai.show_key"), self)
+        self.key_reveal.setObjectName("apiKeyReveal")
+        self.key_reveal.setCheckable(True)
+        self.key_reveal.setAccessibleName(t("settings.ai.show_key"))
+        self.key_reveal.toggled.connect(self._on_key_reveal_toggled)
         self.prompt = QPlainTextEdit(self.settings.default_system_prompt)
         self.prompt.setMinimumSize(240, 80)
         self.about_user = QPlainTextEdit(self.settings.about_user)
@@ -201,21 +211,34 @@ class _AiSettingsPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(18)
-        provider_row = ResponsiveActionRow(
-            self.provider_combo,
-            [self.add_provider_btn, self.delete_provider_btn],
-        )
+        provider_row = QWidget(self)
+        provider_layout = QVBoxLayout(provider_row)
+        provider_layout.setContentsMargins(0, 0, 0, 0)
+        provider_layout.setSpacing(8)
+        provider_layout.addWidget(self.provider_combo)
+        provider_buttons = QHBoxLayout()
+        provider_buttons.setContentsMargins(0, 0, 0, 0)
+        provider_buttons.addWidget(self.add_provider_btn)
+        provider_buttons.addWidget(self.delete_provider_btn)
+        provider_buttons.addStretch(1)
+        provider_layout.addLayout(provider_buttons)
         self._provider_list_row = SettingRow(
             "provider_list", t("settings.ai.api_list"),
             t("settings.ai.pick_model_service_edit_switch"),
-            provider_row,
+            provider_row, stacked=True,
         )
+        key_field = QWidget(self)
+        key_layout = QHBoxLayout(key_field)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        key_layout.setSpacing(6)
+        key_layout.addWidget(self.key, 1)
+        key_layout.addWidget(self.key_reveal)
         root.addWidget(SettingsSection(t("settings.ai.api_list"), [self._provider_list_row], self))
         root.addWidget(SettingsSection(t("settings.ai.model_connection"), [
             SettingRow("provider_name", t("settings.ai.provider_name"), t("settings.ai.tells_model_services_apart"), self.name),
             SettingRow("api_url", t("settings.ai.api_address"), t("settings.ai.address_openai_chat_completions_compatib"), self.url),
             SettingRow("model", t("settings.ai.model"), t("settings.ai.model_identifier_sent_each_request"), self.model),
-            SettingRow("api_key", "API Key", t("settings.ai.credentials_are_stored_system_keychain"), self.key),
+            SettingRow("api_key", "API Key", t("settings.ai.credentials_are_stored_system_keychain"), key_field),
             SettingRow("connection_test", t("settings.ai.connection_test"), self.test_result.text(), self.test_button),
         ], self))
         # 人设与「关于我」是全局的一份，不随服务商切换；和「文案风格与模板」（固定台词，不经模型）是两套互不相干
@@ -519,6 +542,20 @@ class _AiSettingsPage(QWidget):
         label = f"{name} · {model}" if model else str(name)
         return label + t("settings.ai.in_use") if p.provider_id == self._in_use_provider else label
 
+    def _add_provider_row(self, p) -> None:
+        self.provider_combo.addItem(self._combo_label(p), p.provider_id)
+        self.provider_combo.setItemToolTip(self.provider_combo.count() - 1, p.base_url)
+
+    def _stored_key(self, p) -> str:
+        """这一项保存过的 API Key：系统钥匙串优先，钥匙串不可用时是本次运行内存里的那份。"""
+        return self._secret_store_type().get(p.api_key_ref) or p.api_key
+
+    def _on_key_reveal_toggled(self, shown: bool) -> None:
+        self.key.setEchoMode(QLineEdit.EchoMode.Normal if shown else QLineEdit.EchoMode.Password)
+        label = t("settings.ai.hide_key") if shown else t("settings.ai.show_key")
+        self.key_reveal.setText(label)
+        self.key_reveal.setAccessibleName(label)
+
     def _refresh_current_label(self, _text: str = "") -> None:
         pid = self.provider_combo.currentData()
         p = self.settings.providers.get(pid)
@@ -571,7 +608,8 @@ class _AiSettingsPage(QWidget):
         self.name.setText(draft.get("name") if draft.get("name") is not None else p.name)
         self.url.setText(draft.get("base_url") if draft.get("base_url") is not None else p.base_url)
         self.model.setText(draft.get("model") if draft.get("model") is not None else p.model)
-        self.key.clear()
+        self.key.setText(draft.get("key") or self._stored_key(p))
+        self.key_reveal.setChecked(False)           # 换一项就重新遮上
         self.timeout.setValue(int(draft.get("timeout", p.timeout)))
         self.temperature.setValue(float(draft.get("temperature", p.temperature)))
         self.tokens.setValue(int(draft.get("max_tokens", p.max_tokens)))
@@ -639,7 +677,7 @@ class _AiSettingsPage(QWidget):
         }
         self._loading_provider = True
         try:
-            self.provider_combo.addItem(self._combo_label(new), new_id)
+            self._add_provider_row(new)
             self.provider_combo.setCurrentIndex(self.provider_combo.count() - 1)
         finally:
             self._loading_provider = False
@@ -664,7 +702,7 @@ class _AiSettingsPage(QWidget):
         try:
             self.provider_combo.clear()
             for p in self.settings.providers.values():
-                self.provider_combo.addItem(self._combo_label(p), p.provider_id)
+                self._add_provider_row(p)
             self.settings.active_provider = next(iter(self.settings.providers))
             self.provider_combo.setCurrentData(self.settings.active_provider)
         finally:
@@ -693,7 +731,7 @@ class _AiSettingsPage(QWidget):
         p.vision_base_url = draft.get("vision_base_url", p.vision_base_url)
         p.verify_ssl = bool(draft.get("verify_ssl", p.verify_ssl))
         key = str(draft.get("key") or "")
-        if key:
+        if key and key != self._stored_key(p):     # 输入框里是原样的 Key：不重写钥匙串
             p.api_key_ref = p.api_key_ref or f"provider/{provider_id}"
             if not self._secret_store_type().set(p.api_key_ref, key):
                 p.api_key = key
