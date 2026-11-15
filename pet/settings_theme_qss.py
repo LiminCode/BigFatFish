@@ -114,6 +114,10 @@ QLabel#quickLaunchEmpty {{ color: {muted}; background: {page}; border: 2px dashe
 QListWidget#quickLaunchList {{ background: {page}; border: none; border-radius: 0; outline: none; padding: 3px; }}
 QListWidget#quickLaunchList::item {{ min-height: 30px; padding: 3px 7px; border-radius: 0; }}
 QListWidget#quickLaunchList::item:selected {{ background: {selected}; color: {selected_text}; }}
+QListWidget#providerList {{ background: {page}; border: none; border-radius: 0; outline: none; padding: 3px; }}
+QListWidget#providerList::item {{ min-height: 30px; padding: 3px 9px; border-radius: 0; color: {text}; }}
+QListWidget#providerList::item:hover {{ background: {tile_hover}; }}
+QListWidget#providerList::item:selected {{ background: {selected}; color: {selected_text}; }}
 QLabel#menuLayoutEditorHint {{ font-weight: 400; }}
 QFrame#menuLayoutEditorPanel, QFrame#menuLayoutPreviewPanel {{ background: {page}; border: none; border-radius: 0; }}
 QFrame#imagePreviewDrawer {{ background: {tile}; border: none; border-left: 1px solid {divider}; }}

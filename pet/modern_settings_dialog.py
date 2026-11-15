@@ -168,7 +168,7 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
-from . import settings_island_icon, settings_island_name
+from . import settings_island_icon, settings_island_name, settings_config_backup
 from . import (
     settings_help, settings_memory_distill, settings_notifications, settings_personal, settings_slack_watch,
     settings_vscode, settings_work_briefing, settings_work_notes,
@@ -390,6 +390,8 @@ class ModernSettingsDialog(QDialog):
             )
         window_rows.extend(settings_tray.tray_icon_rows(self))
         general_layout.addWidget(SettingsSection(t("settings.dlg.window_system"), window_rows, general_content))
+        # 配置备份到自己的私有 GitHub 仓库 / 从那里恢复（2026-11-14，蓝屏清零配置之后）
+        general_layout.addWidget(settings_config_backup.config_backup_section(self, general_content))
         # 拓扑收口：「单进程多开」实验开关已从设置页移除，4.4b 起配置键
         # `experimental_single_process_spawn` 本身也随多进程多宠退役层删除
         # （进程内多窗是唯一多宠形态，不再是可切换的实验开关）。
@@ -1582,6 +1584,7 @@ class ModernSettingsDialog(QDialog):
                 (t("settings.dlg.language"), claim("ui_language")),
                 (t("settings.dlg.startup"), claim("autostart")),
                 (t("settings.dlg.window_system"), claim("dock_icon", "on_top", "auto_hide_fullscreen", "cursor_hidden_passthrough", "stream_capture", "tray_icon")),
+                (t("settings.config_backup.section"), claim("config_backup_auto", "config_backup_repo", "config_backup_path", "config_backup_actions")),
                 # 「多开」分组已随拓扑收口 Phase A 隐藏（见上方注释）
             ]
         )
@@ -2014,6 +2017,7 @@ class ModernSettingsDialog(QDialog):
                 data_dir=self.config.dir,
             )
         settings_island_name.save_island_name(self)
+        settings_config_backup.save_config_backup(self)
         existing_island = self.config.get("dynamic_island", {})
         if not isinstance(existing_island, dict):
             existing_island = {}
