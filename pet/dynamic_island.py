@@ -348,6 +348,7 @@ class DynamicIsland(QWidget):
     briefing_requested = Signal()  # 点了胶囊最右边的「工作简报」按钮
     personal_requested = Signal()  # 点了「个人助理」按钮（简报图标右边的小人形）
     usage_dashboard_requested = Signal()  # 点了信息槽里的「今日用量」数字（近 7 天仪表盘）
+    connections_requested = Signal()  # 点了连接图标：列出全部模型服务和各自的连接状态
     # 「消息记录」：点了胶囊上的铃铛（卡片已展开并把消息框打开）/ 点了一条 / 右键菜单选了一项 / 折叠或展开了
     messages_requested = Signal()
     message_activated = Signal(object)
@@ -778,6 +779,18 @@ class DynamicIsland(QWidget):
     def _personal_hit(self, pos) -> bool:
         return self._button_hit(self.personal_button_rect(), pos)
 
+    def link_rect(self) -> QRectF | None:
+        """连接图标的可点区域（左右各延半个间距，整条胶囊高度）；不显示状态时返回 None。"""
+        if self._metro():
+            return self._metro_hit_rect("link")
+        if not self._visible_parts()[3]:
+            return None
+        left = self._toolbar_left() - _BRIEF_GAP - _LINK_ICON_W   # 排法与 _content_cache 一致
+        return self._button_rect(left, _LINK_ICON_W, float(self.width()))
+
+    def _link_hit(self, pos) -> bool:
+        return self._button_hit(self.link_rect(), pos)
+
     # ------------------------------------------------------------ Metro 样式
     def _metro(self) -> bool:
         return str(self._cfg.get("style") or "") == "metro"
@@ -999,6 +1012,10 @@ class DynamicIsland(QWidget):
                 return True
             if self._message_hit(event.pos()):
                 QToolTip.showText(event.globalPos(), self.message_tooltip(), self)
+                return True
+            if self._link_hit(event.pos()):
+                text = "\n".join(line for line in (self._api_detail, t("island.connections.hint")) if line)
+                QToolTip.showText(event.globalPos(), text, self)
                 return True
         return super().event(event)
 
@@ -2582,6 +2599,8 @@ class DynamicIsland(QWidget):
                 self._on_bell_clicked()
             elif self._usage_hit(event.position()):
                 self.usage_dashboard_requested.emit()
+            elif self._link_hit(event.position()):
+                self.connections_requested.emit()
             elif self._click_action() == "toggle_pet":
                 self.clicked.emit()
             else:
