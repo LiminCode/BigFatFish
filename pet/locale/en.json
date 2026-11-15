@@ -986,6 +986,8 @@
   "settings.tray.hint": "The icon shown in the notification area (system tray). Leave blank for the character avatar; pick an image to use it instead — square images with the subject filling the frame look clearest in the tray.",
   "settings.tray.unusable_hint": "This file can't be used (missing or not an image), so the default character avatar stays.",
   "settings.island_icon.hint": "Click the icon tile and pick an image from your computer for the island. It takes effect right away, no need to press Save. The image is shrunk and copied into the fish's settings folder (“Open folder” shows it), so moving the original later is fine. Square images with the subject filling the frame look clearest. “Back to default” returns to the fish avatar.",
+  "settings.island_name.title": "Name",
+  "settings.island_name.hint": "The name shown on the island. It is also this character's name in the right-click menu and chat window (the same name “Rename current character” changes). Leave blank for the default name; takes effect after Save.",
   "settings.island_icon.tile_tip": "Click to choose an image",
   "settings.island_icon.choose_title": "Choose an island icon",
   "settings.island_icon.fish_avatar": "Fish avatar (default)",

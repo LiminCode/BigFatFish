@@ -1562,8 +1562,20 @@ class DynamicIsland(QWidget):
         return QTime.currentTime().toString("HH:mm")
 
     def _character_name(self) -> str:
+        """与右键菜单 / 聊天窗同一个显示名：用户起的名 → manifest name → 角色 id。
+
+        每帧绘制（内容缓存键）都会调到这里：别名是内存里的字典读，照旧每次现取
+        （菜单改名不用等刷新）；manifest 名要读盘解析 JSON，按角色 id 记住。
+        """
         character_id = str(self.config.get("character", catalog.DEFAULT_CHARACTER))
-        return self.config.character_alias(character_id) or character_id
+        alias = self.config.character_alias(character_id)
+        if alias:
+            return alias
+        cached = getattr(self, "_default_name_cache", None)
+        if cached is None or cached[0] != character_id:
+            cached = (character_id, catalog.character_display_name(character_id))
+            self._default_name_cache = cached
+        return cached[1]
 
     def _icon_spec(self) -> str:
         """图标配置原值（auto / img:<路径> / 文字或 emoji）。"""

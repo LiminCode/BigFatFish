@@ -978,6 +978,8 @@
   "settings.tray.hint": "通知栏（系统托盘）里显示的图标。留空用角色头像；选一张图片就用它——方形、主体占满画面的图在托盘里最清楚。",
   "settings.tray.unusable_hint": "这个文件用不了（不存在或不是图片），会继续使用默认的角色头像。",
   "settings.island_icon.hint": "点图标方块，从电脑里选一张图片当灵动岛图标，选好立刻换上，不用再点保存。图片会缩小后复制进肥鱼的设置目录（「打开文件夹」能看到），原文件以后移走也没关系；方形、主体占满的图最清楚。「恢复默认」换回鱼本体头像。",
+  "settings.island_name.title": "名字",
+  "settings.island_name.hint": "灵动岛上显示的名字，也是右键菜单、聊天窗里这只角色的名字（和「重命名当前角色」改的是同一个）。留空用默认名，点保存后生效。",
   "settings.island_icon.tile_tip": "点一下选一张图片",
   "settings.island_icon.choose_title": "选择灵动岛图标",
   "settings.island_icon.fish_avatar": "鱼本体头像（默认）",
