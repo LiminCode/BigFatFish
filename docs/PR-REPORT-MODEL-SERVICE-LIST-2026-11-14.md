@@ -122,7 +122,7 @@ writes during probe: []
 | 空白 | `git diff --check` | 通过 |
 | 聚焦（先红） | `pytest -q tests/test_model_service_list.py` | 基线上 3 条全红（不是 `QListWidget`；Key 框为空 ×2），修后 3 passed |
 | 相关 | 设置窗口、多语言、聊天子系统、提问回归、知识库 / 连接器等 11 个文件 | 419 passed，2 skipped |
-| 全量 | 见同批合并树的全量结果 | 见 PR 描述 |
+| 全量 | 未跑完（按用户要求） | 2026-11-14 用户把测试范围改为「新测试 + 受影响的测试族」，覆盖 `AGENTS.md` 的全量门。同批三个 PR 合并树上的全量在约 72% 处按此要求停掉：停之前出现 2 个失败，`-q` 输出在汇总前中断，没有认出是哪两条（本机有 5 个已知环境基线失败，见上一份报告），未单独复核。只跑了上面的聚焦与相关族 |
 
 ## 七、设置变更门禁（`docs/SETTINGS-CHANGE-GATES.md`）
 
