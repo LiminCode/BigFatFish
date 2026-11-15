@@ -9,7 +9,7 @@ Use these sources in descending order:
 
 1. component behavior in `pet/settings_widgets.py` and QSS in `pet/settings_theme_qss.py` (`METRO_TOKENS`);
 2. semantic vectors in `pet/context_menus/icons.py`;
-3. accepted renders in `docs/screenshots/settings-redesign/iteration-10-metro-*`;
+3. accepted renders in `renders/iteration-10-metro-*` (next to this file);
 4. this summary.
 
 When an accepted change intentionally alters a token, update this reference in the same change.
@@ -135,7 +135,7 @@ outlines; color follows the owning widget (white on the selected accent tile).
 Capture every affected settings domain at the top of its scroll view:
 
 ```bash
-.venv/Scripts/python.exe scripts/capture_settings_pages.py   docs/screenshots/settings-redesign/<iteration> --width 1100 --height 760
+.venv/Scripts/python.exe scripts/capture_settings_pages.py   .scratch/screenshots/settings-redesign/<iteration> --width 1100 --height 760
 ```
 
 Also capture 720 px for layout changes and `--dark` for color/surface changes. Inspect the images; file existence
@@ -156,4 +156,4 @@ briefing window
 
 One stylesheet on the window styles every page by objectName; mounted pages only re-colour their link
 palette in `apply_theme(colors)`. Evidence: `scripts/capture_briefing_window.py` →
-`docs/screenshots/briefing-metro-2026-10-15/`.
+`.scratch/screenshots/briefing-metro/`.

@@ -500,15 +500,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_onedir.ps1 -Variant webm-
 
 - **豁免**：纯文档 / 文案 / 依赖版本号这类不改变运行行为的改动，可只保留第 1 条，
   但必须在 PR 描述里写明豁免理由。
-- 存放：`docs/PR-REPORT-<主题>-<YYYY-MM-DD>.md`，模板见
-  [`PR-REPORT-TEMPLATE.md`](PR-REPORT-TEMPLATE.md)（复制后逐节填写），并在
-  [`INDEX.md`](INDEX.md) 的「PR 报告存档」登记一行。示例：
-  - [`PR-REPORT-VOICE-CHIME-2026-09-15.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-VOICE-CHIME-2026-09-15.md)（语音报时，含九轮改进章节）
-  - [`PR-REPORT-GATES-2026-09-10.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-GATES-2026-09-10.md)、[`PR-REPORT-PR76-2026-09-10.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-PR76-2026-09-10.md)
-  - [`PR-REPORT-music-lyric-align-2026-09-22.md`（上游）](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/docs/PR-REPORT-music-lyric-align-2026-09-22.md)（三个必备章节的完整范例）
-- **机器化校验**：`tests/test_pr_report_discipline.py` 对 `2026-09-22` 及之后的
-  报告强制校验「修改文件说明 / 性能分析 / 实机运行记录」三个章节、模板存在、
-  `AGENTS.md` 与本文件仍写明该要求；历史报告豁免。
+- 存放：2026-11-15 起三份证据写在 **PR 描述**里（模板 `.github/PULL_REQUEST_TEMPLATE.md`），仓库里不再为每个 PR
+  留报告文件；大改动另记 ADR（[`adr/README.md`](adr/README.md)）。口径以 `AGENTS.md` 为准。
+- **机器化校验**：`tests/test_pr_report_discipline.py`。
 - 结构建议（在三个必备章节之外）：
   1. **核心特性**：一句话定位 + 能力清单 + 红线/不变量；
   2. **修改文件清单**：逐文件说明改动意图（含新增/删除）；

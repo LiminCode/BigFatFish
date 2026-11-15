@@ -119,7 +119,7 @@ mode ∈ {legacy, whale_maid} : 内置预设[key] → 调用方原文案
 - 「以『X』为底改成我的台词」（`settings_pet_controls._adopt_builtin_phrases`）：把整套内置台词写进 global 层缓冲、
   切到 `custom`、展开折叠框。自定义台词已有内容时先确认；Agent 专属层不动。内置 JSON 仍只读。
 - 导出模板（`_current_dialogue_template`）从 2026-10-18 起带**当前显示**的台词（内置或用户的），不再是空骨架；
-  导入会先切到 `custom` 再写编辑框。报告：`docs/PR-REPORT-DIALOGUE-PREVIEW-2026-10-18.md`。
+  导入会先切到 `custom` 再写编辑框。现行说明：`docs/persona-and-voice.md`。
 
 ## 9. 英文版内置预设（2026-10-19）
 

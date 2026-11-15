@@ -43,6 +43,6 @@ if __name__ == "__main__":
     os.environ["APPDATA"] = tempfile.mkdtemp(prefix="bff-capture-")
     args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
     language = "en" if "--language" in sys.argv and sys.argv[sys.argv.index("--language") + 1] == "en" else "zh"
-    target = Path(args[0]) if args else Path("docs/screenshots/chat-english-2026-10-19")
+    target = Path(args[0]) if args else Path(".scratch/screenshots/chat-english")
     for file in capture(target, language):
         print(file, file.stat().st_size)

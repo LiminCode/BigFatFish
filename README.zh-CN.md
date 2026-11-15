@@ -164,8 +164,8 @@ python -m venv .venv
   [MerZlin/dsh-pet-indesktop](https://github.com/MerZlin/dsh-pet-indesktop) → BigFatFish。感谢两位原作者和上游的各位贡献者。
 - 上游 README 原文（安装、使用教程、动画素材、v4.x 变更记录）：
   [README.md @ ee699c7](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/README.md)。在本项目已不适用的上游文档
-  已移出本仓库，清单见 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
-- 上游的改动按需挑拣，不整体合并（见 [docs/PR-REPORT-UPSTREAM-SYNC-2026-10-24.md](docs/PR-REPORT-UPSTREAM-SYNC-2026-10-24.md)）。
+  已移出本仓库，去哪找见 [docs/upstream.md](docs/upstream.md)。
+- 上游的改动按需挑拣，不整体合并（见 [docs/upstream.md](docs/upstream.md)）。
 - 程序在系统里的名字是 `big-fat-fish`：数据目录 `%APPDATA%\big-fat-fish\`，钥匙串服务名和开机自启项也用它；
   旧名字 `dsh-pet-standalone` 下的数据在首次启动时自动迁移。
 - 许可证沿用上游的 **MIT**（见 [LICENSE](LICENSE)）；第三方素材与组件的声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
@@ -173,7 +173,8 @@ python -m venv .venv
 ## 参与开发
 
 - [AGENTS.md](AGENTS.md)：工程指南（项目结构、变更纪律、PR 交付证据要求）。
-- [docs/INDEX.md](docs/INDEX.md)：全部文档的索引，每篇写明什么时候该读。
+- [docs/README.md](docs/README.md)：文档入口，一个子系统一份；决策记录在 [docs/adr/](docs/adr/README.md)。
+- [CHANGELOG.md](CHANGELOG.md)：用户看得见的变化，一行一条。
 - [CONTEXT.md](CONTEXT.md)：领域术语表。
 - 测试：`python -m pytest -q`（无界面环境设 `QT_QPA_PLATFORM=offscreen`）。
 - 本页的截图是真实组件喂演示数据渲染的。重新生成：`python scripts/capture_readme_shots.py`
