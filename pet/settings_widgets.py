@@ -969,7 +969,7 @@ class ModernSelect(QAbstractButton):
         self.update()
 
     def setItemDisabled(self, index: int, disabled: bool = True) -> None:  # noqa: N802
-        """置灰单项：弹窗里点不动（平台能力暂不可用，见 docs/SETTINGS-CHANGE-GATES.md §4）。"""
+        """置灰单项：弹窗里点不动（平台能力暂不可用，见 docs/settings-and-menu.md 设置变更门禁 §4）。"""
         if not 0 <= index < len(self._items):
             return
         if disabled:

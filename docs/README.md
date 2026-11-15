@@ -33,26 +33,10 @@
 
 | 文档 | 内容 | 什么时候读 |
 |---|---|---|
+| [架构与红线](architecture.md) | 分层、测试守着的红线、配置键 / 菜单项 / 设置行的登记、Qt 生命周期、Windows 关机时的派生闸门 | 加模块、动受守卫的边界、改 ffmpeg 派生或关机路径之前 |
+| [开发指南](development.md) | 怎么跑、怎么测、提交与 PR、合并 PR 的三条规律 | 第一次上手；开 PR、合并 PR 之前 |
+| [排障手册](troubleshooting.md) | 按症状找文档；联网与代理、测试套件原生崩溃、WSL 共享、实机验证的注意 | 出了问题先看这里 |
 | [决策记录](adr/README.md) | 长期有效的决定各一份，以及什么时候该写新的 | 想推翻一个现有做法之前；做大改动时 |
 | [与上游的关系](upstream.md) | 上游旧文档去哪找、只从源码运行、挑拣同步的做法、帧序列档位、聊天窗生命周期 | 同步上游、想恢复打包、改帧序列或聊天窗关闭流程 |
+| [Agent 联动协议](agent-link-protocol.md) | 本地文件事件总线、六态词汇、第三方 Agent 怎么接入、隐私红线 | 接入新 Agent、改事件归一或 hook 脚本 |
 | [`agents/`](agents/domain.md) | agent 的工作约定：[领域文档](agents/domain.md)、[issue](agents/issue-tracker.md)、[triage 标签](agents/triage-labels.md)、[交接](agents/handoff.md) | 用 `.scratch/` 记 issue、交接未完成的工作时 |
-
-## 待并入的旧文档
-
-下面这些是 fork 时带来的专题文档，内容仍然有效，下一步会并进上面的结构（架构总览、开发指南、排障手册）。
-在那之前照旧引用它们。
-
-| 文档 | 内容 |
-|---|---|
-| [`DEV-HANDOVER.md`](DEV-HANDOVER.md) | 上游的开发交接（2026-09）：分层、架构红线、语音报时实现。打包与行号已过时 |
-| [`WINDOW_PY_SPLIT_GUIDE.md`](WINDOW_PY_SPLIT_GUIDE.md) | `pet/window.py` 的拆分办法与生命周期边界 |
-| [`QT-LIFECYCLE-FULL-SUITE-STABILIZATION-2026-09.md`](QT-LIFECYCLE-FULL-SUITE-STABILIZATION-2026-09.md) | 全量测试原生崩溃的归因与诊断规则 |
-| [`ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md`](ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md) | Windows 关机时的 ffmpeg 派生闸门 |
-| [`PR-MERGE-LESSONS-2026-09-12.md`](PR-MERGE-LESSONS-2026-09-12.md) | 合并 PR 的三则教训 |
-| [`NETWORK-PROXY-AND-VPN-2026-09-22.md`](NETWORK-PROXY-AND-VPN-2026-09-22.md) | 系统代理 / VPN 对联网功能的影响 |
-| [`AGENT_LINK_PROTOCOL.md`](AGENT_LINK_PROTOCOL.md) | Agent 联动的事件协议（对外口径） |
-| [`SETTINGS-CHANGE-GATES.md`](SETTINGS-CHANGE-GATES.md) | 已并入[设置与右键菜单](settings-and-menu.md)，代码注释还指着它 |
-| [`CONTEXT-MENU-RESEARCH-AND-REFACTOR-2026-08-25.md`](CONTEXT-MENU-RESEARCH-AND-REFACTOR-2026-08-25.md) | 已并入[设置与右键菜单](settings-and-menu.md) |
-| [`PERSONA-PHRASES-PRESET-STORAGE-2026-09-08.md`](PERSONA-PHRASES-PRESET-STORAGE-2026-09-08.md) | 已并入[台词、人设与语音](persona-and-voice.md) |
-| [`ISSUE-EDGE-TTS-VOICE-DEPRECATION-2026-09-22.md`](ISSUE-EDGE-TTS-VOICE-DEPRECATION-2026-09-22.md) | 已并入[台词、人设与语音](persona-and-voice.md) |
-| [`PERSONA-TEMPLATE-FIELD-ALIGNMENT-2026-09-05.md`](PERSONA-TEMPLATE-FIELD-ALIGNMENT-2026-09-05.md) | 台词模板变量对照表（真相在 `pet/persona_template.py`） |

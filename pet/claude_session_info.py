@@ -16,7 +16,7 @@
 文件，所以「还活着」必须拿进程号 + 进程启动时间去和系统核对。
 
 **提问正文只在内存里**：按需读、读完交给界面，不写进事件文件、日志或配置
-（``docs/AGENT_LINK_PROTOCOL.md`` §6）。
+（``docs/agent-link-protocol.md`` §6）。
 
 WSL 通道的两处文件在发行版里，经一次 ``wsl.exe`` 调用一并取回（``WSL_SCRIPT``）。
 """

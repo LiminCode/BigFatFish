@@ -186,7 +186,7 @@ def test_control_group_spawns_normally_without_session_end(tmp_path, monkeypatch
     clip._ensure_meta()
     # 主线程 _ensure_meta 走「GUI 线程不跑 ffprobe」闸：探测被踢给 daemon
     # 线程异步完成。轮询等待而不是赌线程调度——慢 runner（2 核 CI）上
-    # 固定时序是抛硬币（PR-MERGE-LESSONS：poll state with a wide budget）。
+    # 固定时序是抛硬币（docs/development.md：轮询状态 + 宽预算）。
     deadline = time.monotonic() + 10.0
     while not spy.count_calls and time.monotonic() < deadline:
         time.sleep(0.02)

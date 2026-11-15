@@ -210,6 +210,7 @@ the effort level and when each one runs.
 - [AGENTS.md](AGENTS.md): engineering guide (project shape, change discipline, PR evidence rules).
 - [docs/README.md](docs/README.md): the documentation, one page per subsystem (in Chinese), plus decision records
   under [docs/adr/](docs/adr/README.md).
+- [docs/development.md](docs/development.md): how to run, test, open and merge a PR (in Chinese).
 - [CHANGELOG.md](CHANGELOG.md): user-visible changes, one line each.
 - [CONTEXT.md](CONTEXT.md): domain glossary.
 - Tests: `python -m pytest -q` (set `QT_QPA_PLATFORM=offscreen` when headless).

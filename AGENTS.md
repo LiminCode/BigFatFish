@@ -191,35 +191,43 @@ exact breakpoint there; see `docs/agents/handoff.md`.
 找文档先查 `docs/README.md`（文档入口：每份一句话 + 什么时候读）；新文档必须在那里
 登记。高频专项指针：
 
-- Read `docs/ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md` when changing
-  ffmpeg spawning (`webm_clip` reader/first-frame/meta/exe probes), warm
-  scheduling, or anything that runs during Windows shutdown/logoff
+- Read `docs/architecture.md` before adding a module or touching a guarded
+  boundary: layering, the red lines `tests/test_architecture.py` enforces, where
+  a new config key / menu action / settings row must be registered, Qt
+  lifecycle rules. Its last section ("会话结束冻结") is required reading when
+  changing ffmpeg spawning (`webm_clip` reader/first-frame/meta/exe probes),
+  warm scheduling, or anything that runs during Windows shutdown/logoff
   (`session_watcher`, `match_shutdown`, `AppShell._on_session_end`).
+- Read `docs/development.md` for how to run, which tests to run, the PR flow,
+  and before merging PRs: stacked-PR conflicts after squashing the parent,
+  budget/red-line changes that only break when two PRs combine, and timing-test
+  flake discipline (poll state with a wide budget instead of fixed sleeps).
 - Packaging and release were removed on 2026-10-11: the project runs from
   source only (`run.bat` / `python -m pet`). There are no build scripts,
   installer, or release workflows. Read
   `docs/adr/0001-run-from-source-only.md` and `docs/upstream.md` before
   reintroducing any, and note that runtime branches for packaged builds
   (`sys.frozen`, `build_variant`) were deliberately left in place.
-- Read `docs/CONTEXT-MENU-RESEARCH-AND-REFACTOR-2026-08-25.md` when changing
-  context-menu structure, styling, interaction, or platform behavior.
-- Read `docs/SETTINGS-CHANGE-GATES.md` before adding, moving, removing, or
-  changing a persistent setting or its settings-page interaction.
-- Read `docs/PERSONA-PHRASES-PRESET-STORAGE-2026-09-08.md` before changing
-  dialogue preset files (`pet/persona_presets/*.json`), phrase loading
-  (`persona_phrases.py`), or expression-style semantics
-  (`dialogue_mode`/`dialogue_phrases`).
-- Read `docs/PR-MERGE-LESSONS-2026-09-12.md` before merging PRs: stacked-PR
-  conflicts after squashing the parent, budget/red-line changes that only break
-  when two PRs combine, and timing-test flake discipline (poll state with a wide
-  budget instead of fixed sleeps).
-- Read `docs/NETWORK-PROXY-AND-VPN-2026-09-22.md` when touching any networked
-  feature (music lyrics, edge-tts voice, updater, balance, vision, chat) or when
-  a report sounds like "X worked yesterday and now it doesn't": the Windows
-  system proxy / VPN is a first-class suspect — it made lyric fetching 20-41s
-  (all three sources timed out) on 2026-09-22, while jsdelivr update checks only
-  work *through* the proxy. Lyric requests deliberately bypass the proxy
-  (`pet/music_lyric.py::_build_opener`); other features keep following it.
+- Read `docs/settings-and-menu.md` before adding, moving, removing, or changing
+  a persistent setting or its settings-page interaction (the section
+  "设置变更门禁" is the gate), and when changing context-menu structure,
+  styling, interaction, or platform behavior.
+- Read `docs/i18n.md` before adding any user-visible text.
+- Read `docs/persona-and-voice.md` before changing dialogue preset files
+  (`pet/persona_presets/*.json`), phrase loading (`persona_phrases.py`),
+  expression-style semantics (`dialogue_mode`/`dialogue_phrases`), template
+  variables, or voice synthesis.
+- Read `docs/troubleshooting.md` when touching any networked feature (music
+  lyrics, edge-tts voice, vision, chat) or when a report sounds like "X worked
+  yesterday and now it doesn't": the Windows system proxy / VPN is a
+  first-class suspect. Lyric requests deliberately bypass the proxy
+  (`pet/music_lyric.py::_build_opener`); other features keep following it. The
+  same page covers native crashes in the full test suite and the rules for
+  reading WSL files.
+- Each feature has one topic doc (session fish, jump, island, notifications,
+  work / personal assistant, memory distill, config panorama, config and data);
+  `docs/README.md` lists them. Read the one you are about to change, and update
+  it in the same PR when a mechanism or invariant changes.
 - Read `tools/asset_pipeline/README.md` when changing the asset pipeline
   (green-screen video → transparent WebM → character package) or the package
   geometry it targets (640×360 canvas, feet at y=330, `body_box` measured at

@@ -161,7 +161,7 @@ unlink 而不是一整趟编码。成本对比见 PR 报告的性能分析。
   直接放弃本轮（另一实例在转），不等待；**库侧据此有界重试**
   （``PROVISION_LOCK_RETRY_*`` + ``library._retry_frameseq_provision_after_lock``），
   否则同进程里抢不到锁的其它角色（三宠三库）在这次启动里再也不会供给。
-- ISSUE-111 纪律：每个 clip 转换前查 ``pet.webm_clip.session_ending()``，
+- 会话结束冻结纪律（docs/architecture.md）：每个 clip 转换前查 ``pet.webm_clip.session_ending()``，
   置位即停止后续；**探针之后、``_popen`` 之前再查一次**（半成品清理 + mkdir +
   fps 探测自己就派生一次 ffmpeg，这段窗口里置位必须仍拦得住）；library 收尾
   置 cancel 谓词并终止在飞 ffmpeg 子进程，线程有界等待（≤2s）后退出。这个"有界"

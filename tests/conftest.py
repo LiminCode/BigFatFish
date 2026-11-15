@@ -285,7 +285,7 @@ def _close_qt_top_level_widgets():
     # 历史 timer、别处排的删除任务）一并派发到正在销毁/已销毁的原生对象上，
     # 把历史 QObject 生命周期集中引爆在当前测试 —— 这正是全量套件偶发
     # 0xC0000005 access violation、且崩溃点随当前测试漂移的机制
-    # （docs/QT-LIFECYCLE-FULL-SUITE-STABILIZATION-2026-09.md §2、§4：全局冲刷与
+    # （docs/troubleshooting.md「测试套件原生崩溃」：全局冲刷与
     # 进程级 sendPostedEvents 都已被否决；本轮崩溃点就是这里的 app.processEvents()）。
     try:
         import shiboken6

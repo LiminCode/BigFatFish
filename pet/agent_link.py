@@ -2622,7 +2622,7 @@ class OpenCodeMonitor(BaseAgentMonitor):
 class CustomAgentMonitor(BaseAgentMonitor):
     """自定义联动 Agent 监视器（agent_link.custom_agents 配置驱动）。"""
 
-    """只读监听用户指定路径的统一协议 JSONL 事件文件（docs/AGENT_LINK_PROTOCOL.md §4）：
+    """只读监听用户指定路径的统一协议 JSONL 事件文件（docs/agent-link-protocol.md §4）：
     不创建目录、不写任何外部位置、无需授权弹窗；文件不存在时静默空转等待，
     出现后自动开始增量读取（backfill 防护跳过历史内容）。"""
 

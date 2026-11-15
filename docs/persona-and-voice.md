@@ -63,6 +63,11 @@ legacy / whale_maid : 内置预设[key]                        → 调用方传�
 - 专属层**只在 `custom` 模式读**，且只对把 `agent_key` 传给 `_dialogue()` 的转述事件生效：`start`、`thinking`、`activity.*`、`done.*`、`agent.attention`、`agent.error`。审批 / 提问 / 失败 / 模型访问失败这些「对你说」的事件，以及 `bridge.*`、`agent.missing`、余额，只走 `global`。
 - 同一事件多条时轮换，避免同一个键连续重复。
 - 占位符只能用该事件在 `PARAMETERS` 里声明的字段，越界会原样露出 `{xxx}`。条件字段（`CONDITIONAL_PARAMETERS`）上游没给时自动隐藏。
+- **模板变量的真相在代码里**：`pet/persona_template.py` 的 `VARIABLES` / `PARAMETERS` / `CONDITIONAL_PARAMETERS` / `EVENT_DESCRIPTIONS`。
+  模板里能写的 `{变量名}` 就是调用点传入的 kwargs 名，没有别名层（代码传 `toolName=` 就写 `{toolName}`）。改变量先改这些常量；
+  `tests/test_persona_template.py` 用 AST 双向校验「模板宣称的变量 == 调用点真的注入的」，多宣称或少宣称都会红。
+  同轮触发的上下文记录字段（`UPSTREAM_FIELDS`）只写进导出模板顶层做说明，不进各事件的可用变量，免得写出运行时替换不了的占位符。
+  `activity.*`（正在调用工具）、`failure.tool`（工具出错）、`approval.tool`（待审批的工具调用）名字里都有 tool，语义不同。
 - 「请到界面输入文本回答」这类结构引导由 `agent_link._with_dsh_input_hint()` 补上，不随台词被覆盖掉。
 
 ### 内置预设的英文版
@@ -81,6 +86,18 @@ legacy / whale_maid : 内置预设[key]                        → 调用方传�
 - 「以『X』为底改成我的台词」（`_adopt_builtin_phrases`）：整套内置台词写进 `global` 层缓冲、切到 `custom`、展开折叠框。自定义已有内容时先确认；Agent 专属层不动。
 - 导出模板带**当前显示**的台词（内置模式就是内置的，自定义就是用户的 `global` 层）：既是备份，也能发给 AI 改写。导入先切到 `custom` 再写编辑框（否则写进预览会被覆盖），校验 `template` 以 `persona-phrases/` 开头。
 - 人设与「关于我」在设置页自成一节「人设与回复」，不放在「模型与连接」里——夹在 API Key 旁边会被当成某个服务商的参数。行 id 没变，搜索与深链接按行 id 找。
+
+### 语音报时：调度与播放
+
+- `VoiceChimeService` 每 20 秒 tick 一次。`is_chime_minute` 判定当前分钟是否命中调度；`chime_slot` 给出幂等槽位
+  `YYYY-MM-DDTHH:MM#<模式>`，**同一分钟只报一次**，所以保存设置、服务重启都不会重复报；模式名进槽位，切换调度后不会互相压盖。
+- **预合成**：距下一个报时点不到 60 秒（`PRECACHE_WINDOW_S`）就提前在后台合成，到点直接播。`_consume_precache` 无论命中与否
+  都会清空整组预合成状态，所以**气泡文本必须在消费之前取出**。
+- **语音文本与气泡文本分开**：语音用中文数字口播（它也是音频缓存键），气泡用阿拉伯数字；两者取同一条台词，只有时间写法不同。
+- 合成在普通线程里，不碰任何 Qt 对象，结果只经 `_AudioBridge` 的 queued 信号回 GUI 线程。
+- **降级**：没装 edge-tts 或合成失败时只出气泡不出声；总开关关着时「立即报时」和设置页试听仍然可用；设置窗口开着、
+  普通气泡被抑制时，报时直接经气泡位显示。缓存目录不可写时静默降级，只记 debug。
+- 音频缓存在数据目录的 `voice_chime_cache/`，上限 200 个文件（`MAX_CACHE_FILES`），按修改时间清，5 分钟内最多清一次。
 
 ### 语音报时的台词库
 

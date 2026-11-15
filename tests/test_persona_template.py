@@ -33,7 +33,7 @@ def test_all_advertised_fields_reach_presentation_layer():
        动态 key 调用点（activity/pattern/model_access）按 kwargs 签名归组校验。
     2. UPSTREAM_FIELDS 的每个上下文字段都必须在桥接插件源码中出现（桥确实
        会写出），或属于 Pet 侧注入（agent_key）。
-    审计依据：docs/PERSONA-TEMPLATE-FIELD-ALIGNMENT-2026-09-05.md
+    规则说明：docs/persona-and-voice.md
     """
     import ast
     from pathlib import Path
