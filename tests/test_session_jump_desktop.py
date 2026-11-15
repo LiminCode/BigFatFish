@@ -71,3 +71,24 @@ def test_a_failed_link_falls_back_to_bringing_the_window_up():
     detail = _detail()
     detail.extra["host_session"] = HOST
     assert sj.jump(detail, **desk.kwargs).ok and desk.log == [("uri", LINK), ("focus", 1)]
+
+
+def test_raising_claude_desktop_picks_its_main_window():
+    """A frozen desktop conversation whose desktop-side id was never recorded: bring the app up
+    (2026-11-14 machine: the main window is a ``claude.exe`` window titled ``Claude``; Claude Code's own
+    ``claude.exe`` processes own no visible windows)."""
+    focused: list = []
+    windows = [Window(7, 40, "cmd - claude", "windowsterminal.exe"),
+               Window(8, 50, "Claude Code docs", "chrome.exe"),
+               Window(9, 60, "Claude", "claude.exe")]
+    result = sj.raise_desktop(windows=lambda: windows, focus=lambda hwnd: focused.append(hwnd) or True,
+                              uri=lambda uri: pytest.fail("the window is there: no need to launch"))
+    assert result.ok and focused == [9]
+
+
+def test_raising_claude_desktop_launches_it_when_no_window_is_up():
+    opened: list = []
+    result = sj.raise_desktop(windows=lambda: [Window(7, 40, "cmd", "windowsterminal.exe")],
+                              focus=lambda hwnd: pytest.fail("nothing to focus"),
+                              uri=lambda uri: opened.append(uri) or True)
+    assert result.ok and opened == ["claude://"]

@@ -552,6 +552,83 @@ def test_a_frozen_conversation_that_comes_back_alive_thaws(shell, persistent):
     assert len(_session_pets(shell)) == 1 and _session_pets(shell)[0].caption.endswith("冻结"), "进程没了：回到冻结，不是消失"
 
 
+DESK_HOST = "local_1cf14c8e-3cd8-4542-8f62-c850603ec392"
+
+
+@pytest.fixture
+def running(shell, monkeypatch, tmp_path):
+    """``persistent`` + a stand-in for the local Claude Code run list (``~/.claude/sessions``)."""
+    monkeypatch.setattr(SessionPetController, "WORK_CLIPS", ("act1",))
+    monkeypatch.setattr(SessionPetController, "REST_CLIPS", ("idle1",))
+    monkeypatch.setattr(SessionPetController, "REVIEW_CLIPS", ("click1",))
+    monkeypatch.setattr(SessionPetController, "FROZEN_CLIPS", ("frozen1",))
+    clock = {"now": NOW}
+    live: dict = {}
+    store = SessionHistory(None, clock=lambda: clock["now"])
+    history = SessionHistoryService(store, clock=lambda: 0.0)
+    ctl = SessionPetController(shell, enabled=lambda: True, decisions=SessionFishDecisions(None),
+                               keep_days=lambda: 3, clock=lambda: clock["now"], registry=lambda: dict(live))
+    ctl.attach_history(history)
+    ctl.live = live
+    ctl.history_store = store
+    return ctl
+
+
+def _registry_item(phase="resting", **extra):
+    return {"phase": phase, "title": "", "project": "silly-knuth-a6a8db",
+            "cwd": r"C:\w\silly-knuth-a6a8db", "transcript": "", "entrypoint": "claude-desktop",
+            "host_session": DESK_HOST, **extra}
+
+
+def test_a_recent_conversation_whose_process_is_still_running_is_not_frozen(shell, running):
+    """User 2026-11-14: after a pet restart with the Claude Code link switched off, a conversation they had
+    just typed into showed up as 冻结 (frozen). Frozen means the process is gone; the run list says it is not,
+    so the fish shows the run list's state, follows it, and only freezes once the process really leaves."""
+    key = ("claude", "9f597df0-2760-4b84-9a80-fc2f1ecf88fb")
+    running.history_store.record(*key, seen=NOW - 600, cwd=r"C:\w\silly-knuth-a6a8db",
+                                 title="Island display name configuration", entrypoint="claude-desktop")
+    running.live[key] = _registry_item("resting")
+    running.reconcile()
+    (fish,) = _session_pets(shell)
+    assert not running.is_frozen(key) and fish.caption_tone != "frozen"
+    assert fish.caption.endswith("休息中")
+    assert running.describe(key)["host_session"] == DESK_HOST, "the jump needs the desktop-side id"
+    assert running.history_entry(key).host_session == DESK_HOST, "remembered for when it does freeze"
+
+    running.live[key] = _registry_item("working")
+    running.reconcile()
+    assert _session_pets(shell)[0].caption.endswith("工作中"), "follows the run list's status"
+
+    running.live.clear()                          # the conversation was closed
+    running.reconcile()
+    (fish,) = _session_pets(shell)
+    assert running.is_frozen(key) and fish.caption.endswith("冻结")
+
+
+def test_the_run_list_never_overrides_what_the_live_channel_reports(shell, running):
+    """With the Claude Code link on, the channel owns the session's phase and its end."""
+    key = ("claude", "live-1111-aaaa")
+    running.on_session_update("claude", _update(key[1], phase="working", project="p"))
+    running.live[key] = _registry_item("resting")
+    running.reconcile()
+    assert _session_pets(shell)[0].caption.endswith("工作中")
+    running.live.clear()
+    running.reconcile()
+    (fish,) = _session_pets(shell)
+    assert fish.caption.endswith("工作中") and not running.is_frozen(key)
+
+
+def test_the_shell_feeds_the_fish_the_local_run_list(shell, monkeypatch):
+    """The shell's controller reads the local run list (conftest stubs it empty, so tests never read
+    this machine's ``~/.claude/sessions``)."""
+    from pet import overlay_shell
+
+    assert shell.session_pets._registry() == {}
+    monkeypatch.setattr(overlay_shell, "_local_run_list",
+                        lambda: {("claude", "9f597df0"): _registry_item("waiting")})
+    assert shell.session_pets._registry() == {("claude", "9f597df0"): _registry_item("waiting")}
+
+
 def test_closing_a_fish_is_remembered_across_restarts_until_the_session_is_active_again(shell, persistent, tmp_path):
     persistent.history_store.record("claude", "old-1111-aaaa", seen=NOW - 3600, cwd=r"C:\Users\me\Pet")
     persistent.reconcile()
@@ -610,6 +687,37 @@ def test_frozen_fish_menu_offers_resume_instead_of_jump(shell, persistent, monke
     assert "跳到这个对话" not in labels and "让这只离场" not in labels
     assert actions.jump(sprite) is True
     assert opened == ["claude://claude.ai/epitaxy/local_abc123def456"], "冻结 + 桌面版：走深链"
+    menu.deleteLater()
+
+
+def test_a_frozen_desktop_fish_without_its_host_id_brings_up_claude_desktop_not_a_terminal(shell, persistent):
+    """User 2026-11-14: 「跳到对话」 on a Claude desktop conversation opened a cmd window. The history row came
+    from a transcript scan, which knows the entrypoint but not the desktop-side id, so the resume fell through
+    to ``claude --resume`` in a terminal. A desktop conversation lives in the desktop app: bring that up."""
+    from pet.claude_session_jump import JumpResult
+    from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
+
+    persistent.history_store.record("claude", "9f597df0-2760", seen=NOW - 3600, cwd=r"C:\w\silly",
+                                    entrypoint="claude-desktop")
+    persistent.reconcile()
+    sprite = _session_pets(shell)[0]
+    actions = SessionPetActions(shell, persistent, anchor_factory=lambda s: None)
+    opened, ran, raised = [], [], []
+    actions.uri_opener = lambda uri: opened.append(uri) or True
+
+    class _Runner:
+        def run(self, action, entry):
+            ran.append(action)
+            return "opened a terminal"
+
+    actions._history_actions = _Runner()
+    actions.desktop_raiser = lambda: raised.append(True) or JumpResult(True, "switched to Claude desktop")
+    menu = build_session_pet_menu(shell, sprite, actions)
+    labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "在 Claude 桌面版重开这个对话" in labels and "在终端里恢复这个对话" not in labels
+    assert actions.jump(sprite) is True
+    assert ran == [], "never a terminal for a desktop conversation"
+    assert raised == [True] and opened == []
     menu.deleteLater()
 
 

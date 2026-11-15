@@ -149,6 +149,13 @@ def _no_real_session_history_scan(monkeypatch):
         return
     monkeypatch.setattr(session_history_service, "_default_scan_local", lambda **_kwargs: [])
     monkeypatch.setattr(session_history_service, "_default_scan_wsl", lambda **_kwargs: [])
+    # 会话小鱼按本机运行清单（~/.claude/sessions）判断进程在不在：也换成空清单。放在这同一个
+    # 夹具里，不另加 autouse 夹具（多加一个就会引出全量测试的潜伏原生崩溃）。
+    try:
+        from pet import overlay_shell
+    except Exception:
+        return
+    monkeypatch.setattr(overlay_shell, "_local_run_list", lambda: {})
 
 
 @pytest.fixture(autouse=True)

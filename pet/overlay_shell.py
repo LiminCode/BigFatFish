@@ -1042,7 +1042,8 @@ class OverlayShell(QObject):
         self.session_pets = SessionPetController(
             self, enabled=self._session_pets_enabled,
             decisions=SessionFishDecisions(Path(decisions_dir) / DECISIONS_FILE if decisions_dir else None),
-            keep_days=lambda: self._agent_link_value("session_fish_keep_days", 3))
+            keep_days=lambda: self._agent_link_value("session_fish_keep_days", 3),
+            registry=lambda: _local_run_list())
         # 会话小鱼的交互面（详情卡 / 专属右键菜单 / 跳转）
         from .session_pet_ui import SessionPetActions
         self.session_actions = SessionPetActions(
@@ -5227,3 +5228,13 @@ class OverlayShell(QObject):
                     logging.exception("overlay: 会话结束停止素材库 clip 失败")
         if self.overlay is not None:
             self.overlay.stop()
+
+
+def _local_run_list() -> dict:
+    """本机 Claude Code 运行清单里活着的会话，按会话小鱼的键（``("claude", sessionId)``）。
+
+    会话小鱼据此判断「进程还在」：在的不冻结。WSL 的清单要起 ``wsl.exe``，不在这里读——
+    WSL 通道开着时由它的监视器认领。"""
+    from . import claude_session_info
+
+    return {("claude", sid): item for sid, item in claude_session_info.local_registry_sessions().items()}
