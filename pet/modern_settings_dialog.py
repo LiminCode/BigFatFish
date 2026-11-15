@@ -168,7 +168,7 @@ from . import settings_pet_controls
 from . import settings_save
 from . import settings_language
 from . import settings_tray
-from . import settings_island_icon
+from . import settings_island_icon, settings_island_name
 from . import (
     settings_help, settings_memory_distill, settings_notifications, settings_personal, settings_slack_watch,
     settings_vscode, settings_work_briefing, settings_work_notes,
@@ -329,6 +329,7 @@ class ModernSettingsDialog(QDialog):
         self.island_accent_select.setCurrentData(str(island_cfg.get("accent") or "blue"))
         # 图标：点方块直接选一张自己的图（2026-10-20 起取代原来的头像 / emoji 下拉框）
         island_icon_row = settings_island_icon.island_icon_row(self, island_cfg)
+        island_name_row = settings_island_name.island_name_row(self)  # 改当前角色显示名（2026-11-14）
         self.island_click_action_select = ModernSelect(self, width=160)
         for label, value in (
             (t("settings.dlg.expand_quick_card"), "expand"),
@@ -408,6 +409,7 @@ class ModernSettingsDialog(QDialog):
                     SettingRow("dynamic_island_enabled", t("settings.dlg.enable_dynamic_island"), t("settings.dlg.show_separate_capsule_window_stays"), self.island_enabled_check),
                     SettingRow("dynamic_island_icon", t("settings.dlg.show_icon"), t("settings.dlg.show_character_icon_left_capsule"), self.island_icon_check),
                     SettingRow("dynamic_island_name", t("settings.dlg.show_name"), t("settings.dlg.show_current_character_name"), self.island_name_check),
+                    island_name_row,
                     SettingRow("dynamic_island_info", t("settings.dlg.show_info_slot"), t("settings.dlg.show_current_time_today_claude"), self.island_info_check),
                     SettingRow("dynamic_island_status", t("settings.dlg.show_status_lights"), t("settings.dlg.show_claude_code_session_count"), self.island_status_check),
                     SettingRow("dynamic_island_info_mode", t("settings.dlg.info_slot_content"), t("settings.dlg.current_time_today_usage_tokens"), self.island_info_mode_select),
@@ -820,6 +822,7 @@ class ModernSettingsDialog(QDialog):
         self.menu_translucent_check.toggled.connect(self._update_translucency_controls)
         self.island_enabled_check.toggled.connect(self._update_island_controls)
         self.island_icon_check.toggled.connect(self._update_island_icon_controls)
+        self.island_name_check.toggled.connect(lambda on: settings_pet_controls._update_island_name_controls(self, on))
         self.island_info_check.toggled.connect(self._update_island_info_controls)
         self.egg_enabled_check.toggled.connect(self._update_egg_controls)
         self.egg_enabled_check.toggled.connect(self._sync_menu_action_states)
@@ -2010,6 +2013,7 @@ class ModernSettingsDialog(QDialog):
                 click_sound_pack,
                 data_dir=self.config.dir,
             )
+        settings_island_name.save_island_name(self)
         existing_island = self.config.get("dynamic_island", {})
         if not isinstance(existing_island, dict):
             existing_island = {}

@@ -648,12 +648,13 @@ def _update_island_controls(host, enabled: bool) -> None:
         "dynamic_island_icon", "dynamic_island_name", "dynamic_island_info",
         "dynamic_island_status", "dynamic_island_info_mode",
         "dynamic_island_style", "dynamic_island_opacity", "dynamic_island_accent",
-        "dynamic_island_icon_value",
+        "dynamic_island_icon_value", "dynamic_island_name_value",
         "dynamic_island_click_action",
         "dynamic_island_event_effects", "dynamic_island_edge_dock",
         "dynamic_island_collision", "dynamic_island_hidden_chat",
     ), enabled, dependency="island_enabled")
     _update_island_icon_controls(host, host.island_icon_check.isChecked())
+    _update_island_name_controls(host, host.island_name_check.isChecked())
     _update_island_info_controls(host, host.island_info_check.isChecked())
 
 
@@ -672,6 +673,15 @@ def build_island_card_source_select(host, island_cfg: dict):
         select.addItem(label, value)
     select.setCurrentData(str(island_cfg.get("card_source") or "auto"))
     return select
+
+
+def _update_island_name_controls(host, enabled: bool) -> None:
+    """「名字」输入框只在「显示名字」开着时出现（岛不显示名字时改了也看不到）。"""
+    host._set_setting_rows_visible(
+        ("dynamic_island_name_value",),
+        enabled,
+        dependency="island_show_name",
+    )
 
 
 def _update_island_info_controls(host, enabled: bool) -> None:
