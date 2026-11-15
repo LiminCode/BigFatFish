@@ -84,7 +84,7 @@ jobs:
       - name: Pytest (low-priority warm family, isolated + one retry)
         run: python -m pytest -q tests/test_low_priority_warm_interaction_yield.py || python -m pytest -q tests/test_low_priority_warm_interaction_yield.py
 
-      # frameseq 崩溃家族已根治（2026-10-04，docs/PR-REPORT-QT-LIFECYCLE-CRASH-FAMILY）：
+      # frameseq 崩溃家族已根治（2026-10-04，上游时期的修复；排查方法见 docs/troubleshooting.md「测试套件原生崩溃」）：
       # 根因 = 丢弃未收口的 clip/worker 被 GC 析构时撞上共享预取线程的在途 queued
       # 交付（mac 原生栈实锤 qtPythonMetacall 0x8 空解引用）；修复 = 进程级强钉 +
       # 退役制收口。肇事单条回归主套件（不再 deselect）。本步骤保留为 frameseq 族
