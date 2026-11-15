@@ -174,6 +174,9 @@ def _no_real_session_history_scan(monkeypatch):
     # Claude Code 联动默认开：测试里建的管理器都会起监视器，同样不许认领真机清单上的会话
     from pet import agent_link
     monkeypatch.setattr(agent_link.ClaudeCodeMonitor, "ADOPT_FROM_REGISTRY", False)
+    # 同理：管理器不许去读这台机器真实的 ~/.claude/settings.json 查 hooks 在不在
+    # （要测这项检查的用例自己打开，见 test_claude_hooks_missing.py）
+    monkeypatch.setattr(agent_link.AgentLinkManager, "CHECK_HOOKS_PRESENT", False)
 
 
 @pytest.fixture(autouse=True)

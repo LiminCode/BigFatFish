@@ -275,6 +275,25 @@ def test_strip_removes_only_ours_and_drops_emptied_events():
     assert data["hooks"] == {"Stop": [user]}
 
 
+def test_missing_hook_events_lists_what_lost_our_entry_in_install_order():
+    user = {"matcher": "", "hooks": [{"type": "command", "command": "my-own-hook"}]}
+    data = ch.merge_hooks({"hooks": {"Stop": [user]}}, _entries())
+    assert ch.missing_hook_events(data) == []
+
+    del data["hooks"]["SessionStart"]
+    data["hooks"]["Stop"] = [user]              # 别人的 hook 还在，我们的没了
+    assert ch.missing_hook_events(data) == ["Stop", "SessionStart"]
+
+    legacy = {"matcher": "", "hooks": [{"type": "command", "command": 'sh "x/claude_event_hook.sh" Stop'}]}
+    data["hooks"]["Stop"] = [legacy]
+    assert ch.missing_hook_events(data) == ["SessionStart"], "没有标记的旧条目也算我们的"
+
+
+@pytest.mark.parametrize("data", [{}, {"hooks": None}, {"hooks": []}, {"hooks": {"Stop": "garbage"}}, None, [1]])
+def test_missing_hook_events_treats_dirty_settings_as_nothing_installed(data):
+    assert ch.missing_hook_events(data) == list(ch.HOOK_EVENTS)
+
+
 # ---------------------------------------------------------------- WSL 通道
 
 class _FakeWsl:

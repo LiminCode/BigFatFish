@@ -473,6 +473,39 @@ def test_menu_agent_link_rolls_back_when_manager_refuses(tmp_path):
         shell._delete_runtime_marker()
 
 
+def test_menu_repair_item_goes_through_the_shared_manager(tmp_path):
+    """联动开着但缺 hooks：菜单多出的修复项落到共享 manager 的 ``repair_hooks``（它负责弹同意框）。"""
+    shell, _instance, config = _make_overlay(tmp_path, template="legacy")
+    repaired: list[str] = []
+
+    class _Manager:
+        agent_names = {"claude": "Claude Code"}
+
+        def hooks_missing(self, key):
+            return ("Stop",) if key == "claude" else ()
+
+        def repair_hooks(self, key):
+            repaired.append(key)
+            return True
+
+    try:
+        config.set("agent_link", {**config.get("agent_link"), "claude": True})
+        shell.agent_link_manager = _Manager()
+        facade = SpriteMenuFacade(shell)
+        assert facade.agent_hooks_missing("claude") is True
+        assert facade.agent_hooks_missing("claude_wsl") is False
+
+        link_menu = _find(build_sprite_full_menu(shell), "Agent 联动").menu()
+        labels = [a.text() for a in link_menu.actions()]
+        link_menu.actions()[labels.index("Claude Code") + 1].trigger()
+        assert repaired == ["claude"]
+
+        shell.agent_link_manager = object()      # 没有这个能力的管理器（旧替身）：菜单照常
+        assert SpriteMenuFacade(shell).agent_hooks_missing("claude") is False
+    finally:
+        shell._delete_runtime_marker()
+
+
 def test_menu_exit_this_kept_for_multi_pet(tmp_path):
     shell, _instance, _config = _make_overlay(tmp_path, template="legacy")
     try:

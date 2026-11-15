@@ -41,6 +41,7 @@ from PySide6.QtWidgets import QMessageBox
 from . import agent_cost as agent_cost_mod
 from . import claude_hooks
 from . import harness_launcher
+from . import i18n
 from .click_sound import play_sound, resolve_builtin_sound
 from .agent_event_protocol import parse_agent_event
 from .agent_event_normalizer import normalize_event
@@ -2284,6 +2285,42 @@ class ClaudeCodeMonitor(BaseAgentMonitor):
             log.warning("移除 WSL Claude Code hooks 失败: %s", exc)
             return False
 
+    # ------------------------------------------------------------ 联动开着、hooks 在不在
+    @staticmethod
+    def _missing_in(text: str) -> list[str] | None:
+        """settings.json 的文本 → 缺本肥鱼条目的事件；读不懂（不是合法 JSON / 根不是对象）→ None。"""
+        if not text.strip():
+            return list(claude_hooks.HOOK_EVENTS)
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None
+        return claude_hooks.missing_hook_events(data) if isinstance(data, dict) else None
+
+    @classmethod
+    def missing_hooks(cls) -> list[str] | None:
+        """本机 ``~/.claude/settings.json`` 里哪些事件没有本肥鱼的条目。**只读。**
+
+        返回 None = 判断不了，调用方不提示：这台机器没有 ``~/.claude``（没用过 Claude Code），
+        或文件读不出 / 读不懂。有 ``~/.claude`` 却没有 settings.json 算「一条都没装」。"""
+        path = cls.get_settings_path()
+        try:
+            if not path.parent.is_dir():
+                return None
+            if not path.is_file():
+                return list(cls.HOOK_EVENTS)
+            return cls._missing_in(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    @classmethod
+    def missing_wsl_hooks(cls, *, runner: claude_hooks.WslRunner = claude_hooks.run_wsl) -> list[str] | None:
+        """WSL 默认发行版里的同一件事。**只读、阻塞**（一次 wsl.exe），只许在后台线程调用。
+
+        返回 None = 判断不了（WSL 没响应、发行版里没有 ``~/.claude``、文件读不懂）。"""
+        text = claude_hooks.WslSettingsStore(runner).peek()
+        return None if text is None else cls._missing_in(text)
+
     # ------------------------------------------------------------ 多会话收敛 + 文件清理
     def _dispatch_state(self, data: dict, ev: str, st: str, gen: int) -> None:
         for kind, payload in self._sessions.feed(data):
@@ -2654,6 +2691,8 @@ class AgentLinkManager(QObject):
     """
 
     install_finished = Signal(str, bool, str, int)  # (agent_key, ok, message, install_token)
+    # 后台查完「联动开着、hooks 在不在」：(agent_key, 缺的事件列表或 None, 发起检查时的轮次)
+    hooks_checked = Signal(str, object, int)
     # DSH 收敛器输出（转发自 DshMonitor，供 AppShell 驱动灵动岛/收尾）：
     # (from_state, to_state)；from_state 为 "" 表示首个状态
     dsh_state_changed = Signal(str, str)
@@ -2689,6 +2728,14 @@ class AgentLinkManager(QObject):
     _DONE_CONFIRM_MS = 800   # busy→idle 稳定确认窗口（过滤 working→idle→working 抖动）
     _DONE_COOLDOWN_S = 5.0   # 同 Agent 完成气泡最小间隔（最后一道保险）
     _UNKNOWN_BRIDGE_REMIND_COOLDOWN_S = 600.0  # 未知桥接事件提醒：同 agent 10 分钟内最多一次
+    #: 联动开着时查一下它的 hooks 还在不在（见 ``_schedule_hooks_check``）。联动默认开之后，测试里建的
+    #: 每个管理器都会起监视器：conftest 把它关掉，免得测试去读这台机器真实的 ~/.claude/settings.json
+    #: （要测这项检查的用例自己打开）
+    CHECK_HOOKS_PRESENT = True
+    #: 通道起来后过这么久再查：让桌宠先出场（气泡只发给可见的窗），也不跟启动抢 wsl.exe
+    _HOOKS_CHECK_DELAY_MS = 5000
+    #: 要靠注入 hooks 才收得到事件的通道
+    _HOOKED_AGENTS = ("claude", "claude_wsl")
 
     def __init__(self, window: Any, config: Any, *, min_interval: float = 2.0,
                  clock: Callable[[], float] = time.time) -> None:
@@ -2703,6 +2750,11 @@ class AgentLinkManager(QObject):
         _LIVE_AGENT_LINK_MANAGERS.add(self)
         self._install_token = 0
         self._install_pending: dict[str, int] = {}
+        # 联动开着、hooks 在不在：通道 → 缺的事件（``()`` = 查过没缺 / 判断不了；没有键 = 还没查）。
+        # 轮次在「装好了」和「通道关了」时加一：在那之前发起的检查，结果回来就是旧结论，丢掉。
+        self._hooks_state: dict[str, tuple[str, ...]] = {}
+        self._hooks_epoch: dict[str, int] = {}
+        self.hooks_checked.connect(self._on_hooks_checked)
         # 状态节流：同一 Agent 相同状态去抖；同 Agent 两次动作切换最小间隔
         # （Cursor 等 transcript 密集写入时防止动画"抽搐"）
         self._min_interval = float(min_interval)
@@ -2867,9 +2919,81 @@ class AgentLinkManager(QObject):
                     # 启动自检（后台、每实例一次）：重新打包/换构建目录后，profile 里
                     # 记的 link 可能已指向旧构建；只在陈旧时刷新，绝不新建安装。
                     monitor.schedule_link_refresh_check()
+                self._schedule_hooks_check(key)
             elif not should_run and monitor._running:
                 monitor.stop()
+                self._forget_hooks_state(key)
         self._refresh_moved_hooks(agent_cfg)
+
+    # ---------------------------------------------------------- 联动开着、hooks 在不在
+    def hooks_missing(self, agent_key: str) -> tuple[str, ...] | None:
+        """这个通道缺本肥鱼 hooks 的事件。``()`` = 查过没缺（或判断不了）；None = 没查过 / 通道关着。"""
+        return self._hooks_state.get(agent_key)
+
+    def repair_hooks(self, agent_key: str) -> bool:
+        """联动开着但 hooks 不在：把它装回来。
+
+        和开启联动是同一条路（``set_enabled`` 的同意弹窗）：用户点「否」什么都不写，联动也不会
+        因此被关掉。返回值同 ``set_enabled``——WSL 是后台安装，先返回 False，装完自己清标记并冒泡。"""
+        if agent_key not in self._HOOKED_AGENTS:
+            return False
+        return self.set_enabled(agent_key, True)
+
+    def _schedule_hooks_check(self, agent_key: str) -> None:
+        """通道刚起来：稍后在后台查一次它的 hooks 在不在。
+
+        ``apply_config`` 从不写 hooks（注入要经用户同意），所以「开关开着、settings.json 里却没有
+        肥鱼的条目」是真实存在的状态：别的工具改写了文件、测试把它卸了（2026-11-14）、或者联动是
+        默认开的而用户从没同意过注入。这里只读、只提示，不代用户注入。刚装好的通道不用查。"""
+        if (not self.CHECK_HOOKS_PRESENT or agent_key not in self._HOOKED_AGENTS
+                or agent_key in self._hooks_state):
+            return
+        epoch = self._hooks_epoch.get(agent_key, 0)
+        QTimer.singleShot(self._HOOKS_CHECK_DELAY_MS, self,
+                          lambda: self._start_hooks_check(agent_key, epoch))
+
+    def _start_hooks_check(self, agent_key: str, epoch: int) -> None:
+        if self._shutdown or epoch != self._hooks_epoch.get(agent_key, 0):
+            return
+        # WSL 那边要起一次 wsl.exe（发行版冷启动要几秒）；本机只是读一个文件，也放后台，一条路
+        threading.Thread(target=self._check_hooks_worker, args=(agent_key, epoch), daemon=True,
+                         name=f"{agent_key}-hooks-check").start()
+
+    def _check_hooks_worker(self, agent_key: str, epoch: int) -> None:
+        """后台线程：只读地看一眼 settings.json，结果经信号回主线程。"""
+        try:
+            missing = (ClaudeCodeMonitor.missing_wsl_hooks() if agent_key == "claude_wsl"
+                       else ClaudeCodeMonitor.missing_hooks())
+        except Exception:  # noqa: BLE001 - 附加检查，失败按「判断不了」处理
+            log.debug("检查 %s 的 hooks 失败", agent_key, exc_info=True)
+            missing = None
+        try:
+            self.hooks_checked.emit(agent_key, missing, epoch)
+        except RuntimeError:
+            log.debug("hooks 检查完成但管理器已销毁，丢弃结果")
+
+    def _on_hooks_checked(self, agent_key: str, missing: Any, epoch: int) -> None:
+        if self._shutdown or epoch != self._hooks_epoch.get(agent_key, 0):
+            return      # 检查在路上时已经装好了 / 通道关了：旧结论
+        self._hooks_state[agent_key] = tuple(missing or ())
+        name = self.agent_names.get(agent_key, agent_key)
+        if not missing:
+            log.info("%s 联动：hooks %s", name, "判断不了，不提示" if missing is None else "都在")
+            return
+        log.warning("%s 联动开着，但 settings.json 里缺肥鱼的 hooks（%d 个事件）：%s",
+                    name, len(missing), ", ".join(missing))
+        if hasattr(self.win, "show_bubble"):
+            self.win.show_bubble(i18n.t("agent_link.hooks_missing", name=name, n=len(missing)),
+                                 duration_ms=9000)
+
+    def _note_hooks_installed(self, agent_key: str) -> None:
+        self._hooks_epoch[agent_key] = self._hooks_epoch.get(agent_key, 0) + 1
+        self._hooks_state[agent_key] = ()
+
+    def _forget_hooks_state(self, agent_key: str) -> None:
+        if agent_key in self._HOOKED_AGENTS:
+            self._hooks_epoch[agent_key] = self._hooks_epoch.get(agent_key, 0) + 1
+            self._hooks_state.pop(agent_key, None)
 
     def _refresh_moved_hooks(self, agent_cfg: dict) -> None:
         """数据目录搬过家（程序改名迁移）后，把已注入的 Claude Code hooks 改到新路径。
@@ -2978,6 +3102,7 @@ class AgentLinkManager(QObject):
             # 非 DSH 的后台安装（目前只有 claude_wsl）：不借用 DSH 桥接的台词键
             name = self.AGENT_NAMES.get(agent_key, agent_key)
             if ok:
+                self._note_hooks_installed(agent_key)
                 ag_cfg = dict(self.cfg.get("agent_link", {}))
                 ag_cfg[agent_key] = True
                 self.cfg.set("agent_link", ag_cfg)
@@ -3037,6 +3162,7 @@ class AgentLinkManager(QObject):
                         "hooks 配置写入失败，联动未开启。\n可查看日志了解详情。",
                     )
                     return False
+                self._note_hooks_installed("claude")
             elif agent_key == "claude_wsl":
                 res = QMessageBox.question(
                     self.win if hasattr(self.win, "winId") else None,

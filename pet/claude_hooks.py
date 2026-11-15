@@ -275,11 +275,29 @@ def merge_hooks(data: dict, entries: dict[str, dict]) -> dict:
     return data
 
 
+def missing_hook_events(data: Any, events: tuple[str, ...] = HOOK_EVENTS) -> list[str]:
+    """``events`` 里哪些事件在 settings 上没有本肥鱼的条目（按 ``events`` 的顺序）。
+
+    联动开着、hooks 却不在（被别的工具改写、被卸掉、或者从没同意过注入）时，桌宠靠它说出来。
+    形状不对的 settings（不是对象、``hooks`` 不是对象、事件值不是列表）按「一条都没装」算。
+    """
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        hooks = {}
+    missing = []
+    for name in events:
+        groups = hooks.get(name)
+        if not isinstance(groups, list) or not any(is_our_entry(group) for group in groups):
+            missing.append(name)
+    return missing
+
+
 # ---------------------------------------------------------------- WSL 通道
 
 _NO_WINDOW = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
 _WSL_TIMEOUT_S = 30.0   # 发行版冷启动要几秒；调用方一律在后台线程
 _MISSING = "__DSH_PET_NO_SETTINGS__"
+_NO_CLAUDE = "__DSH_PET_NO_CLAUDE__"
 
 WslRunner = Callable[..., "tuple[int, str]"]
 
@@ -330,6 +348,8 @@ class WslSettingsStore:
 
     _READ = ('f="$HOME/.claude/settings.json"; '
              f'[ -f "$f" ] || {{ printf %s {_MISSING}; exit 0; }}; cat "$f"')
+    _PEEK = ('d="$HOME/.claude"; '
+             f'[ -d "$d" ] || {{ printf %s {_NO_CLAUDE}; exit 0; }}; ' + _READ)
     _WRITE = ('d="$HOME/.claude"; f="$d/settings.json"; t="$f.dsh-pet.tmp"; '
               'mkdir -p "$d" && umask 077 && cat > "$t" && '
               '{ [ ! -e "$f" ] || chmod "$(stat -c %a "$f")" "$t"; } && mv -f "$t" "$f"')
@@ -342,6 +362,16 @@ class WslSettingsStore:
         绝不能拿空配置覆盖用户的 settings.json）。"""
         code, out = self._run(["-e", "sh", "-c", self._READ])
         if code != 0:
+            return None
+        return "" if out.strip() == _MISSING else out
+
+    def peek(self) -> str | None:
+        """同 ``read``，但发行版里连 ``~/.claude`` 都没有（没用过 Claude Code）时也返回 None。
+
+        只读、一次 wsl.exe。给「联动开着但 hooks 不在」的检查用：没用过 Claude Code 的发行版
+        不该被当成「缺 hooks」去提醒。"""
+        code, out = self._run(["-e", "sh", "-c", self._PEEK])
+        if code != 0 or out.strip() == _NO_CLAUDE:
             return None
         return "" if out.strip() == _MISSING else out
 

@@ -830,6 +830,19 @@ class SpriteMenuFacade:
         if on:
             self._bubble(t("menu.facade.now_listening_v_status", v=agent_key.upper()), 4000)
 
+    def agent_hooks_missing(self, agent_key: str) -> bool:
+        """这个联动开着、settings.json 里却缺肥鱼的 hooks（管理器启动后查出来的）。"""
+        probe = getattr(self._agent_manager(), "hooks_missing", None)
+        return bool(probe(agent_key)) if callable(probe) else False
+
+    def repair_agent_hooks(self, agent_key: str) -> None:
+        """菜单上的修复项：交给管理器（它弹同意框，用户点「否」什么都不写）。"""
+        manager = self._agent_manager()
+        repair = getattr(manager, "repair_hooks", None)
+        if callable(repair) and repair(agent_key):
+            name = getattr(manager, "agent_names", {}).get(agent_key, agent_key)
+            self._bubble(t("menu.facade.agent_hooks_restored", name=name), 4000)
+
 
     # ---------------------------------------------------------------- 音乐（歌词）宿主
     def _music_host(self):
