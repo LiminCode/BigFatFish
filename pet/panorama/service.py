@@ -154,9 +154,12 @@ class PanoramaService(QObject):
         if generation != self._generation:
             return
         if stage == "page":
+            log.info("配置全景：Windows 一侧已写出，打开浏览器 %s", text)
             self._open_page(text)
             return
         self._busy = False
         if stage == "error":
             log.warning("配置全景没有生成：%s", text)
+        else:
+            log.info("配置全景：WSL 一侧探完，页面已更新（WSL 用了 %s 秒）", self._last_wsl_seconds)
         self.finished.emit(stage == "done", text)
