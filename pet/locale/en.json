@@ -852,6 +852,7 @@
   "settings.ai.pick_model_service_edit_switch": "Every model service you added is in this list. Pick one to edit it under Model and connection below; after you save, the picked one is what chat uses (marked “in use”).",
   "settings.ai.api_list": "Model services",
   "settings.ai.in_use": " (in use)",
+  "settings.ai.test_ok_not_saved": "Not saved yet: click Save so chat and the island switch to the service filled in here.",
   "settings.ai.added_next_step": "Added “{name}”. Fill in the name, model and API key under Model and connection below, then click Save.",
   "settings.ai.check_current_provider_api_address": "Check that the current model service's API address and credentials work.",
   "settings.ai.stretch": "Stretch",

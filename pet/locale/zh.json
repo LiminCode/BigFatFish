@@ -844,6 +844,7 @@
   "settings.ai.pick_model_service_edit_switch": "你添加过的模型服务都在这个下拉框里。选中一项在下面「模型与连接」里编辑；保存后，选中的那一项就是聊天在用的（标着「使用中」）。",
   "settings.ai.api_list": "模型服务",
   "settings.ai.in_use": "（使用中）",
+  "settings.ai.test_ok_not_saved": "还没保存：点「保存」后，聊天和悬浮岛才会改用这里填的服务。",
   "settings.ai.added_next_step": "已添加「{name}」：在下面「模型与连接」里填写名称、模型和 API Key，然后点「保存」。",
   "settings.ai.check_current_provider_api_address": "验证当前模型服务的 API 地址和凭据是否可用。",
   "settings.ai.stretch": "拉伸铺满",

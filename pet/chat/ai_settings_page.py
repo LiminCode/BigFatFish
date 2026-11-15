@@ -69,6 +69,7 @@ class _AiSettingsPage(QWidget):
         self.settings = config.chat_settings()
         provider = self.settings.active_config
         self._test_thread = None
+        self._tested_unsaved = False   # 正在测的是不是还没保存的表单（通过时提醒「保存后才生效」）
         self._provider_drafts: dict[str, dict] = {}
         self._deleted_provider_ids: set[str] = set()
         self._loading_provider = False
@@ -723,9 +724,28 @@ class _AiSettingsPage(QWidget):
             effort=str(self.effort.currentData() or "medium"),
         )
 
+    def _form_differs_from_saved(self) -> bool:
+        """表单里这一项和聊天 / 灵动岛此刻在用的（盘上的 ``active_provider``）连接是否不同。
+
+        只比影响连接的字段（地址、模型、Key、证书校验）：名称改了不影响连不连得上。
+        """
+        pid = self.provider_combo.currentData()
+        if pid != self._in_use_provider:
+            return True                         # 选中的不是在用的那一项：保存后才切过去
+        saved = self.config.chat_settings().providers.get(pid)
+        if saved is None:
+            return True                         # 新加的，还没写进配置
+        key = self.key.text()
+        stored_key = self._secret_store_type().get(saved.api_key_ref) or saved.api_key
+        return (self.url.text().strip() != saved.base_url
+                or self.model.text().strip() != saved.model
+                or (bool(key) and key != stored_key)
+                or self.skip_ssl.isChecked() == bool(saved.verify_ssl))
+
     def _run_test(self) -> None:
         if self._test_thread is not None and self._test_thread.is_alive():
             return
+        self._tested_unsaved = self._form_differs_from_saved()
         self.test_button.setEnabled(False)
         self.test_button.setText(t("settings.ai.testing"))
         self.test_result.setText(t("settings.ai.connecting_model_service"))
@@ -751,6 +771,9 @@ class _AiSettingsPage(QWidget):
     def _on_test_done(self, ok: bool, message: str) -> None:
         self.test_button.setEnabled(True)
         self.test_button.setText(t("settings.ai.test_connection"))
+        if ok and self._tested_unsaved:
+            # 2026-11-14：测试通过了，岛还是红的——岛查的是已保存的那一项。说清楚要保存。
+            message = f"{message}\n{t('settings.ai.test_ok_not_saved')}"
         self.test_result.setText(message)
         self.test_result.setStyleSheet("color: #16843b;" if ok else "color: #c9362b;")
         self._test_thread = None
