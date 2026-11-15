@@ -119,7 +119,7 @@ dark  | 连接成功（Claude · claude-opus-5-5） / 还没保存：点「保�
 | 空白 | `git diff --check` | 通过 |
 | 聚焦（先红） | `pytest -q tests/test_api_key_monitor.py tests/test_api_provider_list.py` | 基线代码上新增 2 条红（`service_name` 不存在 / 结果里没有提醒），修后 24 passed |
 | 相关 | 岛接线、状态图标、信息槽、聊天子系统、多语言、设置窗口共 10 个文件 | 390 passed，1 skipped |
-| 全量 | 见同批合并树的全量结果（三份报告共用） | 见 PR 描述 |
+| 全量 | 未跑完（按用户要求） | 2026-11-14 用户把测试范围改为「新测试 + 受影响的测试族」，覆盖 `AGENTS.md` 的全量门。同批三个 PR 合并树上的全量在约 72% 处按此要求停掉：停之前出现 2 个失败，`-q` 输出在汇总前中断，没有认出是哪两条（本机有 5 个已知环境基线失败，见上一份报告），未单独复核。只跑了上面的聚焦与相关族 |
 
 ## 七、设置变更门禁（`docs/SETTINGS-CHANGE-GATES.md`）
 
