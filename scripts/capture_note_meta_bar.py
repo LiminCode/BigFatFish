@@ -70,6 +70,6 @@ def capture(out_dir: Path) -> list[Path]:
 
 if __name__ == "__main__":
     os.environ["APPDATA"] = tempfile.mkdtemp(prefix="bff-capture-")
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/screenshots/note-meta-bar-2026-10-20")
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".scratch/screenshots/note-meta-bar")
     for file in capture(target):
         print(file, file.stat().st_size)

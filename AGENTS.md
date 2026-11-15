@@ -101,25 +101,36 @@ with the DSH port probe folded into the same thread), started by
 - Keep QLocal test server names short. POSIX converts names to Unix socket paths,
   whose limit includes the system temporary-directory prefix.
 
-## Delivery evidence discipline (2026-09-22 起，硬要求)
+## Delivery evidence discipline (2026-09-22 起，硬要求；2026-11-15 起写在 PR 描述里)
 
-每个 PR 必须交付**三份证据**，缺一即视为未完成，审查时按缺陷提出
-（模板：`docs/PR-REPORT-TEMPLATE.md`；细则：`docs/DEV-HANDOVER.md` §8.2/§8.3）：
+每个 PR 必须在 **PR 描述**里交付**三份证据**，缺一即视为未完成，审查时按缺陷提出
+（模板：`.github/PULL_REQUEST_TEMPLATE.md`，PR 描述用英文写，章节名见模板）：
 
-1. **修改文件说明**：逐文件写「改了什么 + 为什么」，含增删行数（`git diff
-   --numstat`）与新增/删除文件。只写「修了 bug」不算说明。
-2. **性能分析**：受影响路径的**实测**数字（命令 + 环境 + 样本量），并逐条回答
+1. **修改文件说明**（What changed and why）：逐文件写「改了什么 + 为什么」，含新增 / 删除的
+   文件。只写「修了 bug」不算说明。
+2. **性能分析**（Performance）：受影响路径的**实测**数字（命令 + 环境 + 样本量），并逐条回答
    稳态开销、新增路径成本与触发频率、有无新的系统调用/网络/磁盘/线程、内存有无
    增长。**形容词不算分析**——用「可忽略 / 更快 / 优化了」代替数字视为没写。
-3. **实机运行记录或报告**：在本机真实环境（不是 CI、不是 mock）跑过什么的记录：
+3. **实机运行记录**（Real-machine run）：在本机真实环境（不是 CI、不是 mock）跑过什么的记录：
    命令、真实输出、以及用户可见行为的确认。无法自动验证的能力，必须给出
    「为什么不能自动」的排查证据（探针结果），不许用沉默代替结论。
 
-落地形式：报告写入 `docs/PR-REPORT-<主题>-<YYYY-MM-DD>.md`，在 `docs/INDEX.md`
-的「PR 报告存档」登记（新文档入场规则），PR 描述放摘要 + 链接。
-`tests/test_pr_report_discipline.py` 对本日期之后的报告强制校验四个必备章节与索引
-登记；历史报告豁免。**豁免**：纯文档/文案/依赖版本号这类不改变运行行为的改动，
-可只保留第 1 条，但必须在 PR 描述里写明豁免理由。
+**豁免**：纯文档/文案/依赖版本号这类不改变运行行为的改动，可只保留第 1 条，但必须在
+PR 描述里写明豁免理由。
+
+**仓库里不为每个 PR 留报告文件**（`docs/PR-REPORT-*.md` 已于 2026-11-15 全部并入主题文档）。
+一个 PR 在仓库里留下的文档只有这三种，按需：
+
+- 用户看得见的变化 → 在 `CHANGELOG.md` 最上面加一行；
+- 改了某个子系统的机制、不变量或排障结论 → 同一个 PR 里**改** `docs/` 下对应的主题文档
+  （改已有的，不是新增一份）；
+- **大改动** → 新增一份 ADR（`docs/adr/NNNN-<slug>.md`：背景 / 决定 / 后果，60 行以内）。
+  大改动指：新的功能域、架构边界变了、一个将来有人会想推翻的取舍、下线一个功能；
+  判断标准与模板见 `docs/adr/README.md`。修 bug、打磨、文案、小设置项不写。
+
+截图不入库：截到 `.scratch/screenshots/`（已被 git 忽略），需要给人看时贴进 PR。
+`tests/test_pr_report_discipline.py` 校验：模板与本节仍在、`docs/` 下没有 PR 报告文件、
+ADR 三节齐全且已登记、`docs/` 顶层文档都在 `docs/README.md` 登记、文档路径与相对链接不悬空。
 
 ## CI cost discipline (learned 2026-09-06, PR76 CI loop)
 
@@ -177,8 +188,8 @@ exact breakpoint there; see `docs/agents/handoff.md`.
 
 ## Context pointers
 
-找文档先查 `docs/INDEX.md`（全文档入口索引：每条一句话 + 何时必读）；
-新文档入场必须按其中的规则登记并互链。高频专项指针：
+找文档先查 `docs/README.md`（文档入口：每份一句话 + 什么时候读）；新文档必须在那里
+登记。高频专项指针：
 
 - Read `docs/ISSUE-111-WINDOWS-SESSION-END-FFMPEG-2026-09-12.md` when changing
   ffmpeg spawning (`webm_clip` reader/first-frame/meta/exe probes), warm
@@ -187,9 +198,9 @@ exact breakpoint there; see `docs/agents/handoff.md`.
 - Packaging and release were removed on 2026-10-11: the project runs from
   source only (`run.bat` / `python -m pet`). There are no build scripts,
   installer, or release workflows. Read
-  `docs/PR-REPORT-REMOVE-PACKAGING-2026-10-11.md` before reintroducing any, and
-  note that runtime branches for packaged builds (`sys.frozen`,
-  `build_variant`) were deliberately left in place.
+  `docs/adr/0001-run-from-source-only.md` and `docs/upstream.md` before
+  reintroducing any, and note that runtime branches for packaged builds
+  (`sys.frozen`, `build_variant`) were deliberately left in place.
 - Read `docs/CONTEXT-MENU-RESEARCH-AND-REFACTOR-2026-08-25.md` when changing
   context-menu structure, styling, interaction, or platform behavior.
 - Read `docs/SETTINGS-CHANGE-GATES.md` before adding, moving, removing, or

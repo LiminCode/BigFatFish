@@ -1,57 +1,55 @@
 # -*- coding: utf-8 -*-
-"""交付证据纪律的机器化校验（2026-09-22 起）。
+"""交付证据与文档纪律的机器化校验。
 
 `AGENTS.md` 的 **Delivery evidence discipline** 要求每个 PR 交付三份证据：
-修改文件说明 / 性能分析 / 实机运行记录。本文件把「规范本身还在」与「新报告
-是否真的写了」都变成断言——否则规范会随着文档编辑被静默删掉，而这正是它想
-防止的失败模式。
+修改文件说明 / 性能分析 / 实机运行记录。2026-11-15 起证据写在 **PR 描述**里，
+仓库不再为每个 PR 留一份报告文件；大改动另记一份 ADR（`docs/adr/`）。
 
-四条断言：
+本文件守四件事，都是「不守就会悄悄烂掉」的：
 
-1. 模板 `docs/PR-REPORT-TEMPLATE.md` 存在，且逐字含三个必备章节名；
-2. `AGENTS.md` 与 `docs/DEV-HANDOVER.md` 仍写明该要求并指向模板（删规范 = 红）；
-3. 报告文件名日期 **>= 2026-09-22** 的 `docs/PR-REPORT-*.md` 必须含三个必备
-   章节（**标题级**，不是正文里提一句）；
-4. 同上这批报告必须在 `docs/INDEX.md` 登记（新文档入场规则第 1 条）。
-
-历史报告（2026-09-22 之前）一律豁免——回填旧报告不是本纪律的目的。
+1. 规范还在：PR 描述模板存在且含三个证据章节，`AGENTS.md` 仍写明要求并指向模板；
+2. 报告不长回来：`docs/` 下不再出现 `PR-REPORT-*.md`；
+3. ADR 成形：每份 ADR 含「背景 / 决定 / 后果」三节，并在 `docs/adr/README.md` 登记；
+4. 文档不成孤儿、链接不悬空：`docs/` 顶层每份文档都在 `docs/README.md` 登记，
+   Markdown 里的相对链接、以及代码 / 文档里写的 `docs/….md` 路径都指向真实存在的文件。
 """
 
 from __future__ import annotations
 
+import os
 import re
-from datetime import date
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
+ADR_DIR = DOCS / "adr"
 
-# 纪律生效日：文件名日期 >= 此日期的报告必须满足三份证据要求。
-EVIDENCE_CUTOFF = date(2026, 9, 22)
-
-# 三个必备章节（报告标题里必须逐字出现）。
-REQUIRED_SECTIONS = ("修改文件说明", "性能分析", "实机运行记录")
-
-TEMPLATE = DOCS / "PR-REPORT-TEMPLATE.md"
-INDEX = DOCS / "INDEX.md"
 AGENTS = ROOT / "AGENTS.md"
-HANDOVER = DOCS / "DEV-HANDOVER.md"
+PR_TEMPLATE = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+DOCS_INDEX = DOCS / "README.md"
+ADR_INDEX = ADR_DIR / "README.md"
 
-_DATE_RE = re.compile(r"-(\d{4})-(\d{2})-(\d{2})\.md$")
+# 三份证据：AGENTS.md 里的中文名 ↔ PR 描述模板里的英文章节名（PR 描述用英文写）。
+EVIDENCE = {
+    "修改文件说明": "What changed and why",
+    "性能分析": "Performance",
+    "实机运行记录": "Real-machine run",
+}
 
+ADR_SECTIONS = ("背景", "决定", "后果")
+_ADR_NAME = re.compile(r"^\d{4}-[a-z0-9-]+\.md$")
 
-def _report_date(path: Path) -> date | None:
-    """从文件名取报告日期；模板等无日期文件返回 None（不进纪律范围）。"""
-    match = _DATE_RE.search(path.name)
-    if match is None:
-        return None
-    year, month, day = (int(part) for part in match.groups())
-    try:
-        return date(year, month, day)
-    except ValueError:  # 文件名里的日期不合法：当成"没有日期"，由命名约定负责
-        return None
+# 会写到文档路径的地方：根级与 docs/ 的 Markdown、agent 技能、以及代码注释。
+_MARKDOWN_ROOTS = ("docs", ".agents", ".github", "prompts", "tools")
+_CODE_ROOTS = ("pet", "tests", "scripts", "tools")
+
+_MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
+_CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+# `docs/xxx.md` 形式的仓库路径；前面是 `/` 的属于 URL 或相对链接，不算。
+_DOCS_PATH = re.compile(r"(?<![\w/.-])docs/[\w./-]+\.md")
 
 
 def _headings(text: str) -> list[str]:
@@ -63,76 +61,126 @@ def _headings(text: str) -> list[str]:
     ]
 
 
-def _governed_reports() -> list[Path]:
-    return sorted(
-        path
-        for path in DOCS.glob("PR-REPORT-*.md")
-        if (d := _report_date(path)) is not None and d >= EVIDENCE_CUTOFF
-    )
+def _links(path: Path) -> list[str]:
+    """文件里的 Markdown 链接目标；代码块和行内代码里的 `](…)` 是示例文字，不算。"""
+    text = _CODE.sub("", path.read_text(encoding="utf-8"))
+    return [unquote(target) for target in _MD_LINK.findall(text)]
 
 
-GOVERNED = _governed_reports()
-GOVERNED_IDS = [path.name for path in GOVERNED]
+def _markdown_files() -> list[Path]:
+    files = sorted(ROOT.glob("*.md"))
+    for name in _MARKDOWN_ROOTS:
+        files.extend(sorted((ROOT / name).rglob("*.md")))
+    return files
 
 
-def test_template_exists_and_declares_required_sections():
-    """模板必须存在且逐字含三个必备章节——它是提交者的复制源。"""
-    assert TEMPLATE.is_file(), f"交付证据模板缺失：{TEMPLATE}"
-    headings = _headings(TEMPLATE.read_text(encoding="utf-8"))
-    for section in REQUIRED_SECTIONS:
-        assert any(section in heading for heading in headings), (
-            f"模板 {TEMPLATE.name} 的标题里缺少必备章节「{section}」"
+def _text_files() -> list[Path]:
+    files = _markdown_files()
+    for name in _CODE_ROOTS:
+        files.extend(sorted((ROOT / name).rglob("*.py")))
+    return [path for path in files if path != Path(__file__).resolve()]
+
+
+def _adr_files() -> list[Path]:
+    return sorted(path for path in ADR_DIR.glob("*.md") if _ADR_NAME.match(path.name))
+
+
+ADRS = _adr_files()
+ADR_IDS = [path.name for path in ADRS]
+
+
+def test_pr_template_declares_the_three_evidence_sections():
+    """PR 描述模板是提交者的复制源：必须存在，且标题里逐字有三个证据章节。"""
+    assert PR_TEMPLATE.is_file(), f"PR 描述模板缺失：{PR_TEMPLATE}"
+    headings = _headings(PR_TEMPLATE.read_text(encoding="utf-8"))
+    for name, section in EVIDENCE.items():
+        assert section in headings, (
+            f"{PR_TEMPLATE.name} 缺少证据章节「{section}」（{name}）"
         )
 
 
-def test_template_itself_is_registered_in_index():
-    """模板是 docs/ 下的文档，按新文档入场规则必须登记。"""
-    assert TEMPLATE.name in INDEX.read_text(encoding="utf-8"), (
-        f"{TEMPLATE.name} 未在 docs/INDEX.md 登记（新文档入场规则第 1 条）"
+def test_agents_documents_the_norm_and_points_at_the_template():
+    """规范必须写在 AGENTS.md 里：只存在于聊天或某次 PR 描述里的纪律等于不存在。"""
+    text = AGENTS.read_text(encoding="utf-8")
+    for name in EVIDENCE:
+        assert name in text, f"AGENTS.md 不再写明必备证据「{name}」"
+    for pointer in (".github/PULL_REQUEST_TEMPLATE.md", "docs/adr/README.md", "CHANGELOG.md"):
+        assert pointer in text, f"AGENTS.md 没有指向 {pointer}"
+
+
+def test_no_per_pr_report_files_under_docs():
+    """每个 PR 一份报告的做法已停用：证据进 PR 描述，长期知识进主题文档 / ADR。"""
+    strays = sorted(path.relative_to(ROOT).as_posix() for path in DOCS.rglob("PR-REPORT-*.md"))
+    assert not strays, (
+        "docs/ 下不应再有 PR 报告文件，三份证据写进 PR 描述"
+        f"（见 AGENTS.md Delivery evidence discipline）：{strays}"
     )
 
 
-@pytest.mark.parametrize("doc", [AGENTS, HANDOVER], ids=lambda p: p.name)
-def test_norm_is_documented_and_points_at_template(doc: Path):
-    """规范必须写在 AGENTS.md 与 DEV-HANDOVER.md 里，并指向模板。
+def test_adr_directory_has_an_index_that_says_when_to_write_one():
+    assert ADR_INDEX.is_file(), f"ADR 索引缺失：{ADR_INDEX}"
+    headings = _headings(ADR_INDEX.read_text(encoding="utf-8"))
+    assert "什么时候写" in headings, "docs/adr/README.md 必须写明什么时候该写 ADR"
+    assert ADRS, "docs/adr/ 下应至少有一份 ADR（文件名形如 0001-some-decision.md）"
 
-    这一条防的是「规范被悄悄删掉」：纪律只写在 PR 描述或聊天里等于不存在。
+
+@pytest.mark.parametrize("adr", ADRS, ids=ADR_IDS)
+def test_adr_has_the_three_sections_and_is_indexed(adr: Path):
+    headings = _headings(adr.read_text(encoding="utf-8"))
+    missing = [section for section in ADR_SECTIONS if section not in headings]
+    assert not missing, f"{adr.name} 缺少章节：{', '.join(missing)}（模板见 docs/adr/README.md）"
+    assert adr.name in ADR_INDEX.read_text(encoding="utf-8"), (
+        f"{adr.name} 未在 docs/adr/README.md 的索引里登记"
+    )
+
+
+def test_every_top_level_doc_is_listed_in_the_docs_index():
+    """docs/ 顶层的每份文档都要在 docs/README.md 里有一行，否则就是没人找得到的孤儿。"""
+    linked = {target.split("#")[0] for target in _links(DOCS_INDEX)}
+    orphans = sorted(
+        path.name for path in DOCS.glob("*.md")
+        if path != DOCS_INDEX and path.name not in linked
+    )
+    assert not orphans, f"这些文档没有在 docs/README.md 登记：{orphans}"
+
+
+def test_relative_markdown_links_resolve():
+    """Markdown 里的相对链接必须指向存在的文件（CI 在区分大小写的文件系统上跑）。"""
+    broken = []
+    for path in _markdown_files():
+        for target in _links(path):
+            if "://" in target or target.startswith(("#", "mailto:")):
+                continue
+            written = Path(os.path.normpath(path.parent / target.split("#")[0]))
+            if not _exists_exact(written):
+                broken.append(f"{path.relative_to(ROOT).as_posix()} -> {target}")
+    assert not broken, "悬空的相对链接：\n" + "\n".join(broken)
+
+
+def test_docs_paths_written_in_code_and_docs_exist():
+    """注释和文档里写的 `docs/….md` 路径要真实存在：文档改名 / 合并后别留下指路牌指向空地。"""
+    missing = []
+    for path in _text_files():
+        for match in _DOCS_PATH.findall(path.read_text(encoding="utf-8", errors="replace")):
+            if not _exists_exact(ROOT / match):
+                missing.append(f"{path.relative_to(ROOT).as_posix()} -> {match}")
+    assert not missing, "指向不存在文档的路径：\n" + "\n".join(sorted(set(missing)))
+
+
+def _exists_exact(path: Path) -> bool:
+    """存在且大小写逐段一致（Windows 文件系统不区分大小写，CI 的 Linux 区分）。
+
+    传进来的必须是「照写的样子」拼出来的路径（不要先 resolve，那会把大小写改对）。
     """
-    text = doc.read_text(encoding="utf-8")
-    for section in REQUIRED_SECTIONS:
-        assert section in text, f"{doc.name} 不再写明必备证据「{section}」"
-    assert TEMPLATE.name in text, f"{doc.name} 没有指向模板 {TEMPLATE.name}"
-
-
-def test_governed_reports_exist_after_cutoff():
-    """生效日之后至少应有一份报告（本纪律自身的首份范例）。
-
-    若这条红了，通常意味着首份范例被删或被改名成无日期格式——请先确认
-    `_report_date` 的命名约定仍被遵守，而不是直接删断言。
-    """
-    assert GOVERNED, (
-        f"没有找到日期 >= {EVIDENCE_CUTOFF} 的 docs/PR-REPORT-*.md；"
-        "日期必须写在文件名末尾（-YYYY-MM-DD.md）才能进入纪律范围"
-    )
-
-
-@pytest.mark.parametrize("report", GOVERNED, ids=GOVERNED_IDS)
-def test_report_has_three_evidence_sections(report: Path):
-    """生效日之后的报告必须逐字含三个必备章节（标题级）。"""
-    headings = _headings(report.read_text(encoding="utf-8"))
-    missing = [
-        section for section in REQUIRED_SECTIONS
-        if not any(section in heading for heading in headings)
-    ]
-    assert not missing, (
-        f"{report.name} 缺少必备章节：{', '.join(missing)}；"
-        f"按 {TEMPLATE.name} 补齐（判定标准见 DEV-HANDOVER §8.3）"
-    )
-
-
-@pytest.mark.parametrize("report", GOVERNED, ids=GOVERNED_IDS)
-def test_report_is_registered_in_index(report: Path):
-    """生效日之后的报告必须在 docs/INDEX.md「PR 报告存档」登记。"""
-    assert report.name in INDEX.read_text(encoding="utf-8"), (
-        f"{report.name} 未在 docs/INDEX.md 登记（新文档入场规则第 1 条）"
-    )
+    if not path.exists():
+        return False
+    try:
+        relative = path.relative_to(ROOT)
+    except ValueError:
+        return True
+    current = ROOT
+    for part in relative.parts:
+        if part not in {entry.name for entry in current.iterdir()}:
+            return False
+        current = current / part
+    return True

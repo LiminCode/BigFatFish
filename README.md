@@ -197,9 +197,8 @@ the effort level and when each one runs.
   and all upstream contributors.
 - Upstream's README (installation, usage guide, animation assets, v4.x changelog):
   [README.md @ ee699c7](https://github.com/MerZlin/dsh-pet-indesktop/blob/ee699c7/README.md). Upstream documents
-  that no longer apply here were moved out of this repository and are listed in [docs/UPSTREAM.md](docs/UPSTREAM.md).
-- Upstream changes are cherry-picked, not merged (see
-  [docs/PR-REPORT-UPSTREAM-SYNC-2026-10-24.md](docs/PR-REPORT-UPSTREAM-SYNC-2026-10-24.md)).
+  that no longer apply here were moved out of this repository; [docs/upstream.md](docs/upstream.md) says where to find them.
+- Upstream changes are cherry-picked, not merged (see [docs/upstream.md](docs/upstream.md)).
 - The program's system name is `big-fat-fish`: the data folder is `%APPDATA%\big-fat-fish\`, and the keychain
   service and autostart entry use the same name. Data from the old name `dsh-pet-standalone` is migrated on first
   start.
@@ -209,7 +208,9 @@ the effort level and when each one runs.
 ## For contributors
 
 - [AGENTS.md](AGENTS.md): engineering guide (project shape, change discipline, PR evidence rules).
-- [docs/INDEX.md](docs/INDEX.md): index of every document, with when to read each one.
+- [docs/README.md](docs/README.md): the documentation, one page per subsystem (in Chinese), plus decision records
+  under [docs/adr/](docs/adr/README.md).
+- [CHANGELOG.md](CHANGELOG.md): user-visible changes, one line each.
 - [CONTEXT.md](CONTEXT.md): domain glossary.
 - Tests: `python -m pytest -q` (set `QT_QPA_PLATFORM=offscreen` when headless).
 - The screenshots in this README come from the real widgets fed with demo data. To regenerate them, run

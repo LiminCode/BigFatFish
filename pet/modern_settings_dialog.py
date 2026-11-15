@@ -396,7 +396,7 @@ class ModernSettingsDialog(QDialog):
         # `experimental_single_process_spawn` 本身也随多进程多宠退役层删除
         # （进程内多窗是唯一多宠形态，不再是可切换的实验开关）。
         # 「余额与服务状态」（DeepSeek 余额刷新 / 峰谷文案 / 峰谷颜色）2026-10-14 从设置页下线：用不到 DeepSeek 了；
-        # 配置键与余额代码保留（见 docs/PR-REPORT-SETTINGS-METRO-2026-10-14.md 第二轮）。
+        # 配置键与余额代码保留（见 docs/adr/0012-retire-the-entry-keep-the-code.md）。
         general_layout.addStretch(1)
         self._add_page(t("settings.dlg.general"), "settings", self._page_shell(t("settings.dlg.general"), general_content))
 

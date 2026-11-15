@@ -78,6 +78,6 @@ def capture(out_dir: Path) -> list[Path]:
 
 
 if __name__ == "__main__":
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/screenshots/work-notes-settings-2026-10-15")
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".scratch/screenshots/work-notes-settings")
     for file in capture(target):
         print(file, file.stat().st_size)
