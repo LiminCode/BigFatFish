@@ -358,6 +358,10 @@ class SpriteMenuFacade:
         return _first_callable(self._hosts(), ("open_todo_panel",))
 
     @property
+    def on_open_config_panorama(self):
+        return _first_callable(self._hosts(), ("open_config_panorama",))
+
+    @property
     def on_voice_chime_now(self):
         return _first_callable(self._hosts(), ("trigger_voice_chime_now",))
 

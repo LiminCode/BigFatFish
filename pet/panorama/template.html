@@ -361,7 +361,10 @@ document.getElementById('quests-title').textContent = S.quests_title;
 document.getElementById('meta').textContent = G.meta.summary;
 document.getElementById('foot').textContent = S.footer;
 /* WSL 那半张图还在后台探测：页面自己隔几秒重读一次文件，探完（pending 变 false）就停 */
-if (G.meta.pending) { const p = document.getElementById('pending'); p.hidden = false; p.textContent = S.pending; setTimeout(() => location.reload(), 3000); }
+if (G.meta.pending) { const p = document.getElementById('pending'); p.hidden = false; p.textContent = S.pending;
+  /* 重读次数记在 # 后面，最多 40 次（两分钟）：肥鱼中途退出时页面不会永远刷下去 */
+  const tries = +(location.hash.slice(1)) || 0;
+  if (tries < 40) setTimeout(() => { location.hash = String(tries + 1); location.reload(); }, 3000); }
 detail(null);
 </script>
 </body>

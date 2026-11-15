@@ -364,5 +364,6 @@ def build(facts: dict) -> dict:
     wsl = facts.get("wsl") or {}
     return {**skeleton(), **graph.to_dict(),
             "meta": {"taken_at": facts.get("taken_at", ""), "timing": timing, "bridge": L("bridge"),
-                     "pending": bool(wsl.get("pending")) or not wsl,
+                     # 页面据此自己隔几秒重读：WSL 那半张还没探，或者垫着上一轮的结果、新的还在路上
+                     "pending": bool(wsl.get("pending")) or not wsl or bool(facts.get("refreshing")),
                      "sources": [fn.__name__ for fn in SOURCES]}}

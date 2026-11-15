@@ -92,10 +92,11 @@ class ServiceTile(QWidget):
 
 
 class ConnectionsWindow(QWidget):
-    """面板窗口：页头 + 一列磁贴 + 两个按钮（重新检查 / 去设置修改）。"""
+    """面板窗口：页头 + 一列磁贴 + 两行按钮（重新检查 / 去设置修改；配置全景）。"""
 
     recheck_requested = Signal()
     settings_requested = Signal()
+    panorama_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -119,6 +120,10 @@ class ConnectionsWindow(QWidget):
         self.settings_btn = TiltButton(t("island.connections.edit_in_settings"), self)
         self.settings_btn.setObjectName("connectionsAction")
         self.settings_btn.clicked.connect(self.settings_requested)
+        self.panorama_btn = TiltButton(t("island.connections.panorama"), self)
+        self.panorama_btn.setObjectName("connectionsAction")
+        self.panorama_btn.setToolTip(t("island.connections.panorama_tip"))
+        self.panorama_btn.clicked.connect(self.panorama_requested)
         self.footer_label = _HaloLabel(t("island.connections.footer"), self, px=11)
         self.footer_label.setWordWrap(True)
         self.footer_label.setFixedWidth(TILE_W)
@@ -140,12 +145,17 @@ class ConnectionsWindow(QWidget):
         actions.addWidget(self.recheck_btn)
         actions.addWidget(self.settings_btn)
         actions.addStretch(1)
+        more = QHBoxLayout()                 # 另起一行：英文下前两个按钮已经比磁贴宽，再并排会把面板撑宽
+        more.setContentsMargins(0, 0, 0, 0)
+        more.addWidget(self.panorama_btn)
+        more.addStretch(1)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 14)
         layout.setSpacing(10)
         layout.addLayout(head)
         layout.addLayout(self._tiles_layout)
         layout.addLayout(actions)
+        layout.addLayout(more)
         layout.addWidget(self.footer_label)
         self.colors = METRO_TOKENS["light"]
         self.apply_theme("system")

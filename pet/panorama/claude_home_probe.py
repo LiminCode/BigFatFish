@@ -21,7 +21,7 @@ import time
 MARK = "big-fat-fish"
 BLOCK_RE = re.compile(r"<!-- big-fat-fish:memory-distill:start -->(.*?)<!-- big-fat-fish:memory-distill:end -->", re.S)
 MEMORY_LIST_LIMIT = 40
-TOOL_DIRS = (".config/gh", ".aws", ".kube", ".codex", ".cursor", ".gemini")
+TOOL_DIRS = (".config/gh", ".aws", ".kube", ".cursor", ".gemini")
 
 
 def _load(path):
