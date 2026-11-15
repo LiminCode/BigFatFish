@@ -5,7 +5,7 @@ description: Review PySide6 settings, menus, overlays, QSS, and cross-platform d
 
 # Qt UI Review
 
-Review changed PySide6/Qt files and tests against the Shared UX Contract. Read `docs/SETTINGS-CHANGE-GATES.md` when persistent settings or settings-page interaction changed; every applicable exit gate needs evidence or an explicit not-applicable reason.
+Review changed PySide6/Qt files and tests against the Shared UX Contract. Read the 设置变更门禁 section of `docs/settings-and-menu.md` when persistent settings or settings-page interaction changed; every applicable exit gate needs evidence or an explicit not-applicable reason.
 
 ## Review
 

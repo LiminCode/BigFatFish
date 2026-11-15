@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """内存归因探针（诊断专用）：直接以 python -m pet 的语义启动产品进程，旁路采样。
 
-设计约束（对齐 docs/DEV-HANDOVER.md 的证据纪律）：
+设计约束（对齐 AGENTS.md 的交付证据纪律）：
 
 - **不改产品代码**：本文件是启动器，先起采样器再 ``from pet.app import main``，
   产品侧零 hook、零 env 判定分支。

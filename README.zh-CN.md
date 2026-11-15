@@ -174,6 +174,7 @@ python -m venv .venv
 
 - [AGENTS.md](AGENTS.md)：工程指南（项目结构、变更纪律、PR 交付证据要求）。
 - [docs/README.md](docs/README.md)：文档入口，一个子系统一份；决策记录在 [docs/adr/](docs/adr/README.md)。
+- [docs/development.md](docs/development.md)：怎么跑、怎么测、怎么提交和合并 PR。
 - [CHANGELOG.md](CHANGELOG.md)：用户看得见的变化，一行一条。
 - [CONTEXT.md](CONTEXT.md)：领域术语表。
 - 测试：`python -m pytest -q`（无界面环境设 `QT_QPA_PLATFORM=offscreen`）。

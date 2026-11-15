@@ -26,7 +26,7 @@ def browser_media_rows(dialog) -> list[SettingRow]:
     """「浏览器媒体会话参与歌词」设置行（**仅 Windows**）。
 
     SMTC 是 Windows 专属能力：非 Windows 上这个开关既无效也不该出现
-    （SETTINGS-CHANGE-GATES §4「永久不支持的能力不创建控件」）。控件本体也只在
+    （docs/settings-and-menu.md 设置变更门禁 §4「永久不支持的能力不创建控件」）。控件本体也只在
     Windows 创建（``settings_pet_controls``），所以这里以「控件在不在」为准——
     与 ``cursor_hidden_passthrough`` 的处置一致，不会出现"控件在、行不在"的
     游离开关（那会被孤儿开关测试拦下）。

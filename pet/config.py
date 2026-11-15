@@ -92,7 +92,7 @@ DEFAULT_QUICK_LAUNCH_APPS = [
 
 # 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到肥鱼设置 + 托盘菜单），
 # 用户旧布局里残留的该节点在此一次性剔除——否则菜单编辑器会把它一直回存成「此平台
-# 不可用」，旧入口就没有干净去向（docs/SETTINGS-CHANGE-GATES.md「旧 key/旧入口有去向」）。
+# 不可用」，旧入口就没有干净去向（docs/settings-and-menu.md 的设置变更门禁「旧 key、旧入口有明确去向」）。
 # 同名 action id 若将来重新引入，删掉这里即可。
 # 2026-10-11：在线更新整个移除（从源码运行的 fork，查的是上游发布版、装的是上游
 # 安装包），「检查更新」「夸克网盘下载」同样在此剔除。
@@ -266,7 +266,7 @@ def _default_agent_link_data() -> dict:
         "claude_wsl": sys.platform == "win32",
         "cursor": False,
         "opencode": False,
-        # 自定义联动 Agent（协议见 docs/AGENT_LINK_PROTOCOL.md §4）：只读监听
+        # 自定义联动 Agent（协议见 docs/agent-link-protocol.md §4）：只读监听
         # 用户指定的事件文件，不写外部配置、无需授权弹窗，默认空
         "custom_agents": [],
         # 每个在用的 Claude Code 会话单独生一只小鱼（标题 + 状态），overlay 拓扑才有
@@ -1436,7 +1436,7 @@ class Config:
 
     def _migrate_decode_broker_config(self, raw: dict) -> None:
         """批5.3：decode_broker_enabled 退役（shm broker 下线，共享解码改由
-        进程内 DecodeFanoutHub 承担）。迁移语义（SETTINGS-CHANGE-GATES）：读旧值
+        进程内 DecodeFanoutHub 承担）。迁移语义（docs/settings-and-menu.md 的设置变更门禁）：读旧值
         → 记一次 info → 忽略（键从 defaults/白名单移除，不再归一/进入 self.data）。"""
         if getattr(self, "_decode_broker_migrated", False):
             return

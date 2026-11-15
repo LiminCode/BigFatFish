@@ -1,14 +1,14 @@
 # 多 Agent 联动统一事件协议与扩展指南
 
-> 文档用途：说明桌宠「Agent 联动」的底层事件协议，以及第三方如何接入任意 AI Agent（不改桌宠代码，或新增一个内置 Agent 各需要做什么）。
-> 读者：想把自家 Agent / CLI 工具接入桌宠联动的开发者与集成方。
+> 文档用途：说明肥鱼「Agent 联动」的底层事件协议，以及第三方如何接入任意 AI Agent（不改肥鱼代码，或新增一个内置 Agent 各需要做什么）。
+> 读者：想把自家 Agent / CLI 工具接入肥鱼联动的开发者与集成方。
 
 ---
 
 ## 1. 架构总览：本地文件事件总线（不访问外网）
 
 ```
-Agent 侧（写方）                          桌宠侧（读方）
+Agent 侧（写方）                          肥鱼侧（读方）
 ┌──────────────────────────┐            ┌────────────────────────────────────┐
 │ 插件 / hooks / 直读适配    │   追加写    │ ByteOffsetTailer 字节偏移增量 tail   │
 │ DSH 桥接插件 (Node)       │  ────────▶ │ （1.5s 轮询线程，不回放历史）        │
@@ -27,7 +27,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 
 - **通信方式**：事件通道是纯本地文件追加写 + 增量读，全程不访问外网（联动唯一的网络形态是本机回环端口探活，用于判定 DSH 是否在线）。2026-10 减法后不再有交互回写（mux 订阅与 `/api/respond` 均已删除）：审批/提问只弹纯提示气泡，处理回 DSH 界面完成。
 - **读方保证**：byte-offset tail 不回放历史事件；文件不存在时静默空转；半行缓冲不丢事件；单次读取有界（64KB）。
-- **低功耗**：联动默认全关；桌宠隐藏时监视器全线 pause，显示时 resume。
+- **低功耗**：联动默认全关；肥鱼隐藏时监视器全线 pause，显示时 resume。
 
 ## 2. 统一事件协议（写方契约）
 
@@ -52,7 +52,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 文件每行一个 JSON 对象（JSON Lines，UTF-8 追加写）：
 
 ```jsonc
-// 形态一：事件名（推荐，桌宠按内置映射归一为状态）
+// 形态一：事件名（推荐，肥鱼按内置映射归一为状态）
 {"ts": 1750000000.0, "agent": "myagent", "event": "PreToolUse", "tool": "bash"}
 
 // 形态二：显式状态（直接给六态词汇，优先级最高）
@@ -61,8 +61,8 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `ts` | 建议 | 事件时间戳（秒，浮点）。桌宠当前不校验，但写方应带，便于排查 |
-| `agent` | 建议 | Agent 标识（与文件名一致即可）；桌宠以监视器的 agent_key 为准 |
+| `ts` | 建议 | 事件时间戳（秒，浮点）。肥鱼当前不校验，但写方应带，便于排查 |
+| `agent` | 建议 | Agent 标识（与文件名一致即可）；肥鱼以监视器的 agent_key 为准 |
 | `event` | 二选一 | 事件名，见 §2.4 内置映射；不认识的会被忽略 |
 | `state` | 二选一 | 显式状态，必须是 §2.3 六态词汇之一；优先于 `event` |
 | `tool` | 可选 | 工具名（小写），用于「过程汇报」气泡（如 `bash` → 「正在跑命令」） |
@@ -71,7 +71,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 
 ### 2.3 六态状态词汇（读方统一词汇）
 
-| 状态 | 含义 | 桌宠反应 |
+| 状态 | 含义 | 肥鱼反应 |
 |---|---|---|
 | `thinking` | 思考中/刚接受指令 | 联动动作池轮换（写代码/吃Token…），可选「开始干活」气泡 |
 | `working` | 执行中 | 同上 |
@@ -99,7 +99,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 ### 2.5 写方注意事项（对接清单）
 
 1. **追加写**（append），UTF-8 编码；PowerShell 写入方建议 `-Encoding UTF8`（读方已兼容首行 BOM）。
-2. **去重**：连续相同状态不要重复落盘（状态切换瞬间可能抖出重复事件，重复行会占住桌宠端换帧节流位）。
+2. **去重**：连续相同状态不要重复落盘（状态切换瞬间可能抖出重复事件，重复行会占住肥鱼端换帧节流位）。
 3. **轮转**：事件文件超过约 1MB 时轮转（如 `dsh-{pid}.jsonl` → `dsh-{pid}.jsonl.1`，只留一代）；读方通过文件身份识别自动适配，无需特殊处理。
 4. **绝不阻塞宿主**：写事件失败时静默放弃——联动是锦上添花，不能影响 Agent 本体（参考 `integrations/dsh-pet-bridge/index.js` 的做法）。
 5. **隐私红线**：只写状态/事件元数据（状态、事件名、工具名），**不要**把代码内容、命令全文、文件内容、屏幕信息写进事件文件。
@@ -117,7 +117,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 给新 Agent 选择接入模式的判断依据：
 
 - **Agent 有插件/hook 机制** → 优先「hook 注入 + 统一协议写文件」（模式同 Claude Code），这是侵入最小、协议最稳的方式。
-- **Agent 有现成的本地事件源**（transcript/日志/SQLite）→ 可以像 Cursor/OpenCode 那样写直读适配器（需要改桌宠代码，见 §5）。
+- **Agent 有现成的本地事件源**（transcript/日志/SQLite）→ 可以像 Cursor/OpenCode 那样写直读适配器（需要改肥鱼代码，见 §5）。
 - **Agent 什么都没有** → 只要它能执行任意命令（几乎都能），就可以让它周期性地往统一协议文件追加一行 JSON——配合 §4 的自定义通道，零代码接入。
 
 ### 3.1 Claude Code 通道细节（`claude` / `claude_wsl`）
@@ -129,19 +129,18 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 - **多会话收敛**（`ClaudeSessionTracker`）：按 `sessionId` 分别记「忙 / 不忙」，Agent 级状态 = 任一会话在忙。一个会话收工而别的还在忙时只弹一条提示，不切待机；最后一个会话收工才走完整的完成流程。
 - **与 §2.4 通用映射的差异**：`PostToolUseFailure` 算 `working`（工具失败后回合照常继续，回合失败是 `StopFailure`）；`SessionStart` 不产生状态（自动压缩上下文会在回合中途触发它）；非忙状态只在该会话此前确实在忙时才上报。
 - **等待批准**：`Notification` 且 `ntype` 为 `permission_prompt` / `elicitation_dialog` → 挂一条常驻提示；同一会话的下一个事件到来即视为已答复（Claude Code 没有「用户已答复」事件）。`ntype: idle_prompt` 用来释放被 Esc 打断的会话（打断不发 `Stop`）。
-- **会话标签（`SessionMeta`）**：`UserPromptSubmit` 与 `Stop` 两个回合边界上，脚本在事件行之后再追加一行 `{"event":"SessionMeta","sessionId":…,"project":…,"title":…}`。`project` 是工作目录的最后一段；`title` 是 transcript（hook 输入的 `transcript_path`）末尾 128KB 里最后一个 `ai-title` 条目的标题，取不到为空。两个值都是原样截出的 JSON 字符串片段，截到第一个反斜杠为止（不带转义序列）；单独成行是为了拼坏时只丢这一行。这是脚本里唯一的额外开销：每回合两次、各一次 `tail`（实测 Git Bash +55ms、WSL +5ms，2026-10-10，3MB transcript）；工具事件不读 transcript。
-- **会话小鱼**（overlay 拓扑，开关 `agent_link.session_pets`，默认开）：收敛器另出一路逐会话更新 `session_update(agent_key, {sessionId, phase, title, project})`，`phase ∈ working / waiting / resting / gone`；`pet/overlay_session_pets.py` 据此给每个在用的会话生一只临时小鱼——头顶常驻「标题 · 状态」（没有标题用项目名，再没有用会话 ID 前 8 位；WSL 通道加 ` (WSL)` 后缀），干活时保持 `写代码` / `吃Token`，回合结束后保持 `原地小憩沉眠`，会话关闭即离场。**呈现层另有一个派生阶段 `review`（等你回复）**：收敛器只报「回合结束」（`resting`），`SessionPetController` 把「刚从 working / waiting 转入 resting、用户还没去看」的会话显示成 `review`（标签天蓝底，保持 `工作状态-雀跃庆祝` / `工作状态-原地踱步张望`），到用户点「跳到对话」（`acknowledge`，详情卡按钮、右键菜单、灵动岛「最近的对话」三个入口都走它）或该会话下一次提问为止；`sessions()` 里的 `phase` 是这个显示阶段，所以灵动岛的计数与汇总也分得出「待回复」。「看过没有」只记在内存里，桌宠重启即清空；桌宠启动时就已经停着的会话不算没看过。会话第一次提问（或被看到在干活 / 等批准）才出场。临时小鱼不占 slot 身份、不进活跃清单、重启不复活、不接管主身份，大小是主肥鱼的一半；上限由 `agent_link.session_pets_max` 决定（默认 6，1～24，右键 → Agent 联动 → 会话小鱼上限），超出的会话只体现在主肥鱼的汇总状态里。实测（20 核、144Hz）每只约 9% 单核、3～4MB。主肥鱼走的 Agent 级状态管线不受影响。
-- **会话详情、跳转与专属菜单**（`pet/session_pet_ui.py`）：`SessionMeta` 另带 `cwd`（完整工作目录）与 `transcript`（hook 输入的 `transcript_path`），收敛器把它们连同最近调用的工具名随逐会话更新送出（有值才出现；工具名变化不单独触发更新）。单击会话小鱼弹详情卡，右键是它自己的精简菜单（跳到这个对话 / 查看详情 / 打开项目文件夹 / 复制恢复命令 / 复制会话 ID / 让这只离场 / 会话小鱼设置），不再是主肥鱼那棵全量菜单。
-  - **详情按需读取**（`pet/claude_session_info.py`）：点开详情或跳转时才读两处 Claude Code 自己的文件——transcript 尾部 512KB（`last-prompt` 条目 = 最近一次提问、`gitBranch`、`entrypoint`）与运行中会话清单 `~/.claude/sessions/<pid>.json`（进程号、入口 `cli` / `claude-vscode` / `sdk-cli`、启动时间）。两处都是**内部格式**（官方文档明说 transcript 条目格式会随版本变，清单没有文档；2026-10 按 2.1.283 / 2.1.296 核对），所以一律「读不到就留空」。WSL 通道经一次 `wsl.exe` 调用取回（实测约 120ms），本机约 1～15ms；都在后台线程。提问正文只进内存，不落盘。
-  - **跳转**（`pet/claude_session_jump.py`，仅 Windows）：VS Code 插件会话先按窗口标题找到承载它的 VS Code 窗口（标题按 ` - ` 分段，有一段是工作区文件夹名；WSL 远程窗口那段带 `[WSL: 发行版]`）调到前台，再打开 `vscode://anthropic.claude-code/open?session=<id>`——插件对已打开的会话是聚焦它的标签页。窗口没调到前台就**不发链接**（链接在当前聚焦窗口生效，发错窗口会新开一个空对话）。终端会话只能把宿主窗口调到前台（本机顺着进程链找第一个有窗口的祖先；WSL 按进程环境变量 `TERM_PROGRAM` / `WT_SESSION` 判断是 VS Code 终端还是 Windows Terminal），选不了标签页；兜底是复制 `claude --resume <id>`。VS Code 第一次收到外部链接会弹一次确认。
-  - **进程不在了的会话自动离场**：Claude Code 被直接杀掉时不发 `SessionEnd`。监视器每 60 秒拿运行清单核对一次（进程号 + 进程启动时间都对得上才算活着），进程已不在的会话按 `SessionEnd` 处理——小鱼离场，卡在「工作中」的 Agent 级状态也随之归位。清单里没有记录的会话不动。
-- **灵动岛卡片**：`dynamic_island.card_source`（auto / balance / claude，设置 → 灵动岛 → 卡片内容）。auto 在任一 Claude Code 通道开着时显示会话汇总（各阶段计数 + 最需要管的前两个会话），否则显示 DeepSeek 余额与峰谷。会话汇总是纯本地数据，不查余额、不读 API Key；数据来自 `SessionPetController.sessions()`，与会话小鱼开关、上限无关。
-- **事件文件归桌宠所有**：启动时先建好空文件（避免首批事件被防回放跳过）；超过约 1MB 且没有会话在忙时由读方清空——写方是 shell 脚本，没法自己轮转（§2.5 第 3 条的例外）。
+- **会话标签（`SessionMeta`）**：`UserPromptSubmit` 与 `Stop` 两个回合边界上，脚本在事件行之后再追加一行 `{"event":"SessionMeta","sessionId":…,"project":…,"title":…}`。`project` 是工作目录的最后一段；`title` 取自 transcript（hook 输入的 `transcript_path`）末尾 128KB：有用户改的名字（`custom-title`）就用它的最后一个，没有才用最后一个自动标题（`ai-title`），取不到为空。两个值都是原样截出的 JSON 字符串片段，截到第一个反斜杠为止（不带转义序列）；单独成行是为了拼坏时只丢这一行。这是脚本里唯一的额外开销：每回合两次、各一次 `tail`（实测 Git Bash +55ms、WSL +5ms，2026-10-10，3MB transcript）；工具事件不读 transcript。
+- **逐会话更新**：收敛器另出一路 `session_update(agent_key, {sessionId, phase, title, project, …})`，`phase ∈ working / waiting / resting / gone`，
+  供会话小鱼和灵动岛用；`SessionMeta` 另带 `cwd`、`transcript`、`model`，有值才出现。主肥鱼走的 Agent 级状态管线不受影响。
+  小鱼的生灭、认领、冻结、详情卡见 [会话小鱼](session-fish.md)，跳转见 [跳到对话](session-jump.md)，岛上的会话汇总见 [灵动岛](island.md)。
+- **进程不在了的会话**：Claude Code 被直接杀掉时不发 `SessionEnd`。监视器每 60 秒拿运行清单核对一次（进程号 + 进程启动时间都对得上才算活着），
+  进程已不在的会话按 `SessionEnd` 处理，卡在「工作中」的 Agent 级状态也随之归位。
+- **事件文件归肥鱼所有**：启动时先建好空文件（避免首批事件被防回放跳过）；超过约 1MB 且没有会话在忙时由读方清空——写方是 shell 脚本，没法自己轮转（§2.5 第 3 条的例外）。
 - **WSL**：只支持默认发行版。读写发行版内的 settings.json 不走 `\\wsl.localhost` 共享（经共享原子替换会把文件权限重置成 644），而是在发行版内写临时文件、照抄原权限再 `mv`。所有 `wsl.exe` 调用都在后台线程并带 `CREATE_NO_WINDOW`。
 
-## 4. 自定义 Agent 通道（不改桌宠代码）
+## 4. 自定义 Agent 通道（不改肥鱼代码）
 
-桌宠支持在 `config.json` 的 `agent_link` 块里声明任意数量的自定义联动 Agent：桌宠对其事件文件做**只读监听**（统一协议），不写任何外部配置、无需授权弹窗。
+肥鱼支持在 `config.json` 的 `agent_link` 块里声明任意数量的自定义联动 Agent：肥鱼对其事件文件做**只读监听**（统一协议），不写任何外部配置、无需授权弹窗。
 
 ```jsonc
 // <config.dir>/config.json
@@ -164,7 +163,7 @@ DSH 通道只有**一个读方**：`DshMonitor`（一个 `DirGlobTailer` + 一�
 | `name` | 联动气泡/菜单显示名；留空时用 key |
 | `path` | 事件文件路径，支持 `~` 展开；文件不必预先存在（不存在时静默等待） |
 
-配置后重启桌宠（或重新加载配置）即生效：右键菜单「Agent 联动」会出现该 Agent 的开关，行为与内置 Agent 一致（六态映射、开始/过程/完成气泡、音效全部可用）。最多 8 个自定义条目。
+配置后重启肥鱼（或重新加载配置）即生效：右键菜单「Agent 联动」会出现该 Agent 的开关，行为与内置 Agent 一致（六态映射、开始/过程/完成气泡、音效全部可用）。最多 8 个自定义条目。
 
 **接入示例**：让任意 Agent 在干活时执行（或由其 hook 执行）：
 
@@ -174,7 +173,7 @@ printf '{"ts": %s, "event": "PreToolUse", "tool": "bash"}\n' "$(date +%s)" >> ~/
 printf '{"ts": %s, "state": "idle"}\n' "$(date +%s)" >> ~/.gemini/pet-events.jsonl      # 收工
 ```
 
-## 5. 新增一个内置 Agent（改桌宠代码）
+## 5. 新增一个内置 Agent（改肥鱼代码）
 
 若要走一等公民路径（内置开关、专属直读适配器），当前需要改动以下位置：
 
@@ -196,5 +195,5 @@ printf '{"ts": %s, "state": "idle"}\n' "$(date +%s)" >> ~/.gemini/pet-events.jso
 1. **默认全关**：所有 Agent 联动开关默认关闭，用户显式勾选才启动。
 2. **不访问外网**：联动链路只碰本地文件/本地数据库，以及本机回环（`127.0.0.1`）端口探活；任何一方不得向外网发起网络请求。
 3. **只存元数据**：事件文件只有状态/事件名/工具名/错误码/身份标识，绝不写截图、代码内容、命令全文、消息正文（DSH 桥接自 2026-10 起连截断后的正文/命令/参数指纹/结果摘要也不再落盘）。有意的例外：错误摘要（`errorMessage`，截断 300 字）与问题正文（`question/requested` 的 `questions`，agent 生成的待选问题）——前者是排障所必需，后者是气泡提示的内容本体；以及 Claude Code 通道的 `SessionMeta`（项目文件夹名、会话标题、工作目录与 transcript 的路径，见 §3.1）——会话小鱼的标签、详情与跳转要用它们。会话标题是对话内容的摘要：WSL 通道的标题会随事件文件落到 Windows 侧。**提问正文不在此列**：详情卡里的「最近的问题」是用户点开时从本机的 transcript 现读进内存的，不写事件文件、日志或配置（hook 输入里虽然有 `prompt` 字段，脚本不取）。
-4. **写外部配置必须先弹窗**：任何向 Agent 配置（如 `~/.claude/settings.json`、dsh profiles）注入内容的操作，必须先经用户确认，且卸载时只清理带本桌宠标记的条目。
+4. **写外部配置必须先弹窗**：任何向 Agent 配置（如 `~/.claude/settings.json`、dsh profiles）注入内容的操作，必须先经用户确认，且卸载时只清理带本肥鱼标记的条目。
 5. **自定义通道只读**：`custom_agents` 仅监听用户指定的文件，不创建目录、不写任何外部位置。

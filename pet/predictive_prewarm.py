@@ -20,7 +20,7 @@
   prewarm.ff_ms（后者在 library.warm_predicted 内计时，见 library.py）。
 
 本模块是纯控制器：不 import window / webm_clip；对窗口的依赖（掷骰、预热、
-可否预测判定）经构造注入回调，避免循环依赖（docs/WINDOW_PY_SPLIT_GUIDE.md）。
+可否预测判定）经构造注入回调，避免循环依赖（docs/architecture.md「window.py：只修崩溃」）。
 
 只在 GUI 线程使用（被 _on_frame / _pick_next / _switch 帧驱动触发）。
 """
@@ -75,7 +75,7 @@ def roll_next(pools, exclude: str | None = None, *, rng=None) -> str | None:
 class PredictivePrewarm:
     """预测式接力预热的单槽状态机（GUI 线程使用）。
 
-    window.py 只保留薄钩子（docs/WINDOW_PY_SPLIT_GUIDE.md §3）：
+    window.py 只保留薄钩子（docs/architecture.md「window.py：只修崩溃」）：
     - ``_switch`` → ``begin_anim(name)``（换动画代次：作废旧预测）；
     - ``_on_frame`` → ``on_frame(...)``（帧驱动触发掷骰 + 预热）；
     - ``_pick_next`` → ``consume(...)``（消费预测）；

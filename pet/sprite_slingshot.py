@@ -38,7 +38,7 @@ sprite 侧只走公有交互协议（``interaction_state`` / ``set_pos`` /
 
 config 热读：``enabled`` 每次进入判定前读 ``config.get("slingshot_enabled", True)``
 ——设置页开关即时生效，不缓存；沿用既有键，不新增
-（docs/SETTINGS-CHANGE-GATES.md「准入」）。
+（docs/settings-and-menu.md 设置变更门禁「准入」）。
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ class SlingshotController:
         """slingshot_enabled 每次进入判定前热读（设置页开关即时生效；不缓存）。
 
         无 config（裸 overlay / demo）时取产品默认值 True；键沿用既有
-        config 键，不新增、不迁移（docs/SETTINGS-CHANGE-GATES.md）。
+        config 键，不新增、不迁移（docs/settings-and-menu.md 的设置变更门禁）。
         """
         config = self._config
         getter = getattr(config, "get", None)

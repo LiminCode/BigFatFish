@@ -7,7 +7,7 @@
 2. 私有面冻结：PetWindow 私有成员（win._xxx）只许 window.py 自身访问；
    app.py / agent_link.py / context_menus/ 再出现即为违规（S2 已清零，防回潮）。
 3. window.py 行数预算：结构线拆到 4200 量级后只许降不许涨——
-   新功能请先按 docs/WINDOW_PY_SPLIT_GUIDE.md 拆对应控制器，
+   新功能请先按 docs/architecture.md 拆对应控制器，
    而不是继续往上帝类里塞。确实该涨时，预算上调必须在 PR 里说明理由。
 """
 from __future__ import annotations
@@ -88,7 +88,7 @@ PET_DIR = Path(__file__).resolve().parents[1] / "pet"
 # 2026-09-18 合并 #140 时按实测校准到 4605：#140 的碰撞稳定边界缓存（字段/切换复原/
 # 素材替换作废/缩放清空）与 main 已含的 #137 Linux 贴边绘制补偿（虚拟位置 + 稳定
 # 身体框）**叠加**后实测 4605——两边各自的预算都低于合并结果，是「红线是组合性质」
-# 的又一实例（docs/PR-MERGE-LESSONS-2026-09-12.md 教训 2）。按文件约定只随实测校准，
+# 的又一实例（docs/development.md「合并 PR」：红线是组合性质）。按文件约定只随实测校准，
 # 不为达标压行/合并语句。
 # 2026-09-19 上调到 4616：新增「气泡文字大小」（bubble_text_scale）注入——两处
 # 配置读取（__init__ / _refresh_pet_settings 各 4 行：读配置 + getattr 守卫 +
@@ -99,14 +99,14 @@ PET_DIR = Path(__file__).resolve().parents[1] / "pet"
 # _play_roll 移动分支被 gap 步触发的意外位移。实测 4629。
 # 2026-09-20 上调到 4632：delete_when_idle 轮询定时器绑定 menu context（+3：
 # 注释），窗口/菜单销毁后不再访问已删 C++ 对象。与 move-sync-facing 的 4629
-# 叠加，组合实测 4632（docs/PR-MERGE-LESSONS-2026-09-12.md 教训 2 又一实例）。
+# 叠加，组合实测 4632（docs/development.md「合并 PR」：红线是组合性质 又一实例）。
 # 2026-09-22 上调到 4635：崩溃消融回退（_rebuild_frame 零拷贝直取改回
 # currentPixmap().toImage() 私有深拷贝，切断 窗口↔显示槽↔首帧缓存 别名面，
 # Qt6Gui QRasterPaintEngine 三连崩排查，见 .scratch/single-overlay-window/
 # HANDOFF.md 崩溃案），注释 +2 + currentPixmap→toImage 两行替代原一行直取（+3）。实测 4635。
 # 2026-09-23 上调到 4638：rebase 合入上游 a7489ae（fix(self-talk): 点击自言自语
 # 与周期气泡解耦 + 恢复点击侧设置可见，window.py +4/-1）。与本分支各修复无
-# 组合冲突，叠加实测 4638（docs/PR-MERGE-LESSONS-2026-09-12.md 教训 2 常规校准）。
+# 组合冲突，叠加实测 4638（docs/development.md「合并 PR」：红线是组合性质 常规校准）。
 # 2026-09-23 上调到 4648：合入前评审修复——A1 冷 meta 闸门（_try_move 加
 # duration 退化值守卫 + 注释，+9）与 A2 飞行加速按用户「播放速率」复合
 # （表达式改写 + getattr 防御测试替身，+2）。净增为守卫与注释，未拆控制器
@@ -149,7 +149,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 2026-09-16 上调到 2300：#128「歌词/消费统计/音乐菜单」接入设置页，实测 2300。
 # 2026-09-16 再上调到 2311：#127 节日提醒设置页（+11）与 #128 叠加后实测 2311——
 # 这正是「红线是组合性质」：两个 PR 各自合并时 CI 都绿，合到一起才越线
-# （见 docs/PR-MERGE-LESSONS-2026-09-12.md 教训 2）。按文件约定只随实测校准，
+# （见 docs/development.md「合并 PR」：红线是组合性质）。按文件约定只随实测校准，
 # 不为达标压缩行宽/合并语句；拆分仍是待办。
 # 2026-09-17 上调到 2327：新增「语音」总域，并按主人定稿口径只收鱼开口说话
 # （TTS）类设置——语音报时整组 12 行 + 节日提醒 12 行（原「自动化与联动」域，带
@@ -169,7 +169,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 「文件识别」域（对话框只做接线，实现全在 pet/settings_file_interpret.py）与灵动岛
 # 「隐藏时对话气泡」开关（控件 +2、SettingRow +6、_write_config 回写 +1）各自
 # 只按自己那批校准（2384 / 2380），合起来才是 2393：单个 PR 都不越线、只有两者
-# 同时进才红——又一次「红线是组合性质」的实例（PR-MERGE-LESSONS 第 2 条），
+# 同时进才红——又一次「红线是组合性质」的实例（docs/development.md「合并 PR」），
 # 故按文件约定只随实测校准，不为达标压缩行宽/合并语句；拆分仍是待办。
 # 2026-09-19 上调到 2401：新增「气泡文字大小」设置行（bubble_text_scale，+8）——
 # 3 行 SettingRow 展开式写法（6 行）+ _write_config 回写 1 行 + 布局编排认领 1 行；
@@ -188,7 +188,7 @@ WINDOW_PY_LINE_BUDGET = 4671
 # 只随实测校准，不为达标压行。
 # 2026-09-22 上调到 2441：**组合越线**——#176（点击侧显隐解耦，2436）与
 # #177（音乐播放器路径接线的 +5）各自合并时都在预算内，合到一起才越线，
-# 又一次「红线是组合性质」的实例（docs/PR-MERGE-LESSONS-2026-09-12.md 教训 2）。
+# 又一次「红线是组合性质」的实例（docs/development.md「合并 PR」：红线是组合性质）。
 # 实测 2441；随后即由「互动」域分页 + 抽 pet/settings_interaction.py 大幅下调，
 # 故这里只做一次性校准，不为达标压行。
 # 2026-09-22 **下调到 2347**：兑现上一条的承诺——「互动」域整页搬进
@@ -377,7 +377,7 @@ def test_window_private_surface_frozen():
 # 为什么有预算：window.py / modern_settings_dialog.py 这类文件膨胀到几千行后，
 # 人和 AI 都难读难改、定位问题成本高、合并冲突频发。预算只是倒逼拆分的
 # 「绊线」，本身不是目的，更不是红线。触发时的正确动作按优先级：
-#   1. 首选：把新内容拆到独立模块/控制器（window.py 见 docs/WINDOW_PY_SPLIT_GUIDE.md）；
+#   1. 首选：把新内容拆到独立模块/控制器（window.py 见 docs/architecture.md）；
 #   2. 实在拆不动或强拆更伤可读性时：把预算常量校准到新实测值，注明日期+理由，
 #      并在 PR 里说明（超一点没关系，说清楚就行）。
 # 禁止的反向优化：靠压缩行宽/合并语句/删注释把行数硬塞回预算内——
@@ -388,7 +388,7 @@ def test_window_py_line_budget():
     assert lines <= WINDOW_PY_LINE_BUDGET, (
         f"window.py 涨到 {lines} 行（预算 {WINDOW_PY_LINE_BUDGET}）。"
         "预算是防膨胀的绊线（文件太大则难读难改、合并冲突多、问题定位难），"
-        "不是红线：新功能优先拆对应控制器（docs/WINDOW_PY_SPLIT_GUIDE.md）；"
+        "不是红线：新功能优先拆对应控制器（docs/architecture.md）；"
         "拆不动可把预算校准到新实测值（带日期注释）并在 PR 说明理由。"
         "请勿为达标压缩行宽/合并语句——那是反向优化。"
     )
