@@ -450,6 +450,12 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get(agent_key, False)))
         act.toggled.connect(lambda on, k=agent_key, a=act: pet.toggle_agent_link(k, on, a))
+        # 联动开着、settings.json 里却没有肥鱼的 hooks：紧跟一条修复项（点了走同意弹窗，不自动注入）
+        hooks_missing = getattr(pet, "agent_hooks_missing", None)
+        repair = getattr(pet, "repair_agent_hooks", None)
+        if act.isChecked() and callable(hooks_missing) and callable(repair) and hooks_missing(agent_key):
+            connect_action(sub.addAction(t("menu.shared.repair_agent_hooks")),
+                           lambda k=agent_key: repair(k))
     # 每个 Claude Code 会话一只小鱼：只有 overlay 拓扑有这个能力（旧 PetWindow 没有）
     toggle_session_pets = getattr(pet, "toggle_session_pets", None)
     if callable(toggle_session_pets):
