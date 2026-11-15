@@ -929,6 +929,31 @@ def jump(detail: SessionDetail, *, wsl_env: dict[str, str] | None = None,
     return _jump_terminal(detail, all_windows, focus, chain, wsl_env or {}, owner, select_tab)
 
 
+#: 只为把 Claude 桌面版拉起来 / 调到前台的外链（不指向哪个对话）
+_DESKTOP_APP_URI = "claude://"
+
+
+def raise_desktop(*, windows: Callable[[], list[Window]] = list_windows,
+                  focus: Callable[[int], bool] = focus_window,
+                  uri: Callable[[str], bool] = open_uri) -> JumpResult:
+    """把 Claude 桌面版调到前台（冻结的桌面版对话、却没记下桌面版那边的会话 id 时）。
+
+    主窗口是标题为 ``Claude`` 的 ``claude.exe`` 窗口（实机 2026-11-14）；Claude Code 自己的
+    ``claude.exe`` 进程没有可见窗口。一个都没有（没开 / 缩在托盘）就用 ``claude://`` 把它拉起来。
+    无论如何不开终端——那个对话在桌面版里。"""
+    if sys.platform != "win32" and windows is list_windows:
+        return JumpResult(False, t("session_jump.ui.jumping_session_only_works_windows"))
+    mine = [w for w in windows() if w.process == "claude.exe"]
+    target = next((w for w in mine if w.title.strip() == "Claude"), mine[0] if mine else None)
+    if target is not None:
+        if focus(target.hwnd):
+            return JumpResult(True, t("session_jump.ui.switched_desktop_pick_conversation"))
+        return JumpResult(False, t("session_jump.ui.could_not_bring_desktop"))
+    if uri(_DESKTOP_APP_URI):
+        return JumpResult(True, t("session_jump.ui.switched_desktop_pick_conversation"))
+    return JumpResult(False, t("session_jump.ui.could_not_bring_desktop"))
+
+
 def _jump_vscode(detail, all_windows, focus, uri, vscode, sleep, known,
                  done: str = "session_jump.ui.jumped_conversation_vs_code",
                  pinned: OpenWorkspace | None = None) -> JumpResult:

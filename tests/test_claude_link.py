@@ -22,6 +22,23 @@ from pet.agent_link import AgentLinkManager, ClaudeCodeMonitor
 from pet.config import Config
 from pet.context_menus import shared as menu_shared
 
+_REAL_DEFAULT_TESTS = {"test_claude_code_links_are_on_by_default_but_an_explicit_choice_is_kept"}
+
+
+@pytest.fixture(autouse=True)
+def _links_start_off(request, monkeypatch):
+    """These tests replay agent events by hand (generation 0) and assume no Claude Code monitor is
+    running. Since 2026-11-14 the product defaults both Claude Code links on, which starts the
+    monitors and makes generation-0 events stale. Keep the old starting point here; the tests that
+    check the real defaults opt out."""
+    if request.node.name in _REAL_DEFAULT_TESTS:
+        return
+    from pet import config as config_module
+
+    real = config_module._default_agent_link_data
+    monkeypatch.setattr(config_module, "_default_agent_link_data",
+                        lambda: {**real(), "claude": False, "claude_wsl": False})
+
 
 def _pump_until(predicate, budget_s: float = 20.0) -> bool:
     app = QApplication.instance() or QApplication([])
@@ -514,3 +531,22 @@ def test_uninstall_cleanup_leaves_wsl_alone_unless_the_channel_was_used(tmp_path
 def test_uninstall_cleanup_removes_wsl_hooks_when_the_channel_was_on(tmp_path, monkeypatch):
     results, calls = _cleanup(tmp_path, monkeypatch, enabled=True)
     assert calls == [1] and results["claude_wsl_hooks"] is True
+
+
+def test_claude_code_links_are_on_by_default_but_an_explicit_choice_is_kept(tmp_path):
+    """User 2026-11-14: both Claude Code links should be on by default. After the 11-13 crash zeroed
+    the config, the rebuilt defaults had them off and every live conversation showed as frozen.
+    The WSL link only means something on Windows. A stored ``false`` is the user's choice and stays."""
+    import sys
+
+    from pet.config import Config
+
+    fresh = Config(base=tmp_path / "fresh").get("agent_link")
+    assert fresh["claude"] is True
+    assert fresh["claude_wsl"] is (sys.platform == "win32")
+
+    chosen = Config(base=tmp_path / "chosen")
+    chosen.set("agent_link", {**chosen.get("agent_link"), "claude": False, "claude_wsl": False})
+    chosen.save()
+    reread = Config(base=tmp_path / "chosen").get("agent_link")
+    assert reread["claude"] is False and reread["claude_wsl"] is False

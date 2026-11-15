@@ -1696,6 +1696,8 @@
   "session_jump.ui.reopened_conversation_in_workspace": "已按当时的工作区「{label}」重开这个对话",
   "session_jump.ui.could_not_reopen_workspace": "没能打开当时的工作区「{label}」（找不到 code 命令）",
   "session_jump.ui.jumped_conversation_claude_desktop": "已跳到 Claude 桌面版里的这个对话",
+  "session_jump.ui.switched_desktop_pick_conversation": "已切到 Claude 桌面版：在侧栏里点这个对话",
+  "session_jump.ui.could_not_bring_desktop": "没能把 Claude 桌面版调到前台",
   "session_jump.ui.switched_vs_code_but_could": "已切到 VS Code，但没能打开那个对话",
   "session_jump.ui.no_vs_code_window_has": "没找到打开着这个项目的 VS Code 窗口",
   "session_jump.ui.could_not_tell_which_vs": "没认出这个对话在哪个 VS Code 窗口里",

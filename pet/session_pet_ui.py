@@ -929,6 +929,7 @@ class SessionPetActions(QObject):
         self.opener = _open_path
         self.uri_opener = claude_session_jump.open_uri        # 冻结鱼：按深链让 Claude 桌面版重开对话
         self.vscode_resumer = claude_session_jump.resume_in_vscode   # 冻结鱼：开工作区 + 插件深链重开对话
+        self.desktop_raiser = claude_session_jump.raise_desktop      # 冻结的桌面版对话没记下桌面版 id：调出桌面版
         self.workspace_finder = claude_session_jump.workspace_from_storage   # 老会话：从 VS Code 的状态库找回工作区
         self._history_actions = None                         # 冻结鱼：在终端里 claude --resume（懒建）
         QTimer.singleShot(_ICON_WARM_DELAY_MS, self, self._warm_host_icons)
@@ -1116,10 +1117,16 @@ class SessionPetActions(QObject):
         entry = self._controller.history_entry(key) if hasattr(self._controller, "history_entry") else None
         host = str((entry.host_session if entry is not None else "") or info.get("host_session") or "")
         entrypoint = str((entry.entrypoint if entry is not None else "") or info.get("entrypoint") or "")
-        if entrypoint == claude_session_info.ENTRY_DESKTOP and host:
-            ok = self.uri_opener(claude_session_jump._DESKTOP_URI.format(session=host))
-            self._say(key, t("menu.session.opened_in_desktop") if ok else t("menu.session.couldn_t_open_desktop"))
-            return bool(ok)
+        if entrypoint == claude_session_info.ENTRY_DESKTOP:
+            if host:
+                ok = self.uri_opener(claude_session_jump._DESKTOP_URI.format(session=host))
+                self._say(key, t("menu.session.opened_in_desktop") if ok else t("menu.session.couldn_t_open_desktop"))
+                return bool(ok)
+            # 历史是扫 transcript 回填的，只知道入口、不知道桌面版那边的 id：把桌面版调出来让用户点，
+            # 绝不落到下面的终端 claude --resume（用户 2026-11-14：「为什么跳到了 cmd？」）
+            result = self.desktop_raiser()
+            self._say(key, result.message)
+            return bool(result.ok)
         if entrypoint == claude_session_info.ENTRY_VSCODE:
             detail = self._detail_for_key(key)
             if detail is None or not detail.cwd:
@@ -1259,7 +1266,7 @@ def _open_path(path: str) -> bool:
 
 def resume_label(detail: SessionDetail) -> str:
     """冻结鱼「恢复」那一项的文案：按会话的入口说清会在哪里重开（与 ``SessionPetActions.resume_key`` 的分流一致）。"""
-    if detail.entrypoint == claude_session_info.ENTRY_DESKTOP and detail.extra.get("host_session"):
+    if detail.entrypoint == claude_session_info.ENTRY_DESKTOP:
         return t("menu.session.resume_in_desktop")
     if detail.entrypoint == claude_session_info.ENTRY_VSCODE:
         return t("menu.session.resume_in_vs_code")

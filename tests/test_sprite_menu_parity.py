@@ -405,6 +405,8 @@ def test_menu_routes_legacy_service_semantics(tmp_path, monkeypatch):
         monkeypatch.setattr(shell.overlay, "reopen_context_menu",
                             lambda menu: reopened.append(menu))
 
+        # Claude Code 联动默认开（2026-11-14）：先关上，下面才是「勾选 = 打开」
+        config.set("agent_link", {**config.get("agent_link"), "claude": False})
         menu = build_sprite_full_menu(shell)
         # AI 对话 / AI 设置 → PetInstance（无聊天变体整条不显示）
         _find(menu, "AI 对话").trigger()

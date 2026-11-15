@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import sys
 import json
 import os
 import threading
@@ -37,6 +38,23 @@ from pet.agent_link import (
 )
 from pet.config import Config
 from pet.config import _clean_agent_link_data, _clean_custom_agents
+
+_REAL_DEFAULT_TESTS = {"test_default_agent_link_shape"}
+
+
+@pytest.fixture(autouse=True)
+def _links_start_off(request, monkeypatch):
+    """These tests replay agent events by hand (generation 0) and assume no Claude Code monitor is
+    running. Since 2026-11-14 the product defaults both Claude Code links on, which starts the
+    monitors and makes generation-0 events stale. Keep the old starting point here; the tests that
+    check the real defaults opt out."""
+    if request.node.name in _REAL_DEFAULT_TESTS:
+        return
+    from pet import config as config_module
+
+    real = config_module._default_agent_link_data
+    monkeypatch.setattr(config_module, "_default_agent_link_data",
+                        lambda: {**real(), "claude": False, "claude_wsl": False})
 
 
 class TestMainlineAgentLinkHardening:
@@ -487,13 +505,14 @@ class TestEventStateNormalization:
 # 3. AgentLinkManager 管理器与生命周期测试
 # ============================================================================
 class TestAgentLinkManager:
-    def test_default_all_disabled(self, tmp_path):
-        """产品默认的 agent_link 形状：开关全关 + 音效配置（减法后无概率门/检测器键）。"""
+    def test_default_agent_link_shape(self, tmp_path):
+        """产品默认的 agent_link 形状：Claude Code 两个通道默认开（2026-11-14；WSL 只在 Windows），
+        其余全关 + 音效配置（减法后无概率门/检测器键）。"""
         cfg = Config(base=tmp_path)
         assert cfg.data["agent_link"] == {
             "dsh": False,
-            "claude": False,
-            "claude_wsl": False,
+            "claude": True,
+            "claude_wsl": sys.platform == "win32",
             "cursor": False,
             "opencode": False,
             "custom_agents": [],
@@ -519,8 +538,11 @@ class TestAgentLinkManager:
         }
 
         mgr = AgentLinkManager(None, cfg)
-        for key, mon in mgr.monitors.items():
-            assert mon.is_running() is False
+        try:
+            for key, mon in mgr.monitors.items():
+                assert mon.is_running() is bool(cfg.data["agent_link"].get(key)), key
+        finally:
+            mgr.shutdown()
 
     def test_removed_agent_link_keys_dropped_on_clean(self, tmp_path):
         """减法退役键（概率门/卡住/行为模式/探索看门狗及旧前身）读入即丢弃，不写回。"""

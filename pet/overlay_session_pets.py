@@ -51,12 +51,19 @@ class SessionPetController(QObject):
 
     def __init__(self, shell, *, enabled: Callable[[], bool], parent: QObject | None = None,
                  decisions: SessionFishDecisions | None = None, keep_days: Callable[[], int] = lambda: 3,
-                 clock: Callable[[], float] = time.time) -> None:
+                 clock: Callable[[], float] = time.time,
+                 registry: Callable[[], dict] | None = None) -> None:
         super().__init__(parent)
         self._shell = shell
         self._enabled = enabled
         self._keep_days = keep_days
         self._clock = clock
+        # 本机运行清单里活着的会话 ``{(agent, sessionId): 认领项}``（``claude_session_info.adoptable_sessions``
+        # 的形状）。冻结 = 进程不在了：清单说它还开着就不能冻结——联动通道关着（没人喂更新）时由这里
+        # 按清单把它认领成活的（用户 2026-11-14：重启后正在用的对话显示「冻结」）。None = 不核对。
+        self._registry = registry
+        self._self_adopted: dict[tuple[str, str], dict] = {}     # 按清单认领的会话 → 上一次给的更新
+        self._syncing = False
         # 用户的「关闭这只」决定（落盘、跨重启；会话再活跃就作废）
         self._decisions = decisions if decisions is not None else SessionFishDecisions(None)
         # 冻结层：最近 X 天开过、进程已不在的对话 → 一只静止的鱼（``attach_history`` 之后才有）
@@ -267,6 +274,54 @@ class SessionPetController(QObject):
 
     @Slot()
     def reconcile(self) -> None:
+        """先按运行清单认领没人喂的活会话，再核对名册（见 ``_reconcile_roster``）。"""
+        if self._history is None or self._syncing:
+            return                               # 认领途中历史变了（同步信号）：认领完会核对
+        self._sync_registry()
+        self._reconcile_roster()
+
+    def _sync_registry(self) -> None:
+        """运行清单里活着、却没有联动通道在喂的会话：按清单的状态认领成活的鱼、跟着清单换阶段，
+        进程走了（清单里没了）就按 ``gone`` 收掉——它随即落进名册成为冻结鱼。通道喂过的会话一律不碰：
+        阶段和离场都归通道。读几个小 JSON + 查进程，实测 ~2 ms，只在定时 / 历史变了时跑。"""
+        if self._registry is None:
+            return
+        try:
+            live = dict(self._registry() or {})
+        except Exception:  # noqa: BLE001 - 读不了清单只是少一条线索
+            log.debug("会话小鱼：读取运行清单失败", exc_info=True)
+            return
+        self._syncing = True
+        try:
+            for key in list(self._self_adopted):
+                if key not in live:
+                    self._self_adopted.pop(key, None)
+                    log.info("会话进程已不在（运行清单）agent=%s session=%s", key[0], key[1][:8])
+                    self._apply_update(key[0], {"sessionId": key[1], "phase": "gone"})
+            for key, item in live.items():
+                if key in self._sessions and key not in self._self_adopted:
+                    continue                     # 通道在喂它
+                update = {"sessionId": key[1], "adopted": "1",
+                          **{name: str(item.get(name) or "") for name in
+                             ("phase", "title", "project", "cwd", "transcript", "entrypoint", "host_session")}}
+                if not update["title"]:
+                    entry = self.history_entry(key)
+                    update["title"] = entry.title if entry is not None else ""
+                previous = self._self_adopted.get(key)
+                if previous == update:
+                    continue                     # 清单没变
+                if previous is None:
+                    log.info("从运行清单认领会话小鱼 agent=%s session=%s phase=%s",
+                             key[0], key[1][:8], update["phase"])
+                self._self_adopted[key] = update
+                self._apply_update(key[0], update)
+                record = getattr(self._history, "on_session_update", None)
+                if callable(record):
+                    record(key[0], update)      # 桌面版 id 记进历史：将来冻结了还能深链回去
+        finally:
+            self._syncing = False
+
+    def _reconcile_roster(self) -> None:
         """名册 = 在用的会话 ∪ 最近 X 天的对话。不在名册里的关闭决定忘掉；该冻结的生鱼、不该的收走。"""
         if self._history is None:
             return
@@ -353,6 +408,12 @@ class SessionPetController(QObject):
 
     @Slot(str, object)
     def on_session_update(self, agent_key, update) -> None:
+        """联动通道的逐会话更新：从此这个会话归通道管（运行清单不再替它认领 / 换阶段）。"""
+        if isinstance(update, dict):
+            self._self_adopted.pop((str(agent_key), str(update.get("sessionId") or "")), None)
+        self._apply_update(agent_key, update)
+
+    def _apply_update(self, agent_key, update) -> None:
         if not isinstance(update, dict):
             return
         key = (str(agent_key), str(update.get("sessionId") or ""))
@@ -430,6 +491,7 @@ class SessionPetController(QObject):
         self._after_update()
 
     def _after_update(self) -> None:
-        """会话有增减之后核对一次名册（会话没了 → 它的对话可能该冻结；回来了 → 冻结的该走）。"""
-        if self._history is not None:
-            self.reconcile()
+        """会话有增减之后核对一次名册（会话没了 → 它的对话可能该冻结；回来了 → 冻结的该走）。
+        按运行清单认领途中不核对：认领完 ``reconcile`` 自己核对一次。"""
+        if self._history is not None and not self._syncing:
+            self._reconcile_roster()

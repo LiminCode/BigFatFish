@@ -452,6 +452,7 @@ def _card_shell(tmp_path, monkeypatch, *, source: str, claude_on: bool, sessions
     shell._balance_cache_path = Path(shell.config.dir) / "balance_cache.json"
     agent_cfg = dict(shell.config.get("agent_link"))
     agent_cfg["claude"] = claude_on
+    agent_cfg["claude_wsl"] = False         # 默认开（Windows）：「联动关着」要两个通道都关
     shell.config.set("agent_link", agent_cfg)
     provider = SimpleNamespace(id="p", base_url="http://x", api_key="", verify_ssl=True)
     monkeypatch.setattr(shell.config, "chat_settings", lambda: SimpleNamespace(active_config=provider))
