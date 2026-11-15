@@ -717,3 +717,46 @@ def test_island_chat_button_keeps_the_legacy_route_without_an_overlay(tmp_path):
     shell._open_chat_from_island()
 
     assert shell.instance.quick_chat_calls == 1
+
+
+def test_island_reprobes_when_the_settings_process_saves_a_new_service(tmp_path, monkeypatch):
+    """独立设置进程保存了新服务（地址 / Key 变了）→ 主进程重读配置后马上重新体检，岛跟着变。
+
+    2026-11-14 用户：「设定了 Claude API，连接测试成功，但悬浮岛上的状态没有更新」——当时表单还没
+    保存；这条守住「保存之后一定会更新」这一半。
+    """
+    import pet.api_key_monitor as akm
+    from pet.chat import models
+
+    store: dict = {}
+    monkeypatch.setattr(models.SecretStore, "get", lambda self, ref: store.get(ref, ""))
+    monkeypatch.setattr(models.SecretStore, "set", lambda self, ref, value: (store.__setitem__(ref, value), True)[1])
+    probed: list = []
+    monkeypatch.setattr(akm, "_default_probe", lambda p: (probed.append(p.base_url),
+                                                          ("anthropic" in p.base_url, "ok?"))[1])
+    monkeypatch.setattr(akm, "_spawn_thread", lambda fn: fn())
+    _qapp()
+    shell = _make_shell(tmp_path)
+    shell.config.data["chat"] = {"active_provider": "api-2", "providers": {"api-2": {
+        "name": "DeepSeek 副本", "base_url": "https://api.deepseek.com", "api_key_ref": "provider/api-2"}}}
+    shell.config.save()
+    store["provider/api-2"] = "sk-ant-old"
+    try:
+        shell._sync_dynamic_island()
+        shell._api_key_monitor.check()
+        assert shell.island._api_state == "bad"
+
+        settings_process = Config(base=tmp_path)            # 设置进程自己的那份配置
+        chat = settings_process.chat_settings()
+        chat.providers["api-2"].name = "Claude Opus"
+        chat.providers["api-2"].base_url = "https://api.anthropic.com"
+        settings_process.set_chat_settings(chat)
+        settings_process.save()
+        store["provider/api-2"] = "sk-ant-new"
+
+        shell._on_config_change_debounced()                 # 主进程的配置监视器去抖后走到这里
+        assert probed == ["https://api.deepseek.com", "https://api.anthropic.com"]
+        assert shell.island._api_state == "ok"
+        assert shell.island.toolTip().startswith("Claude Opus · ")
+    finally:
+        _teardown_shell(shell)

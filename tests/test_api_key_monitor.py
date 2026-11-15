@@ -219,3 +219,22 @@ def test_real_worker_thread_delivers_on_the_gui_thread():
     assert monitor.state == "ok"
     assert probe_threads and probe_threads[0] is not threading.main_thread()
     assert slot_threads and all(t is threading.main_thread() for t in slot_threads)
+
+
+class _NamedConfig(_Config):
+    def chat_settings(self):
+        settings = super().chat_settings()
+        settings.active_config.name = "DeepSeek 副本"
+        return settings
+
+
+def test_the_verdict_names_the_service_it_checked():
+    """2026-11-14：设置里测 Claude 通过了，岛还是红的——提示里看不出岛查的是哪一个服务
+    （其实查的是已保存的「DeepSeek 副本」，表单里的 Claude 还没保存）。"""
+    pending = []
+    monitor = _monitor(_NamedConfig(), _Probe((False, "认证失败（HTTP 401）")), spawn=pending.append)
+    monitor.start()
+    monitor.check()
+    assert monitor.service_name == "DeepSeek 副本"
+    pending.pop()()
+    assert monitor.detail == "DeepSeek 副本 · 认证失败（HTTP 401）"

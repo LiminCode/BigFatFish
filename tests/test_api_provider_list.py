@@ -241,3 +241,64 @@ def test_modern_select_item_text_can_change():
     select.setItemText(1, "b2")
     assert select.currentText() == "a2" and select.text() == "a2"
     assert select.itemText(1) == "b2"
+
+
+# ---------------------------------------------------------------- 测试连接通过 ≠ 已经在用
+# 2026-11-14 用户：「我设定了 Claude API，连接测试成功，但悬浮岛上的状态没有更新」——表单里填好的
+# Claude 还没保存，岛体检的是盘上那一项（「DeepSeek 副本」）。测试通过时要说清楚：保存后才生效。
+
+class _MemoryStore:
+    values: dict = {}
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    available = True
+
+    def get(self, ref):
+        return self.values.get(ref, "")
+
+    def set(self, ref, value):
+        self.values[ref] = value
+        return True
+
+
+def _run_test_and_wait(page):
+    page._run_test()
+    page._test_thread.join(10)
+    for _ in range(20):
+        _app().processEvents()
+        if page._test_thread is None:
+            break
+    assert page._test_thread is None, "测试结果没回到界面"
+    return page.test_result.text()
+
+
+def test_modern_connection_test_says_save_before_it_is_used(tmp_path, monkeypatch):
+    from pet.i18n import t
+
+    monkeypatch.setattr("pet.chat.models.SecretStore", _MemoryStore)
+    _MemoryStore.values = {"provider/openai-main": "sk-saved"}
+    dlg = _modern_dialog(tmp_path, monkeypatch)
+    try:
+        page = dlg.ai_page
+        page._test_connection = lambda provider, timeout=10.0: (True, "连接成功")
+        reminder = t("settings.ai.test_ok_not_saved")
+
+        assert reminder not in _run_test_and_wait(page), "测的就是在用的配置：不用提醒"
+
+        page.url.setText("https://api.anthropic.com")
+        page.key.setText("sk-ant-new")
+        assert reminder in _run_test_and_wait(page), "表单改过还没保存：要说保存后才生效"
+
+        dlg.save_button.click()
+        assert reminder not in _run_test_and_wait(page), "保存之后测的就是在用的"
+
+        page._add_provider()
+        assert reminder in _run_test_and_wait(page), "新加的服务保存前不是在用的那一项"
+
+        page._test_connection = lambda provider, timeout=10.0: (False, "认证失败")
+        assert reminder not in _run_test_and_wait(page), "没通过就不谈保存"
+    finally:
+        dlg.close()
+        _app().processEvents()

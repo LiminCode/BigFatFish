@@ -2552,6 +2552,8 @@ class AppShell:
             self.island.personal_requested.connect(self._open_personal_from_island)
             # 点信息槽里的「今日用量」数字：近 7 天仪表盘（弹在岛的上方）
             self.island.usage_dashboard_requested.connect(self._toggle_usage_dashboard)
+            # 点连接图标：全部模型服务和各自的连接状态（弹在岛的上方）
+            self.island.connections_requested.connect(self._toggle_connections_panel)
             # 「消息记录」铃铛与卡片里的消息框（有没有由 _push_island_messages 定：overlay 拓扑才有记录）
             self.island.messages_requested.connect(self._on_island_messages_opened)
             self.island.message_activated.connect(self._on_island_message_activated)
@@ -3177,6 +3179,23 @@ class AppShell:
         anchor = island.geometry()
         screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
         dashboard.toggle(anchor, screen.availableGeometry() if screen is not None else anchor)
+
+    def _toggle_connections_panel(self) -> None:
+        island = getattr(self, "island", None)
+        if island is None or not shiboken6.isValid(island):
+            return
+        panel = getattr(self, "_connections_panel", None)
+        if panel is None:
+            from .island_connections import ConnectionsPanel
+
+            monitor = self._live_api_key_monitor()
+            panel = self._connections_panel = ConnectionsPanel(self.config, monitor=monitor, parent=self.app)
+            panel.settings_requested.connect(self._open_settings_from_island)
+            if monitor is not None:
+                monitor.status_changed.connect(panel.on_monitor_changed)
+        anchor = island.geometry()
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        panel.toggle(anchor, screen.availableGeometry() if screen is not None else anchor)
 
     def _open_work_briefing_from_island(self) -> None:
         controller = getattr(self, "_work_briefing", None)
