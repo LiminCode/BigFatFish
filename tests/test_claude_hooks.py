@@ -348,6 +348,14 @@ def test_run_wsl_folds_failures_into_a_return_code(monkeypatch):
     assert ch.run_wsl(["-e", "true"])[0] != 0
 
 
+def test_a_test_without_a_stub_cannot_start_the_real_wsl(monkeypatch):
+    """conftest 的防线：很多函数把 ``run_wsl`` 绑成默认 runner，漏打一个桩就会读写开发机发行版里真实的
+    ``~/.claude``（2026-11-14 一轮全量测试就这样卸掉了那边的 hooks）。没换掉 ``subprocess.run`` 的测试
+    走到这里，得到的是「WSL 没有响应」，而不是一个真的 wsl.exe 进程。"""
+    monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")       # 装了 WSL 的 Windows 开发机
+    assert ch.run_wsl(["-e", "true"]) == (1, "")
+
+
 # ---------------------------------------------------------------- 会话收敛
 
 def _ev(event: str, sid: str = "A", **extra) -> dict:

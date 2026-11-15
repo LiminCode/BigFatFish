@@ -143,6 +143,21 @@ def _no_real_session_history_scan(monkeypatch):
     对话记录。这里把服务的默认扫描换成空结果，要测扫描本身的用例直接调
     ``claude_session_history.scan_local``（test_claude_session_history.py，喂临时目录）。
     """
+    # 真的 wsl.exe 一律不许起。很多函数把 ``claude_hooks.run_wsl`` 绑成默认 runner（换掉模块属性拦不住），
+    # 漏打一个桩就会读写开发机发行版里真实的 ``~/.claude``：2026-11-14 一轮全量测试就这样把那边用户同意
+    # 注入的 hooks 卸掉了。这里让它像「WSL 没有响应」一样失败（``run_wsl`` 折成非零返回码）；要测
+    # ``run_wsl`` 本身的用例自己换掉 ``subprocess.run``。同样放在这个夹具里，不另加 autouse 夹具。
+    import subprocess
+
+    real_run = subprocess.run
+
+    def _run_without_wsl(argv, *args, **kwargs):
+        first = argv[0] if isinstance(argv, (list, tuple)) and argv else argv
+        if str(first).replace("\\", "/").rsplit("/", 1)[-1].lower() in ("wsl.exe", "wsl"):
+            raise OSError("tests must not start the real wsl.exe: inject a runner or stub subprocess.run")
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _run_without_wsl)
     try:
         from pet import session_history_service
     except Exception:

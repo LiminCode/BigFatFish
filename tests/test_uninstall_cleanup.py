@@ -11,14 +11,30 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 
+import pytest
+
 from pet.config import Config
-from pet import uninstall_cleanup
+from pet import claude_hooks, uninstall_cleanup
 
 
 def _config(tmp_path) -> Config:
     return Config(base=tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def wsl_step(monkeypatch) -> list:
+    """WSL 那一步的替身，返回它被调用的记录。
+
+    默认配置在 Windows 上开着 Claude Code (WSL) 联动，所以这里每个用默认配置的用例都会走到这一步；
+    真的那份经 wsl.exe 改开发机发行版里的 ``~/.claude/settings.json``。夹具放在本文件里，不进 conftest
+    （那边多加一个 autouse 夹具会引出全量测试的潜伏原生崩溃）。"""
+    calls: list = []
+    monkeypatch.setattr("pet.agent_link.ClaudeCodeMonitor.uninstall_wsl_hooks",
+                        classmethod(lambda cls, **_kwargs: (calls.append(1), True)[1]))
+    return calls
 
 
 def test_uninstall_cleanup_runs_all_steps(tmp_path, monkeypatch):
@@ -106,6 +122,31 @@ def test_uninstall_cleanup_deletes_claude_when_no_other_instance(tmp_path, monke
     assert results["autostart"] is True
     assert results["claude_hooks"] is True
     assert results["dsh_bridge"] is True
+
+
+def test_cleanup_in_this_file_never_reaches_the_real_wsl(tmp_path, monkeypatch, wsl_step):
+    """回归（2026-11-14）：Claude Code (WSL) 联动改成 Windows 上默认开之后，本文件里用默认配置的用例全都
+    走到了 WSL 那一步；那一步没有替身，就经默认 runner 起了真的 wsl.exe，把开发机发行版里
+    ``~/.claude/settings.json`` 中用户同意注入的 9 个 hook 卸掉了。这里把「起进程」换成记录：一条都不许有。"""
+    spawned: list = []
+
+    def _record(argv, **_kwargs):
+        spawned.append(list(argv))
+        return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(claude_hooks, "wsl_exe", lambda: "wsl.exe")       # 装了 WSL 的 Windows 开发机
+    monkeypatch.setattr(claude_hooks.subprocess, "run", _record)
+    config = _config(tmp_path)
+    config.set("agent_link", {**config.get("agent_link"), "claude_wsl": True})   # Windows 上的默认值
+    monkeypatch.setattr("pet.autostart.disable", lambda: True)
+    monkeypatch.setattr("pet.agent_link.ClaudeCodeMonitor.uninstall_hooks", classmethod(lambda cls: True))
+    monkeypatch.setattr("pet.agent_link.DshMonitor.uninstall_bridge", classmethod(lambda cls: True))
+    monkeypatch.setattr(uninstall_cleanup, "other_instances_use_agent", lambda config, key: False)
+
+    results = uninstall_cleanup.run_uninstall_cleanup(config)
+
+    assert spawned == [], "卸载清理的用例起了 wsl.exe"
+    assert wsl_step == [1] and results["claude_wsl_hooks"] is True
 
 
 def test_other_instances_use_agent_detects_peers(tmp_path):
