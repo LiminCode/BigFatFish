@@ -66,6 +66,7 @@ class ApiKeyMonitor(QObject):
         self._spawn = spawn or _spawn_thread
         self._state, self._detail = UNKNOWN, ""
         self._fingerprint: tuple | None = None   # 上次体检的服务商指纹；None = 还没查过
+        self._service = ""                        # 上次体检的服务名：提示里写明查的是哪一个
         self._generation = 0
         self._busy = False
         self._running = False
@@ -81,6 +82,15 @@ class ApiKeyMonitor(QObject):
     @property
     def detail(self) -> str:
         return self._detail
+
+    @property
+    def service_name(self) -> str:
+        """上次体检的是哪一个服务（已保存的 ``active_provider`` 的名称）；还没查过是空串。"""
+        return self._service
+
+    def _labelled(self, text: str) -> str:
+        """「服务名 · 结论」：设置里测的可能是表单里还没保存的另一项，岛上得说清查的是谁。"""
+        return f"{self._service} · {text}" if self._service else text
 
     # ---------------------------------------------------------------- 生命周期
     def start(self) -> None:
@@ -126,7 +136,7 @@ class ApiKeyMonitor(QObject):
     def note_success(self) -> None:
         """一次真实对话成功了：等同体检通过（不额外发请求）。"""
         if self._running and self._chat_enabled and self._state != OK:
-            self._set(OK, t("api.recent_success"))
+            self._set(OK, self._labelled(t("api.recent_success")))
 
     # ---------------------------------------------------------------- 内部
     def _resolve(self) -> tuple | None:
@@ -143,8 +153,10 @@ class ApiKeyMonitor(QObject):
         return provider, fingerprint + (digest,)
 
     def _launch(self, provider, fingerprint: tuple) -> None:
+        self._service = str(getattr(provider, "name", "") or "")
         if self._fingerprint is not None and fingerprint != self._fingerprint:
-            self._set(UNKNOWN, t(_CHECKING_TEXT_KEY))   # 换了服务商 / Key：旧结论不能挂在新配置上
+            # 换了服务商 / Key：旧结论不能挂在新配置上
+            self._set(UNKNOWN, self._labelled(t(_CHECKING_TEXT_KEY)))
         self._fingerprint = fingerprint
         self._generation += 1
         generation = self._generation
@@ -175,7 +187,7 @@ class ApiKeyMonitor(QObject):
         self._busy = False
         if (OK if ok else BAD) != self._state:
             log.info("API 体检：%s（%s）", "可用" if ok else "不可用", message)
-        self._set(OK if ok else BAD, message)
+        self._set(OK if ok else BAD, self._labelled(message))
         self._timer.start(self.OK_RECHECK_MS if ok else self.BAD_RECHECK_MS)
 
     def _set(self, state: str, detail: str) -> None:
