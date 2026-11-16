@@ -3,11 +3,15 @@
    数据换了页面会原地重画，所以这里可以反复调：每次调用挂的监听都带同一个中止信号，返回的 dispose() 一次摘干净；
    kept 是上一次 capture() 记下的「用户正看着什么」，重画后照原样恢复（那个节点或那条线还在的话）。 */
 import {esc} from './util.js';
+import {viewer} from './viewer.js';
 
-export function interact(M, E, map, kept) {
+export function interact(M, E, map, kept, api) {
 const {G, R, N, W, H} = M;
 const S = G.strings, STATE = S.state, ESTATE = S.edge_state;
 const off = new AbortController(), on = {signal: off.signal};
+const files = viewer(api, S, on);
+/* 「查看」按钮：从肥鱼打开的页面才有服务可问；离线快照里按钮是灰的，悬停说明为什么 */
+const viewBtn = (store, title, cls) => `<button class="${cls}" data-view="${esc(store)}" data-title="${esc(title)}"${api ? '' : ` disabled title="${esc(S.view_needs_service)}"`}>${esc(S.view)}</button>`;
 let selected = null, lineOn = null;
 function trace(id) { const ns = new Set([id]), es = new Set();
   const walk = fwd => { const q = [id], seen = new Set([id]);
@@ -34,10 +38,10 @@ function detail(id) { const box = document.getElementById('detail');
   box.innerHTML = `<h2>${esc(k.name || n.kind)} · ${esc(R[n.region].title)}</h2><h3>${esc(n.title)}</h3>
     <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-top:4px"><i class="dot ${n.state}"></i>${STATE[n.state] || ''}</div>
     <dl class="kv">${(n.facts || []).filter(f => f[1] !== undefined && f[1] !== null && f[1] !== '').map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>
-    ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small></div>` +
+    ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small>${r.view ? viewBtn(r.view, r.name, 'peek') : ''}</div>` +
       (r.more ? `<dl class="more">${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : '')).join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
-    <div class="btns">${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a><button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
+    <div class="btns">${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a><button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }
@@ -49,6 +53,7 @@ function search(text) { const q = text.trim().toLowerCase(); if (!q) return pain
 map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
 document.getElementById('detail').addEventListener('click', ev => {
   const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);
+  const see = ev.target.closest('[data-view]'); if (see) return files.open(see.dataset.view, see.dataset.title);
   const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } }, on);
 document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span></div>`).join('');
 document.getElementById('quests').addEventListener('click', ev => { const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); }, on);

@@ -187,10 +187,12 @@ class PanoramaService(QObject):
         """（GUI 线程）浏览器该打开什么：本机服务的网址；服务起不来就退回快照文件。"""
         try:
             if self._server is None:
+                from .files import Reader
                 from .routes import build_router
                 from .server import PanoramaServer
 
-                self._server = PanoramaServer(build_router(self._feed))
+                reader = Reader(config_dir=self._config.dir, home=Path.home())
+                self._server = PanoramaServer(build_router(self._feed, files=reader))
             self._server.start()
             return self._server.page_url()
         except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看

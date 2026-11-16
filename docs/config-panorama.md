@@ -19,12 +19,13 @@
 | `pet/panorama/places.py` | 存储画在图上哪里：`PLACES`（一个地方 = 几个根 + 分区 + 列 + 谁往这里写）、`OWN_TILE`、`ALSO_ON` |
 | `pet/panorama/model.py` | 图模型 `Graph`：账号带 `ZONES`、层 `TIERS`、分区、列、节点、连线、待处理；状态取值校验。没有坐标 |
 | `pet/panorama/sources.py` | 来源：若干 `@source` 纯函数，把事实翻译成节点 / 连线 / 待处理；`build(facts)` |
-| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
+| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
 | `pet/panorama/render.py` | 把图变成页面要的那份数据（`page_data` / `payload`）；`shell()` / `asset()` 给本机服务；`render()` / `write()` 出离线快照 |
 | `pet/panorama/service.py` | `PanoramaService`：应用里的后台两段采集与发布；持有本机服务 |
 | `pet/panorama/server.py` | 本机回环服务 `PanoramaServer` + 路由表 `Router`：生命周期、守门检查、分发。**只用标准库、不碰 Qt** |
 | `pet/panorama/feed.py` | 发布台 `Feed`：存最近一次发布的数据和它的编号，让「等新数据」的请求等到有为止。**只用标准库** |
-| `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法） |
+| `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`） |
+| `pet/panorama/files.py` | 文件查看的那道门：`VIEWABLE` 名单、`Reader.listing` / `Reader.read`。**只用标准库、不碰 Qt** |
 | `pet/panorama/__main__.py` | 命令行入口 `[--no-wsl] [--no-mcp] [--no-open]` |
 
 ## 机制与不变量
@@ -98,6 +99,27 @@
 
 **存储表里加了一个新的根**：在 `places.PLACES` 里说它画在哪，否则 `tests/test_panorama_storage.py` 会红。
 
+### 文件查看（只读）
+
+图上能打开看的东西带一个「查看」按钮：`CLAUDE.md`、项目记忆这两块磁贴上，和存储磁贴清单里能看的那几项旁边。
+点了之后页面向本机服务要清单（`GET /api/files?store=<存储>`）再要文件（`GET /api/file?store=<存储>&path=<相对路径>`），
+在盖住页面的一张面板里按纯文本显示。
+
+- **能读什么由 `files.py` 一处把关，页面说了不算。** 一条路径过四关才会被打开：存储在 `VIEWABLE` 名单里、种类是内容、
+  根在这台机器上读得到；路径是规矩的相对路径（没有 `..`、反斜杠、盘符、绝对路径、空段）；按存储表的模式它**正好属于
+  这一项**（同一个项目目录下的会话原文不属于「项目记忆」）；解开符号链接和目录联接之后仍在根目录里、是普通文件。
+  哪一关没过都只回短代码（`not_viewable` / `bad_path` / `not_found`），不带内容、不说原因。
+- **名单现在是四项**：`claude_md`、`claude_memory`、`distill_entries`、`distill_entries_work`。
+  设置文件（`settings.json`、`.claude.json`、`config.json`）不在：里面可能夹着密钥。加一项之前先确认它是人或 AI 写的内容。
+- **图只在真有东西可看的地方给按钮**：存储在名单里，并且存储探针刚才数到这台机器上有它的文件（`sources._can_view`）。
+  WSL 一侧一个也不给：那边要经 `wsl.exe` 读，还没做。
+- **文件内容永远当文本**：`viewer.js` 把每一行转义后放进页面，不当标记解析。记忆文件里写了 `<script>` 也只是几个字。
+- **受管块**由服务标出行号（`marks`，标记串和 `claude_home_probe.BLOCK_RE` 同源），页面给这几行加底色并说明「手改会被覆盖」。
+- 一个文件最多给 512 KB（超了截断并说明），一项最多列 500 个文件。清单里的短名字是模式里通配符对上的那几段加文件名
+  （`<项目> / MEMORY.md`），完整路径在悬停提示里。
+- **离线快照里按钮是灰的**：没有服务可问。文件内容不进快照、不进 `/api/graph`、不进日志（服务只在调试级别记请求行）。
+- 面板开着的时候数据换了、页面原地重画：面板留着，监听跟着新的那一套重新挂上。
+
 ### 只读、秘密、隐私
 
 - **只读**：探针不写任何文件，`Config` 只加载。
@@ -105,7 +127,8 @@
   凭据文件只看在不在、不读内容；仓库远端地址去掉内嵌凭据。
 - **页面不联网**：没有外部脚本、样式、字体；从肥鱼点开的页面只和本机服务说话（内容策略只许同源），
   离线快照是单个 HTML。快照里嵌的数据把 `</` 转义，防 `</script>` 截断页面。
-- **不要令牌就能拿到的东西里没有数据**：外壳和三个静态文件只有结构、代码和界面文字；采到的一切只在 `/api/graph` 里。
+- **不要令牌就能拿到的东西里没有数据**：外壳和静态文件只有结构、代码和界面文字；采到的一切只在 `/api/graph` 里，
+  文件内容只在 `/api/file` 里，都要令牌。
 - 页面是自用的，**不脱敏**：里面有账号邮箱、组织名、机器名、connector 名。生成的 `%APPDATA%/big-fat-fish/panorama/panorama.html`
   不要提交或贴出去；测试样例（`tests/panorama_samples.py`）必须全是虚构的事实。
 
@@ -185,6 +208,10 @@
 - `tests/test_panorama_render.py` 守两条：离线快照不向任何地方要东西；外壳和静态文件里没有采到的数据、没有内联脚本。
 - 页面文字全部来自 `pet/locale/*.json` 的 `panorama.*`（存储的名字和说明在 `stores.*`）；两种语言 × 四种 WSL 状态下
   建出来的图不许有缺的文字。
+- `tests/test_panorama_files.py`：读临时目录里的真文件，接口那一半走真实的本机服务。拒绝矩阵是重点——名单外的存储、
+  十几种不规矩的路径、属于别的存储的路径、指到根外面的链接和目录联接，各自回什么代码；密钥字样不许出现在任何回答里。
+  **往 `VIEWABLE` 加一项，先在这里补它不该读到的邻居。** 查看面板在 `tests/test_panorama_page.py` 里单独跑
+  （假的「向服务要东西」同步返回）：问了哪两个网址、内容被转义、受管块的行带标记、读不到时说什么。
 - `tests/test_panorama_storage.py`：探针读临时目录里的真文件（归类、不认得的只报名字、封顶、缺目录）；图那一半喂虚构事实
   （三块磁贴怎么分、每一项恰好列一次、配置备份五种状态各自的磁贴和线、没登记的文件、WSL 一侧没核对时怎么画）。
 - `tests/test_panorama_server.py` 用真实的回环套接字测服务：`http.client` 能随意改 Host / Origin，正好冒充浏览器里的坏页面。
@@ -243,6 +270,9 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 | 模型服务的线是灰点线 | 没开岛（没有体检器）或走的命令行入口；正常 |
 | hooks 的线是红色断线 | 如实反映：联动开着，但那一侧 `settings.json` 里没有肥鱼的 hook（被卸掉过），去重新安装 hooks |
 | 功能明明开了却显示未启用 | 显示的是生效值：看该功能的总开关 |
+| 「查看」按钮是灰的 | 打开的是离线快照（地址栏是 `file://`）：没有服务可问。从肥鱼里点「配置全景」打开 |
+| 该有「查看」的地方没有按钮 | 存储不在 `files.VIEWABLE` 里；或存储探针没数到这台机器上有它的文件；或它在 WSL 一侧 |
+| 查看面板说「读不到」 | 文件刚被删了 / 改名了，或服务停了（页面顶上会有红条）；浏览器网络面板里看 `/api/file` 回的代码 |
 | 多出一块「没登记的文件」 | 数据目录里有存储表不认得的文件：新功能忘了登记就去 `pet/data_stores.py` 加一项；别的程序或早先版本留下的，确认后删掉文件 |
 | 存储磁贴上各项都不显示数目 | 那个地方没逐个文件核对（WSL 一侧），或者 `facts` 里没有 `storage` 这一段（探针抛了异常，看日志） |
 | 「有备份机制」是琥珀色 | 如实反映：配置备份没开、没填仓库且没配知识库仓库、没有 GitHub Token、上次失败、或暂停了；点开看是哪一种 |

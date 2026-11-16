@@ -103,6 +103,26 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .list div{display:flex;gap:8px;align-items:center;padding:2px 0}
 .list small{color:var(--muted);margin-left:auto;white-space:nowrap}
 .list:has(.more){max-height:420px}
+.list .peek{margin-left:8px;padding:1px 8px;font:inherit;font-size:11.5px;border:0;background:var(--m-tile);color:var(--m-title);cursor:pointer}
+.list .peek:hover:not(:disabled){background:var(--m-tile-hover)}.list .peek:focus-visible{outline:2px solid var(--m-accent)}.list .peek:disabled,.btn:disabled{opacity:.45;cursor:not-allowed}
+/* 文件查看面板：盖在页面上的一张纸。左边是这一项存储名下的文件，右边是选中那个的文本 */
+.viewer{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(5,8,11,.72)}
+.viewer[hidden]{display:none}
+.viewer .sheet{display:flex;flex-direction:column;width:min(1080px,94vw);height:min(820px,90vh);background:#161c23;border:1px solid #2c3742;box-shadow:0 18px 60px rgba(0,0,0,.6)}
+.viewer header{position:static;display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #252e38;background:none}
+.viewer header b{font-size:14px;margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.viewer .vbody{display:flex;flex:1;min-height:0}
+.viewer nav{width:260px;flex:none;overflow:auto;border-right:1px solid #252e38;padding:6px}
+.viewer nav[hidden]{display:none}
+.viewer nav button{display:block;width:100%;text-align:left;padding:6px 8px;border:0;border-left:3px solid transparent;background:none;color:var(--m-text);font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.viewer nav button:hover{background:#1f2730}.viewer nav button.on{border-left-color:#56b8e6;background:#1f2730;color:#fff}
+.viewer nav small{display:block;color:var(--muted);font-size:10.5px}.viewer nav em{display:block;padding:8px;color:var(--muted);font-size:11.5px;font-style:normal}
+.viewer .vmain{display:flex;flex-direction:column;flex:1;min-width:0}
+.viewer .vmeta{padding:7px 14px;font-size:11.5px;color:var(--muted);border-bottom:1px solid #252e38;word-break:break-all;min-height:16px}
+.viewer pre{flex:1;margin:0;padding:10px 0;overflow:auto;font:12.5px/1.55 ui-monospace,Consolas,"Cascadia Mono",monospace;color:#d7dee6;white-space:pre-wrap;word-break:break-word;tab-size:4}
+.viewer .ln{display:block;padding:0 14px;min-height:1.55em}
+.viewer .ln.managed{background:rgba(86,184,230,.11);box-shadow:inset 3px 0 0 #56b8e6}
+.viewer .ln.note{color:var(--muted)}
 .list .more{display:grid;grid-template-columns:78px minmax(0,1fr);gap:2px 8px;margin:0 0 9px 16px;padding:0 0 8px;font-size:11.5px;border-bottom:1px solid #252e38}
 .list .more dt{color:var(--muted)}.list .more dd{margin:0;word-break:break-word;color:#c5ced8}
 .quest{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid #252e38;cursor:pointer;font-size:12.5px}

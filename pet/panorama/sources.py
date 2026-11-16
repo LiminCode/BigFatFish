@@ -14,7 +14,7 @@ from typing import Callable
 
 from .. import data_stores as ds
 from ..i18n import t
-from . import features, places
+from . import features, files, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
 
 FISH_NODE = "pet"
@@ -396,9 +396,15 @@ def _store_item(store: ds.Store, counts: dict | None, where: str) -> dict:
     state = "off" if counts is not None and not count else "warn" if ds.standing(store) == "local" else "ok"
     writers = _join(L("who.user") if w == "user" else _WRITER_NAMES.get(w, w) for w in store.writers)
     return {"id": store.id, "name": t(f"stores.{key}.name"), "state": state, "detail": detail,
+            **({"view": store.id} if _can_view(store, counts) else {}),
             "more": [[L("store.holds"), t(f"stores.{key}.holds")],
                      [L("store.where"), L("store.where_value", root=where, patterns=", ".join(store.patterns))],
                      [L("fact.writer"), writers], [L("store.restore"), _restore_text(store)]]}
+
+
+def _can_view(store: ds.Store, counts: dict | None) -> bool:
+    """这一项能不能在页面上打开看：在查看名单里，而且刚才数到这台机器上确实有它的文件。"""
+    return files.viewable(store.id) and bool((counts or {}).get(store.id))
 
 
 def _some(names: list[str]) -> str:
@@ -478,6 +484,8 @@ def storage(g: Graph, f: dict) -> None:
         tile = places.OWN_TILE.get(store.id) or places.ALSO_ON.get(store.id)
         if tile:
             g.add_fact(tile, L("store.restore"), _restore_text(store))
+            if _can_view(store, seen.get(store.root)):
+                g.mark(tile, view=store.id)
 
 
 @source

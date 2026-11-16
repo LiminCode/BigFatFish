@@ -56,7 +56,7 @@ import {start} from './app.js';
     if (view) view.dispose();
     document.documentElement.lang = data.page.lang;
     document.title = data.page.title;
-    view = start(data, kept);
+    view = start(data, kept, api);
     revision = data.revision;
   }
 
