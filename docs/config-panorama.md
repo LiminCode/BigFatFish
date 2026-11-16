@@ -252,6 +252,17 @@
 
 ## 外部格式依赖
 
+「在 VS Code 打开」靠 VS Code 的链接格式（`interact.js` 里拼）：
+
+- Windows 上的路径：`vscode://file/<路径>`。文件和目录都行，VS Code 自己去看它是哪一种。
+- WSL 里的路径：`vscode://vscode-remote/wsl+<发行版>/<路径>`，在连着 WSL 的窗口里打开（要装 WSL 扩展）。
+  **VS Code 对远程路径分不出文件和目录，默认当文件夹开；结尾带 `:行号` 才当文件。** 所以文件的链接拼成 `…/CLAUDE.md:1`，
+  目录（来源里带 `dir`，由 `sources._src(folder=True)` 标）不带。发行版名字没探到时不给链接，只留「复制路径」。
+- 两种链接结尾都带 `?windowId=_blank`：VS Code 看到它就**开一个新窗口**，否则文件会开进最近用的那个窗口，
+  和手头的项目混在一起。VS Code 打开之前会把这个参数摘掉，不会变成路径的一部分。
+- 依据是 VS Code 源码 `src/vs/code/electron-main/app.ts` 里处理协议链接的那两个函数（`handleProtocolUrl`、
+  `getWindowOpenableFromProtocolUrl`）；VS Code 改了这些规则就要跟着改。
+
 Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 
 - `~/.claude/settings.json`：`hooks`（事件 → 组 → `hooks` 列表，逐条命令计数，含 `big-fat-fish` 字样的算肥鱼的）、`model`、
@@ -279,6 +290,9 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 | 模型服务的线是灰点线 | 没开岛（没有体检器）或走的命令行入口；正常 |
 | hooks 的线是红色断线 | 如实反映：联动开着，但那一侧 `settings.json` 里没有肥鱼的 hook（被卸掉过），去重新安装 hooks |
 | 功能明明开了却显示未启用 | 显示的是生效值：看该功能的总开关 |
+| 点「在 VS Code 打开」开出一个空白窗口 | WSL 里的文件被当成文件夹开了：链接结尾少了 `:1`（来源被错标成了目录），或 VS Code 改了规则。见「外部格式依赖」 |
+| 「在 VS Code 打开」把文件开进了现有的窗口 | 链接结尾少了 `?windowId=_blank`，或 VS Code 改了规则。见「外部格式依赖」 |
+| WSL 一侧的磁贴没有「在 VS Code 打开」 | 发行版名字没探到（探针读的是 `WSL_DISTRO_NAME`）；路径仍然可以复制 |
 | 「查看」按钮是灰的 | 打开的是离线快照（地址栏是 `file://`）：没有服务可问。从肥鱼里点「配置全景」打开 |
 | 该有「查看」的地方没有按钮 | 存储不在 `files.VIEWABLE` 里（登录凭据、钥匙串永远不在）；或存储探针没数到这台机器上有它的文件；或它在 WSL 一侧 |
 | 查看面板说「读不到」 | 文件刚被删了 / 改名了，或服务停了（页面顶上会有红条）；浏览器网络面板里看 `/api/file` 回的代码 |

@@ -31,7 +31,12 @@ function select(id) { selected = id; lineOn = null; document.getElementById('q')
 function detail(id) { const box = document.getElementById('detail');
   if (!id) { box.innerHTML = `<h2>${esc(S.help_title)}</h2><p class="hint">${esc(S.help_text).split('\n').join('<br>')}</p>`; return; }
   const n = N[id], k = G.kinds[n.kind] || {}, out = E.filter(e => e.from === id), inn = E.filter(e => e.to === id), src = n.source || {};
-  const link = src.path ? (src.env === 'wsl' ? `vscode://vscode-remote/wsl+${src.distro}${src.path}` : 'vscode://file/' + src.path.replace(/\\/g, '/')) : '';
+  /* 「在 VS Code 打开」。WSL 里的路径走远程链接：VS Code 默认把它当文件夹开，结尾带 :行号 才当文件——
+     不带的话点一个文件会开出空白窗口。是目录（src.dir）就不带。发行版名字没探到时不给链接，只留路径。
+     两种链接都带 ?windowId=_blank：让 VS Code 开一个新窗口，而不是把文件塞进手头正开着的那个项目里。 */
+  const target = !src.path ? '' : src.env !== 'wsl' ? 'vscode://file/' + src.path.replace(/\\/g, '/')
+    : src.distro ? `vscode://vscode-remote/wsl+${src.distro}${src.path}${src.dir ? '' : ':1'}` : '';
+  const link = target && target + '?windowId=_blank';
   const rank = r => r.state === 'off' ? 2 : r.state === 'ok' ? 1 : 0;     /* 要处理的在前，这台机器上没有的垫底 */
   const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
   const nb = (list, key) => list.map(e => `<button data-go="${e[key]}"><i class="dot ${e.state === 'broken' ? 'bad' : e.state}"></i>${esc(N[e[key]].title)}${e.label ? ' · ' + esc(e.label) : ''}<span style="color:var(--muted)">${ESTATE[e.state]}</span></button>`).join('');
@@ -41,7 +46,7 @@ function detail(id) { const box = document.getElementById('detail');
     ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small>${r.view ? viewBtn(r.view, r.name, 'peek') : ''}</div>` +
       (r.more ? `<dl class="more">${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : '')).join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
-    <div class="btns">${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a><button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
+    <div class="btns">${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }

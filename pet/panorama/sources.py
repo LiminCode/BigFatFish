@@ -38,8 +38,12 @@ def source(fn):
 
 # ───────────────────────── 小工具 ─────────────────────────
 
-def _src(path: str, key: str = "", env: str = "win", distro: str = "") -> dict | None:
-    return {"path": path, "key": key, "env": env, "distro": distro} if path else None
+def _src(path: str, key: str = "", env: str = "win", distro: str = "", *, folder: bool = False) -> dict | None:
+    """磁贴指向磁盘上的哪里。``folder`` = 这是个目录：页面给 WSL 里的路径拼「在 VS Code 打开」的链接时要知道
+    （VS Code 对远程路径分不出文件和目录，得由链接说清楚）。"""
+    if not path:
+        return None
+    return {"path": path, "key": key, "env": env, "distro": distro, **({"dir": True} if folder else {})}
 
 
 def _hook_events(hooks: dict) -> list[str]:
@@ -247,7 +251,7 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
             g.quest("bad", L("quest.wsl_failed", detail=w.get("error", "")), WSL_ENTRY)
         return
     account, home, distro = w["account"], w["home"], w.get("distro", "")
-    src = lambda path, key="": _src(path, key, "wsl", distro)  # noqa: E731
+    src = lambda path, key="", folder=False: _src(path, key, "wsl", distro, folder=folder)  # noqa: E731
     g.node("acct_work", "cloud_work", 1, "account", L("node.acct_work"), account["email"] or L("unknown_account"),
            "ok" if w["credentials_file"] else "bad", "big", lines=[account["organization"], L("acct.used_by_wsl")],
            facts=[[L("fact.account"), account["email"]], [L("fact.organization"), account["organization"]],
@@ -268,7 +272,7 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
     _claude_md_node(g, "md_wsl", "wsl", w["claude_md"], L("writer.work"), src(w["claude_md"].get("path", "")))
     g.node("mem_wsl", "wsl", 0, "memory", L("node.project_memory"), L("memory.sub", n=w["memory_count"], total=w["projects"]), "ok",
            icon="stack", facts=[[L("fact.location"), "~/.claude/projects/<project>/memory/"], [L("fact.distilled"), L("count", n=w["distilled_files"])]],
-           source=src(home + "/.claude/projects"))
+           source=src(home + "/.claude/projects", folder=True))
     g.node("mcp_wsl", "wsl", 1, "connector", L("node.local_mcp"), _join(w["mcp_servers"]) or L("none"), "ok", gap=74,
            facts=[[L("fact.source"), "~/.claude.json → mcpServers"]], source=src(w["state_path"], "mcpServers"))
     g.node("plug_wsl", "wsl", 1, "plugin", L("node.plugins"), L("plugins.sub", n=len(w["plugins"])), "ok",
@@ -438,7 +442,8 @@ def storage(g: Graph, f: dict) -> None:
         if not g.has(place.owner) or (place.wsl and not _wsl_ready(f)):
             continue
         owner, short = L(f"place.{place.label}"), L(f"place_tile.{place.label}")    # 待处理里说全名，磁贴上地方小，说短的
-        src = _src(paths.get(place.roots[0], ""), "", "wsl" if place.wsl else "win", wsl.get("distro", "") if place.wsl else "")
+        src = _src(paths.get(place.roots[0], ""), "", "wsl" if place.wsl else "win", wsl.get("distro", "") if place.wsl else "",
+                   folder=True)
         members = [s for s in ds.STORES if s.root in place.roots and s.id not in places.OWN_TILE]
         checked = any(root in seen for root in place.roots)
         for stand in ds.STANDINGS:
