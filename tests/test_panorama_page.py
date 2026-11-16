@@ -352,6 +352,37 @@ def test_view_buttons_appear_where_the_graph_offers_them_and_are_disabled_in_the
     assert "data-view=" not in _details(engine, graph, "md_wsl", "fakeApi([])")               # WSL 一侧这一步还读不了
 
 
+# ---------------------------------------------------------------- 「在 VS Code 打开」的链接
+
+def test_a_wsl_file_link_carries_a_line_number_so_vs_code_opens_it_as_a_file(engine):
+    """VS Code 把 ``vscode://vscode-remote/…`` 的路径默认当**文件夹**开，只有结尾带 ``:行号`` 才当文件。
+    不带的话点 WSL 里的 CLAUDE.md 会开出一个空白窗口。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    remote = "vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude"
+    assert f'href="{remote}/CLAUDE.md:1"' in _details(engine, graph, "md_wsl", "undefined")
+    assert f'href="{remote}/settings.json:1"' in _details(engine, graph, "set_wsl", "undefined")
+    assert 'href="vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude.json:1"' in _details(engine, graph, "mcp_wsl", "undefined")
+
+
+def test_a_wsl_folder_link_has_no_line_number(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    remote = "vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude"
+    assert f'href="{remote}/projects"' in _details(engine, graph, "mem_wsl", "undefined")
+    assert f'href="{remote}"' in _details(engine, graph, "st_cc_wsl_local", "undefined")
+
+
+def test_windows_links_are_unchanged_and_a_wsl_link_without_a_distro_is_not_offered(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    assert 'href="vscode://file/C:/Users/dev/.claude/CLAUDE.md"' in _details(engine, graph, "md_win", "undefined")
+    nameless = samples.wsl_home()
+    nameless["distro"] = ""
+    detail = _details(engine, sources.build(samples.facts(wsl=nameless)), "md_wsl", "undefined")
+    assert "vscode://" not in detail and "/home/dev/.claude/CLAUDE.md" in detail      # 路径还在，只是不给一个打不开的链接
+
+
 # ---------------------------------------------------------------- 原生模块
 
 def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(engine):
