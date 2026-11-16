@@ -175,6 +175,17 @@ def test_redraw_keeps_the_selected_node_and_shows_its_new_details(engine):
     assert out["pending"] is True                                        # 第一张图亮着的「还在探测」收起来了
 
 
+def test_whatever_was_selected_while_waiting_is_still_selected_when_the_wsl_half_arrives(engine):
+    """等 WSL 那一半的时候点了哪一块都行：那一半到了以后它仍然选中。靠的是节点标识在两张图里不变。"""
+    i18n.set_language("zh")
+    waiting, complete = sources.build(samples.facts(wsl="pending")), sources.build(samples.facts())
+    assert {n["id"] for n in waiting["nodes"]} <= {n["id"] for n in complete["nodes"]}
+    for node in waiting["nodes"]:
+        out = _redraw(engine, waiting, complete, f"view.select({json.dumps(node['id'])});")
+        assert out["after"]["selected"] == node["id"], node["title"]
+        assert node["title"] in out["detail"], node["title"]
+
+
 def test_redraw_drops_a_selection_that_no_longer_exists(engine):
     """选中的是 WSL 里的东西，新数据里 WSL 没了：回到没选中，不报错。"""
     i18n.set_language("zh")
