@@ -354,29 +354,40 @@ def test_view_buttons_appear_where_the_graph_offers_them_and_are_disabled_in_the
 
 # ---------------------------------------------------------------- 「在 VS Code 打开」的链接
 
+NEW_WINDOW = "?windowId=_blank"          # VS Code 认这个参数：在新窗口里打开，不塞进现有的窗口
+
 def test_a_wsl_file_link_carries_a_line_number_so_vs_code_opens_it_as_a_file(engine):
     """VS Code 把 ``vscode://vscode-remote/…`` 的路径默认当**文件夹**开，只有结尾带 ``:行号`` 才当文件。
     不带的话点 WSL 里的 CLAUDE.md 会开出一个空白窗口。"""
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
     remote = "vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude"
-    assert f'href="{remote}/CLAUDE.md:1"' in _details(engine, graph, "md_wsl", "undefined")
-    assert f'href="{remote}/settings.json:1"' in _details(engine, graph, "set_wsl", "undefined")
-    assert 'href="vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude.json:1"' in _details(engine, graph, "mcp_wsl", "undefined")
+    assert f'href="{remote}/CLAUDE.md:1{NEW_WINDOW}"' in _details(engine, graph, "md_wsl", "undefined")
+    assert f'href="{remote}/settings.json:1{NEW_WINDOW}"' in _details(engine, graph, "set_wsl", "undefined")
+    assert f'href="vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude.json:1{NEW_WINDOW}"' in _details(engine, graph, "mcp_wsl", "undefined")
 
 
 def test_a_wsl_folder_link_has_no_line_number(engine):
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
     remote = "vscode://vscode-remote/wsl+Ubuntu-24.04/home/dev/.claude"
-    assert f'href="{remote}/projects"' in _details(engine, graph, "mem_wsl", "undefined")
-    assert f'href="{remote}"' in _details(engine, graph, "st_cc_wsl_local", "undefined")
+    assert f'href="{remote}/projects{NEW_WINDOW}"' in _details(engine, graph, "mem_wsl", "undefined")
+    assert f'href="{remote}{NEW_WINDOW}"' in _details(engine, graph, "st_cc_wsl_local", "undefined")
 
 
-def test_windows_links_are_unchanged_and_a_wsl_link_without_a_distro_is_not_offered(engine):
+def test_every_link_asks_vs_code_for_a_new_window(engine):
+    """不带这个参数，VS Code 把文件开在最近用的那个窗口里，和手头的项目混在一起。"""
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
-    assert 'href="vscode://file/C:/Users/dev/.claude/CLAUDE.md"' in _details(engine, graph, "md_win", "undefined")
+    for node in ("md_win", "set_win", "vault_personal", "pet", "md_wsl", "mem_wsl"):
+        links = re.findall(r'href="(vscode://[^"]+)"', _details(engine, graph, node, "undefined"))
+        assert len(links) == 1 and links[0].endswith(NEW_WINDOW) and links[0].count("?") == 1, (node, links)
+
+
+def test_windows_links_keep_their_shape_and_a_wsl_link_without_a_distro_is_not_offered(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    assert f'href="vscode://file/C:/Users/dev/.claude/CLAUDE.md{NEW_WINDOW}"' in _details(engine, graph, "md_win", "undefined")
     nameless = samples.wsl_home()
     nameless["distro"] = ""
     detail = _details(engine, sources.build(samples.facts(wsl=nameless)), "md_wsl", "undefined")

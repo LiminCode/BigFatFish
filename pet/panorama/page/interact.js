@@ -32,9 +32,11 @@ function detail(id) { const box = document.getElementById('detail');
   if (!id) { box.innerHTML = `<h2>${esc(S.help_title)}</h2><p class="hint">${esc(S.help_text).split('\n').join('<br>')}</p>`; return; }
   const n = N[id], k = G.kinds[n.kind] || {}, out = E.filter(e => e.from === id), inn = E.filter(e => e.to === id), src = n.source || {};
   /* 「在 VS Code 打开」。WSL 里的路径走远程链接：VS Code 默认把它当文件夹开，结尾带 :行号 才当文件——
-     不带的话点一个文件会开出空白窗口。是目录（src.dir）就不带。发行版名字没探到时不给链接，只留路径。 */
-  const link = !src.path ? '' : src.env !== 'wsl' ? 'vscode://file/' + src.path.replace(/\\/g, '/')
+     不带的话点一个文件会开出空白窗口。是目录（src.dir）就不带。发行版名字没探到时不给链接，只留路径。
+     两种链接都带 ?windowId=_blank：让 VS Code 开一个新窗口，而不是把文件塞进手头正开着的那个项目里。 */
+  const target = !src.path ? '' : src.env !== 'wsl' ? 'vscode://file/' + src.path.replace(/\\/g, '/')
     : src.distro ? `vscode://vscode-remote/wsl+${src.distro}${src.path}${src.dir ? '' : ':1'}` : '';
+  const link = target && target + '?windowId=_blank';
   const rank = r => r.state === 'off' ? 2 : r.state === 'ok' ? 1 : 0;     /* 要处理的在前，这台机器上没有的垫底 */
   const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
   const nb = (list, key) => list.map(e => `<button data-go="${e[key]}"><i class="dot ${e.state === 'broken' ? 'bad' : e.state}"></i>${esc(N[e[key]].title)}${e.label ? ' · ' + esc(e.label) : ''}<span style="color:var(--muted)">${ESTATE[e.state]}</span></button>`).join('');
