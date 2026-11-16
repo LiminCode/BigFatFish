@@ -208,6 +208,14 @@ exact breakpoint there; see `docs/agents/handoff.md`.
   `docs/adr/0001-run-from-source-only.md` and `docs/upstream.md` before
   reintroducing any, and note that runtime branches for packaged builds
   (`sys.frozen`, `build_variant`) were deliberately left in place.
+- Read `docs/roadmap.md` before starting a new piece of work: it holds the
+  project goal, the eight principles and the milestone checklist. Two of them
+  bind every change. Anything a feature writes to disk must be able to say
+  where it is restored from after the machine is lost
+  (`docs/adr/0015-private-repos-are-home.md`); settings are moving from the Qt
+  window to the config panorama page one group at a time, and a setting has
+  exactly one place to edit it (`docs/adr/0014-panorama-becomes-the-console.md`).
+  Tick the roadmap item in the PR that finishes it.
 - Read `docs/settings-and-menu.md` before adding, moving, removing, or changing
   a persistent setting or its settings-page interaction (the section
   "设置变更门禁" is the gate), and when changing context-menu structure,

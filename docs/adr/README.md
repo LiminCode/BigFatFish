@@ -61,3 +61,5 @@ PR 满足下面**任意一条**才新增一份 ADR：
 | [0011](0011-settings-is-a-separate-process.md) | 设置窗口是独立的单实例进程 |
 | [0012](0012-retire-the-entry-keep-the-code.md) | 下线一个功能时只摘入口，能力代码和配置键留着 |
 | [0013](0013-evidence-in-pr-decisions-in-adr.md) | 交付证据写在 PR 描述里，仓库里只留主题文档、变更记录和 ADR |
+| [0014](0014-panorama-becomes-the-console.md) | 配置全景长成主控制台，设置逐步从 Qt 窗口搬到网页，经本机回环服务读写 |
+| [0015](0015-private-repos-are-home.md) | 私有仓库是数据的家，本机磁盘只是缓存；每种落盘数据都要登记从哪恢复 |
