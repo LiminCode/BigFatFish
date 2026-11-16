@@ -203,6 +203,18 @@ def test_redraw_keeps_the_search_text_when_nothing_is_selected(engine):
     assert out["kept"] == {"selected": None, "lineOn": None, "query": "notion"} and out["query"] == "notion"
 
 
+def test_a_storage_tile_lists_each_store_with_what_where_who_and_restore_source(engine):
+    """存储磁贴点开：清单里每一项下面跟着几行说明（里面是什么、在哪、谁在写、丢了从哪恢复）。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    out = _redraw(engine, graph, graph, "view.select('st_fish_local');")
+    stores = [i for i in next(n for n in graph["nodes"] if n["id"] == "st_fish_local")["items"]]
+    assert out["detail"].count('<dl class="more">') == len(stores)
+    assert "memory-distill/entries.json" in out["detail"] and "丢了从哪恢复" in out["detail"]
+    plain = _redraw(engine, graph, graph, "view.select('conn_w_ok');")       # 没有说明的清单照旧，不多出空壳
+    assert '<dl class="more">' not in plain["detail"]
+
+
 def test_redraw_removes_the_old_listeners_and_attaches_the_same_number_again(engine):
     """重画十次也只有一套监听：每次先把上一套整个摘掉。"""
     i18n.set_language("zh")

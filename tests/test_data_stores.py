@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from pet import data_stores as ds
+from pet import i18n
 
 PET = Path(ds.__file__).resolve().parent
 #: 只盯这几种扩展名：数据文件基本都是它们。`.done` / `.txt` 之类和文案键、提示词撞得太多，不盯。
@@ -29,7 +30,7 @@ def test_table_is_internally_consistent():
     for store in ds.STORES:
         assert store.zone in ds.ZONES and store.root in ds.ROOTS and store.kind in ds.KINDS, store.id
         assert store.restore.source in ds.RESTORE_SOURCES, store.id
-        assert store.patterns and store.writer and store.holds, store.id
+        assert store.patterns and store.writers, store.id
 
 
 def test_validate_rejects_the_mistakes_it_exists_to_catch():
@@ -43,12 +44,13 @@ def test_validate_rejects_the_mistakes_it_exists_to_catch():
     broken(root="nowhere")
     broken(zone="neither")
     broken(patterns=())
-    broken(restore=ds.Restore("uncovered"))                               # 没覆盖却不说为什么、打算哪一步补
-    broken(restore=ds.Restore("uncovered", reason="因为", plan=""))
+    broken(restore=ds.Restore("uncovered"))                               # 没覆盖却不说打算哪一步补
+    broken(writers=())
+    broken(writers=("用户",))                                              # 写的人是标识，不是给人看的话
     broken(restore=ds.Restore("git", via="config_backup"))                # 说进了仓库却不说哪个仓库
     broken(restore=ds.Restore("git", repo="kb_personal"))                 # 也不说靠哪个机制
-    broken(kind="content", restore=ds.Restore("disposable", reason="x"))  # 人或 AI 写的东西不能「丢了无所谓」
-    broken(kind="settings", restore=ds.Restore("rebuild", reason="x"))    # 设置重算不出来
+    broken(kind="content", restore=ds.Restore("disposable"))              # 人或 AI 写的东西不能「丢了无所谓」
+    broken(kind="settings", restore=ds.Restore("rebuild"))                # 设置重算不出来
     broken(kind="secret", restore=ds.Restore("git", repo="kb_personal", via="x"))   # 密钥只有一种恢复来源
     broken(kind="cache", restore=ds.Restore("secret"))
     with pytest.raises(ValueError):
@@ -61,7 +63,32 @@ def test_content_and_settings_are_either_backed_up_or_listed_as_a_gap():
         if store.kind in ("content", "settings"):
             assert store.restore.source in ("git", "uncovered"), store.id
     for store in ds.gaps():
-        assert store.restore.reason and store.restore.plan, store.id
+        assert store.restore.plan, store.id
+
+
+def test_standing_says_what_happens_to_each_store_if_the_disk_dies():
+    by_id = {store.id: ds.standing(store) for store in ds.STORES}
+    assert set(by_id.values()) == set(ds.STANDINGS)
+    assert by_id["config"] == "kept" and by_id["kb_personal_repo"] == "kept"
+    assert by_id["distill_entries"] == "local" and by_id["claude_md_wsl"] == "local"
+    assert by_id["logs"] == "free" and by_id["claude_login"] == "free" and by_id["voice_cache"] == "free"
+    # 密钥：定了做法（加密后进私有仓库）却还没做，所以现在算只在本机；做完把 plan 去掉就算留住了
+    assert by_id["api_keys"] == "local"
+    done = ds.Store("k", "personal", "keyring", ("x",), "secret", ("chat.models",), ds.Restore("secret"))
+    assert ds.standing(done) == "kept"
+    assert {store.id for store in ds.gaps()} == {i for i, s in by_id.items() if s == "local"}
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_every_store_and_root_is_described_in_both_languages(language):
+    """表里只有标识；每一项叫什么、里面是什么、为什么是这个恢复来源，在字表里，两种语言都得有。"""
+    table = i18n.table(language)
+    missing = [f"stores.{ds.text_key(store)}.{part}" for store in ds.STORES for part in ("name", "holds", "why")
+               if not str(table.get(f"stores.{ds.text_key(store)}.{part}") or "").strip()]
+    missing += [f"stores.root.{root}" for root in ds.ROOTS if not str(table.get(f"stores.root.{root}") or "").strip()]
+    assert missing == []
+    described = {key.split(".")[1] for key in table if key.startswith("stores.") and not key.startswith("stores.root.")}
+    assert described == {ds.text_key(store) for store in ds.STORES}, "字表里有表里已经没有的存储，删掉"
 
 
 def test_every_filename_literal_in_the_code_is_accounted_for():

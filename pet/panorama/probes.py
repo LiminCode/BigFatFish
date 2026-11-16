@@ -16,7 +16,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from .. import claude_hooks, config_backup, personal_vault, work_notes
-from . import claude_home_probe, features
+from . import claude_home_probe, features, storage_probe
 
 SecretGet = Callable[[str], str]
 GitRunner = Callable[..., "tuple[int, str]"]
@@ -49,9 +49,14 @@ def providers(cfg: dict, secret_get: SecretGet) -> list[dict]:
 
 
 def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git) -> dict:
-    """一个本地克隆：在不在、远端（去掉内嵌凭据）、分支、最近一次提交。"""
+    """一个本地克隆：在不在、远端（去掉内嵌凭据）、分支、最近一次提交，还有多少东西没到远端。
+
+    ``unpushed``：比上游多出来的提交数（按本地记得的上游算，不联网）；``dirty``：有没有还没提交的改动。
+    问不出来（没有上游、git 失败）是 ``None``。
+    """
     folder = Path(os.path.expandvars(str(path or "")))
-    info = {"path": str(folder) if path else "", "exists": bool(path) and folder.is_dir(), "remote": "", "branch": "", "last_commit": ""}
+    info = {"path": str(folder) if path else "", "exists": bool(path) and folder.is_dir(), "remote": "", "branch": "", "last_commit": "",
+            "unpushed": None, "dirty": None}
     if not info["exists"]:
         return info
 
@@ -62,6 +67,10 @@ def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git) -> 
     info["remote"] = re.sub(r"(https?://)[^@/]+@", r"\1", git("remote", "get-url", "origin"))
     info["branch"] = git("rev-parse", "--abbrev-ref", "HEAD")
     info["last_commit"] = git("log", "-1", "--format=%cd · %s", "--date=format:%Y-%m-%d %H:%M")[:90]
+    ahead = git("rev-list", "--count", "@{upstream}..HEAD")
+    info["unpushed"] = int(ahead) if ahead.isdigit() else None
+    code, out = run_git(folder, ["status", "--porcelain"], timeout=GIT_TIMEOUT_S)
+    info["dirty"] = bool(out.strip()) if code == 0 else None
     return info
 
 
@@ -105,7 +114,11 @@ def windows_side(cfg: dict, *, cfg_path: str | Path, secret_get: SecretGet, api_
         "work_vault": repo_info(work_notes.normalize(cfg.get(work_notes.CONFIG_KEY))["repo_dir"], run_git),
         "win": claude_home_probe.probe(home or Path.home()),
     }
-    facts["timing"] = {"windows_s": round(time.perf_counter() - started, 2)}
+    storage_started = time.perf_counter()
+    facts["storage"] = storage_probe.collect(cfg, config_dir=cfg_path.parent, home=home or Path.home(),
+                                             kb_repo=facts["chat"]["knowledge_base_repo"])
+    facts["timing"] = {"windows_s": round(time.perf_counter() - started, 2),
+                       "storage_s": round(time.perf_counter() - storage_started, 2)}
     return facts
 
 
