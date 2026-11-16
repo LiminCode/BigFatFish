@@ -43,7 +43,7 @@ def test_snapshot_is_self_contained():
     page = render.render(sources.build(samples.facts()))
     assert render.STYLE_LINK not in page and render.SCRIPT_TAGS not in page
     assert not re.search(r'<(script|link|img)[^>]*\s(src|href)=', page)
-    assert "function start(G)" in page and "PANORAMA_DATA" in page
+    assert "function start(G" in page and "PANORAMA_DATA" in page
 
 
 def test_a_script_end_tag_inside_the_data_cannot_cut_the_page_short():

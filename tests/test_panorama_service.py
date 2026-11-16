@@ -236,6 +236,7 @@ def test_quitting_stops_the_local_service(tmp_path):
     h.service.open()
     h.service.stop()
     assert not h.server.running and h.log[-1] == "unserve"
+    assert h.service._feed.closed                                        # 挂着等新数据的请求随之放回去
 
 
 def test_the_token_never_reaches_the_log(tmp_path, caplog):
@@ -274,6 +275,61 @@ def test_real_service_serves_what_was_published_and_stops_on_quit(tmp_path):
         status, shell = get("/", {})
         assert status == 200 and b'src="/boot.js"' in shell and token.encode() not in shell
         assert service.page_path.is_file()                               # 离线快照照样写了
+
+        # 页面带着手里的编号来「等更新的」：请求被挂住；这时退出应用，它立刻被放回去，服务照常停下
+        import threading
+
+        held = {}
+
+        def wait_for_newer():
+            try:
+                held["status"] = get("/api/graph?after=2", {"X-Panorama-Token": token})[0]
+            except OSError as exc:                                       # 服务先一步关了连接：也算放回去了
+                held["status"] = type(exc).__name__
+
+        waiter = threading.Thread(target=wait_for_newer, daemon=True)
+        waiter.start()
+        import time
+
+        deadline = time.monotonic() + 15                                 # 等请求真的挂到发布台上再退出，不赌先后
+        while service._feed.waiting < 1 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert service._feed.waiting == 1
     finally:
         service.stop()
+    waiter.join(15)
+    assert not waiter.is_alive() and held["status"] == 204
     assert not service._server.running
+
+
+def test_a_new_round_wakes_a_page_that_is_waiting(tmp_path):
+    """页面开着的时候再点一次「配置全景」：挂着的那个请求在新数据发布的那一刻拿到它。"""
+    import http.client
+    import threading
+
+    opened = []
+    service = PanoramaService(_config(tmp_path), windows=_windows_facts, wsl=samples.wsl_home,
+                              open_page=opened.append, spawn=lambda run: run())
+    try:
+        service.open()                                                   # 发布了第 1、2 份
+        base, _, token = opened[0].partition("/#")
+        port = int(base.rsplit(":", 1)[1])
+        box = {}
+
+        def wait_for_newer():
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+            try:
+                connection.request("GET", "/api/graph?after=2", headers={"Host": f"127.0.0.1:{port}", "X-Panorama-Token": token})
+                response = connection.getresponse()
+                box["status"], box["body"] = response.status, response.read()
+            finally:
+                connection.close()
+
+        waiter = threading.Thread(target=wait_for_newer, daemon=True)
+        waiter.start()
+        service.open()                                                   # 第 3、4 份
+        waiter.join(15)
+        assert not waiter.is_alive() and box["status"] == 200
+        assert json.loads(box["body"])["revision"] in (3, 4)             # 等的人拿到的是它醒来时最新的那份
+    finally:
+        service.stop()

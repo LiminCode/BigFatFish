@@ -10,8 +10,8 @@
 （``panorama.html``，肥鱼没开时也能看）。浏览器打开的是本机服务的网址；服务起不来时退回打开快照文件。
 
 两段都在一条 daemon 线程里；结果经信号排队回 GUI 线程（``ConfigBackupSync`` 同一个模式）。
-配置在 GUI 线程上拷贝一份再交给线程，线程不碰活的 ``Config``。本机服务有自己的线程，只读 ``_payload``
-这一个引用（整个换掉，不原地改）。
+配置在 GUI 线程上拷贝一份再交给线程，线程不碰活的 ``Config``。本机服务有自己的线程，只从发布台
+（``feed.Feed``）取数据、等数据；每次发布是整份替换，不原地改。
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
 from . import probes, render, sources
+from .feed import Feed
 
 log = logging.getLogger(__name__)
 OUT_SUBDIR = "panorama"
@@ -69,8 +70,7 @@ class PanoramaService(QObject):
         self._open_page = open_page or _open_in_browser
         self._spawn = spawn or _spawn_thread
         self._server = server                   # 第一次要开页面时才创建（见 _page_target）
-        self._payload: bytes | None = None      # 最近一次发布的 /api/graph 正文；本机服务的线程只读这个引用
-        self._revision = 0
+        self._feed = Feed()                     # 发布台：采集线程往上放，本机服务的请求线程来取、来等
         self._generation = 0
         self._busy = False
         self._last_wsl: dict | None = None      # 上一轮 WSL 的结果：下一次打开先拿它垫着
@@ -88,13 +88,17 @@ class PanoramaService(QObject):
         return self._busy
 
     def graph_payload(self) -> bytes | None:
-        """给本机服务用：最近一次发布的数据；还没发布过是 ``None``。"""
-        return self._payload
+        """最近一次发布的数据；还没发布过是 ``None``。"""
+        return self._feed.latest()
 
     def stop(self) -> None:
-        """应用要退出：在跑的那一轮作废（它写完的文件留着，只是不再打开浏览器、不再报完成），本机服务停掉。"""
+        """应用要退出：在跑的那一轮作废（它写完的文件留着，只是不再打开浏览器、不再报完成），本机服务停掉。
+
+        先关发布台：页面挂着的「等新数据」请求立刻放回去，服务才停得干净。
+        """
         self._generation += 1
         self._busy = False
+        self._feed.close()
         if self._server is not None:
             try:
                 self._server.stop()
@@ -104,7 +108,7 @@ class PanoramaService(QObject):
     def open(self) -> bool:
         """采一轮并打开页面；返回是否真的发起了新一轮。上一轮还没跑完时只把现有页面再打开一次。"""
         if self._busy:
-            if self._payload is not None or self.page_path.is_file():
+            if self._feed.latest() is not None or self.page_path.is_file():
                 self._open_page(self._page_target(str(self.page_path)))
             return False
         try:
@@ -173,11 +177,10 @@ class PanoramaService(QObject):
     def _publish(self, facts: dict, out_dir: Path) -> str:
         """（worker 线程）写离线快照，再把同一份事实交给本机服务。返回快照路径。
 
-        先写文件后换 ``_payload``：页面看到新的 ``revision`` 时，快照也已经是新的了。
+        先写文件后发布：页面看到新的 ``revision`` 时，快照也已经是新的了。发布会叫醒页面挂着的「等新数据」请求。
         """
         path = str(self._write(facts, out_dir))
-        self._revision += 1
-        self._payload = render.payload(sources.build(facts), revision=self._revision)
+        self._feed.publish(lambda revision: render.payload(sources.build(facts), revision=revision))
         return path
 
     def _page_target(self, snapshot: str) -> str:
@@ -187,7 +190,7 @@ class PanoramaService(QObject):
                 from .routes import build_router
                 from .server import PanoramaServer
 
-                self._server = PanoramaServer(build_router(self.graph_payload))
+                self._server = PanoramaServer(build_router(self._feed))
             self._server.start()
             return self._server.page_url()
         except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看

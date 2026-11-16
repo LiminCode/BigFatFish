@@ -3,9 +3,10 @@
 import {esc, soften, tint, ICONS} from './util.js';
 import {PADT, BRIDGE} from './layout.js';
 
-export function draw(M, E) {
+export function draw(M, E, redraw) {
 const {G, Z, W, H} = M;
 const map = document.getElementById('map');
+map.classList.toggle('redraw', !!redraw);     /* 原地重画时磁贴不再重放入场动画（样式里 .map.redraw） */
 map.style.width = W + 'px'; map.style.height = H + 'px';
 let html = G.zones.map(z => `<div class="band" style="left:${z.x - 12}px;top:8px;width:${z.w + 24}px;height:${H - 16}px;--zc:${soften(z.accent, .55, .95)};background:${tint(z.accent, .135)}"><b>${esc(z.title)}</b></div>`).join('');
 html += G.regions.map(r => { const a = Z[r.zone].accent;

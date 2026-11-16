@@ -55,6 +55,7 @@ svg.roads{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .cut{animation:throb 1.4s ease-in-out infinite}
 .tile{position:absolute;display:flex;color:#fff;cursor:pointer;overflow:hidden;background:var(--tc);
   box-shadow:0 6px 16px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.16);transition:filter .12s,opacity .15s,transform .14s;animation:rise .45s ease-out backwards}
+.map.redraw .tile{animation:none}
 .tile:hover{filter:brightness(1.16);transform:translateY(-2px)}
 .tile.sel{outline:2px solid #fff;outline-offset:2px}
 .tile .plate{flex:none;width:34px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.2)}
