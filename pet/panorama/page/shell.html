@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="meta" id="meta"></span>
+  <input id="q" autocomplete="off">
+  <div class="chips" id="lines"></div>
+  <button class="chip" id="motion"></button>
+</header>
+<div class="legend" id="legend"></div>
+<div class="pending" id="pending" hidden></div>
+<div class="pending lost" id="lost" hidden>__LOST__</div>
+<div class="layout">
+  <div class="stage" id="stage"><div class="map" id="map"></div></div>
+  <aside>
+    <div class="card" id="detail"></div>
+    <div class="card"><h2 id="quests-title"></h2><div id="quests"></div></div>
+  </aside>
+</div>
+<footer id="foot"></footer>
+<script src="/app.js"></script>
+<script src="/boot.js"></script>
+</body>
+</html>

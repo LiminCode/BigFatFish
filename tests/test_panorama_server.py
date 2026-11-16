@@ -288,6 +288,15 @@ def test_every_response_carries_the_hardening_headers_and_no_cors(server):
         assert "python" not in headers.get("server", "").lower()
 
 
+def test_content_policy_relaxes_inline_style_attributes_and_nothing_else():
+    """页面脚本靠内联 style 属性给磁贴定位；脚本、样式表、图片、连接仍然只许同源。"""
+    policy = srv.HARDENING_HEADERS["Content-Security-Policy"]
+    directives = dict(part.strip().split(" ", 1) for part in policy.split(";"))
+    assert directives["default-src"] == "'self'"
+    assert directives["style-src-attr"] == "'unsafe-inline'"
+    assert policy.count("unsafe") == 1 and "script-src" not in directives and "*" not in policy
+
+
 def test_server_module_stays_stdlib_only():
     """这一层不碰 Qt：它要能在没有界面的进程里起，也不能把线程规则搅进来。"""
     import ast
