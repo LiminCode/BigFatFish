@@ -1,13 +1,15 @@
 # Desktop UI visual system
 
 > 2026-10-14 起设置页改为 **Windows Phone / Metro** 风格（方角、磁贴、倾斜、上下折叠）。
-> 下面的令牌以 `pet/settings_theme_qss.py::METRO_TOKENS` 与 `pet/settings_widgets.py` 的实现为准。
+> 下面的令牌以 `pet/theme_tokens.py::METRO_TOKENS`（唯一的一张表，配置全景的网页也用它；`pet/settings_theme_qss.py`
+> 照旧能按老名字 import）与 `pet/settings_widgets.py` 的实现为准。
 
 ## Authority
 
 Use these sources in descending order:
 
-1. component behavior in `pet/settings_widgets.py` and QSS in `pet/settings_theme_qss.py` (`METRO_TOKENS`);
+1. component behavior in `pet/settings_widgets.py`, QSS in `pet/settings_theme_qss.py`, and the colour table
+   `METRO_TOKENS` in `pet/theme_tokens.py`;
 2. semantic vectors in `pet/context_menus/icons.py`;
 3. accepted renders in `renders/iteration-10-metro-*` (next to this file);
 4. this summary.

@@ -16,22 +16,8 @@
 from __future__ import annotations
 
 from .settings_widgets import _system_dark, BROWSER_CONTROL_STYLESHEET
-
-#: 设置页的颜色令牌（明 / 暗）。测试按这张表核对 QSS 里的值。
-METRO_TOKENS = {
-    "light": {
-        "page": "#f2f2f2", "sidebar": "#e6e6e8", "tile": "#ffffff", "tile_hover": "#f7f7f7", "divider": "#ececec",
-        "title": "#111111", "text": "#1f1f1f", "muted": "#6d6d6d", "disabled": "#a8a8a8",
-        "outline": "#333333", "selected": "#0a84ff", "selected_text": "#ffffff", "accent": "#0a84ff",
-        "field": "#ffffff", "field_border": "#b9b9b9", "match": "#dcebff",
-    },
-    "dark": {
-        "page": "#1b1b1f", "sidebar": "#141417", "tile": "#2a2a2f", "tile_hover": "#33333a", "divider": "#38383f",
-        "title": "#f4f4f6", "text": "#e6e6ea", "muted": "#9a9aa3", "disabled": "#6a6a72",
-        "outline": "#e6e6e6", "selected": "#0a84ff", "selected_text": "#ffffff", "accent": "#0a84ff",
-        "field": "#26262b", "field_border": "#4a4a54", "match": "#223a5c",
-    },
-}
+# 颜色令牌的那张表在 theme_tokens（不依赖 Qt，配置全景的网页也用它）；这里照旧能按老名字 import。
+from .theme_tokens import METRO_TOKENS
 
 _TEMPLATE = """
 QDialog {{
