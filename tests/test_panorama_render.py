@@ -111,9 +111,9 @@ def test_shell_and_static_files_hold_no_user_data():
 def test_shell_has_no_inline_script_or_style():
     """页面带「只许同源脚本」的内容策略：外壳里出现内联脚本就是一张空白页。"""
     shell = render.shell()
-    assert re.findall(r"<script[^>]*>", shell) == ['<script src="/app.js">', '<script src="/boot.js">']
+    assert re.findall(r"<script[^>]*>", shell) == ['<script type="module" src="/boot.js">']      # 只引用入口模块
     assert "<style" not in shell and not re.search(r"\son[a-z]+=", shell)
-    for name in ("app.js", "boot.js"):
+    for name in render.MODULES:
         text = render.asset(name).decode("utf-8")
         assert "</script" not in text and not re.search(r"\bon(click|load|error|input)=", text), name
 

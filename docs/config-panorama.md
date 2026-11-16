@@ -17,7 +17,7 @@
 | `pet/panorama/features.py` | 肥鱼的 AI 功能表 `FEATURES`，一行一项：走哪条线、生效的设置、写到哪 |
 | `pet/panorama/model.py` | 图模型 `Graph`：账号带 `ZONES`、层 `TIERS`、分区、列、节点、连线、待处理；状态取值校验。没有坐标 |
 | `pet/panorama/sources.py` | 来源：若干 `@source` 纯函数，把事实翻译成节点 / 连线 / 待处理；`build(facts)` |
-| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`、`app.js`（`start(G)`：版面、走线、动效、追踪、搜索）、`boot.js`（数据从哪来、等新数据、连接断了） |
+| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
 | `pet/panorama/render.py` | 把图变成页面要的那份数据（`page_data` / `payload`）；`shell()` / `asset()` 给本机服务；`render()` / `write()` 出离线快照 |
 | `pet/panorama/service.py` | `PanoramaService`：应用里的后台两段采集与发布；持有本机服务 |
 | `pet/panorama/server.py` | 本机回环服务 `PanoramaServer` + 路由表 `Router`：生命周期、守门检查、分发。**只用标准库、不碰 Qt** |
@@ -44,6 +44,19 @@
 - 线的画法就是状态：流动 = 通着（`live` 是这次亲自探到的，流得快）；琥珀闪 = 待处理；红线中间断开 = 坏了；灰点线 = 本机探测不到；
   很淡 = 功能没启用。节点 / 连线状态只能取 `NODE_STATES` / `EDGE_STATES` 里的值。
 - 一组 connector 按状态拆成「已连」和「待处理」两块磁贴，线才能一条流动、一条琥珀。
+
+### 页面脚本是原生模块，离线快照把它们拼起来
+
+- 本机服务的外壳只引用入口 `boot.js`（`<script type="module">`），其余模块由浏览器按 `import` 自己装配。
+- 离线快照做不到这一点（`file://` 页面加载不了模块），所以 `render.bundle()` 按 `render.MODULES` 的顺序把模块拼成
+  一段普通脚本：去掉 `import` 行和 `export` 前缀，所有顶层名字落在同一个作用域里。
+- 因此模块有三条写法上的约束，违反了 `bundle()` 直接报错，不会悄悄拼出坏脚本：
+  只用整行的具名导入 `import {a, b} from './x.js';`；只在顶层的 `function` / `const` 前写 `export`；
+  **不同模块的顶层名字不能重名**。不用默认导出、改名导入、`import *`。
+- **加一个模块**：文件放进 `page/`，在 `render.MODULES` 里登记，位置在所有 import 它的模块之前。登记了才会被服务发出去
+  （`ASSETS` 由它生成），也才会进快照。
+- 画一张图是四步，各一个模块：`layout(G)` 算坐标并返回模型 → `roads(M)` 给每条线算折线和路径 → `draw(M, E)` 写标记 →
+  `interact(M, E, map)` 接交互。模型是普通对象，后一步只读前一步的结果。
 
 ### 只读、秘密、隐私
 
@@ -118,7 +131,8 @@
 - `tests/test_panorama_page.py` 用 Qt 自带的 JS 引擎（`QJSEngine`）加一个极简假 DOM **真跑页面脚本**：每个节点一块磁贴、
   每条线一条路径、坐标没有 NaN、磁贴不出界不重叠，四种 WSL 状态各跑一遍。脚本里写坏一处正则整页就是空白，靠它拦。
   页面脚本用到新的 DOM / BOM 接口时要给假 DOM 补上。`boot.js` 也在这里跑：假 `fetch` 同步返回、假定时器由测试触发，
-  所以 `boot.js` 只用 `.then`，不用 `async` / `await`。
+  所以 `boot.js` 只用 `.then`，不用 `async` / `await`。同一个文件里还有一条用例让 JS 引擎按真正的模块规则加载 `app.js`
+  （`importModule`），并要求它和拼出来的脚本画出同一张图：哪个模块导入了别人没导出的名字，或者两条交付路径分了叉，都在这里红。
 - `tests/test_panorama_render.py` 守两条：离线快照不向任何地方要东西；外壳和静态文件里没有采到的数据、没有内联脚本。
 - 页面文字全部来自 `pet/locale/*.json` 的 `panorama.*`；两种语言 × 四种 WSL 状态下建出来的图不许有缺的文字。
 - `tests/test_panorama_server.py` 用真实的回环套接字测服务：`http.client` 能随意改 Host / Origin，正好冒充浏览器里的坏页面。
@@ -157,6 +171,8 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 | 症状 | 原因 / 先查什么 |
 |---|---|
 | 页面整个空白 | 页面脚本有语法错误（跑 `tests/test_panorama_page.py`）；或者有内联脚本 / `on*` 属性被内容策略挡了（看浏览器控制台） |
+| 从肥鱼点开是空白、离线快照却正常 | 某个模块没在 `render.MODULES` 里登记（服务发不出去，浏览器控制台有 404），或 import 的名字对不上 |
+| 生成页面时报 `uses an import/export form the bundler does not handle` | 模块里用了拼不了的写法（默认导出、改名、`import *`、跨行）；改回整行具名导入 |
 | 磁贴全挤在左上角 | 内联 `style` 属性被挡了：内容策略里的 `style-src-attr 'unsafe-inline'` 被改掉了 |
 | 页面顶上红条「连接断了」 | 肥鱼退出了，或服务空闲自停了（页面藏着超过 15 分钟）；从肥鱼里再点一次「配置全景」 |
 | 点了之后打开的是 `file://` 的页面 | 本机服务没起来，退回了离线快照；看日志里「本机服务起不来」后面的异常 |

@@ -59,6 +59,13 @@ function tick() { var fn = timers.shift(); fn(); }
 """
 
 
+#: 跑完 start() 之后把页面上看得见的东西取回来
+REPORT = ("var el = document.getElementById;"
+          "return JSON.stringify({map: el('map').innerHTML, width: size.width, height: size.height, "
+          "detail: el('detail').innerHTML, pending: el('pending').hidden, quests: el('quests').innerHTML, "
+          "meta: el('meta').textContent});")
+
+
 @pytest.fixture(scope="module")
 def engine():
     app = QCoreApplication.instance() or QCoreApplication([])
@@ -75,16 +82,12 @@ def _evaluate(engine, script: str) -> dict:
 
 def _run(engine, graph: dict) -> dict:
     data = json.dumps(render.page_data(graph), ensure_ascii=False)
-    return _evaluate(engine, FAKE_DOM + render.asset("app.js").decode("utf-8") + f"\nvar size = start({data});"
-                     "var el = document.getElementById;"
-                     "return JSON.stringify({map: el('map').innerHTML, width: size.width, height: size.height, "
-                     "detail: el('detail').innerHTML, pending: el('pending').hidden, quests: el('quests').innerHTML, "
-                     "meta: el('meta').textContent});")
+    return _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data});" + REPORT)
 
 
 def _boot(engine, setup: str, steps: str = "") -> dict:
     """跑 boot.js。``setup`` 在它之前布置环境，``steps`` 在它之后推进定时器。"""
-    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + setup + render.asset("boot.js").decode("utf-8") + steps +
+    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + setup + render.bundle(("boot.js",)) + steps +
                      "\nreturn JSON.stringify({calls: calls, timers: timers.length, intervals: intervals.length, reloads: reloads, "
                      "replaced: replaced, started: started, store: store, hash: location.hash, "
                      "lost: document.getElementById('lost').hidden === false, lang: document.documentElement.lang, "
@@ -132,6 +135,50 @@ def test_page_text_follows_the_interface_language(engine):
         i18n.set_language("zh")
     assert "How to read this map" in out["detail"] and "Snapshot" in out["meta"]
     assert not re.search(r"[一-鿿]", out["detail"] + out["meta"])
+
+
+# ---------------------------------------------------------------- 原生模块
+
+def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(engine):
+    """本机服务的页面由浏览器按 import 装配模块，离线快照用拼出来的一段脚本——两条路必须画出同一张图。
+
+    这里让 JS 引擎按真正的模块规则去加载 ``app.js``：哪个模块 import 了别人没 export 的名字，这里就报链接错误。
+    """
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    bundled = _run(engine, graph)
+
+    js = QJSEngine()                                    # 模块在引擎里有缓存：单开一个，不污染别的用例
+    setup = js.evaluate(FAKE_DOM)                       # 全局作用域里的假 DOM，模块看得见
+    assert not setup.isError(), setup.toString()
+    module = js.importModule(str(render.PAGE_DIR / "app.js"))
+    assert not module.isError(), f"{module.toString()} (line {module.property('lineNumber').toInt()})"
+    js.globalObject().setProperty("panoramaStart", module.property("start"))
+    data = json.dumps(render.page_data(graph), ensure_ascii=False)
+    result = js.evaluate(f"(function () {{ var size = panoramaStart({data});" + REPORT + "})()")
+    assert not result.isError(), result.toString()
+    assert json.loads(result.toString()) == bundled
+
+
+def test_bundle_keeps_the_declared_order_and_strips_every_import_and_export():
+    text = render.bundle()
+    assert not re.search(r"^\s*(import|export)\b", text, re.M)
+    positions = [text.index(marker) for marker in ("const esc = ", "function layout(G)", "function roads(M)", "function draw(M, E)",
+                                                   "function interact(M, E, map)", "function start(G)", "PANORAMA_DATA")]
+    assert positions == sorted(positions)
+    for name in render.MODULES:
+        for target in re.findall(r"^import \{[^}]*\} from '\./([a-z]+\.js)';", render.asset(name).decode("utf-8"), re.M):
+            assert render.MODULES.index(target) < render.MODULES.index(name), f"{name} 依赖的 {target} 要排在它前面"
+
+
+def test_bundler_refuses_import_forms_it_cannot_flatten(monkeypatch):
+    """模块里写了打包不了的 import / export（默认导出、改名、import *），宁可报错也不拼出一段坏脚本。"""
+    for bad in ("import * as util from './util.js';\n", "export default function () {}\n",
+                "import {esc as e} from './util.js';\n", "import {esc}\n  from './util.js';\n", "export {esc};\n",
+                "import {esc} from 'https://elsewhere.example/util.js';\n"):
+        monkeypatch.setattr(render, "_text", lambda name, bad=bad: bad + "const x = 1;\n")
+        with pytest.raises(RuntimeError):
+            render.bundle(("util.js",))
 
 
 # ---------------------------------------------------------------- boot.js：本机服务的页面
