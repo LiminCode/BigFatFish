@@ -47,10 +47,33 @@ def provider(provider_id="api-1", *, active=True, key=True) -> dict:
 
 def repo(name: str, owner: str, exists=True) -> dict:
     return {"path": f"C:\\Users\\dev\\{name}", "exists": exists, "remote": f"https://github.com/{owner}/{name}.git" if exists else "",
-            "branch": "main" if exists else "", "last_commit": "2026-01-02 03:04 · notes" if exists else ""}
+            "branch": "main" if exists else "", "last_commit": "2026-01-02 03:04 · notes" if exists else "",
+            "unpushed": 0 if exists else None, "dirty": False if exists else None}
 
 
-def facts(*, cfg=None, health="ok", wsl="ready", win=None, providers=None) -> dict:
+def storage(*, backup=None, unknown=()) -> dict:
+    """``storage_probe.collect`` 的一份结果：数据目录和个人 Claude Code 家目录里各项有多少，配置备份此刻的状态。"""
+    def seen(files: int, size: int) -> dict:
+        return {"files": files, "bytes": size, "mtime": "2026-01-02 03:04"}
+
+    def root(path: str, stores: dict, names=()) -> dict:
+        return {"path": path, "exists": True, "files": sum(s["files"] for s in stores.values()) + len(names), "truncated": False,
+                "stores": stores, "unknown": list(names), "unknown_count": len(names)}
+
+    return {
+        "data": root("C:\\Users\\dev\\cfg", {
+            "config": seen(1, 4096), "distill_entries": seen(1, 2048), "chat_sessions": seen(12, 300_000), "message_log": seen(1, 9000),
+            "logs": seen(3, 1_500_000), "voice_cache": seen(40, 6_000_000), "runtime_markers": seen(4, 900)}, unknown),
+        "claude_home": root("C:\\Users\\dev\\.claude", {
+            "claude_settings": seen(1, 3000), "claude_md": seen(1, 120), "claude_memory": seen(2, 500),
+            "claude_transcripts": seen(30, 9_000_000), "claude_login": seen(1, 400)}),
+        "home": root("C:\\Users\\dev", {"claude_json": seen(1, 20_000)}),
+        "config_backup": {"auto": False, "repo": "acme/handbook", "path": ".big-fat-fish/config.json", "backed_up_at": "", "error": "",
+                          "paused": False, **(backup or {})},
+    }
+
+
+def facts(*, cfg=None, health="ok", wsl="ready", win=None, providers=None, backup=None, unknown=()) -> dict:
     """``probes.windows_side`` + WSL 那一半。``wsl``：ready / absent / error / pending，或直接给一个探针结果。"""
     wsl_value = {"ready": wsl_home(), "absent": {"absent": True}, "error": {"error": "exit 1"}, "pending": {"pending": True}}.get(wsl, wsl) \
         if isinstance(wsl, str) else wsl
@@ -63,7 +86,8 @@ def facts(*, cfg=None, health="ok", wsl="ready", win=None, providers=None) -> di
         "config_backup": {"auto": False, "repo": "", "path": ".big-fat-fish/config.json"},
         "features": features.read_all(cfg if cfg is not None else all_on_config()),
         "personal_vault": repo("handbook", "acme-home"), "work_vault": repo("field-notes", "acme-work"),
-        "win": win or home(), "wsl": wsl_value, "timing": {"windows_s": 0.3, "wsl_s": 6.5},
+        "win": win or home(), "wsl": wsl_value, "storage": storage(backup=backup, unknown=unknown),
+        "timing": {"windows_s": 0.3, "wsl_s": 6.5},
     }
 
 

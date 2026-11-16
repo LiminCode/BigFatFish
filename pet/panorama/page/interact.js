@@ -28,12 +28,14 @@ function detail(id) { const box = document.getElementById('detail');
   if (!id) { box.innerHTML = `<h2>${esc(S.help_title)}</h2><p class="hint">${esc(S.help_text).split('\n').join('<br>')}</p>`; return; }
   const n = N[id], k = G.kinds[n.kind] || {}, out = E.filter(e => e.from === id), inn = E.filter(e => e.to === id), src = n.source || {};
   const link = src.path ? (src.env === 'wsl' ? `vscode://vscode-remote/wsl+${src.distro}${src.path}` : 'vscode://file/' + src.path.replace(/\\/g, '/')) : '';
-  const rows = (n.items || []).slice().sort((a, b) => (a.state === 'ok') - (b.state === 'ok'));
+  const rank = r => r.state === 'off' ? 2 : r.state === 'ok' ? 1 : 0;     /* 要处理的在前，这台机器上没有的垫底 */
+  const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
   const nb = (list, key) => list.map(e => `<button data-go="${e[key]}"><i class="dot ${e.state === 'broken' ? 'bad' : e.state}"></i>${esc(N[e[key]].title)}${e.label ? ' · ' + esc(e.label) : ''}<span style="color:var(--muted)">${ESTATE[e.state]}</span></button>`).join('');
   box.innerHTML = `<h2>${esc(k.name || n.kind)} · ${esc(R[n.region].title)}</h2><h3>${esc(n.title)}</h3>
     <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-top:4px"><i class="dot ${n.state}"></i>${STATE[n.state] || ''}</div>
     <dl class="kv">${(n.facts || []).filter(f => f[1] !== undefined && f[1] !== null && f[1] !== '').map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>
-    ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small></div>`).join('')}</div>` : ''}
+    ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small></div>` +
+      (r.more ? `<dl class="more">${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : '')).join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
     <div class="btns">${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a><button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
@@ -43,7 +45,7 @@ function pickLine(k) { select(null); lineOn = k;
   document.querySelectorAll('#lines .chip').forEach(x => x.classList.toggle('active', x.dataset.line === k)); if (!k) return;
   const ns = new Set(), es = new Set(); E.forEach((e, i) => { if (e.line === k) { es.add(i); ns.add(e.from); ns.add(e.to); } }); paint(ns, es); }
 function search(text) { const q = text.trim().toLowerCase(); if (!q) return paint(null, null);
-  paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
+  paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), ...(n.items || []).reduce((all, p) => all.concat((p.more || []).map(m => m[1])), []), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
 map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
 document.getElementById('detail').addEventListener('click', ev => {
   const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);

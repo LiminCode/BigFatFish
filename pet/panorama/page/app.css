@@ -68,7 +68,7 @@ svg.roads{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .tile.sz-big .txt{justify-content:flex-start;padding-top:9px}
 .tile b{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile span{font-size:11px;color:rgba(255,255,255,.84);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile .dot{position:absolute;right:8px;top:8px}
+.tile .dot{position:absolute;right:8px;top:8px;outline:2px solid rgba(8,12,16,.42)}
 .tile .badge{position:absolute;right:8px;bottom:7px;font-size:10px;background:rgba(0,0,0,.3);padding:1px 6px}
 .tile.st-off{filter:saturate(.2) brightness(.62)}
 .tile.st-live::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 42%,rgba(255,255,255,.2) 50%,transparent 58%);transform:translateX(-110%);animation:sheen 5s ease-in-out infinite}
@@ -102,6 +102,9 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .list{max-height:250px;overflow:auto;font-size:12.5px;margin-top:6px}
 .list div{display:flex;gap:8px;align-items:center;padding:2px 0}
 .list small{color:var(--muted);margin-left:auto;white-space:nowrap}
+.list:has(.more){max-height:420px}
+.list .more{display:grid;grid-template-columns:78px minmax(0,1fr);gap:2px 8px;margin:0 0 9px 16px;padding:0 0 8px;font-size:11.5px;border-bottom:1px solid #252e38}
+.list .more dt{color:var(--muted)}.list .more dd{margin:0;word-break:break-word;color:#c5ced8}
 .quest{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid #252e38;cursor:pointer;font-size:12.5px}
 .quest:first-of-type{border-top:0}.quest:hover{color:#fff}.quest .dot{margin-top:4px}
 .hint{color:var(--muted);font-size:12px}

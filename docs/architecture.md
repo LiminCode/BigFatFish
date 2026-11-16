@@ -53,7 +53,9 @@
   详见 [设置与右键菜单](settings-and-menu.md)。
 - **新增一种落盘数据**（数据目录里一个新文件或新目录，或者往别处写一个新文件）要在 `pet/data_stores.py` 的 `STORES`
   里登记一项，并回答「硬盘没了它从哪回来」；不是我们的数据（别家程序的文件、随包资源）就加进 `NOT_STORES` 写明是什么。
-  `tests/test_data_stores.py` 扫源码里的文件名字面量，漏了就红。详见 [配置与数据](config-and-data.md) 的「存储表」。
+  `tests/test_data_stores.py` 扫源码里的文件名字面量，漏了就红。两张字表里各补三句话
+  （`stores.<id>.name` / `.holds` / `.why`）；用了一个新的根，还要在 `pet/panorama/places.py` 里说它画在配置全景的哪里。
+  详见 [配置与数据](config-and-data.md) 的「存储表」。
 - **设置页控件必须包在 `SettingRow` 里**。域聚合用 `findChildren(SettingRow)` 收集再搬进共享卡片，
   页面自己布局里的普通控件（包括按钮）搬不过去，会直接消失。行的键在 `objectName`（`settingRow_<key>`）。
 

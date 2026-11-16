@@ -26,11 +26,11 @@ KINDS = {
     "feature_work": ("#6a00ff", "news"), "link": ("#76608a", "link"), "provider": ("#fa6800", "chip"),
     "account": ("#aa00ff", "key"), "connector": ("#d80073", "plug"), "memory": ("#1ba1e2", "book"),
     "config": ("#647687", "gear"), "plugin": ("#87794e", "puzzle"), "repo": ("#6d8764", "repo"),
-    "tools": ("#825a2c", "wrench"),
+    "tools": ("#825a2c", "wrench"), "store": ("#f0a30a", "disk"),
 }
 LINES = {
     "personal": "#3fc9bb", "work": "#a78bfa", "memory": "#56b8e6", "account": "#c98bf5",
-    "connector": "#ee7fb6", "config": "#cdb67c", "github": "#a9c78c",
+    "connector": "#ee7fb6", "config": "#cdb67c", "github": "#a9c78c", "storage": "#f2a86a",
 }
 
 
@@ -75,6 +75,12 @@ class Graph:
         if level not in QUEST_LEVELS:
             raise ValueError(f"bad quest level {level}")
         self.quests.append({"sev": level, "text": text, "node": node})
+
+    def add_fact(self, node_id: str, label: str, value: str) -> None:
+        """给别的来源建的磁贴补一行事实；那块磁贴这次没出现就算了。"""
+        for node in self.nodes:
+            if node["id"] == node_id and value:
+                node.setdefault("facts", []).append([label, value])
 
     def has(self, node_id: str) -> bool:
         return any(n["id"] == node_id for n in self.nodes)

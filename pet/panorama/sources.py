@@ -12,8 +12,9 @@ from __future__ import annotations
 import re
 from typing import Callable
 
+from .. import data_stores as ds
 from ..i18n import t
-from . import features
+from . import features, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
 
 FISH_NODE = "pet"
@@ -309,17 +310,24 @@ def repositories(g: Graph, f: dict) -> None:
     g.quest("unknown", L("quest.github_no_probe"), "gh_personal")
 
     def vault(node_id: str, column_: int, title: str, info: dict, push: str) -> None:
+        unpushed, dirty = info.get("unpushed"), info.get("dirty")    # 没推送的提交 = 要处理；没提交的改动 = 提示
         g.node(node_id, "win", column_, "repo", title, info["last_commit"][:16] if info["exists"] else L("missing_dir"),
-               "ok" if info["exists"] else "bad", anchor="bottom",
+               "bad" if not info["exists"] else "warn" if unpushed else "ok", anchor="bottom",
                facts=[[L("fact.remote"), info["remote"]], [L("fact.branch"), info["branch"]], [L("fact.last_commit"), info["last_commit"]],
+                      [L("fact.unpushed"), "" if unpushed is None else L("count", n=unpushed) if unpushed else L("none")],
+                      [L("fact.dirty"), "" if dirty is None else L("has") if dirty else L("none")],
                       [L("fact.push_via"), push]], source=_src(info["path"]))
+        if unpushed:
+            g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id)
+        if dirty:
+            g.quest("info", L("quest.dirty", name=title), node_id)
 
     vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"))
     vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
     token_line = "ok" if token["present"] else "unknown"
-    g.edge(FISH_NODE, "gh_personal", "github", token_line, L("edge.config_backup"))
+    g.edge(FISH_NODE, "gh_personal", "github", token_line)      # 知识库同步、GitHub 连接器；配置备份那条线见 storage
     if "github" in personal["remote"]:
-        g.edge("vault_personal", "gh_personal", "github", token_line)
+        g.edge("vault_personal", "gh_personal", "github", "warn" if personal.get("unpushed") else token_line)
     if _wsl_ready(f):
         hosts = [h for h in f["wsl"]["ssh_hosts"] if "." in h and not h[0].isdigit()]
         g.node("gh_work", "cloud_work", 0, "repo", L("node.github", owner=_owner(work["remote"]) or L("zone.work")), " · ".join(hosts), "ok", "big",
@@ -328,7 +336,148 @@ def repositories(g: Graph, f: dict) -> None:
                       [L("fact.credentials"), L("github.work_credentials")]])
         g.edge(WSL_ENTRY, "gh_work", "github", "ok", "gh / ssh")
         if "github" in work["remote"]:
-            g.edge("vault_work", "gh_work", "github")
+            g.edge("vault_work", "gh_work", "github", "warn" if work.get("unpushed") else "ok")
+
+
+# ───────────────────────── 存储 ─────────────────────────
+
+_WRITER_NAMES = {"claude_code": "Claude Code"}
+QUEST_NAMES = 5             # 一条待处理里最多点几个名字，其余折成「等 N 种」
+
+
+def _size(n: int) -> str:
+    for unit, step in (("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)):
+        if n >= step:
+            return f"{n / step:.1f} {unit}"
+    return f"{n} B"
+
+
+def _parent(path: str) -> str:
+    return re.split(r"[/\\][^/\\]*$", path or "")[0]
+
+
+def _root_paths(f: dict) -> dict:
+    """存储表的每个根在这台机器上是哪里（钥匙串、系统登记项不是路径，给一句话）。"""
+    win, wsl, seen = f["win"], f.get("wsl") or {}, f.get("storage") or {}
+    home = win.get("home", "")
+    sep = "\\" if "\\" in home else "/"
+    return {"data": (seen.get("data") or {}).get("path") or _parent(f.get("cfg_path", "")),
+            "home": home, "claude_home": home + sep + ".claude" if home else "",
+            "claude_home_wsl": wsl["home"] + "/.claude" if wsl.get("home") else "",
+            "keyring": t("stores.root.keyring"), "os": t("stores.root.os")}
+
+
+def _seen(f: dict) -> dict:
+    """根 → {存储 id: 这台机器上此刻有多少}。没核对过的根不在里面（那些只按存储表列出，不说有没有）。"""
+    surveyed = f.get("storage") or {}
+    seen = {root: surveyed[root].get("stores") or {} for root in ("data", "claude_home", "home") if root in surveyed}
+    keys = sum(bool(p["key"]["present"]) for p in f["providers"]) + bool(f["github_token"]["present"])
+    seen["keyring"] = {"api_keys": {"entries": keys}} if keys else {}
+    return seen
+
+
+def _restore_text(store: ds.Store) -> str:
+    restore = store.restore
+    what = L("restore.uncovered", plan=restore.plan) if ds.standing(store) == "local" else L(f"restore.{restore.source}", via=restore.via)
+    return L("restore.line", what=what, why=t(f"stores.{ds.text_key(store)}.why"))
+
+
+def _store_item(store: ds.Store, counts: dict | None, where: str) -> dict:
+    """分组磁贴里的一行。``counts`` 是这个根核对出来的数；``None`` = 这个根没核对过。"""
+    key, count = ds.text_key(store), (counts or {}).get(store.id)
+    if counts is None:
+        detail = ""
+    elif not count:
+        detail = L("store.absent")
+    elif "entries" in count:
+        detail = L("store.entries", n=count["entries"])
+    else:
+        detail = L("store.files", n=count["files"], size=_size(count["bytes"]), when=count["mtime"])
+    state = "off" if counts is not None and not count else "warn" if ds.standing(store) == "local" else "ok"
+    writers = _join(L("who.user") if w == "user" else _WRITER_NAMES.get(w, w) for w in store.writers)
+    return {"id": store.id, "name": t(f"stores.{key}.name"), "state": state, "detail": detail,
+            "more": [[L("store.holds"), t(f"stores.{key}.holds")],
+                     [L("store.where"), L("store.where_value", root=where, patterns=", ".join(store.patterns))],
+                     [L("fact.writer"), writers], [L("store.restore"), _restore_text(store)]]}
+
+
+def _some(names: list[str]) -> str:
+    shown = _join(names[:QUEST_NAMES])
+    return shown + L("and_more", n=len(names) - QUEST_NAMES) if len(names) > QUEST_NAMES else shown
+
+
+def _backup_now(f: dict) -> tuple[str, str, str, str]:
+    """配置备份此刻的状态 →（磁贴状态，去 GitHub 那条线的状态，一句话，待处理的文字；没有待处理是空串）。"""
+    b = (f.get("storage") or {}).get("config_backup") or {}
+    if not (b.get("auto") and b.get("repo") and f["github_token"]["present"]):
+        return "warn", "off", L("backup.off"), L("quest.backup_off")
+    if b.get("paused"):
+        return "warn", "warn", L("backup.paused"), L("quest.backup_paused")
+    if b.get("error"):
+        return "warn", "broken", L("backup.failed", error=b["error"]), L("quest.backup_failed", error=b["error"])
+    if not b.get("backed_up_at"):
+        return "unknown", "unknown", L("backup.never"), ""
+    return "ok", "ok", L("backup.last", when=b["backed_up_at"]), ""
+
+
+@source
+def storage(g: Graph, f: dict) -> None:
+    """存储表画到图上：每个地方（``places.PLACES``）按「硬盘没了会怎样」分成最多三块磁贴，点开是里面的每一项。
+
+    设计来自存储表，此刻的实际情况来自 ``facts["storage"]``（没有这一段也画得出来，只是不说各有多少）。
+    """
+    surveyed, paths, seen = f.get("storage") or {}, _root_paths(f), _seen(f)
+    wsl = f.get("wsl") or {}
+    for place in places.PLACES:
+        if not g.has(place.owner) or (place.wsl and not _wsl_ready(f)):
+            continue
+        owner, short = L(f"place.{place.label}"), L(f"place_tile.{place.label}")    # 待处理里说全名，磁贴上地方小，说短的
+        src = _src(paths.get(place.roots[0], ""), "", "wsl" if place.wsl else "win", wsl.get("distro", "") if place.wsl else "")
+        members = [s for s in ds.STORES if s.root in place.roots and s.id not in places.OWN_TILE]
+        checked = any(root in seen for root in place.roots)
+        for stand in ds.STANDINGS:
+            stores = [s for s in members if ds.standing(s) == stand]
+            if not stores:
+                continue
+            items = [_store_item(s, seen.get(s.root), paths.get(s.root, "")) for s in stores]
+            present = [i["name"] for i in items if i["state"] != "off"]
+            counts = [c for c in ((seen.get(s.root) or {}).get(s.id) for s in stores) if c and "files" in c]
+            files, size = sum(c["files"] for c in counts), sum(c["bytes"] for c in counts)
+            sub = L("store.sub", owner=short, n=len(present), size=_size(size)) if counts else L("store.sub_plain", owner=short, n=len(present))
+            state = "warn" if stand == "local" and present else "ok"
+            where = _join(dict.fromkeys(paths.get(s.root, "") for s in stores))
+            facts = [[L("fact.location"), where], [L("store.total"), L("store.total_value", n=files, size=_size(size)) if counts else ""],
+                     [L("fact.basis"), L("store.basis")], [L("fact.note"), "" if checked else L("store.not_surveyed")]]
+            backed_up = stand == "kept" and any(s.restore.via == "config_backup" for s in stores)
+            if backed_up:
+                state, line_state, sentence, quest = _backup_now(f)
+                sub = sentence
+                facts.insert(1, [L("fact.config_backup"), sentence])
+            node_id = g.node(f"st_{place.id}_{stand}", place.region, place.col, "store", L(f"store.tile.{stand}"), sub, state,
+                             "row" if stand == "free" else "std", items=items, facts=facts, source=src,
+                             page=L("page.config_backup") if backed_up else "")
+            g.edge(place.owner, node_id, "storage")
+            if backed_up:
+                g.edge(node_id, "gh_personal", "github", line_state, L("edge.config_backup"))
+                if quest:
+                    g.quest("warn", quest, node_id)
+            if stand == "local" and present:
+                g.quest("warn", L("quest.local_only", owner=owner, n=len(present), names=_some(present)), node_id)
+        unknown = [name for root in place.roots for name in (surveyed.get(root) or {}).get("unknown", [])]
+        total = sum((surveyed.get(root) or {}).get("unknown_count", 0) for root in place.roots)
+        if unknown:
+            node_id = g.node(f"st_{place.id}_unknown", place.region, place.col, "store", L("store.tile.unknown"),
+                             L("store.sub_unknown", owner=short, n=total), "unknown", "row",
+                             items=[{"name": name, "state": "unknown", "detail": ""} for name in unknown],
+                             facts=[[L("fact.location"), paths.get(place.roots[0], "")], [L("fact.note"), L("store.unknown_note")]], source=src)
+            g.edge(place.owner, node_id, "storage", "unknown")
+            g.quest("unknown", L("quest.unregistered", owner=owner, n=total, names=_some(unknown)), node_id)
+        if any((surveyed.get(root) or {}).get("truncated") for root in place.roots):
+            g.quest("info", L("quest.truncated", owner=owner), place.owner)
+    for store in ds.STORES:
+        tile = places.OWN_TILE.get(store.id) or places.ALSO_ON.get(store.id)
+        if tile:
+            g.add_fact(tile, L("store.restore"), _restore_text(store))
 
 
 @source

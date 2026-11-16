@@ -91,14 +91,24 @@ def test_repo_info_strips_credentials_from_the_remote(tmp_path):
 
     def fake_git(folder, args, *, timeout):
         calls.append(args)
-        answers = {"remote": "https://x-access-token:ghp_secret@github.com/acme/handbook.git\n", "rev-parse": "main\n", "log": "2026-01-02 03:04 · notes\n"}
+        answers = {"remote": "https://x-access-token:ghp_secret@github.com/acme/handbook.git\n", "rev-parse": "main\n", "log": "2026-01-02 03:04 · notes\n",
+                   "rev-list": "2\n", "status": " M note.md\n?? new.md\n"}
         return 0, answers[args[0]]
 
     info = probes.repo_info(tmp_path, fake_git)
     assert info["exists"] and info["remote"] == "https://github.com/acme/handbook.git" and info["branch"] == "main"
+    assert info["unpushed"] == 2 and info["dirty"] is True
+    assert ["rev-list", "--count", "@{upstream}..HEAD"] in calls                # 按本地记得的上游算，不联网
     assert probes.repo_info(tmp_path / "missing", fake_git) == {
-        "path": str(tmp_path / "missing"), "exists": False, "remote": "", "branch": "", "last_commit": ""}
-    assert probes.repo_info(tmp_path, lambda *a, **k: (128, "fatal: not a git repository"))["remote"] == ""
+        "path": str(tmp_path / "missing"), "exists": False, "remote": "", "branch": "", "last_commit": "", "unpushed": None, "dirty": None}
+    broken = probes.repo_info(tmp_path, lambda *a, **k: (128, "fatal: not a git repository"))
+    assert broken["remote"] == "" and broken["unpushed"] is None and broken["dirty"] is None      # 问不出来 ≠ 没有
+
+
+def test_repo_info_says_a_clean_pushed_clone_has_nothing_left_behind(tmp_path):
+    answers = {"remote": "", "rev-parse": "main\n", "log": "x\n", "rev-list": "0\n", "status": ""}
+    info = probes.repo_info(tmp_path, lambda folder, args, *, timeout: (0, answers[args[0]]))
+    assert info["unpushed"] == 0 and info["dirty"] is False
 
 
 def test_wsl_side_pipes_the_probe_source_into_python_inside_the_distro():
