@@ -237,6 +237,114 @@ def test_view_select_ignores_an_unknown_node(engine):
     assert out["kept"]["selected"] is None
 
 
+# ---------------------------------------------------------------- 文件查看面板
+
+#: 假的「向服务要东西」：同步返回像 Promise 的东西，记下问了什么；回答用完了就算连接断了
+VIEW_API = """
+var asked = [];
+function done(value, failed) {
+  return {then: function (ok, err) {
+    var handler = failed ? err : ok;
+    if (!handler) return done(value, failed);
+    try { return done(handler(value), false); } catch (e) { return done(e, true); }
+  }};
+}
+function fakeApi(replies) {
+  return function (path) { asked.push(path); var r = replies.shift(); return r === undefined ? done(new Error('gone'), true) : done(r, false); };
+}
+"""
+
+
+def _view(engine, replies, steps: str, *, api: bool = True) -> dict:
+    """只跑查看面板这一个模块：``replies`` 是服务依次给的回答，``steps`` 里用 ``v`` 操作面板。"""
+    i18n.set_language("zh")
+    strings = json.dumps(render.page_strings(), ensure_ascii=False)
+    source = f"fakeApi({json.dumps(replies, ensure_ascii=False)})" if api else "undefined"
+    return _evaluate(engine, FAKE_DOM + VIEW_API + render.bundle(("util.js", "viewer.js")) + f"""
+        var v = viewer({source}, {strings}, {{}});
+        {steps}
+        var el = document.getElementById;
+        return JSON.stringify({{asked: asked, hidden: el('viewer').hidden, frame: el('viewer').innerHTML, files: el('viewer-files').innerHTML,
+          oneFile: el('viewer-files').hidden, meta: el('viewer-meta').textContent, text: el('viewer-text').innerHTML}});""")
+
+
+def _file(path: str, text: str, **extra) -> dict:
+    return {"store": "claude_memory", "path": path, "text": text, "bytes": len(text), "mtime": "2026-01-02 03:04", "truncated": False,
+            "marks": [], **extra}
+
+
+def test_viewer_asks_for_the_list_then_reads_the_first_file(engine):
+    listing = {"store": "claude_memory", "truncated": False, "files": [
+        {"path": "projects/C--x/memory/a b.md", "label": "C--x / a b.md", "bytes": 9, "mtime": "2026-01-02 03:04"},
+        {"path": "projects/C--x/memory/c.md", "label": "C--x / c.md", "bytes": 3, "mtime": "2026-01-01 00:00"}]}
+    out = _view(engine, [listing, _file("projects/C--x/memory/a b.md", "hello\nworld")], "v.open('claude_memory', '项目记忆');")
+    assert out["asked"] == ["/api/files?store=claude_memory", "/api/file?store=claude_memory&path=projects%2FC--x%2Fmemory%2Fa%20b.md"]
+    assert out["hidden"] is False and "项目记忆" in out["frame"] and out["oneFile"] is False
+    assert "C--x / a b.md" in out["files"] and 'data-file="projects/C--x/memory/c.md"' in out["files"]
+    assert out["text"] == '<span class="ln">hello</span><span class="ln">world</span>'
+    assert out["meta"].startswith("projects/C--x/memory/a b.md · 11 B · 2026-01-02 03:04")
+
+
+def test_viewer_shows_file_content_as_text_never_as_markup(engine):
+    """记忆文件里写了标签也只是几个字：进页面之前全部转义。"""
+    nasty = '<script>alert(1)</script>\n<img src=x onerror="steal()">\n& done'
+    listing = {"store": "claude_md", "truncated": False, "files": [{"path": "CLAUDE.md", "label": "<b>x</b>", "bytes": 1, "mtime": ""}]}
+    out = _view(engine, [listing, _file("CLAUDE.md", nasty)], "v.open('claude_md', '<i>t</i>');")
+    for part in (out["text"], out["files"], out["frame"]):
+        assert "<script" not in part and "<img" not in part and "<i>" not in part and "<b>x" not in part
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out["text"] and "&amp; done" in out["text"]
+    assert out["oneFile"] is True                                        # 只有一个文件：不显示左边那一栏
+
+
+def test_viewer_tints_the_managed_block_and_says_when_the_file_was_cut(engine):
+    listing = {"store": "claude_md", "truncated": False, "files": [{"path": "CLAUDE.md", "label": "CLAUDE.md", "bytes": 1, "mtime": ""}]}
+    text = "mine\r\n<!-- start -->\r\n- rule\r\n<!-- end -->\r\ntail"
+    reply = _file("CLAUDE.md", text, marks=[{"from": 2, "to": 4, "kind": "managed"}], truncated=True)
+    out = _view(engine, [listing, reply], "v.open('claude_md', 'CLAUDE.md');")
+    lines = re.findall(r'<span class="(ln[^"]*)">', out["text"])
+    assert lines == ["ln", "ln managed", "ln managed", "ln managed", "ln"]
+    assert "\r" not in out["text"]
+    assert "受管块" in out["meta"] and "512 KB" in out["meta"]
+
+
+def test_viewer_says_so_when_there_is_nothing_or_the_service_is_gone(engine):
+    empty = _view(engine, [{"store": "claude_md", "files": [], "truncated": False}], "v.open('claude_md', 'x');")
+    assert "这台机器上没有" in empty["text"] and len(empty["asked"]) == 1
+    gone = _view(engine, [], "v.open('claude_md', 'x');")
+    assert "读不到" in gone["text"]
+    half = _view(engine, [{"store": "claude_md", "files": [{"path": "CLAUDE.md", "label": "CLAUDE.md", "bytes": 1, "mtime": ""}],
+                           "truncated": False}], "v.open('claude_md', 'x');")
+    assert "读不到" in half["text"] and len(half["asked"]) == 2           # 清单拿到了，读文件时断了
+
+
+def test_viewer_closes_and_does_nothing_without_a_service(engine):
+    listing = {"store": "claude_md", "files": [], "truncated": False}
+    closed = _view(engine, [listing], "v.open('claude_md', 'x'); v.close();")
+    assert closed["hidden"] is True and closed["frame"] == ""
+    offline = _view(engine, [], "v.open('claude_md', 'x');", api=False)
+    assert offline["asked"] == [] and offline["hidden"] is True          # 离线快照：没有服务可问，打不开
+
+
+def _details(engine, graph: dict, node: str, api: str) -> str:
+    data = json.dumps(render.page_data(graph), ensure_ascii=False)
+    return _evaluate(engine, FAKE_DOM + VIEW_API + render.bundle(render.MODULES[:-1]) + f"""
+        var view = start({data}, undefined, {api}); view.select({json.dumps(node)});
+        return JSON.stringify({{detail: document.getElementById('detail').innerHTML}});""")["detail"]
+
+
+def test_view_buttons_appear_where_the_graph_offers_them_and_are_disabled_in_the_snapshot(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    served = _details(engine, graph, "md_win", "fakeApi([])")
+    assert 'data-view="claude_md"' in served and "disabled" not in served
+    snapshot = _details(engine, graph, "md_win", "undefined")
+    assert 'data-view="claude_md"' in snapshot and "disabled" in snapshot and "离线快照" in snapshot
+    listed = _details(engine, graph, "st_fish_local", "fakeApi([])")
+    assert listed.count("data-view=") == 1 and 'data-view="distill_entries"' in listed        # 样例里只有这一项有文件又能看
+    assert "data-view=" not in _details(engine, graph, "set_win", "fakeApi([])")              # 设置文件不给看
+    assert "data-view=" not in _details(engine, graph, "md_wsl", "fakeApi([])")               # WSL 一侧这一步还读不了
+
+
 # ---------------------------------------------------------------- 原生模块
 
 def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(engine):

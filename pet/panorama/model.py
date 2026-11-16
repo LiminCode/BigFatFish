@@ -57,7 +57,7 @@ class Graph:
 
     def node(self, node_id: str, region: str, col: int, kind: str, title: str, sub: str = "", state: str = "ok",
              size: str = "std", **extra) -> str:
-        """``extra``：icon lines badge facts items source page group head anchor gap（空值不写进去）。"""
+        """``extra``：icon lines badge facts items source page group head anchor gap view（空值不写进去）。"""
         if state not in NODE_STATES or size not in SIZES or kind not in KINDS:
             raise ValueError(f"bad node {node_id}: state={state} size={size} kind={kind}")
         if self.has(node_id):
@@ -81,6 +81,12 @@ class Graph:
         for node in self.nodes:
             if node["id"] == node_id and value:
                 node.setdefault("facts", []).append([label, value])
+
+    def mark(self, node_id: str, **extra) -> None:
+        """给别的来源建的磁贴补几个属性（如 ``view``）；那块磁贴这次没出现就算了。"""
+        for node in self.nodes:
+            if node["id"] == node_id:
+                node.update({key: value for key, value in extra.items() if value not in (None, "", [], ())})
 
     def has(self, node_id: str) -> bool:
         return any(n["id"] == node_id for n in self.nodes)
