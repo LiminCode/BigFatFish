@@ -37,6 +37,7 @@
 | [开发指南](development.md) | 怎么跑、怎么测、提交与 PR、合并 PR 的三条规律 | 第一次上手；开 PR、合并 PR 之前 |
 | [排障手册](troubleshooting.md) | 按症状找文档；联网与代理、测试套件原生崩溃、WSL 共享、实机验证的注意 | 出了问题先看这里 |
 | [决策记录](adr/README.md) | 长期有效的决定各一份，以及什么时候该写新的 | 想推翻一个现有做法之前；做大改动时 |
+| [路线图](roadmap.md) | 唯一一份写「要去哪」的文档：项目目标、原则、目标架构、里程碑清单与进度 | 开始一步新工作之前；加任何会落盘的数据或新设置之前；做完一步来打勾 |
 | [与上游的关系](upstream.md) | 上游旧文档去哪找、只从源码运行、挑拣同步的做法、帧序列档位、聊天窗生命周期 | 同步上游、想恢复打包、改帧序列或聊天窗关闭流程 |
 | [Agent 联动协议](agent-link-protocol.md) | 本地文件事件总线、六态词汇、第三方 Agent 怎么接入、隐私红线 | 接入新 Agent、改事件归一或 hook 脚本 |
 | [`agents/`](agents/domain.md) | agent 的工作约定：[领域文档](agents/domain.md)、[issue](agents/issue-tracker.md)、[triage 标签](agents/triage-labels.md)、[交接](agents/handoff.md) | 用 `.scratch/` 记 issue、交接未完成的工作时 |
