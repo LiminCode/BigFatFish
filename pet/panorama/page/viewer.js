@@ -1,6 +1,6 @@
 /* 文件查看面板（只读）：点「查看」→ 向本机服务要这一项存储名下的文件清单 → 读其中一个，按纯文本显示。
 
-   能读哪些文件由服务把关（pet/panorama/files.py），这里只管问和显示。文件内容一律当文本转义后放进页面，
+   能读哪些文件由服务把关（pet/panorama/files.py），这里只管问和显示。内容是原文，不脱敏；一律当文本转义后放进页面，
    不当标记解析——记忆文件里写了 <script> 也只是几个字。服务标出来的段落（受管块）整行加底色。
    离线快照没有服务可问：api 是空的，「查看」按钮不可用（interact.js 里处理），这里的 open() 什么也不做。 */
 import {esc} from './util.js';
@@ -18,6 +18,7 @@ function show(store, path) { const mine = ++turn; box.dataset.path = path; say(S
   ask('/api/file', {store: store, path: path}).then(f => { if (mine !== turn) return;
     const marks = f.marks || [], inMark = n => marks.some(m => n >= m.from && n <= m.to);
     part('viewer-meta').textContent = [f.path, fileSize(f.bytes), f.mtime, f.truncated ? S.viewer_truncated : '', marks.length ? S.viewer_managed : ''].filter(Boolean).join(' · ');
+    if (f.binary) { part('viewer-text').innerHTML = `<span class="ln note">${esc(S.viewer_binary)}</span>`; return; }
     part('viewer-text').innerHTML = f.text.replace(/\r\n/g, '\n').split('\n').map((line, i) => `<span class="ln${inMark(i + 1) ? ' managed' : ''}">${esc(line) || ' '}</span>`).join('');
   }).then(null, () => { if (mine === turn) say(S.viewer_failed); }); }
 function open(store, title) { if (!api) return; const mine = ++turn;

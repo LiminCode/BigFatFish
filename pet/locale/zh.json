@@ -2297,6 +2297,7 @@
   "panorama.ui.viewer_truncated": "文件太大，只显示了开头 512 KB",
   "panorama.ui.viewer_managed": "带底色的几行是受管块：由会话记忆蒸馏生成，手改会被覆盖",
   "panorama.ui.viewer_more": "文件太多，只列了前 500 个",
+  "panorama.ui.viewer_binary": "不是文本文件，这里显示不了",
   "panorama.ui.summary": "本机快照 {time} · 采集 Windows {win} 秒 / WSL {wsl} 秒 · {nodes} 个站点 · {edges} 条路",
   "panorama.ui.summary_windows_only": "本机快照 {time} · 采集 Windows {win} 秒 · {nodes} 个站点 · {edges} 条路",
   "panorama.kind.store": "存储",

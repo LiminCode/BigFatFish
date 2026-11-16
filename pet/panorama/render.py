@@ -41,7 +41,7 @@ _LEFTOVER = re.compile(r"^\s*(?:import|export)\b", re.M)
 PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_title", "help_text", "quests_title", "no_quests",
              "uses", "used_by", "open_vscode", "copy_path", "copied", "settings_at", "settings_hint", "footer", "pending",
              "lost", "view", "view_needs_service", "viewer_close", "viewer_loading", "viewer_failed", "viewer_empty",
-             "viewer_truncated", "viewer_managed", "viewer_more")
+             "viewer_truncated", "viewer_managed", "viewer_more", "viewer_binary")
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 
