@@ -54,7 +54,10 @@ HARDENING_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Resource-Policy": "same-origin",
-    "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    # 脚本、样式表、图片、连接一律只许同源。唯一放开的是「内联 style 属性」：页面脚本用它给磁贴定位、
+    # 传颜色变量。样式属性执行不了代码，而外部资源已被 default-src 挡住，所以它也带不走数据。
+    "Content-Security-Policy": ("default-src 'self'; style-src-attr 'unsafe-inline'; base-uri 'none'; "
+                                "form-action 'none'; frame-ancestors 'none'"),
 }
 
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"          # 路径参数：一段，不含 / % \，不能以点开头（所以不会是 ..）
@@ -361,10 +364,3 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args) -> None:   # noqa: A002 - 基类的参数名
         log.debug("配置全景服务：%s", format % args)   # 只有请求行和状态码，没有请求头（令牌在头里）
-
-
-def default_router() -> Router:
-    """现阶段只有一个探活接口；页面外壳和数据接口在后续步骤里加进来。"""
-    router = Router()
-    router.add("GET", "/api/ping", lambda request: Response.json({"ok": True, "app": "big-fat-fish"}))
-    return router

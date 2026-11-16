@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""应用里的「打开配置全景」：后台采集、分两段写页面、在 GUI 线程打开浏览器。
+"""应用里的「打开配置全景」：后台采集、分两段发布、在 GUI 线程打开浏览器。
 
 点一下之后：
 1. 第一段采 Windows 这一侧（约 0.15 秒），WSL 那一侧先用上一轮的结果（没有就显示「正在探测…」），
-   写出页面并打开浏览器——用户几乎立刻看到图。
-2. 第二段去 WSL 里探测（``claude mcp list`` 逐个体检，6 秒上下），探完重写页面。页面在 ``meta.pending``
-   为真时每隔几秒自己重读文件，所以不用任何服务器也能自己更新。
+   发布出去并打开浏览器——用户几乎立刻看到图。
+2. 第二段去 WSL 里探测（``claude mcp list`` 逐个体检，6 秒上下），探完再发布一次。
+
+**发布**是两件事：把数据交给本机服务（页面带着令牌向 ``/api/graph`` 要），同时写一份离线快照
+（``panorama.html``，肥鱼没开时也能看）。浏览器打开的是本机服务的网址；服务起不来时退回打开快照文件。
 
 两段都在一条 daemon 线程里；结果经信号排队回 GUI 线程（``ConfigBackupSync`` 同一个模式）。
-配置在 GUI 线程上拷贝一份再交给线程，线程不碰活的 ``Config``。
+配置在 GUI 线程上拷贝一份再交给线程，线程不碰活的 ``Config``。本机服务有自己的线程，只读 ``_payload``
+这一个引用（整个换掉，不原地改）。
 """
 from __future__ import annotations
 
@@ -33,8 +36,10 @@ def _spawn_thread(target: Callable[[], None]) -> None:
     threading.Thread(target=target, daemon=True, name="pet-panorama").start()
 
 
-def _open_in_browser(path: str) -> bool:
-    return QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+def _open_in_browser(target: str) -> bool:
+    """``target`` 是本机服务的网址，或者快照文件的路径。"""
+    url = QUrl(target) if target.startswith("http://") else QUrl.fromLocalFile(target)
+    return QDesktopServices.openUrl(url)
 
 
 def _secret_get(ref: str) -> str:
@@ -44,7 +49,7 @@ def _secret_get(ref: str) -> str:
 
 
 class PanoramaService(QObject):
-    """``finished(成功?, 页面路径或出错说明)``：一轮（含 WSL 那一段）结束。"""
+    """``finished(成功?, 快照路径或出错说明)``：一轮（含 WSL 那一段）结束。"""
 
     finished = Signal(bool, str)
     _stage = Signal(int, str, str)           # worker 线程 → GUI 线程：(第几轮, "page" | "done" | "error", 路径或说明)
@@ -53,7 +58,7 @@ class PanoramaService(QObject):
                  secret_get: Callable[[str], str] | None = None, windows: Callable[..., dict] | None = None,
                  wsl: Callable[[], dict] | None = None, write: Callable[[dict, Path], Path] | None = None,
                  open_page: Callable[[str], object] | None = None, spawn: Callable | None = None,
-                 parent: QObject | None = None) -> None:
+                 server=None, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._health = health or (lambda: ("unknown", ""))
@@ -63,6 +68,9 @@ class PanoramaService(QObject):
         self._write = write or (lambda facts, out_dir: render.write(sources.build(facts), out_dir))
         self._open_page = open_page or _open_in_browser
         self._spawn = spawn or _spawn_thread
+        self._server = server                   # 第一次要开页面时才创建（见 _page_target）
+        self._payload: bytes | None = None      # 最近一次发布的 /api/graph 正文；本机服务的线程只读这个引用
+        self._revision = 0
         self._generation = 0
         self._busy = False
         self._last_wsl: dict | None = None      # 上一轮 WSL 的结果：下一次打开先拿它垫着
@@ -79,16 +87,25 @@ class PanoramaService(QObject):
     def is_busy(self) -> bool:
         return self._busy
 
+    def graph_payload(self) -> bytes | None:
+        """给本机服务用：最近一次发布的数据；还没发布过是 ``None``。"""
+        return self._payload
+
     def stop(self) -> None:
-        """应用要退出：在跑的那一轮作废（它写完的文件留着，只是不再打开浏览器、不再报完成）。"""
+        """应用要退出：在跑的那一轮作废（它写完的文件留着，只是不再打开浏览器、不再报完成），本机服务停掉。"""
         self._generation += 1
         self._busy = False
+        if self._server is not None:
+            try:
+                self._server.stop()
+            except Exception:  # noqa: BLE001 - 退出路径上不抛
+                log.exception("配置全景：停本机服务失败")
 
     def open(self) -> bool:
         """采一轮并打开页面；返回是否真的发起了新一轮。上一轮还没跑完时只把现有页面再打开一次。"""
         if self._busy:
-            if self.page_path.is_file():
-                self._open_page(str(self.page_path))
+            if self._payload is not None or self.page_path.is_file():
+                self._open_page(self._page_target(str(self.page_path)))
             return False
         try:
             cfg = copy.deepcopy(self._config.data)
@@ -110,6 +127,9 @@ class PanoramaService(QObject):
 
         def run() -> None:
             try:
+                # 本机服务的模块在这条后台线程上先载入（首次约 30 毫秒）：等 GUI 线程要起服务时已经在缓存里了
+                from . import routes, server  # noqa: F401
+
                 facts = self._windows(cfg, cfg_path=cfg_path, secret_get=self._secret_get, api_health=health)
                 if previous is not None:
                     facts["wsl"], facts["refreshing"] = previous, True
@@ -117,7 +137,7 @@ class PanoramaService(QObject):
                         facts["timing"]["wsl_s"] = previous_seconds
                 else:
                     facts["wsl"] = {"pending": True}
-                emit("page", str(self._write(facts, out_dir)))
+                emit("page", self._publish(facts, out_dir))
             except Exception as exc:  # noqa: BLE001 - 第一段就失败：没有页面可看
                 log.exception("配置全景：采集失败")
                 emit("error", f"{type(exc).__name__}: {exc}")
@@ -133,7 +153,7 @@ class PanoramaService(QObject):
             facts["wsl"] = wsl
             facts["timing"]["wsl_s"] = seconds
             try:
-                path = str(self._write(facts, out_dir))
+                path = self._publish(facts, out_dir)
             except Exception as exc:  # noqa: BLE001
                 log.exception("配置全景：写页面失败")
                 emit("error", f"{type(exc).__name__}: {exc}")
@@ -150,12 +170,38 @@ class PanoramaService(QObject):
             return False
         return True
 
+    def _publish(self, facts: dict, out_dir: Path) -> str:
+        """（worker 线程）写离线快照，再把同一份事实交给本机服务。返回快照路径。
+
+        先写文件后换 ``_payload``：页面看到新的 ``revision`` 时，快照也已经是新的了。
+        """
+        path = str(self._write(facts, out_dir))
+        self._revision += 1
+        self._payload = render.payload(sources.build(facts), revision=self._revision)
+        return path
+
+    def _page_target(self, snapshot: str) -> str:
+        """（GUI 线程）浏览器该打开什么：本机服务的网址；服务起不来就退回快照文件。"""
+        try:
+            if self._server is None:
+                from .routes import build_router
+                from .server import PanoramaServer
+
+                self._server = PanoramaServer(build_router(self.graph_payload))
+            self._server.start()
+            return self._server.page_url()
+        except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看
+            log.exception("配置全景：本机服务起不来，改开离线快照")
+            return snapshot
+
     def _on_stage(self, generation: int, stage: str, text: str) -> None:
         if generation != self._generation:
             return
         if stage == "page":
-            log.info("配置全景：Windows 一侧已写出，打开浏览器 %s", text)
-            self._open_page(text)
+            target = self._page_target(text)
+            # 网址里的 # 片段是令牌，不进日志
+            log.info("配置全景：Windows 一侧已发布，打开浏览器 %s", target.split("#")[0])
+            self._open_page(target)
             return
         self._busy = False
         if stage == "error":

@@ -2295,6 +2295,7 @@
   "panorama.ui.settings_hint": "Change it there in the fish; this page cannot jump to it yet",
   "panorama.ui.footer": "This is this machine's configuration as read at the time above, read-only; open it again from the fish to refresh. API keys show only their last 4 characters.",
   "panorama.ui.pending": "The WSL side is still being checked; this page refreshes by itself",
+  "panorama.ui.lost": "Lost the connection to the fish: it quit, or this page sat idle for too long. The map shows what was read before that; open Config panorama from the fish again to refresh.",
   "panorama.ui.summary": "Snapshot {time} · collected in {win} s on Windows, {wsl} s in WSL · {nodes} tiles · {edges} lines",
   "panorama.ui.summary_windows_only": "Snapshot {time} · collected in {win} s on Windows · {nodes} tiles · {edges} lines",
   "menu.action.config_panorama": "Config panorama",
