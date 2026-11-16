@@ -317,6 +317,12 @@ def test_viewer_says_so_when_there_is_nothing_or_the_service_is_gone(engine):
     assert "读不到" in half["text"] and len(half["asked"]) == 2           # 清单拿到了，读文件时断了
 
 
+def test_viewer_says_a_file_is_not_text_instead_of_showing_noise(engine):
+    listing = {"store": "claude_skills", "truncated": False, "files": [{"path": "skills/a/logo.png", "label": "a / logo.png", "bytes": 9, "mtime": ""}]}
+    out = _view(engine, [listing, _file("skills/a/logo.png", "", binary=True, bytes=2048)], "v.open('claude_skills', 'x');")
+    assert "不是文本" in out["text"] and "2.0 KB" in out["meta"]
+
+
 def test_viewer_closes_and_does_nothing_without_a_service(engine):
     listing = {"store": "claude_md", "files": [], "truncated": False}
     closed = _view(engine, [listing], "v.open('claude_md', 'x'); v.close();")
@@ -340,8 +346,9 @@ def test_view_buttons_appear_where_the_graph_offers_them_and_are_disabled_in_the
     snapshot = _details(engine, graph, "md_win", "undefined")
     assert 'data-view="claude_md"' in snapshot and "disabled" in snapshot and "离线快照" in snapshot
     listed = _details(engine, graph, "st_fish_local", "fakeApi([])")
-    assert listed.count("data-view=") == 1 and 'data-view="distill_entries"' in listed        # 样例里只有这一项有文件又能看
-    assert "data-view=" not in _details(engine, graph, "set_win", "fakeApi([])")              # 设置文件不给看
+    assert listed.count("data-view=") == 3 and 'data-view="distill_entries"' in listed        # 样例里有文件的三项；密钥那一行没有
+    assert 'data-view="claude_settings"' in _details(engine, graph, "set_win", "fakeApi([])") # 设置文件原样可看
+    assert "data-view=" not in _details(engine, graph, "plug_win", "fakeApi([])")
     assert "data-view=" not in _details(engine, graph, "md_wsl", "fakeApi([])")               # WSL 一侧这一步还读不了
 
 
