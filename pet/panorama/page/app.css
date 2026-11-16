@@ -1,3 +1,7 @@
+/* 两套颜色，各管各的：
+   - 地图自己的配色（下面这组变量、磁贴、分区、线）只属于这张图；
+   - 输入框、按钮这类「控件」用 --m-* 变量，它们来自和 Qt 设置窗口共用的令牌表（tokens.css，由 theme_tokens 生成）。
+   以后页面上加表单，控件一律用 --m-*，不要再写死颜色。 */
 :root{color-scheme:dark;--bg:#101418;--panel:#1a2027;--text:#e8edf2;--muted:#93a0ad;--faint:#5d6a78;
   --live:#5fd79a;--ok:#54c58a;--warn:#f0b03f;--bad:#f06363;--fog:#8b97a6;--off:#56616d;--info:#6aa5e8}
 *{box-sizing:border-box}
@@ -5,8 +9,9 @@ html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe 
 header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;border-bottom:1px solid #232b34;position:sticky;top:0;background:var(--bg);z-index:5}
 header h1{font-size:18px;font-weight:600;margin:0}
 .meta{color:var(--muted);font-size:12px}
-header input{background:#0c1014;border:1px solid #2a343f;color:var(--text);padding:6px 10px;width:210px;font:inherit}
-header input:focus{outline:1px solid var(--info)}
+header input{background:var(--m-field);border:1px solid var(--m-field-border);color:var(--m-text);padding:6px 10px;width:210px;font:inherit}
+header input::placeholder{color:var(--m-muted)}
+header input:focus{outline:2px solid var(--m-accent);outline-offset:-1px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#1b222a;color:var(--muted);border:0;font:inherit;font-size:12px;cursor:pointer}
 .chip:hover{background:#242d37;color:var(--text)}.chip.active{background:#2c3742;color:#fff}
@@ -87,11 +92,12 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .kv dt{color:var(--muted)}.kv dd{margin:0;word-break:break-all}
 .path{font:12px/1.4 Consolas,"Cascadia Mono",monospace;background:#0c1014;padding:6px 8px;word-break:break-all;margin:6px 0}
 .btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.btn{background:#2c3742;color:#fff;border:0;padding:5px 10px;font:inherit;font-size:12px;cursor:pointer;text-decoration:none}
-.btn:hover{background:#3a4856}.btn.ghost{background:transparent;border:1px dashed #3a4654;color:var(--muted);cursor:default}
+.btn{background:var(--m-tile);color:var(--m-title);border:0;padding:5px 10px;font:inherit;font-size:12px;cursor:pointer;text-decoration:none}
+.btn:hover{background:var(--m-tile-hover)}.btn:focus-visible{outline:2px solid var(--m-accent)}
+.btn.ghost{background:transparent;border:1px dashed var(--m-field-border);color:var(--m-muted);cursor:default}
 .nb{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
-.nb button{background:#0c1014;border:0;color:var(--text);font:inherit;font-size:12px;padding:3px 8px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
-.nb button:hover{background:#2c3742}
+.nb button{background:var(--m-field);border:0;color:var(--m-text);font:inherit;font-size:12px;padding:3px 8px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.nb button:hover{background:var(--m-tile-hover)}.nb button:focus-visible{outline:2px solid var(--m-accent)}
 .list{max-height:250px;overflow:auto;font-size:12.5px;margin-top:6px}
 .list div{display:flex;gap:8px;align-items:center;padding:2px 0}
 .list small{color:var(--muted);margin-left:auto;white-space:nowrap}

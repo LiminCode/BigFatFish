@@ -126,6 +126,16 @@ def test_payload_is_the_page_data_with_a_revision_and_page_info():
     assert data["meta"]["summary"] == render.summary(graph)
 
 
+def test_token_stylesheet_is_served_before_the_page_stylesheet_and_inlined_into_the_snapshot():
+    from pet import theme_tokens
+
+    shell = render.shell()
+    assert shell.index('href="/tokens.css"') < shell.index('href="/app.css"')            # 令牌在前，页面样式才引用得到
+    assert render.asset("tokens.css").decode("utf-8") == theme_tokens.tokens_css()
+    page = render.render(sources.build(samples.facts()))
+    assert theme_tokens.tokens_css() in page and page.index("--m-accent:") < page.index("header input{")
+
+
 def test_only_registered_static_files_can_be_read():
     assert render.asset("app.js").startswith(b"/*")
     for name in ("shell.html", "../render.py", "nope.js", ""):

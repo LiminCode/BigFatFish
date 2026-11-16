@@ -9,7 +9,8 @@
 |---|---|
 | `pet/__main__.py` | `--settings` 分流：最小 `QApplication` + `Config` + `ModernSettingsDialog`，持有 `settings.lock`；**不导入 `pet.app`** |
 | `pet/modern_settings_dialog.py` | 设置窗口本体：侧栏能力域、把各页的行按 `setting_id` 重新分节、保存；有行数预算 |
-| `pet/settings_theme_qss.py` | `METRO_TOKENS`（明 / 暗两张令牌表）与 `metro_stylesheet(dark)` |
+| `pet/theme_tokens.py` | `METRO_TOKENS`（明 / 暗两张令牌表，**唯一的一份**）；`tokens_css()` 把它变成给[配置全景](config-panorama.md)网页的 CSS 变量。不 import Qt |
+| `pet/settings_theme_qss.py` | `metro_stylesheet(dark)`：用令牌表填出设置页的 QSS；仍可从这里 import `METRO_TOKENS` |
 | `pet/settings_widgets.py` | 共享控件：`tilt_transform` / `TiltButton` / `TiltItemDelegate`、`ToggleSwitch`、`ModernSelect`、`ProviderList`、`SettingsTabContainer`（手风琴）、`SETTINGS_DOMAIN_NAV` |
 | `pet/settings_<主题>.py` | 各功能自己的设置行（`settings_tray.py`、`settings_language.py`、`settings_music.py` …），主文件只留几行接线 |
 | `pet/settings_focus.py` | 设置已开着时按锁文件的 pid 找到那扇窗并调到前台 |
@@ -41,7 +42,8 @@
 
 ### Metro 视觉
 
-- 令牌只在 `METRO_TOKENS`；明、暗是**二选一**的两张表（不是浅色打底再追加深色），断言令牌的测试要两张都认。
+- 令牌只在 `METRO_TOKENS`（`pet/theme_tokens.py`）；明、暗是**二选一**的两张表（不是浅色打底再追加深色），断言令牌的测试要两张都认。
+  改一个颜色，Qt 这边和配置全景网页上的控件一起变。
   灵动岛、通知弹窗、用量看板、简报窗口也读这张表。
 - 口径：圆角一律 0（含弹出面板、滚动条、搜索框）；磁贴没有描边和阴影，靠底色分层；页标题 30px / 300，节标题 15px / 600；
   侧栏项满宽，选中 = 主题色底白字；按钮透明底 2px 描边；主题色只给选中 / 焦点 / 开着的开关 / 展开表头的左缘。

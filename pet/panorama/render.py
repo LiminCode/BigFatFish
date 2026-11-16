@@ -16,19 +16,24 @@ import re
 from pathlib import Path
 
 from ..i18n import current_language
+from ..theme_tokens import tokens_css
 from .sources import L
 
 PAGE_DIR = Path(__file__).with_name("page")
 PAGE_NAME = "panorama.html"
 DATA_NAME = "PANORAMA_DATA"                     # 快照里嵌数据的那个变量名（boot.js 认它）
-STYLE_LINK = '<link rel="stylesheet" href="/app.css">'
+STYLE_LINK = '<link rel="stylesheet" href="/tokens.css">\n<link rel="stylesheet" href="/app.css">'
+#: 不是文件、现算出来的静态内容：名字 → 生成函数。``tokens.css`` 是和 Qt 共用的那张颜色令牌表（见 ``theme_tokens``）。
+GENERATED = {"tokens.css": tokens_css}
+STYLES = ("tokens.css", "app.css")              # 顺序即层叠顺序：令牌在前，页面样式在后
 SCRIPT_TAGS = '<script type="module" src="/boot.js"></script>'
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
 #: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
 MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "interact.js", "app.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
-ASSETS = {"app.css": "text/css; charset=utf-8", **{name: "text/javascript; charset=utf-8" for name in MODULES}}
+ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES},
+          **{name: "text/javascript; charset=utf-8" for name in MODULES}}
 # 模块里只许这两种写法，bundle() 才拼得起来：整行的具名 import，和顶层声明前的 export。
 _IMPORT_LINE = re.compile(r"^import \{\w+(?:, \w+)*\} from '\./[a-z]+\.js';\n", re.M)
 _EXPORT_PREFIX = re.compile(r"^export (?=(?:function|const) )", re.M)
@@ -73,9 +78,11 @@ def payload(graph: dict, *, revision: int = 0) -> bytes:
 
 
 def asset(name: str) -> bytes:
-    """``page/`` 下的一个静态文件；只认 ``ASSETS`` 里登记的名字。"""
+    """一份静态内容：``page/`` 下的文件，或 ``GENERATED`` 里现算的；只认 ``ASSETS`` 里登记的名字。"""
     if name not in ASSETS:
         raise KeyError(name)
+    if name in GENERATED:
+        return GENERATED[name]().encode("utf-8")
     return (PAGE_DIR / name).read_bytes()
 
 
@@ -110,7 +117,8 @@ def render(graph: dict) -> str:
     """
     data = json.dumps(page_data(graph), ensure_ascii=False).replace("</", "<\\/")
     script = f"<script>\nconst {DATA_NAME} = {data};\n{bundle()}</script>"
-    return shell().replace(STYLE_LINK, f"<style>\n{_text('app.css')}</style>").replace(SCRIPT_TAGS, script)
+    styles = "".join(_text(name) for name in STYLES)
+    return shell().replace(STYLE_LINK, f"<style>\n{styles}</style>").replace(SCRIPT_TAGS, script)
 
 
 def write(graph: dict, out_dir: str | Path) -> Path:
