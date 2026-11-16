@@ -21,21 +21,23 @@ from pet.panorama import render, sources
 from tests import panorama_samples as samples
 
 FAKE_DOM = """
-var _els = {};
+var _els = {}, _listeners = 0, _aborted = 0, _docListeners = {};
 function _el() {
-  return {style: {}, dataset: {}, clientWidth: 1600, hidden: true, textContent: '', placeholder: '', innerHTML: '',
-    classList: {toggle: function () { return false; }, add: function () {}, remove: function () {}},
-    addEventListener: function () {}, insertAdjacentHTML: function () {}, scrollIntoView: function () {},
+  return {style: {}, dataset: {}, clientWidth: 1600, hidden: true, textContent: '', placeholder: '', innerHTML: '', value: '',
+    classList: {toggle: function () { return false; }, add: function () {}, remove: function () {}, contains: function () { return false; }},
+    addEventListener: function () { _listeners++; }, insertAdjacentHTML: function () {}, scrollIntoView: function () {},
     querySelectorAll: function () { return []; }, querySelector: function () { return null; }};
 }
 var document = {getElementById: function (id) { return _els[id] || (_els[id] = _el()); },
-  querySelectorAll: function () { return []; }, body: _el(), documentElement: {lang: ''}, title: '', visibilityState: 'visible'};
-var addEventListener = function () {}, navigator = {};
+  querySelectorAll: function () { return []; }, body: _el(), documentElement: {lang: ''}, title: '', visibilityState: 'visible',
+  addEventListener: function (type, fn) { _docListeners[type] = fn; }};
+var addEventListener = function () { _listeners++; }, navigator = {};
+function AbortController() { this.signal = {}; this.abort = function () { _aborted++; }; }
 """
 
 #: boot.js 的假环境：fetch 同步返回「像 Promise 的东西」，定时器只把回调存起来等测试去触发。
 FAKE_BROWSER = """
-var calls = [], timers = [], intervals = [], reloads = 0, replaced = [], started = [], store = {};
+var calls = [], timers = [], intervals = [], reloads = 0, replaced = [], started = [], disposed = [], store = {};
 var sessionStorage = {getItem: function (k) { return k in store ? store[k] : null; }, setItem: function (k, v) { store[k] = v; }};
 var history = {replaceState: function (a, b, url) { replaced.push(url); location.hash = ''; }};
 var location = {hash: '', pathname: '/', reload: function () { reloads++; }};
@@ -52,11 +54,20 @@ var fetch = function (path, options) {
   calls.push({path: path, token: options.headers['X-Panorama-Token']});
   var r = responses.shift();
   if (!r) return settled(new Error('network'), true);
+  if (r.hang) return {then: function () { return this; }};          // 服务把请求挂着：谁也不会被调到
   return settled({ok: r.status === 200, status: r.status, json: function () { return r.data; }}, false);
 };
-function start(data) { started.push(data.revision === undefined ? 'embedded' : data.revision); }
+// 假的 start()：记下每次拿到的编号和 kept；返回的 view 记下谁被 dispose 了
+function start(data, kept) {
+  var n = started.length;
+  started.push({revision: data.revision === undefined ? 'embedded' : data.revision, kept: kept === undefined ? null : kept});
+  return {capture: function () { return {selected: 'seen-in-' + n}; }, dispose: function () { disposed.push(n); }};
+}
 function tick() { var fn = timers.shift(); fn(); }
 """
+
+HANG = '{"hang": true}'
+NOTHING_NEW = '{"status": 204}'
 
 
 #: 跑完 start() 之后把页面上看得见的东西取回来
@@ -89,7 +100,8 @@ def _boot(engine, setup: str, steps: str = "") -> dict:
     """跑 boot.js。``setup`` 在它之前布置环境，``steps`` 在它之后推进定时器。"""
     return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + setup + render.bundle(("boot.js",)) + steps +
                      "\nreturn JSON.stringify({calls: calls, timers: timers.length, intervals: intervals.length, reloads: reloads, "
-                     "replaced: replaced, started: started, store: store, hash: location.hash, "
+                     "replaced: replaced, started: started, disposed: disposed, store: store, hash: location.hash, "
+                     "watching: Object.keys(_docListeners), "
                      "lost: document.getElementById('lost').hidden === false, lang: document.documentElement.lang, "
                      "title: document.title});")
 
@@ -137,6 +149,71 @@ def test_page_text_follows_the_interface_language(engine):
     assert not re.search(r"[一-鿿]", out["detail"] + out["meta"])
 
 
+# ---------------------------------------------------------------- 原地重画
+
+def _redraw(engine, first: dict, second: dict, between: str) -> dict:
+    """画 first，执行 ``between``（能用 ``view``），再按页面的顺序重画成 second：capture → dispose → start(新, kept)。"""
+    one, two = (json.dumps(render.page_data(g), ensure_ascii=False) for g in (first, second))
+    return _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"""
+        var view = start({one}); var before = _listeners;
+        {between}
+        var kept = view.capture(); view.dispose();
+        var size = start({two}, kept);
+        var el = document.getElementById;
+        return JSON.stringify({{kept: kept, aborted: _aborted, firstListeners: before, secondListeners: _listeners - before,
+          detail: el('detail').innerHTML, map: el('map').innerHTML, query: el('q').value, pending: el('pending').hidden,
+          after: size.capture()}});""")
+
+
+def test_redraw_keeps_the_selected_node_and_shows_its_new_details(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts(wsl="pending"))
+    node = next(n for n in graph["nodes"] if n["region"] != "wsl" and n.get("facts"))
+    out = _redraw(engine, graph, sources.build(samples.facts()), f"view.select({json.dumps(node['id'])});")
+    assert out["kept"]["selected"] == node["id"] and out["after"]["selected"] == node["id"]
+    assert node["title"] in out["detail"]                                # 详情是这个节点的，不是「怎么看这张图」
+    assert out["pending"] is True                                        # 第一张图亮着的「还在探测」收起来了
+
+
+def test_redraw_drops_a_selection_that_no_longer_exists(engine):
+    """选中的是 WSL 里的东西，新数据里 WSL 没了：回到没选中，不报错。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    node = next(n for n in graph["nodes"] if n["region"] == "wsl")
+    out = _redraw(engine, graph, sources.build(samples.facts(wsl="absent")), f"view.select({json.dumps(node['id'])});")
+    assert out["kept"]["selected"] == node["id"] and out["after"]["selected"] is None
+    assert "怎么看这张图" in out["detail"]
+
+
+def test_redraw_keeps_the_search_text_when_nothing_is_selected(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    out = _redraw(engine, graph, graph, "document.getElementById('q').value = 'notion';")
+    assert out["kept"] == {"selected": None, "lineOn": None, "query": "notion"} and out["query"] == "notion"
+
+
+def test_redraw_removes_the_old_listeners_and_attaches_the_same_number_again(engine):
+    """重画十次也只有一套监听：每次先把上一套整个摘掉。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    out = _redraw(engine, graph, graph, "")
+    assert out["aborted"] == 1 and out["firstListeners"] == out["secondListeners"] > 0
+
+
+def test_first_draw_and_redraw_produce_the_same_map(engine):
+    """重画只多一个「别重放入场动画」的标记，图本身和第一次画的一样。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    assert _redraw(engine, graph, graph, "")["map"] == _run(engine, graph)["map"]
+
+
+def test_view_select_ignores_an_unknown_node(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    out = _redraw(engine, graph, graph, "view.select('no-such-node');")
+    assert out["kept"]["selected"] is None
+
+
 # ---------------------------------------------------------------- 原生模块
 
 def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(engine):
@@ -163,8 +240,8 @@ def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(en
 def test_bundle_keeps_the_declared_order_and_strips_every_import_and_export():
     text = render.bundle()
     assert not re.search(r"^\s*(import|export)\b", text, re.M)
-    positions = [text.index(marker) for marker in ("const esc = ", "function layout(G)", "function roads(M)", "function draw(M, E)",
-                                                   "function interact(M, E, map)", "function start(G)", "PANORAMA_DATA")]
+    positions = [text.index(marker) for marker in ("const esc = ", "function layout(", "function roads(", "function draw(",
+                                                   "function interact(", "function start(", "PANORAMA_DATA")]
     assert positions == sorted(positions)
     for name in render.MODULES:
         for target in re.findall(r"^import \{[^}]*\} from '\./([a-z]+\.js)';", render.asset(name).decode("utf-8"), re.M):
@@ -184,57 +261,85 @@ def test_bundler_refuses_import_forms_it_cannot_flatten(monkeypatch):
 # ---------------------------------------------------------------- boot.js：本机服务的页面
 
 def test_served_page_takes_the_token_from_the_fragment_and_wipes_it_from_the_address_bar(engine):
-    out = _boot(engine, f"location.hash = '#SECRET'; responses = [{_reply(1)}];")
-    assert out["calls"] == [{"path": "/api/graph", "token": "SECRET"}]      # 令牌只走请求头
+    out = _boot(engine, f"location.hash = '#SECRET'; responses = [{_reply(1)}, {HANG}];")
+    assert out["calls"][0] == {"path": "/api/graph", "token": "SECRET"}    # 令牌只走请求头
+    assert all(call["token"] == "SECRET" and "SECRET" not in call["path"] for call in out["calls"])
     assert out["replaced"] == ["/"] and out["hash"] == ""                  # 地址栏里不留令牌
     assert out["store"] == {"panorama-token": "SECRET"}
-    assert out["started"] == [1] and not out["lost"]
+    assert out["started"] == [{"revision": 1, "kept": None}] and not out["lost"]
     assert out["lang"] == "en" and out["title"] == "Config map"
-    assert out["timers"] == 0                                              # 数据是完整的：不用再等
 
 
 def test_reloading_the_tab_gets_the_token_back_from_session_storage(engine):
-    out = _boot(engine, f"store['panorama-token'] = 'KEPT'; responses = [{_reply(3)}];")
-    assert out["calls"] == [{"path": "/api/graph", "token": "KEPT"}] and out["replaced"] == [] and out["started"] == [3]
+    out = _boot(engine, f"store['panorama-token'] = 'KEPT'; responses = [{_reply(3)}, {HANG}];")
+    assert out["calls"][0] == {"path": "/api/graph", "token": "KEPT"} and out["replaced"] == []
+    assert out["started"] == [{"revision": 3, "kept": None}]
 
 
-def test_served_page_waits_for_the_wsl_half_and_reloads_when_the_data_changes(engine):
-    setup = f"location.hash = '#T'; responses = [{_reply(1, pending=True)}, {_reply(1, pending=True)}, {_reply(2)}];"
-    waiting = _boot(engine, setup, "tick();")
-    assert [c["path"] for c in waiting["calls"]] == ["/api/graph", "/api/graph"]
-    assert waiting["reloads"] == 0 and waiting["timers"] == 1              # 还是那一份：接着等
-    done = _boot(engine, setup, "tick(); tick();")
-    assert done["reloads"] == 1 and done["timers"] == 0 and not done["lost"]
+def test_served_page_then_waits_for_data_newer_than_what_it_has(engine):
+    """拿到第一份之后带着它的编号去等更新的：一个挂着的请求，没有定时器在转。"""
+    out = _boot(engine, f"location.hash = '#T'; responses = [{_reply(5)}, {HANG}];")
+    assert out["calls"] == [{"path": "/api/graph", "token": "T"}, {"path": "/api/graph?after=5", "token": "T"}]
+    assert out["timers"] == 0 and out["intervals"] == 0 and not out["lost"]
+    assert out["watching"] == ["visibilitychange"]
 
 
-def test_served_page_gives_up_waiting_after_a_bounded_number_of_checks(engine):
-    """肥鱼卡住或那一半永远探不完：页面不会无止境地问下去。"""
-    setup = "location.hash = '#T'; responses = [];" + f"for (var i = 0; i < 200; i++) responses.push({_reply(1, pending=True)});"
-    out = _boot(engine, setup, "var n = 0; while (timers.length && n < 500) { tick(); n++; }")
-    assert len(out["calls"]) == 41 and out["timers"] == 0                  # 第一次 + 40 次
+def test_new_data_is_drawn_in_place_keeping_what_the_user_was_looking_at(engine):
+    """数据变了不重载页面：先记下上一张图上选中的东西、摘掉旧监听，再用新数据画，然后接着等下一份。"""
+    out = _boot(engine, f"location.hash = '#T'; responses = [{_reply(1, pending=True)}, {_reply(2)}, {HANG}];")
+    assert out["reloads"] == 0
+    assert out["started"] == [{"revision": 1, "kept": None}, {"revision": 2, "kept": {"selected": "seen-in-0"}}]
+    assert out["disposed"] == [0]                                          # 旧的那张图的监听摘掉了，新的没动
+    assert [c["path"] for c in out["calls"]] == ["/api/graph", "/api/graph?after=1", "/api/graph?after=2"]
+
+
+def test_when_nothing_changed_the_page_asks_again_after_a_short_pause(engine):
+    """服务挂了一阵说「没有新的」（204）：不立刻再问（出错时会空转），排一个定时器，到点带同一个编号再去等。"""
+    setup = f"location.hash = '#T'; responses = [{_reply(1)}, {NOTHING_NEW}, {HANG}];"
+    paused = _boot(engine, setup)
+    assert len(paused["calls"]) == 2 and paused["timers"] == 1 and len(paused["started"]) == 1
+    resumed = _boot(engine, setup, "tick();")
+    assert [c["path"] for c in resumed["calls"]] == ["/api/graph", "/api/graph?after=1", "/api/graph?after=1"]
+    assert resumed["timers"] == 0 and not resumed["lost"]
+
+
+def test_a_hidden_tab_does_not_hold_a_request_and_resumes_when_shown(engine):
+    """藏起来的标签页不占着服务：服务靠「没人在等」判断空闲。回到标签页就接着等，期间的新数据立刻拿到。"""
+    setup = f"location.hash = '#T'; document.visibilityState = 'hidden'; responses = [{_reply(1)}, {_reply(2)}, {HANG}];"
+    hidden = _boot(engine, setup)
+    assert [c["path"] for c in hidden["calls"]] == ["/api/graph"] and hidden["timers"] == 0
+    shown = _boot(engine, setup, "document.visibilityState = 'visible'; _docListeners.visibilitychange();")
+    assert [c["path"] for c in shown["calls"]] == ["/api/graph", "/api/graph?after=1", "/api/graph?after=2"]
+    assert [s["revision"] for s in shown["started"]] == [1, 2]
+
+
+def test_becoming_visible_twice_does_not_stack_requests(engine):
+    setup = f"location.hash = '#T'; responses = [{_reply(1)}, {HANG}, {HANG}];"
+    out = _boot(engine, setup, "_docListeners.visibilitychange(); _docListeners.visibilitychange();")
+    assert len(out["calls"]) == 2                                          # 已经有一个挂着：不再发第二个
 
 
 @pytest.mark.parametrize("first", [_reply(0, status=401), "null"])
 def test_served_page_says_so_when_it_cannot_reach_the_fish(engine, first):
     """令牌作废（401）或连不上：亮出「连接断了」，不画半张图。"""
     out = _boot(engine, f"location.hash = '#OLD'; responses = [{first}];".replace("[null]", "[]"))
-    assert out["lost"] and out["started"] == []
+    assert out["lost"] and out["started"] == [] and out["watching"] == []
 
 
-def test_served_page_tells_the_service_it_is_still_open_only_while_visible(engine):
-    setup = f"location.hash = '#T'; responses = [{_reply(1)}, {json.dumps({'status': 200, 'data': {'ok': True}})}];"
-    out = _boot(engine, setup, "document.visibilityState = 'hidden'; intervals[0](); "
-                               "document.visibilityState = 'visible'; intervals[0](); intervals[0]();")
-    assert out["intervals"] == 1
-    assert [c["path"] for c in out["calls"]] == ["/api/graph", "/api/ping", "/api/ping"]   # 藏着的那次没问
-    assert out["lost"]                                                     # 第二次探活没人应：服务已经停了
+def test_losing_the_service_later_shows_the_notice_keeps_the_map_and_stops_asking(engine):
+    """肥鱼退出了：亮出「连接断了」，图留着；之后再切回这个标签页也不再去敲一个不存在的服务。"""
+    setup = f"location.hash = '#T'; responses = [{_reply(1)}];"            # 第二个请求没人应
+    out = _boot(engine, setup, "_docListeners.visibilitychange(); _docListeners.visibilitychange();")
+    assert out["lost"] and len(out["started"]) == 1 and out["disposed"] == []
+    assert len(out["calls"]) == 2 and out["timers"] == 0
 
 
 # ---------------------------------------------------------------- boot.js：离线快照
 
 def test_snapshot_uses_the_embedded_data_and_never_calls_the_service(engine):
     out = _boot(engine, "var PANORAMA_DATA = {meta: {pending: false}};")
-    assert out["started"] == ["embedded"] and out["calls"] == [] and out["timers"] == 0 and out["intervals"] == 0
+    assert out["started"] == [{"revision": "embedded", "kept": None}]
+    assert out["calls"] == [] and out["timers"] == 0 and out["intervals"] == 0 and out["watching"] == []
 
 
 def test_pending_snapshot_rereads_its_own_file_a_bounded_number_of_times(engine):

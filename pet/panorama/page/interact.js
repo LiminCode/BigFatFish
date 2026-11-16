@@ -1,9 +1,13 @@
-/* 交互与侧栏：点磁贴追踪、详情、待处理、线路筛选、搜索、动效开关、缩放，以及页面上的固定文字。 */
+/* 交互与侧栏：点磁贴追踪、详情、待处理、线路筛选、搜索、动效开关、缩放，以及页面上的固定文字。
+
+   数据换了页面会原地重画，所以这里可以反复调：每次调用挂的监听都带同一个中止信号，返回的 dispose() 一次摘干净；
+   kept 是上一次 capture() 记下的「用户正看着什么」，重画后照原样恢复（那个节点或那条线还在的话）。 */
 import {esc} from './util.js';
 
-export function interact(M, E, map) {
+export function interact(M, E, map, kept) {
 const {G, R, N, W, H} = M;
 const S = G.strings, STATE = S.state, ESTATE = S.edge_state;
+const off = new AbortController(), on = {signal: off.signal};
 let selected = null, lineOn = null;
 function trace(id) { const ns = new Set([id]), es = new Set();
   const walk = fwd => { const q = [id], seen = new Set([id]);
@@ -35,32 +39,41 @@ function detail(id) { const box = document.getElementById('detail');
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }
-map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); });
+function pickLine(k) { select(null); lineOn = k;
+  document.querySelectorAll('#lines .chip').forEach(x => x.classList.toggle('active', x.dataset.line === k)); if (!k) return;
+  const ns = new Set(), es = new Set(); E.forEach((e, i) => { if (e.line === k) { es.add(i); ns.add(e.from); ns.add(e.to); } }); paint(ns, es); }
+function search(text) { const q = text.trim().toLowerCase(); if (!q) return paint(null, null);
+  paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
+map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
 document.getElementById('detail').addEventListener('click', ev => {
   const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);
-  const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } });
+  const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } }, on);
 document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span></div>`).join('');
-document.getElementById('quests').addEventListener('click', ev => { const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); });
+document.getElementById('quests').addEventListener('click', ev => { const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); }, on);
 document.getElementById('lines').innerHTML = Object.entries(G.lines).map(([k, l]) => `<button class="chip" data-line="${k}" title="${esc(l.tip)}"><i style="background:${l.color}"></i>${esc(l.name)}</button>`).join('');
 document.getElementById('lines').addEventListener('click', ev => { const c = ev.target.closest('[data-line]'); if (!c) return;
-  const k = c.dataset.line === lineOn ? null : c.dataset.line; select(null); lineOn = k;
-  document.querySelectorAll('#lines .chip').forEach(x => x.classList.toggle('active', x.dataset.line === k)); if (!k) return;
-  const ns = new Set(), es = new Set(); E.forEach((e, i) => { if (e.line === k) { es.add(i); ns.add(e.from); ns.add(e.to); } }); paint(ns, es); });
-document.getElementById('q').addEventListener('input', ev => { const q = ev.target.value.trim().toLowerCase(); if (!q) return paint(null, null);
-  paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).flat(), ...(n.items || []).map(p => p.name), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); });
-document.getElementById('motion').addEventListener('click', ev => { const still = document.body.classList.toggle('still'); ev.target.textContent = still ? S.motion_off : S.motion_on; });
+  pickLine(c.dataset.line === lineOn ? null : c.dataset.line); }, on);
+document.getElementById('q').addEventListener('input', ev => search(ev.target.value), on);
+document.getElementById('motion').addEventListener('click', ev => { const still = document.body.classList.toggle('still'); ev.target.textContent = still ? S.motion_off : S.motion_on; }, on);
 const sample = (st, text) => `<span><svg width="54" height="12"><g class="edge st-${st}" style="--lc:#3fc9bb"><path class="rail" d="${st === 'broken' ? 'M2 6H20M34 6H52' : 'M2 6H52'}"/><path class="flow" d="M2 6H52"/>${st === 'broken' ? '<g class="cut" transform="translate(27 6) scale(.7)"><circle r="7.5"/><path d="M-3 -3L3 3M3 -3L-3 3"/></g>' : ''}</g></svg>${text}</span>`;
 document.getElementById('legend').innerHTML = ['live', 'ok', 'warn', 'broken', 'unknown', 'off'].map(st => sample(st, esc(ESTATE[st]))).join('');
 function fit() { const st = document.getElementById('stage'), s = Math.max(.45, Math.min(1.3, st.clientWidth / W));
   map.style.transform = `scale(${s})`; st.style.height = Math.ceil(H * s) + 14 + 'px'; }
-addEventListener('resize', fit); fit();
+addEventListener('resize', fit, on); fit();
 document.getElementById('title').textContent = S.title;
 document.getElementById('q').placeholder = S.search_placeholder;
-document.getElementById('motion').textContent = S.motion_on;
+document.getElementById('motion').textContent = document.body.classList.contains('still') ? S.motion_off : S.motion_on;
 document.getElementById('quests-title').textContent = S.quests_title;
 document.getElementById('meta').textContent = G.meta.summary;
 document.getElementById('foot').textContent = S.footer;
-/* WSL 那半张图还在后台探测：这里只把提示条露出来；怎么等到新数据由 boot.js 管 */
-if (G.meta.pending) { const p = document.getElementById('pending'); p.hidden = false; p.textContent = S.pending; }
+/* WSL 那半张图还在后台探测：这里只管提示条露不露；怎么等到新数据由 boot.js 管 */
+const pending = document.getElementById('pending'); pending.hidden = !G.meta.pending; if (G.meta.pending) pending.textContent = S.pending;
 detail(null);
+/* 重画之后把用户正看着的东西放回去：选中的节点优先，其次是线路筛选，再其次是搜索词 */
+if (kept && kept.selected && N[kept.selected]) select(kept.selected);
+else if (kept && kept.lineOn && G.lines[kept.lineOn]) pickLine(kept.lineOn);
+else if (kept && kept.query) { document.getElementById('q').value = kept.query; search(kept.query); }
+return {select: id => select(N[id] ? id : null),
+  capture: () => ({selected, lineOn, query: document.getElementById('q').value}),
+  dispose: () => off.abort()};
 }

@@ -7,9 +7,12 @@ import {roads} from './roads.js';
 import {draw} from './draw.js';
 import {interact} from './interact.js';
 
-export function start(G) {
+/* kept 是上一张图的 capture() 结果：有它就是「数据换了，原地重画」，没有就是第一次画。
+   返回的 view：select(id) 选中一个节点；capture() 记下用户正看着什么；dispose() 摘掉这一次挂的监听。
+   重画的顺序固定是：kept = view.capture() → view.dispose() → view = start(新数据, kept)。 */
+export function start(G, kept) {
 const M = layout(G);
 const E = roads(M);
-interact(M, E, draw(M, E));
-return {width: M.W, height: M.H};
+const view = interact(M, E, draw(M, E, !!kept), kept);
+return {width: M.W, height: M.H, select: view.select, capture: view.capture, dispose: view.dispose};
 }
