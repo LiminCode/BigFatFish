@@ -13,6 +13,7 @@
 | `pet/config_backup.py` | 不依赖 Qt 的备份核心：`backup` / `fetch` / `restore`、状态文件、`fingerprint`、`needs_backup`、`recover_at_startup` |
 | `pet/config_backup_sync.py` | 主进程定时器 `ConfigBackupSync`：到点在 daemon 线程上传 |
 | `pet/settings_config_backup.py` | 设置「常规 → 配置备份」这一节：开关、仓库、路径、「立即备份」「从 GitHub 恢复…」 |
+| `pet/data_stores.py` | 存储表 `STORES`：每种落盘数据在哪、谁写、从哪恢复；`match` / `unregistered` / `gaps` / `validate` |
 | `pet/autostart.py` | 开机自启（注册表 Run / LaunchAgents plist / XDG `.desktop`）；旧条目的收编与升级 |
 | `pet/app_identity.py` | `APP_NAME = "BigFish"`、应用用户模型 ID、窗口图标 |
 | `tools/make_launcher.py` | 生成 `.venv\Scripts\BigFish.exe`（改了版本资源和图标的解释器副本），`run.bat` 每次启动前调 |
@@ -104,6 +105,27 @@ Token 与知识库同步 / GitHub 连接器共用（钥匙串 `connector/github`
 - 网络都在 daemon 线程，结果经 Qt 信号排队回 GUI 线程；窗口中途关闭时 emit 的 `RuntimeError` 吞掉。
 - **公开仓库不放任何配置内容**，代码里也不写死任何仓库名。备份里没有密钥，但有本机路径、服务商地址、
   `api_key_ref` 名字，所以必须是用户自己的私有仓库。
+
+### 存储表：每种落盘数据从哪恢复
+
+`pet/data_stores.py` 把肥鱼往磁盘上写的、以及替用户照看的每一种东西登记一次（决定见
+[ADR 0015](adr/0015-private-repos-are-home.md)）。它只有声明和几个纯函数，不 import Qt，不读写文件。
+
+- 一项 = 标识、归哪个账号（个人 / 公司 / 混在一起）、在哪个根下（数据目录、两个 Claude Code 家目录、两个知识库、
+  钥匙串、系统登记项）、路径模式、种类、谁写、里面是什么、**恢复来源**。
+- 恢复来源只有六种：`git`（已有机制放进某个私有仓库，写明哪个仓库、哪个机制）、`rebuild`（能重算或重新下载）、
+  `disposable`（丢了没有损失）、`secret`、`relogin`、`uncovered`（该留却还只在本机）。
+- **`uncovered` 就是缺口清单**（`gaps()`）：必须写明原因和打算在[路线图](roadmap.md)哪一步补上。
+- **人写的、AI 写的内容和用户的设置只能是 `git` 或 `uncovered`**，不许标成能重算或丢了无所谓。`validate()` 守着这条。
+- 表声明的是**设计**：标成 `git` 表示有机制能备份，不表示用户此刻开着它。配置备份默认是关的。
+- `match(根, 相对路径)` 认一个真实文件属于哪一项（几项都匹配时取写得最具体的模式）；`unregistered()` 列出表不认得的。
+  同一个目录里该留的和不该留的靠这个分开：`projects/<项目>/memory/*.md` 是记忆，同一个项目目录下其余的是会话原文。
+- 个人和公司的内容混在一个文件里的（蒸馏的提案、候选）标成 `mixed`：进任何仓库之前都得先分开。
+
+**加一种落盘数据**：在 `STORES` 里加一项。守卫（`tests/test_data_stores.py`）扫 `pet/` 里所有像数据文件的文件名字面量
+（`.json` / `.jsonl` / `.log` / `.lock` / `.pending` / `.db` / `.md`），没有着落的会点名。守卫有两个已知的漏洞：
+只看文件名不看目录；带占位符的名字（如 `<编号>.json`）只要表里有任何 `*.json` 就算过。兜底是 `unregistered()`
+——真机数据目录里出现表不认得的文件，配置全景会报出来（接上图的那一步做）。
 
 ### 数据目录与程序在系统里的名字
 
@@ -198,6 +220,7 @@ Token 与知识库同步 / GitHub 连接器共用（钥匙串 `connector/github`
 |---|---|
 | 「界面回到最初版本」「设置全丢」「灵动岛样式变回去了」「小鱼全冻结」 | 多半不是代码回退，而是配置被按默认值重建（`agent_link.claude` 也跟着回默认）。先看数据目录有没有 `config.json.corrupt-*`（全零 = 崩溃时没落盘），再看 `pet-<pid>.log` 开头有没有「配置文件损坏，已退回…」（有 = 已自动退回，只丢最后一次改动）。没有这条就是 `.bak` 和 GitHub 兜底都没用上、落到了默认值：用设置「常规 → 配置备份 → 从 GitHub 恢复…」拉回 |
 | 设置页显示自动备份已暂停 | 状态文件里 `rebuilt_at` 非零：配置曾按默认值重建。确认当前设置是想要的之后点「立即备份」，或直接「恢复」 |
+| `test_every_filename_literal_in_the_code_is_accounted_for` 红了 | 代码里新出现了一个数据文件名：是肥鱼落盘的数据就在 `pet/data_stores.py` 的 `STORES` 登记并回答从哪恢复；不是就加进 `NOT_STORES` 写一句它是什么 |
 | 备份 / 恢复报 HTTP 401 / 403 | Token 失效或没有该仓库的 Contents 读写权限；知识库同步用的是同一个 Token，会一起失败。404 = 仓库名不对或 Token 看不到这个私有仓库 |
 | 配置坏了但启动时没去 GitHub 拉 | 从没成功备份过（状态文件没有 `repo`）、钥匙串没 Token，或坏的是运行期重载 / slot 配置——这几种按设计都不拉 |
 | `pet-<pid>.log` 一直 0 字节 | 有代码在 `_setup_logging` 之前调了根 logger，`basicConfig` 成了空操作。查 `Config` 构造路径上新加的 `logging.xxx(...)` |
