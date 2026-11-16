@@ -5,7 +5,10 @@
    - 本机服务（127.0.0.1 上的页面）：令牌从网址的 # 片段里取，马上从地址栏抹掉，之后只放在请求头里；
      向 /api/graph 要数据。同一个标签页刷新时令牌从 sessionStorage 里取回。
 
-   只用 .then，不用 async/await：测试里用同步的假 fetch 就能把整条路跑完。 */
+   只用 .then，不用 async/await：测试里用同步的假 fetch 就能把整条路跑完。
+   这是页面的入口模块：本机服务的外壳只引用它，其余模块由 import 带进来。 */
+import {start} from './app.js';
+
 (function () {
   var RELOAD_MS = 3000;        /* 等 WSL 那一半时多久看一次 */
   var MAX_TRIES = 40;          /* 最多看这么多次（两分钟）：肥鱼中途退出时页面不会永远刷下去 */

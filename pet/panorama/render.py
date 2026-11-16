@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from ..i18n import current_language
@@ -21,13 +22,17 @@ PAGE_DIR = Path(__file__).with_name("page")
 PAGE_NAME = "panorama.html"
 DATA_NAME = "PANORAMA_DATA"                     # 快照里嵌数据的那个变量名（boot.js 认它）
 STYLE_LINK = '<link rel="stylesheet" href="/app.css">'
-SCRIPT_TAGS = '<script src="/app.js"></script>\n<script src="/boot.js"></script>'
+SCRIPT_TAGS = '<script type="module" src="/boot.js"></script>'
+#: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
+#: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
+#: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
+MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "interact.js", "app.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
-ASSETS = {
-    "app.css": "text/css; charset=utf-8",
-    "app.js": "text/javascript; charset=utf-8",
-    "boot.js": "text/javascript; charset=utf-8",
-}
+ASSETS = {"app.css": "text/css; charset=utf-8", **{name: "text/javascript; charset=utf-8" for name in MODULES}}
+# 模块里只许这两种写法，bundle() 才拼得起来：整行的具名 import，和顶层声明前的 export。
+_IMPORT_LINE = re.compile(r"^import \{\w+(?:, \w+)*\} from '\./[a-z]+\.js';\n", re.M)
+_EXPORT_PREFIX = re.compile(r"^export (?=(?:function|const) )", re.M)
+_LEFTOVER = re.compile(r"^\s*(?:import|export)\b", re.M)
 PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_title", "help_text", "quests_title", "no_quests",
              "uses", "used_by", "open_vscode", "copy_path", "copied", "settings_at", "settings_hint", "footer", "pending",
              "lost")
@@ -74,6 +79,21 @@ def asset(name: str) -> bytes:
     return (PAGE_DIR / name).read_bytes()
 
 
+def bundle(names: tuple[str, ...] = MODULES) -> str:
+    """把模块按顺序拼成一段普通脚本：去掉 import 行和 ``export`` 前缀，所有顶层名字落在同一个作用域里。
+
+    这不是通用的打包器，只认 ``_IMPORT_LINE`` / ``_EXPORT_PREFIX`` 那两种写法；模块里出现别的 import / export
+    写法（默认导出、改名、``import *``、跨行）就报错，而不是悄悄拼出一段坏脚本。
+    """
+    parts = []
+    for name in names:
+        text = _EXPORT_PREFIX.sub("", _IMPORT_LINE.sub("", _text(name).replace("\r\n", "\n")))
+        if _LEFTOVER.search(text):
+            raise RuntimeError(f"panorama module {name} uses an import/export form the bundler does not handle")
+        parts.append(text)
+    return "\n".join(parts)
+
+
 def shell() -> str:
     """本机服务发的页面外壳：没有数据，只有结构、语言、标题和「连接断了」那句话。"""
     page = (PAGE_DIR / "shell.html").read_text(encoding="utf-8")
@@ -89,7 +109,7 @@ def render(graph: dict) -> str:
     数据里的 ``</`` 转义掉：嵌进 ``<script>`` 的数据里出现 ``</script>`` 会把脚本截断。
     """
     data = json.dumps(page_data(graph), ensure_ascii=False).replace("</", "<\\/")
-    script = f"<script>\nconst {DATA_NAME} = {data};\n{_text('app.js')}\n{_text('boot.js')}</script>"
+    script = f"<script>\nconst {DATA_NAME} = {data};\n{bundle()}</script>"
     return shell().replace(STYLE_LINK, f"<style>\n{_text('app.css')}</style>").replace(SCRIPT_TAGS, script)
 
 
