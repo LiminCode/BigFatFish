@@ -1,35 +1,54 @@
 # -*- coding: utf-8 -*-
-"""设置页「Slack 关注」一节：开关、间隔、离开判定、模型，改了能存回去；没装 WSL 时开关置灰。"""
+"""设置窗口里的「Slack 关注」一节：设置已经搬到配置全景（ADR 0014，路线图 M4），这里只剩一行说明、一个跳过去的按钮
+和折叠的「存档与 Slack 关注页」说明。
+
+和工作简报那一组一样要守住「一项设置只有一个编辑入口」：设置窗口里没有这一组的控件，保存时也不碰 ``slack_watch`` 这个键。
+"""
 from __future__ import annotations
 
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from PySide6.QtWidgets import QApplication
 
-from pet import settings_slack_watch as ssw
+from pet import i18n
+from pet import overlay_settings_command as cmd
 from pet import slack_watch as sw
 from pet.config import Config
+from pet.settings_widgets import SettingRow
 
 app = QApplication.instance() or QApplication([])
 
+OLD_ROWS = ("slack_watch_enabled", "slack_watch_interval", "slack_watch_idle", "slack_watch_model",
+            "slack_watch_model_custom", "slack_watch_effort", "slack_watch_prompt")
 
-def _dialog(tmp_path, monkeypatch, *, wsl: bool = True, **settings):
+
+@pytest.fixture(autouse=True)
+def _chinese_again():
+    yield
+    i18n.set_language("zh")
+
+
+def _dialog(tmp_path, monkeypatch, *, language: str = "zh", **settings):
     from pet import modern_settings_dialog as settings_mod
 
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    monkeypatch.setattr(ssw.claude_hooks, "wsl_exe", lambda: r"C:\Windows\System32\wsl.exe" if wsl else None)
     config = Config(tmp_path)
+    config.set("ui_language", language)
     if settings:
-        config.set(sw.CONFIG_KEY, settings)
+        config.set(sw.CONFIG_KEY, sw.normalize(settings))
+    config.save()
     return config, settings_mod.ModernSettingsDialog(config, include_ai=False)
 
 
-def _row_page(dialog, row_id: str) -> str:
-    from pet.settings_widgets import SettingRow
+def _row(dialog, row_id: str):
+    return dialog.findChild(SettingRow, f"settingRow_{row_id}")
 
-    row = dialog.findChild(SettingRow, f"settingRow_{row_id}")
+
+def _page_of(dialog, row_id: str) -> str:
+    row = _row(dialog, row_id)
     assert row is not None, row_id
     for index in range(dialog.pages.count()):
         if dialog.pages.widget(index).isAncestorOf(row):
@@ -37,88 +56,53 @@ def _row_page(dialog, row_id: str) -> str:
     return ""
 
 
-def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, interval_minutes=30, idle_minutes=5, model="haiku")
+def _close(dialog):
+    dialog.close()
+    dialog.deleteLater()
+    app.processEvents()
+
+
+def test_the_section_only_says_where_the_settings_went_and_keeps_the_archive_help(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, interval_minutes=30)
     try:
-        for row_id in ("slack_watch_enabled", "slack_watch_interval", "slack_watch_idle", "slack_watch_model"):
-            assert _row_page(dialog, row_id) == "简报与笔记", row_id
-        assert dialog.slack_watch_enabled_check.isChecked() and dialog.slack_watch_enabled_check.isEnabled()
-        assert dialog.slack_watch_interval_spin.value() == 30 and dialog.slack_watch_idle_spin.value() == 5
-        assert dialog.slack_watch_model_select.currentData() == "haiku"
-        assert dialog.slack_watch_model_edit.isHidden(), "选的是常用名：自定义框收起"
+        assert all(_row(dialog, row_id) is None for row_id in OLD_ROWS), "控件留在这里就是两个编辑入口"
+        assert not hasattr(dialog, "slack_watch_enabled_check")
+        assert _page_of(dialog, "slack_watch_moved") == "简报与笔记"
+        moved = _row(dialog, "slack_watch_moved")
+        assert "Slack 关注" in moved.hint_label.text() and "配置全景" in moved.hint_label.text()
+        assert dialog.slack_watch_open_panorama.text() == "到配置全景里改"
+        assert _page_of(dialog, "slack_watch_archive") == "简报与笔记"
     finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()
+        _close(dialog)
 
 
-def test_changes_are_saved_back_through_normalize(tmp_path, monkeypatch):
+def test_the_button_asks_the_fish_to_open_the_panorama_at_this_group(tmp_path, monkeypatch):
     config, dialog = _dialog(tmp_path, monkeypatch)
     try:
-        assert not dialog.slack_watch_enabled_check.isChecked(), "默认关"
-        dialog.slack_watch_enabled_check.setChecked(True)
-        dialog.slack_watch_interval_spin.setValue(45)
-        dialog.slack_watch_idle_spin.setValue(20)
-        select = dialog.slack_watch_model_select
-        select.setCurrentIndex(select.findData(ssw.CUSTOM))
-        assert not dialog.slack_watch_model_edit.isHidden()
-        dialog.slack_watch_model_edit.setText(" claude-sonnet-5-5 ")
-        ssw.save_slack_watch_settings(dialog)
-        assert config.get(sw.CONFIG_KEY) == {"enabled": True, "interval_minutes": 45, "idle_minutes": 20,
-                                             "model": "claude-sonnet-5-5", "effort": "high", "prompt": ""}
-        dialog.slack_watch_model_edit.setText("rm -rf /")
-        ssw.save_slack_watch_settings(dialog)
-        assert config.get(sw.CONFIG_KEY)["model"] == "sonnet", "怪名字退回默认，不进 shell"
+        dialog.slack_watch_open_panorama.click()
+        command = cmd.consume_command(config.dir)
+        assert command["command"] == cmd.CMD_OPEN_PANORAMA and command["focus"] == "slack_watch"
     finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()
+        _close(dialog)
 
 
-def test_a_custom_model_name_in_the_config_shows_up_as_custom(tmp_path, monkeypatch):
-    _config, dialog = _dialog(tmp_path, monkeypatch, model="claude-opus-5-5")
+def test_saving_the_window_leaves_what_the_page_wrote_alone(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=False, interval_minutes=15)
     try:
-        assert dialog.slack_watch_model_select.currentData() == ssw.CUSTOM
-        assert dialog.slack_watch_model_edit.text() == "claude-opus-5-5" and not dialog.slack_watch_model_edit.isHidden()
-        assert ssw.chosen_model(dialog) == "claude-opus-5-5"
+        page = Config(tmp_path)                                               # 窗口开着的时候，页面经主进程改了这一组
+        page.set(sw.CONFIG_KEY, sw.normalize({"enabled": True, "interval_minutes": 45, "prompt": "页面上改的"}))
+        assert page.save()
+        assert dialog._write_config()
+        saved = sw.normalize(Config(tmp_path).get(sw.CONFIG_KEY))
+        assert saved["enabled"] is True and saved["interval_minutes"] == 45 and saved["prompt"] == "页面上改的"
     finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()
+        _close(dialog)
 
 
-def test_without_wsl_the_switch_is_greyed_out_and_saving_keeps_it_off(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, wsl=False, enabled=True)
+def test_the_section_speaks_english(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, language="en")
     try:
-        check = dialog.slack_watch_enabled_check
-        assert not check.isEnabled() and not check.isChecked()
-        ssw.save_slack_watch_settings(dialog)
-        assert config.get(sw.CONFIG_KEY)["enabled"] is False
+        assert dialog.slack_watch_open_panorama.text() == "Change them in Config panorama"
+        assert "Slack watch" in _row(dialog, "slack_watch_moved").hint_label.text()
     finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()
-
-
-# ---------------------------------------------------------------- effort / 提示词（2026-10-24）
-
-def test_effort_and_prompt_rows_show_the_builtin_and_save_only_changes(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, effort="low")
-    try:
-        assert _row_page(dialog, "slack_watch_effort") == "简报与笔记"
-        assert _row_page(dialog, "slack_watch_prompt") == "简报与笔记"
-        assert dialog.slack_watch_effort_select.currentData() == "low"
-        assert dialog.slack_watch_prompt_edit.toPlainText() == sw.default_prompt_template()
-        assert not dialog.slack_watch_prompt_restore.isEnabled()
-        ssw.save_slack_watch_settings(dialog)
-        assert config.get(sw.CONFIG_KEY)["prompt"] == "" and config.get(sw.CONFIG_KEY)["effort"] == "low"
-
-        dialog.slack_watch_prompt_edit.setPlainText("我的 Slack 模板 {since}")
-        ssw.save_slack_watch_settings(dialog)
-        assert config.get(sw.CONFIG_KEY)["prompt"] == "我的 Slack 模板 {since}"
-        dialog.slack_watch_prompt_restore.click()
-        assert dialog.slack_watch_prompt_edit.toPlainText() == sw.default_prompt_template()
-    finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()
+        _close(dialog)

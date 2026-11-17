@@ -38,10 +38,27 @@ function buttons(r) {
     (d ? `<small class="fdirty">${esc(S.form_dirty)}</small>` : '') + '</div>';
 }
 
+const bounded = r => r.min != null && r.max != null;
+const whole = r => bounded(r) && Number.isInteger(r.min) && Number.isInteger(r.max);
+const range = r => bounded(r) ? ` min="${esc(r.min)}" max="${esc(r.max)}"${whole(r) ? ' step="1"' : ''}` : '';
+
+/** 一个数字放不放得进声明的范围：放不进返回错误代码（和服务那边同名），放得进返回空串。 */
+function numberError(r, n) {
+  if (!bounded(r)) return '';
+  if (n < r.min || n > r.max) return 'out_of_range';
+  return whole(r) && !Number.isInteger(n) ? 'type' : '';
+}
+
+function errorText(r, code) {
+  const text = S['form_err_' + code] || S.form_err_rejected;
+  return code === 'out_of_range' && bounded(r) ? text.replace('{min}', r.min).replace('{max}', r.max) : text;
+}
+
 function control(r) {
   const id = idOf(r), key = esc(r.id), off = locked(r) ? ' disabled' : '', value = shown(r);
   if (r.control === 'toggle') return `<input type="checkbox" role="switch" data-set="${key}"${value === true ? ' checked' : ''}${off} id="${id}">`;
-  if (r.control === 'number') return `<input type="number" data-set="${key}" value="${esc(value)}"${off} id="${id}">`;
+  if (r.control === 'number') return `<input type="number" data-set="${key}" value="${esc(value)}"${range(r)}${off} id="${id}">` +
+    (r.unit ? `<span class="funit">${esc(r.unit)}</span>` : '');
   if (r.control === 'choice' || r.control === 'choice_or_text') {
     const free = r.control === 'choice_or_text', custom = free && (!!st.custom[r.id] || r.choices.indexOf(value) < 0);
     const options = r.choices.map(c => `<option value="${esc(c)}"${!custom && c === value ? ' selected' : ''}>${esc(c)}</option>`).join('') +
@@ -59,7 +76,7 @@ function rowHtml(r) {
   return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
     `<div class="flabel"><label for="${idOf(r)}">${esc(r.title)}</label>${r.hint ? `<small>${esc(r.hint)}</small>` : ''}</div>` +
     `<div class="fctl">${control(r)}</div>` +
-    (error ? `<p class="ferr" role="alert">${esc(S['form_err_' + error] || S.form_err_rejected)}</p>` : '') + '</div>';
+    (error ? `<p class="ferr" role="alert">${esc(errorText(r, error))}</p>` : '') + '</div>';
 }
 
 function draw() {
@@ -117,6 +134,8 @@ host.addEventListener('change', ev => {
   if (r.control === 'number') {
     const n = Number(t.value);
     if (String(t.value).trim() === '' || !isFinite(n)) { st.errors[r.id] = 'type'; return draw(); }
+    const wrong = numberError(r, n);
+    if (wrong) { st.errors[r.id] = wrong; return draw(); }
     return commit({[r.id]: n});
   }
   if (r.control === 'choice_or_text' && t.value === CUSTOM) { st.custom[r.id] = true; return draw(); }

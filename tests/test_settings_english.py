@@ -122,7 +122,7 @@ def test_rows_hints_and_buttons_speak_english(tmp_path, monkeypatch):
 
         assert row("on_top").label.text() == "Always on top"
         assert row("on_top").hint_label.text() == "Keep the fish above other windows."
-        assert row("slack_watch_interval").hint_label.text().startswith("Minutes between checks")
+        assert "Config panorama" in row("slack_watch_moved").hint_label.text()
         assert row("vscode_menu_limit").hint_label.text().startswith("Most items the menu lists")
         assert row("tray_icon").hint_label.text().startswith("The icon shown in the notification area")
         assert dialog.save_button.text() == "Save"

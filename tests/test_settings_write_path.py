@@ -167,10 +167,26 @@ def test_read_describes_every_setting_with_its_text_value_and_control(env):
     assert list(rows) == [s.id for s in GROUP.settings]
     assert rows["enabled"] == {"id": "enabled", "control": "toggle", "title": "工作日自动生成", "hint": rows["enabled"]["hint"],
                                "value": False, "default": False, "choices": [], "commit": "immediate", "disclosure": "primary",
-                               "depends_on": "", "builtin": None}
+                               "depends_on": "", "builtin": None, "min": None, "max": None, "unit": ""}
     assert rows["effort"]["choices"] == ["low", "medium", "high", "xhigh"] and rows["time"]["control"] == "choice_or_text"
     assert rows["prompt_zh"]["commit"] == "on_finish" and rows["prompt_zh"]["builtin"] == wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
     assert rows["priority_rules"]["builtin"] is None and rows["enabled"]["hint"]
+
+
+def test_a_bounded_number_is_described_with_its_range_and_unit_and_writes_through(env):
+    from pet import slack_watch as sw
+
+    config, audit = env
+    out = api.read(config, "slack_watch")
+    rows = {row["id"]: row for row in out["settings"]}
+    assert (rows["interval_minutes"]["min"], rows["interval_minutes"]["max"]) == sw.INTERVAL_RANGE
+    assert rows["interval_minutes"]["unit"] == "分钟" and rows["interval_minutes"]["value"] == sw.DEFAULT_INTERVAL_MIN
+    assert rows["prompt"]["builtin"] == sw.default_prompt_template() and rows["model"]["control"] == "choice_or_text"
+    done = api.write(config, "slack_watch", {"base": out["version"], "changes": {"interval_minutes": 30}}, audit=audit)
+    assert done["changed"] == ["interval_minutes"] and _disk(config)[sw.CONFIG_KEY]["interval_minutes"] == 30
+    with pytest.raises(api.SettingsError) as refused:
+        api.write(config, "slack_watch", {"base": done["version"], "changes": {"interval_minutes": 1}}, audit=audit)
+    assert refused.value.status == 422 and refused.value.detail["errors"] == [{"id": "interval_minutes", "code": "out_of_range"}]
 
 
 def test_read_says_when_the_group_cannot_work_on_this_machine(env, monkeypatch):

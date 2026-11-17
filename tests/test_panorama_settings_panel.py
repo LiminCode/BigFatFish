@@ -104,7 +104,7 @@ def test_the_settings_button_is_on_the_briefing_tile_and_opens_the_form(engine):
 
 
 def test_tiles_whose_settings_are_still_in_the_settings_window_have_no_button(engine):
-    out = _page(engine, "view.select('f_slack');")
+    out = _page(engine, "view.select('f_notes');")                   # 工作笔记还没搬
     assert "data-settings" not in out["detail"]
 
 

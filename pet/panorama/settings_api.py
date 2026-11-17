@@ -60,6 +60,8 @@ def describe(group: st.Group, raw) -> dict:
             "hint": _text(st.hint_key(group, setting)), "value": current[setting.id], "default": default[setting.id],
             "choices": list(setting.choices), "commit": setting.commit_policy, "disclosure": setting.disclosure,
             "depends_on": setting.depends_on, "builtin": setting.builtin(effective) if setting.builtin else None,
+            "min": setting.bounds[0] if setting.bounds else None, "max": setting.bounds[1] if setting.bounds else None,
+            "unit": _text(setting.unit),
         } for setting in group.settings],
     }
 

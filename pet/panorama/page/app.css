@@ -143,6 +143,7 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .sform select,.sform input[type=text],.sform input[type=number],.sform textarea{background:var(--m-field);color:var(--m-text);
   border:1px solid var(--m-field-border);font:inherit;font-size:12.5px;padding:5px 8px}
 .sform select{min-width:140px}.sform input[type=number]{width:90px}.sform input.fcustom{width:180px}
+.sform .funit{color:var(--m-muted);font-size:12px}
 .sform textarea{width:100%;box-sizing:border-box;resize:vertical;font:12px/1.5 ui-monospace,Consolas,"Cascadia Mono",monospace}
 .sform select:focus,.sform input:focus,.sform textarea:focus{outline:2px solid var(--m-accent);outline-offset:-1px}
 .sform :disabled{opacity:.55;cursor:not-allowed}
