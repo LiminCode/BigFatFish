@@ -21,6 +21,11 @@ import time
 MARK = "big-fat-fish"
 BLOCK_RE = re.compile(r"<!-- big-fat-fish:memory-distill:start -->(.*?)<!-- big-fat-fish:memory-distill:end -->", re.S)
 MEMORY_LIST_LIMIT = 40
+MEMORY_ENTRY_LIMIT = 600        # 记忆索引最多收这么多条（所有项目加起来）
+MEMORY_TEXT_LIMIT = 240         # 说明、规矩正文最多留这么多字
+MEMORY_HEAD_BYTES = 4096        # 每个记忆文件只读开头这么多：名字和说明都在文件头里
+_FRONT_RE = re.compile(r"\ufeff?---\r?\n(.*?)\r?\n---", re.S)
+_RULE_RE = re.compile(r"^- \*\*(.+?)\*\*[ \t]*(?:[—–-]+[ \t]*)?(.*)$", re.M)
 TOOL_DIRS = (".config/gh", ".aws", ".kube", ".cursor", ".gemini")
 
 
@@ -63,6 +68,64 @@ def claude_md_summary(path):
             "mtime": _mtime(path), "managed_block": bool(block),
             "managed_rules": len(re.findall(r"^- \*\*", block.group(1), re.M)) if block else 0,
             "managed_updated": updated.group(1) if updated else ""}
+
+
+def _cut(text):
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= MEMORY_TEXT_LIMIT else text[:MEMORY_TEXT_LIMIT] + "…"
+
+
+def _memory_entry(path):
+    """一个记忆文件的名字、说明、类型（文件头里的 ``name`` / ``description`` / ``type``）。**不带正文。**"""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            head = fh.read(MEMORY_HEAD_BYTES)
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    meta = {}
+    front = _FRONT_RE.match(head)
+    for line in (front.group(1).splitlines() if front else ()):
+        key, colon, value = line.strip().partition(":")
+        value = value.strip().strip("\"'")
+        if colon and value and key in ("name", "description", "type"):
+            meta.setdefault(key, value)
+    if "name" not in meta:                          # 没有文件头：拿第一个标题，再不行拿文件名
+        heading = re.search(r"^#+[ \t]+(.+)$", head, re.M)
+        meta["name"] = heading.group(1).strip() if heading else os.path.splitext(os.path.basename(path))[0]
+    return {"file": os.path.basename(path), "name": _cut(meta["name"]), "description": _cut(meta.get("description", "")),
+            "type": meta.get("type", ""), "bytes": size, "mtime": _mtime(path)}
+
+
+def memory_index(claude):
+    """这个家目录里的记忆，按作用域：``rules`` 是 CLAUDE.md 受管块里的每条规矩，``sections`` 是受管块之外你自己写的
+    小标题，``projects`` 是各项目记忆目录里的每个文件（``MEMORY.md`` 是目录，不算）。只有名字和说明，没有正文。"""
+    out = {"rules": [], "sections": [], "projects": [], "entries": 0, "truncated": False}
+    try:
+        with open(os.path.join(claude, "CLAUDE.md"), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        text = ""
+    block = BLOCK_RE.search(text)
+    if block:
+        out["rules"] = [{"title": _cut(title), "text": _cut(body)} for title, body in _RULE_RE.findall(block.group(1))]
+    outside = BLOCK_RE.sub("", text)
+    out["sections"] = [_cut(title) for title in re.findall(r"^#{1,3}[ \t]+(.+)$", outside, re.M)][:MEMORY_LIST_LIMIT]
+    for folder in sorted(glob.glob(os.path.join(claude, "projects", "*", "memory"))):
+        entries = []
+        for path in sorted(glob.glob(os.path.join(folder, "*.md"))):
+            if os.path.basename(path) == "MEMORY.md":
+                continue
+            if out["entries"] >= MEMORY_ENTRY_LIMIT:
+                out["truncated"] = True
+                break
+            entry = _memory_entry(path)
+            if entry:
+                entries.append(entry)
+                out["entries"] += 1
+        if entries:
+            out["projects"].append({"name": os.path.basename(os.path.dirname(folder)), "entries": entries})
+    return out
 
 
 def parse_mcp_list(output):
@@ -133,6 +196,7 @@ def probe(home, with_mcp=False, mcp_timeout=90):
         "projects": len(glob.glob(os.path.join(claude, "projects", "*", ""))),
         "memory_count": len(memory), "memory_projects": memory[:MEMORY_LIST_LIMIT],
         "distilled_files": len(glob.glob(os.path.join(claude, "projects", "*", "memory", "distill-*.md"))),
+        "memory_index": memory_index(claude),
         "credentials_path": os.path.join(claude, ".credentials.json"),
         "credentials_file": os.path.isfile(os.path.join(claude, ".credentials.json")),
         "tools": [name for name in TOOL_DIRS if os.path.exists(os.path.join(home, *name.split("/")))],

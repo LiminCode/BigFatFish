@@ -21,7 +21,7 @@ function show(store, path) { const mine = ++turn; box.dataset.path = path; say(S
     if (f.binary) { part('viewer-text').innerHTML = `<span class="ln note">${esc(S.viewer_binary)}</span>`; return; }
     part('viewer-text').innerHTML = f.text.replace(/\r\n/g, '\n').split('\n').map((line, i) => `<span class="ln${inMark(i + 1) ? ' managed' : ''}">${esc(line) || ' '}</span>`).join('');
   }).then(null, () => { if (mine === turn) say(S.viewer_failed); }); }
-function open(store, title) { if (!api) return; const mine = ++turn;
+function open(store, title, path) { if (!api) return; const mine = ++turn;       /* path：直接翻到这一个文件；不给就看第一个 */
   box.dataset.store = store; box.hidden = false;
   box.innerHTML = `<div class="sheet"><header><b>${esc(title)}</b><button class="btn" data-close="1">${esc(S.viewer_close)}</button></header>` +
     `<div class="vbody"><nav id="viewer-files"></nav><div class="vmain"><div class="vmeta" id="viewer-meta"></div><pre id="viewer-text"></pre></div></div></div>`;
@@ -30,12 +30,12 @@ function open(store, title) { if (!api) return; const mine = ++turn;
     part('viewer-files').hidden = list.files.length < 2;
     part('viewer-files').innerHTML = list.files.map(f => `<button data-file="${esc(f.path)}" title="${esc(f.path)}">${esc(f.label || f.path)}<small>${esc(f.mtime)}</small></button>`).join('') +
       (list.truncated ? `<em>${esc(S.viewer_more)}</em>` : '');
-    if (list.files.length) show(store, list.files[0].path); else say(S.viewer_empty);
+    if (path || list.files.length) show(store, path || list.files[0].path); else say(S.viewer_empty);
   }).then(null, () => { if (mine === turn) say(S.viewer_failed); }); }
 function close() { turn++; box.hidden = true; box.innerHTML = ''; }
 box.addEventListener('click', ev => {
   if (ev.target === box || ev.target.closest('[data-close]')) return close();
   const f = ev.target.closest('[data-file]'); if (f) show(box.dataset.store, f.dataset.file); }, on);
-document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !box.hidden) close(); }, on);
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !box.hidden) { ev.preventDefault(); close(); } }, on);
 return {open, close, show};
 }

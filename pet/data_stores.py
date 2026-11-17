@@ -233,7 +233,7 @@ STORES: tuple[Store, ...] = (
     Store("lyrics_cache", "personal", "data", ("lyrics_cache/*.json",), "cache", ("music_lyric",), _REBUILD),
     Store("probe_cache", "personal", "data", ("harness_probe_cache.json", "balance_cache.json"), "cache",
           ("harness_launcher", "app"), _REBUILD),
-    Store("panorama_snapshot", "personal", "data", ("panorama/*",), "cache", ("panorama",), _REBUILD),
+    Store("panorama_snapshot", "mixed", "data", ("panorama/*",), "cache", ("panorama",), _REBUILD),
     # ── 日志、锁和标记 ──
     Store("logs", "personal", "data", ("pet-*.log*", "pet-overlay-gate.log"), "log", ("app", "overlay_instance_gate"), _DISPOSABLE),
     Store("agent_events", "mixed", "data", ("agent-events/*.jsonl", "agent-events/*"), "log", ("claude_code", "agent_link"),

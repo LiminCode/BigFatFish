@@ -30,7 +30,7 @@ SCRIPT_TAGS = '<script type="module" src="/boot.js"></script>'
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
 #: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
-MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "viewer.js", "interact.js", "app.js", "boot.js")
+MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "viewer.js", "memory.js", "interact.js", "app.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
 ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES},
           **{name: "text/javascript; charset=utf-8" for name in MODULES}}
@@ -41,7 +41,9 @@ _LEFTOVER = re.compile(r"^\s*(?:import|export)\b", re.M)
 PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_title", "help_text", "quests_title", "no_quests",
              "uses", "used_by", "open_vscode", "copy_path", "copied", "settings_at", "settings_hint", "footer", "pending",
              "lost", "view", "view_needs_service", "viewer_close", "viewer_loading", "viewer_failed", "viewer_empty",
-             "viewer_truncated", "viewer_managed", "viewer_more", "viewer_binary")
+             "viewer_truncated", "viewer_managed", "viewer_more", "viewer_binary", "memory_button", "memory_title", "memory_global",
+             "memory_project", "memory_own", "memory_none", "memory_only_flagged", "memory_all", "memory_note", "memory_count",
+             "memory_truncated", "memory_empty")
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 

@@ -66,6 +66,11 @@ def test_english_page_has_no_chinese_left_in_its_own_text():
     page = render.render(sources.build(samples.facts()))
     data = _embedded(page)
     assert '<html lang="en">' in page
+    for side in data["memory"]["sides"]:             # 记忆的名字和说明是用户写的内容，不是这张字表的文字：拿掉再查
+        side["sections"] = []
+        for row in side["rules"] + [entry for project in side["projects"] for entry in project["entries"]]:
+            for key in ("title", "text", "name", "description"):
+                row.pop(key, None)
     leftovers = [text for text in _strings(data) if CJK.search(text)]
     assert leftovers == ["连接成功"]                                            # 体检器给的结论原样转述，不归这张字表管
     shell_text = re.sub(r"<[^>]+>", "", render.shell())
