@@ -50,6 +50,17 @@ def _secret_get(ref: str) -> str:
     return SecretStore().get(ref)
 
 
+def _known_group(group_id: str) -> bool:
+    """这个组 id 在设置表里吗（网址里只放认识的组名）。"""
+    from .. import settings_table
+
+    try:
+        settings_table.group(group_id)
+    except KeyError:
+        return False
+    return True
+
+
 class _GuiCall:
     """请求线程交给界面线程办的一件事，和等它办完用的那把锁。见 ``PanoramaService.on_gui``。"""
 
@@ -96,6 +107,7 @@ class PanoramaService(QObject):
         self._audit = audit                     # 审计记录；不给就用数据目录里那一份（第一次用到时才建）
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
+        self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
         self._stage.connect(self._on_stage)
         self._call.connect(self._run_call)      # 从别的线程 emit 时自动排队到本对象所在的界面线程
         app = QApplication.instance()
@@ -127,8 +139,12 @@ class PanoramaService(QObject):
             except Exception:  # noqa: BLE001 - 退出路径上不抛
                 log.exception("配置全景：停本机服务失败")
 
-    def open(self) -> bool:
-        """采一轮并打开页面；返回是否真的发起了新一轮。上一轮还没跑完时只把现有页面再打开一次。"""
+    def open(self, focus: str = "") -> bool:
+        """采一轮并打开页面；返回是否真的发起了新一轮。上一轮还没跑完时只把现有页面再打开一次。
+
+        ``focus``：页面画完就直接翻到的那一组设置（设置表里的组 id）。不在设置表里的不认，当没给。
+        """
+        self._focus = focus if focus and _known_group(focus) else ""
         if self._busy:
             if self._feed.latest() is not None or self.page_path.is_file():
                 self._open_page(self._page_target(str(self.page_path)))
@@ -303,7 +319,9 @@ class PanoramaService(QObject):
                 reader = Reader(config_dir=self._config.dir, home=Path.home(), run_wsl=run_wsl)
                 self._server = PanoramaServer(build_router(self._feed, files=reader, settings=self))
             self._server.start()
-            return self._server.page_url()
+            # 组名跟在令牌后面，也在 # 片段里：不发给服务器、不进日志；页面取走令牌后整段从地址栏抹掉
+            focus, self._focus = self._focus, ""
+            return self._server.page_url() + (f"&settings={focus}" if focus else "")
         except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看
             log.exception("配置全景：本机服务起不来，改开离线快照")
             return snapshot

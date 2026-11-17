@@ -129,7 +129,8 @@ FEATURES: tuple[Feature, ...] = (
             writes=(("vault_personal", "memory", _always),)),
     Feature("link_wsl", "link", "link", "agent_link.claude_wsl", _link("claude_wsl", sys.platform == "win32"),
             page="menu_agent_link", writes=(("set_wsl", "config", _always),), note="link_wsl"),
-    Feature("briefing", "work", "news", "work_briefing", _briefing, page="briefing_work"),
+    # 设置已经搬到配置全景（settings_table 里登记了这个键）：磁贴上是「设置」按钮，不再指向设置窗口的哪一页
+    Feature("briefing", "work", "news", "work_briefing", _briefing),
     Feature("slack", "work", "hash", "slack_watch", _slack, page="briefing_slack"),
     Feature("notes", "work", "note", "work_notes", _notes, page="briefing_notes",
             writes=(("vault_work", "memory", _always),)),

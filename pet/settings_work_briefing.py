@@ -1,28 +1,29 @@
 # -*- coding: utf-8 -*-
-"""设置页「工作简报」一节（自动化与联动）：开关、只在工作日、几点、模型、**包含哪些来源**，以及折叠的流程说明。
+"""设置页「工作简报」一节（简报与笔记）。
 
-此前简报只能在右键菜单里开关与定时，来源是写死的；用户 2026-10-19 要求能说明「怎么做、什么时候做、
-发给 Claude 什么」，并且来源可配置（邮件 / Slack / Jira / GitHub PR / 日历 / 建议）。逻辑见 ``work_briefing.py``：
-来源开关决定提示词里列哪些来源、输出哪几节，以及放行给 Claude Code 的只读工具。文案全部走 ``i18n.t``；
-没装 WSL 时开关置灰并说明原因。
+**工作简报的设置已经搬到配置全景**（2026-11-17，路线图 M3；决定见 ADR 0014）：开关、时间、工作日、模型、effort、
+六个来源、提示词、优先级偏好都在那边改（声明在 ``settings_table.GROUPS``）。这一节只剩：
+
+- 一行「搬到配置全景了」加一个跳过去的按钮（``settings_moved.moved_row``）；
+- 默认收起的「这个功能怎么运作」：怎么做、什么时候做、发给 Claude 什么、它能用什么工具、结果放哪。
+
+这扇窗保存时不再碰 ``work_briefing`` 这个键，所以页面上改的值不会被它盖回去。
+``effort_select`` 留在这里是因为 Slack 关注、工作笔记、会话记忆蒸馏三节还在用它。
 """
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLineEdit, QPlainTextEdit
-
-from . import claude_hooks
+from . import claude_hooks  # noqa: F401 - 测试和别处经这里替换 wsl_exe
 from . import work_briefing as wb
 from .i18n import t
 from .settings_help import help_section
-from .settings_prompt_editor import PromptEditor
-from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleSwitch
+from .settings_moved import moved_row
+from .settings_widgets import ModernSelect, SettingRow, SettingsSection
 
-MODEL_CHOICES = (("sonnet", "Sonnet"), ("haiku", "Haiku"), ("opus", "Opus"))
-CUSTOM = "__custom__"
+GROUP_ID = "work_briefing"                       # settings_table 里的组 id
 
 
 def effort_select(dialog, current: str) -> ModernSelect:
-    """effort 下拉（四档）；简报 / 笔记 / Slack 关注三处共用。"""
+    """effort 下拉（四档）；Slack 关注 / 工作笔记 / 会话记忆蒸馏共用。"""
     select = ModernSelect(dialog, width=140)
     for value in wb.EFFORT_CHOICES:
         select.addItem(value, value)
@@ -43,110 +44,5 @@ def flow_section(dialog) -> SettingsSection:
 
 
 def work_briefing_rows(dialog) -> list[SettingRow]:
-    """建出控件并返回设置行。挂在 ``dialog`` 上：``work_briefing_enabled_check``、``work_briefing_weekdays_check``、
-    ``work_briefing_time_select``、``work_briefing_model_select`` / ``_edit``、``work_briefing_source_checks``。"""
-    settings = wb.normalize(dialog.config.get(wb.CONFIG_KEY))
-    usable = bool(claude_hooks.wsl_exe())
-
-    check = ToggleSwitch(dialog)
-    check.setChecked(bool(settings["enabled"]) and usable)
-    check.setEnabled(usable)
-    dialog.work_briefing_enabled_check = check
-
-    weekdays = ToggleSwitch(dialog)
-    weekdays.setChecked(bool(settings["weekdays_only"]))
-    dialog.work_briefing_weekdays_check = weekdays
-
-    time_select = ModernSelect(dialog, width=120)
-    choices = list(wb.TIME_CHOICES)
-    if settings["time"] not in choices:
-        choices.append(settings["time"])
-        choices.sort()
-    for value in choices:
-        time_select.addItem(value, value)
-    time_select.setCurrentIndex(max(0, time_select.findData(settings["time"])))
-    dialog.work_briefing_time_select = time_select
-
-    select = ModernSelect(dialog, width=200)
-    for value, label in MODEL_CHOICES:
-        select.addItem(label, value)
-    select.addItem(t("briefing.settings.custom_choice"), CUSTOM)
-    edit = QLineEdit(dialog)
-    edit.setPlaceholderText("claude-sonnet-5-5")
-    edit.setAccessibleName(t("briefing.settings.custom_model"))
-    known = {value for value, _label in MODEL_CHOICES}
-    if settings["model"] in known:
-        select.setCurrentIndex(max(0, select.findData(settings["model"])))
-    else:
-        select.setCurrentIndex(max(0, select.findData(CUSTOM)))
-        edit.setText(settings["model"])
-    edit.setVisible(select.currentData() == CUSTOM)
-    select.currentIndexChanged.connect(lambda _index: edit.setVisible(select.currentData() == CUSTOM))
-    dialog.work_briefing_model_select = select
-    dialog.work_briefing_model_edit = edit
-    effort = effort_select(dialog, settings["effort"])
-    dialog.work_briefing_effort_select = effort
-
-    rows = [
-        SettingRow("work_briefing_enabled", t("briefing.settings.enabled"),
-                   t("briefing.settings.enabled_hint") if usable else t("briefing.settings.no_wsl"), check),
-        SettingRow("work_briefing_weekdays", t("briefing.settings.weekdays"), t("briefing.settings.weekdays_hint"), weekdays),
-        SettingRow("work_briefing_time", t("briefing.settings.time"), t("briefing.settings.time_hint"), time_select),
-        SettingRow("work_briefing_model", t("briefing.settings.model"), t("briefing.settings.model_hint"), select),
-        SettingRow("work_briefing_model_custom", t("briefing.settings.custom_model"), "", edit, stacked=True),
-        SettingRow("work_briefing_effort", t("briefing.settings.effort"), t("briefing.settings.effort_hint"), effort),
-    ]
-    dialog.work_briefing_source_checks = {}
-    for source in wb.SOURCES:
-        toggle = ToggleSwitch(dialog)
-        toggle.setChecked(bool(settings["sources"].get(source)))
-        dialog.work_briefing_source_checks[source] = toggle
-        rows.append(SettingRow(f"work_briefing_source_{source}", t(f"briefing.settings.source.{source}"),
-                               t(f"briefing.settings.source.{source}_hint"), toggle))
-
-    # 发给 Claude 的提示词（明文、可改；按界面语言各存一份）与优先级偏好（2026-10-24 用户要求）
-    language = wb.prompt_language()
-    prompt = PromptEditor(dialog, default=wb.default_prompt_template(language, settings["sources"]),
-                          stored=settings[f"prompt_{language}"], accessible_name=t("briefing.settings.prompt"))
-    dialog.work_briefing_prompt_editor = prompt
-    dialog.work_briefing_prompt_edit = prompt.edit
-    dialog.work_briefing_prompt_restore = prompt.restore
-    dialog.work_briefing_prompt_language = language
-    rules = QPlainTextEdit(dialog)
-    rules.setPlaceholderText(t("briefing.settings.priority_rules"))
-    rules.setAccessibleName(t("briefing.settings.priority_rules"))
-    rules.setMinimumSize(320, 70)
-    rules.setMaximumHeight(140)
-    rules.setPlainText(settings["priority_rules"])
-    dialog.work_briefing_priority_rules_edit = rules
-    rows.append(SettingRow("work_briefing_prompt", t("briefing.settings.prompt"), t("briefing.settings.prompt_hint"),
-                           prompt, stacked=True))
-    rows.append(SettingRow("work_briefing_priority_rules", t("briefing.settings.priority_rules"),
-                           t("briefing.settings.priority_rules_hint"), rules, stacked=True))
-    return rows
-
-
-def chosen_model(dialog) -> str:
-    value = dialog.work_briefing_model_select.currentData()
-    if value == CUSTOM:
-        value = dialog.work_briefing_model_edit.text()
-    return wb.normalize_model(value)
-
-
-def save_work_briefing_settings(dialog) -> None:
-    check = getattr(dialog, "work_briefing_enabled_check", None)
-    if check is None:
-        return
-    current = wb.normalize(dialog.config.get(wb.CONFIG_KEY))
-    dialog.config.set(wb.CONFIG_KEY, wb.normalize({
-        **current,
-        "enabled": check.isChecked(),
-        "weekdays_only": dialog.work_briefing_weekdays_check.isChecked(),
-        "time": dialog.work_briefing_time_select.currentData(),
-        "model": chosen_model(dialog),
-        "effort": dialog.work_briefing_effort_select.currentData(),
-        "sources": {source: toggle.isChecked() for source, toggle in dialog.work_briefing_source_checks.items()},
-        # 只存当前界面语言那一份（编辑框里就是它）；另一种语言的保持原样
-        f"prompt_{dialog.work_briefing_prompt_language}": dialog.work_briefing_prompt_editor.value(),
-        "priority_rules": dialog.work_briefing_priority_rules_edit.toPlainText(),
-    }))
+    """这一节的行：只有「搬到配置全景了」那一行。"""
+    return [moved_row(dialog, GROUP_ID)]

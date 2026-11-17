@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""D12：独立设置进程 → 主进程的「退出子肥鱼」指令通道（零 Qt 纯逻辑）。
+"""D12：独立设置进程 → 主进程的指令通道（零 Qt 纯逻辑）：「退出子肥鱼」，以及「打开配置全景并翻到某一组设置」。
 
 设计稿：``.scratch/single-overlay-window/PHASE4_DESIGN.md``（§4 D12 / §5 4.2c）。
 
@@ -54,7 +54,12 @@ COMMAND_VERSION = 1
 
 # 已知指令：设置页「一键退出子肥鱼」（全部子肥鱼 / 指定 slot 身份）。
 CMD_EXIT_SPAWNED_PETS = "exit_spawned_pets"
-KNOWN_COMMANDS = frozenset({CMD_EXIT_SPAWNED_PETS})
+# 设置窗口里「到配置全景里改」（M3 起设置一组一组搬到配置全景）：主进程打开配置全景，
+# ``focus`` 是要直接翻到的那一组设置（设置表里的组 id），空 = 只打开。
+CMD_OPEN_PANORAMA = "open_panorama"
+KNOWN_COMMANDS = frozenset({CMD_EXIT_SPAWNED_PETS, CMD_OPEN_PANORAMA})
+# focus 只许是个干净的名字：它会被拼进浏览器打开的网址
+_FOCUS_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 # 指令保鲜窗口：超过即视为"写下时主进程不在跑"。
 DEFAULT_MAX_AGE_S = 120.0
@@ -100,7 +105,16 @@ def _normalize_target(target) -> int | None:
     return target if target >= 1 else None
 
 
-def write_command(config_dir: Path | str, command: str, *, target=None,
+def _normalize_focus(command: str, focus) -> str | None:
+    """focus 合法化：空 → ""；只有「打开配置全景」带它，且只能是个干净的名字。非法 → None。"""
+    if focus is None or focus == "":
+        return ""
+    if command != CMD_OPEN_PANORAMA or not isinstance(focus, str) or not _FOCUS_RE.match(focus):
+        return None
+    return focus
+
+
+def write_command(config_dir: Path | str, command: str, *, target=None, focus=None,
                   now: float | None = None, issuer_pid: int | None = None) -> bool:
     """原子写一条指令（tmp + ``os.replace``）。返回是否落盘成功。
 
@@ -115,11 +129,16 @@ def write_command(config_dir: Path | str, command: str, *, target=None,
     if target is not None and clean_target is None:
         logger.warning("指令通道：拒绝写入非法 target %r", target)
         return False
+    clean_focus = _normalize_focus(name, focus)
+    if clean_focus is None:
+        logger.warning("指令通道：拒绝写入非法 focus %r", focus)
+        return False
     path = command_path(config_dir)
     payload = {
         "version": COMMAND_VERSION,
         "command": name,
         "target": clean_target,
+        "focus": clean_focus,
         "issued_at": time.time() if now is None else float(now),
         "issuer_pid": os.getpid() if issuer_pid is None else int(issuer_pid),
     }
@@ -179,10 +198,15 @@ def _parse(raw: str, *, now: float, max_age_s: float) -> dict | None:
     if target is not None and _normalize_target(target) is None:
         logger.warning("指令通道：指令 target 非法 (%r)，已跳过", target)
         return None
+    focus = _normalize_focus(str(name), data.get("focus"))
+    if focus is None:
+        logger.warning("指令通道：指令 focus 非法，已跳过")
+        return None
     return {
         "version": COMMAND_VERSION,
         "command": str(name),
         "target": _normalize_target(target),
+        "focus": focus,
         "issued_at": issued_at,
         "issuer_pid": data.get("issuer_pid"),
     }

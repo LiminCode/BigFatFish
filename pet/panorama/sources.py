@@ -13,6 +13,7 @@ import re
 from typing import Callable
 
 from .. import data_stores as ds
+from .. import settings_table
 from ..i18n import t
 from . import features, files, memory_scope, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
@@ -291,7 +292,8 @@ def fish_features(g: Graph, f: dict) -> None:
         column = 3 if feature.route == "work" or feature.id == "link_wsl" else 2
         g.node(node_id, "win", column, kind, L(f"feature.{feature.id}"), sub, "ok" if s["enabled"] else "off", "row",
                icon=feature.icon, group=FISH_NODE, facts=facts, source=_src(f["cfg_path"], feature.config_key),
-               page=L(f"page.{feature.page}") if feature.page else "")
+               page=L(f"page.{feature.page}") if feature.page else "",
+               settings=settings_table.group_for_config_key(feature.config_key))
         if not s["enabled"]:
             off.append(L(f"feature.{feature.id}"))
         if feature.route == "personal" and active:

@@ -68,6 +68,23 @@ def test_a_feature_that_is_off_keeps_its_tile_but_every_line_goes_faint():
     assert any(q["sev"] == "info" and q["node"] == "pet" for q in graph["quests"])
 
 
+def test_a_feature_whose_settings_moved_to_the_page_opens_them_there_instead_of_naming_a_settings_page():
+    """设置表里登记了的功能：磁贴带着那一组的 id（页面上出「设置」按钮），不再写「去设置窗口哪一页」。"""
+    from pet import settings_table
+
+    graph = sources.build(samples.facts())
+    moved = {group.config_key: group.id for group in settings_table.GROUPS}
+    for feature in features.FEATURES:
+        node = _node(graph, f"f_{feature.id}")
+        if feature.config_key in moved:
+            assert node.get("settings") == moved[feature.config_key] and "page" not in node, feature.id
+            assert not feature.page, f"{feature.id}: 设置已经搬到页面上，别再指向设置窗口"
+        else:
+            assert "settings" not in node, feature.id
+    assert _node(graph, "f_briefing")["settings"] == "work_briefing"
+    assert _node(graph, "f_slack")["page"]                                     # 还没搬的照旧
+
+
 def test_session_link_line_is_broken_when_the_switch_is_on_but_the_hooks_are_gone():
     graph = sources.build(samples.facts(wsl=samples.wsl_home(hooks={"Stop": {"total": 1, "fish": 0}})))
     assert _node(graph, "set_wsl")["state"] == "bad"

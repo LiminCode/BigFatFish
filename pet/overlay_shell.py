@@ -4376,6 +4376,13 @@ class OverlayShell(QObject):
         command = overlay_settings_command.consume_command(config_dir)
         if command is None:
             return
+        if command.get("command") == overlay_settings_command.CMD_OPEN_PANORAMA:
+            # 设置窗口里「到配置全景里改」：配置全景归应用（AppShell）管，壳只转过去
+            opener = getattr(getattr(self._instance, "shell", None), "open_config_panorama", None)
+            logging.info("overlay: 收到设置进程指令 → 打开配置全景（%s）", command.get("focus") or "不翻页")
+            if callable(opener):
+                opener(focus=command.get("focus") or "")
+            return
         if command.get("command") != overlay_settings_command.CMD_EXIT_SPAWNED_PETS:
             return  # consume 已按白名单过滤，这里只是防御
         target = command.get("target")

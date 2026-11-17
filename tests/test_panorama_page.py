@@ -38,6 +38,7 @@ function AbortController() { this.signal = {}; this.abort = function () { _abort
 #: boot.js 的假环境：fetch 同步返回「像 Promise 的东西」，定时器只把回调存起来等测试去触发。
 FAKE_BROWSER = """
 var calls = [], timers = [], intervals = [], reloads = 0, replaced = [], started = [], disposed = [], store = {};
+var requests = [], openedSettings = [], lastApi = null;
 var sessionStorage = {getItem: function (k) { return k in store ? store[k] : null; }, setItem: function (k, v) { store[k] = v; }};
 var history = {replaceState: function (a, b, url) { replaced.push(url); location.hash = ''; }};
 var location = {hash: '', pathname: '/', reload: function () { reloads++; }};
@@ -52,16 +53,19 @@ function settled(value, failed) {
 var responses = [];
 var fetch = function (path, options) {
   calls.push({path: path, token: options.headers['X-Panorama-Token']});
+  requests.push({path: path, method: options.method || 'GET', headers: options.headers, body: options.body});
   var r = responses.shift();
   if (!r) return settled(new Error('network'), true);
   if (r.hang) return {then: function () { return this; }};          // 服务把请求挂着：谁也不会被调到
   return settled({ok: r.status === 200, status: r.status, json: function () { return r.data; }}, false);
 };
-// 假的 start()：记下每次拿到的编号和 kept；返回的 view 记下谁被 dispose 了
-function start(data, kept) {
+// 假的 start()：记下每次拿到的编号和 kept；返回的 view 记下谁被 dispose 了、被要求翻到哪一组设置
+function start(data, kept, api) {
   var n = started.length;
+  lastApi = api || null;
   started.push({revision: data.revision === undefined ? 'embedded' : data.revision, kept: kept === undefined ? null : kept});
-  return {capture: function () { return {selected: 'seen-in-' + n}; }, dispose: function () { disposed.push(n); }};
+  return {capture: function () { return {selected: 'seen-in-' + n}; }, dispose: function () { disposed.push(n); },
+          openSettings: function (group) { openedSettings.push(group); return true; }};
 }
 function tick() { var fn = timers.shift(); fn(); }
 """
@@ -218,11 +222,13 @@ def test_a_storage_tile_lists_each_store_with_what_where_who_and_restore_source(
 
 
 def test_redraw_removes_the_old_listeners_and_attaches_the_same_number_again(engine):
-    """重画十次也只有一套监听：每次先把上一套整个摘掉。"""
+    """重画十次也只有一套监听：每次先把上一套整个摘掉。
+
+    唯一的例外是设置面板：它整页只有一个、跨重画存活（不然重画会冲掉没保存的字），第一次画的时候挂上一个，之后不再挂。"""
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
     out = _redraw(engine, graph, graph, "")
-    assert out["aborted"] == 1 and out["firstListeners"] == out["secondListeners"] > 0
+    assert out["aborted"] == 1 and out["firstListeners"] == out["secondListeners"] + 1 and out["secondListeners"] > 0
 
 
 def test_first_draw_and_redraw_produce_the_same_map(engine):

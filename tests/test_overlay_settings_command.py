@@ -203,3 +203,32 @@ def test_unreadable_file_leaves_command_for_retry(tmp_path, monkeypatch, caplog)
     with caplog.at_level(logging.WARNING):
         assert cmd.consume_command(tmp_path, now=_now()) is None
     assert path.is_file()
+
+
+# ---------------------------------------------------------------- 打开配置全景（设置窗口里「搬走了」的那一行）
+def test_open_panorama_carries_the_settings_group_to_open(tmp_path):
+    assert cmd.write_command(tmp_path, cmd.CMD_OPEN_PANORAMA, focus="work_briefing", now=_now()) is True
+    got = cmd.consume_command(tmp_path, now=_now())
+    assert got["command"] == cmd.CMD_OPEN_PANORAMA and got["focus"] == "work_briefing" and got["target"] is None
+
+
+def test_open_panorama_without_a_group_just_opens_it(tmp_path):
+    cmd.write_command(tmp_path, cmd.CMD_OPEN_PANORAMA, now=_now())
+    assert cmd.consume_command(tmp_path, now=_now())["focus"] == ""
+
+
+def test_a_focus_that_is_not_a_plain_name_is_neither_written_nor_read(tmp_path, caplog):
+    for bad in ("../x", "work briefing", "x&y=1", "A", "a" * 41, 3):
+        assert cmd.write_command(tmp_path, cmd.CMD_OPEN_PANORAMA, focus=bad, now=_now()) is False, bad
+    assert not cmd.command_path(tmp_path).exists()
+    cmd.command_path(tmp_path).write_text(json.dumps(
+        {"version": 1, "command": cmd.CMD_OPEN_PANORAMA, "issued_at": _now(), "target": None, "focus": "a&b"}), encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        assert cmd.consume_command(tmp_path, now=_now()) is None
+    assert not cmd.command_path(tmp_path).exists()
+
+
+def test_exit_spawned_pets_takes_no_focus(tmp_path):
+    assert cmd.write_command(tmp_path, cmd.CMD_EXIT_SPAWNED_PETS, focus="work_briefing", now=_now()) is False
+    cmd.write_command(tmp_path, cmd.CMD_EXIT_SPAWNED_PETS, now=_now())
+    assert cmd.consume_command(tmp_path, now=_now())["focus"] == ""

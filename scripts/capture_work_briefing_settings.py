@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""把设置页「自动化与联动 → 工作简报」一节连同展开的「这个功能怎么运作」渲染成 PNG（中 / 英）。
+"""把设置页「简报与笔记 → 工作简报」一节（设置已搬到配置全景，只剩跳转那一行）连同展开的「这个功能怎么运作」渲染成 PNG（中 / 英）。
 
 用法：``python scripts/capture_work_briefing_settings.py <输出目录> [--language zh|en]``。不碰真实数据目录；
 要看真实字体用 ``QT_QPA_PLATFORM=windows``。
@@ -36,10 +36,10 @@ def capture(out_dir: Path, language: str) -> list[Path]:
     dialog = settings_mod.ModernSettingsDialog(config, include_ai=False)
     dialog.resize(1180, 1250)
     dialog.show()
-    dialog.select_page("自动化与联动")
+    dialog.select_page("简报与笔记")
     dialog.work_briefing_flow_section.toggle.setChecked(True)
     app.processEvents()
-    row = dialog.findChild(SettingRow, "settingRow_work_briefing_enabled")
+    row = dialog.findChild(SettingRow, "settingRow_work_briefing_moved")
     area = row.parentWidget()
     while area is not None and not isinstance(area, QScrollArea):
         area = area.parentWidget()

@@ -27,8 +27,9 @@ class _FakeService:
         self.config, self.health, self.apply, self.opened = config, health, apply, 0
         _FakeService.made.append(self)
 
-    def open(self):
+    def open(self, focus=""):
         self.opened += 1
+        self.focus = focus
         return True
 
 
@@ -154,6 +155,8 @@ def test_shell_opens_the_panorama_from_the_island_panel_and_reuses_one_service(t
         assert state == shell._api_key_monitor.state                        # 体检结论取自岛上的体检器
         shell.open_config_panorama()                                        # 右键菜单走的是同一个方法
         assert len(fake_service.made) == 1 and fake_service.made[0].opened == 2
+        shell.open_config_panorama(focus="work_briefing")                   # 设置窗口里「到配置全景里改」：带着组名
+        assert fake_service.made[0].opened == 3 and fake_service.made[0].focus == "work_briefing"
     finally:
         panel = getattr(shell, "_connections_panel", None)
         if panel is not None:

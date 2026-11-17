@@ -58,7 +58,9 @@ class Graph:
 
     def node(self, node_id: str, region: str, col: int, kind: str, title: str, sub: str = "", state: str = "ok",
              size: str = "std", **extra) -> str:
-        """``extra``：icon lines badge facts items source page group head anchor gap view memory（空值不写进去）。"""
+        """``extra``：icon lines badge facts items source page settings group head anchor gap view memory（空值不写进去）。
+
+        ``page`` 是「去设置窗口哪一页改」的一句话；``settings`` 是已经搬到页面上的那一组设置的 id（页面出「设置」按钮）。"""
         if state not in NODE_STATES or size not in SIZES or kind not in KINDS:
             raise ValueError(f"bad node {node_id}: state={state} size={size} kind={kind}")
         if self.has(node_id):
