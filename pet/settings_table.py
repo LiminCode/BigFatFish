@@ -4,7 +4,7 @@
 **只有声明和几个纯函数，不碰 Qt，不读写任何文件。** 谁用它：
 
 - 本机服务按它回答「这一组有哪些设置、各用什么控件、现在是什么值」，页面照着画通用控件——页面里没有任何一项设置的名字；
-- 写入链路按它校验页面提交的改动（哪一项、什么类型、在不在可选值里）；
+- 写入链路按它校验页面提交的改动（``check_changes``：哪一项、什么类型、在不在可选值里、功能自己认不认）；
 - 测试拿它当守卫：功能多读了一个设置键却没登记，``tests/test_settings_table.py`` 就红。
 
 **搬一组设置到页面上 = 在 ``GROUPS`` 里加一个 ``Group``。** 读和校验不另写：一律走那个功能自己的 ``normalize``，
@@ -147,6 +147,52 @@ def is_available(group: Group) -> bool:
         return bool(group.available())
     except Exception:  # noqa: BLE001 - 探测条件失败不该让读设置的接口报错
         return False
+
+
+# ───────────────────────── 校验一次改动 ─────────────────────────
+
+def _type_error(setting: Setting, value: Any) -> str:
+    """这个值装不装得进这种控件；装不进返回错误代码。"""
+    if setting.control == "toggle":
+        return "" if isinstance(value, bool) else "type"
+    if setting.control == "number":
+        return "" if isinstance(value, (int, float)) and not isinstance(value, bool) else "type"
+    if setting.control == "choice":
+        return "" if value in setting.choices else "not_a_choice"
+    return "" if isinstance(value, str) else "type"
+
+
+def check_changes(group: Group, raw: Any, changes: Any) -> tuple[dict | None, list[dict]]:
+    """页面提交的改动 ``{项: 新值}`` 能不能存。能：返回（整组的新值，``[]``）；不能：返回（``None``，错误清单）。
+
+    错误清单一项一条 ``{"id", "code"}``：``unknown`` 表里没有这一项；``type`` 类型不对；``not_a_choice`` 不在可选值里；
+    ``rejected`` 功能自己的校验不认。只要有一条错误，整次改动都不存。
+
+    **``rejected`` 是这里最要紧的一条。** 功能的 ``normalize`` 遇到不合法的值不报错，而是悄悄换成默认值（时间写错 → 09:00，
+    模型名里有空格 → sonnet）。读配置时这样是对的；写的时候不行——用户以为存上了，其实存的是默认值。所以把改动合进去、
+    过一遍 ``normalize``，再逐项比：存下去的和提交的不一样，就是被改掉了，拒。文本只容许去掉首尾空白这一种差别。
+    连「9」被规范成「09:00」也算不一样：写接口要的是规范的写法，由页面去给。
+    """
+    if not isinstance(changes, dict) or not changes:
+        return None, [{"id": "", "code": "empty"}]
+    by_id = {setting.id: setting for setting in group.settings}
+    errors: list[dict] = []
+    merged = group.normalize(raw)
+    passed: list[str] = []
+    for key, value in changes.items():
+        setting = by_id.get(key) if isinstance(key, str) else None
+        code = "unknown" if setting is None else _type_error(setting, value)
+        if code:
+            errors.append({"id": str(key), "code": code})
+            continue
+        merged = set_path(merged, key, value)
+        passed.append(key)
+    final = group.normalize(merged)
+    for key in passed:
+        wanted = changes[key].strip() if by_id[key].control in _TEXT_CONTROLS else changes[key]
+        if get_path(final, key) != wanted:
+            errors.append({"id": key, "code": "rejected"})
+    return (None, errors) if errors else (final, [])
 
 
 def group(group_id: str) -> Group:

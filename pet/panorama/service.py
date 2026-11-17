@@ -22,12 +22,13 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QUrl, Signal
+from PySide6.QtCore import QObject, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
-from . import probes, render, sources
+from . import features, probes, render, settings_api, sources
 from .feed import Feed
+from .settings_api import Busy
 
 log = logging.getLogger(__name__)
 OUT_SUBDIR = "panorama"
@@ -49,17 +50,33 @@ def _secret_get(ref: str) -> str:
     return SecretStore().get(ref)
 
 
+class _GuiCall:
+    """请求线程交给界面线程办的一件事，和等它办完用的那把锁。见 ``PanoramaService.on_gui``。"""
+
+    def __init__(self, work: Callable[[], object]) -> None:
+        self.work = work
+        self.done = threading.Event()
+        self.lock = threading.Lock()
+        self.started = False
+        self.cancelled = False
+        self.result: object = None
+        self.error: BaseException | None = None
+
+
 class PanoramaService(QObject):
     """``finished(成功?, 快照路径或出错说明)``：一轮（含 WSL 那一段）结束。"""
 
     finished = Signal(bool, str)
     _stage = Signal(int, str, str)           # worker 线程 → GUI 线程：(第几轮, "page" | "done" | "error", 路径或说明)
+    _call = Signal(object)                   # 请求线程 → GUI 线程：一个 _GuiCall
+    GUI_TIMEOUT = 10.0                       # 请求线程等界面线程办一件事，最多等这么久
 
     def __init__(self, config, *, health: Callable[[], tuple[str, str]] | None = None,
                  secret_get: Callable[[str], str] | None = None, windows: Callable[..., dict] | None = None,
                  wsl: Callable[[], dict] | None = None, write: Callable[[dict, Path], Path] | None = None,
                  open_page: Callable[[str], object] | None = None, spawn: Callable | None = None,
-                 server=None, parent: QObject | None = None) -> None:
+                 server=None, apply: Callable[[], object] | None = None, audit=None,
+                 parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._health = health or (lambda: ("unknown", ""))
@@ -75,7 +92,12 @@ class PanoramaService(QObject):
         self._busy = False
         self._last_wsl: dict | None = None      # 上一轮 WSL 的结果：下一次打开先拿它垫着
         self._last_wsl_seconds: float | None = None
+        self._apply = apply                     # 设置改完之后要跑的应用链（应用传进来：_apply_external_config_change）
+        self._audit = audit                     # 审计记录；不给就用数据目录里那一份（第一次用到时才建）
+        self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
+        self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._stage.connect(self._on_stage)
+        self._call.connect(self._run_call)      # 从别的线程 emit 时自动排队到本对象所在的界面线程
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.stop)
@@ -181,7 +203,92 @@ class PanoramaService(QObject):
         """
         path = str(self._write(facts, out_dir))
         self._feed.publish(lambda revision: render.payload(sources.build(facts), revision=revision))
+        self._last_published = (dict(facts), Path(out_dir))
         return path
+
+    # ------------------------------------------------------------ 设置：读、改、审计（本机服务的请求线程来调）
+
+    def on_gui(self, work: Callable[[], object]):
+        """在界面线程上跑 ``work`` 并把结果带回来。``Config`` 只许界面线程碰，请求线程要读写设置都经这里。
+
+        已经在界面线程上就直接跑。否则排一个队列信号，在这里等，最多 ``GUI_TIMEOUT`` 秒：
+
+        - 等到了：返回结果，或者把 ``work`` 抛的异常原样抛出来；
+        - 没等到、而且那边还没开始：把这次调用作废，抛 ``Busy``。作废之后界面线程轮到它也不会再跑——
+          不然页面以为没改成，过一会儿设置却自己变了；
+        - 没等到、但那边已经在跑了：接着等它跑完（一次落盘是毫秒级的），不撒手。
+        """
+        if QThread.currentThread() is self.thread():
+            return work()
+        call = _GuiCall(work)
+        try:
+            self._call.emit(call)
+        except RuntimeError:                        # 应用正在退出：本对象已销毁
+            raise Busy() from None
+        if not call.done.wait(self.GUI_TIMEOUT):
+            with call.lock:
+                call.cancelled = not call.started
+            if call.cancelled or not call.done.wait(self.GUI_TIMEOUT):
+                raise Busy()
+        if call.error is not None:
+            raise call.error
+        return call.result
+
+    def _run_call(self, call: "_GuiCall") -> None:
+        """（界面线程）跑一个排过来的调用；已经被等的人作废了就不跑。"""
+        with call.lock:
+            if call.cancelled:
+                return
+            call.started = True
+        try:
+            call.result = call.work()
+        except BaseException as exc:  # noqa: BLE001 - 原样带回给等着的请求线程
+            call.error = exc
+        finally:
+            call.done.set()
+
+    def _audit_log(self):
+        if self._audit is None:
+            from ..settings_audit import FILE_NAME, AuditLog
+
+            self._audit = AuditLog(Path(self._config.dir) / FILE_NAME)
+        return self._audit
+
+    def read_settings(self, group_id: str) -> dict:
+        return self.on_gui(lambda: settings_api.read(self._config, group_id))
+
+    def write_settings(self, group_id: str, body) -> dict:
+        return self.on_gui(lambda: self._write_settings(group_id, body))
+
+    def read_audit(self, limit: int) -> list[dict]:
+        """审计记录只读文件，不碰 ``Config``：就在请求线程上读。"""
+        return self._audit_log().read(limit)
+
+    def _write_settings(self, group_id: str, body) -> dict:
+        """（界面线程）改一组设置。真的改了东西之后：跑应用链，再把图上的功能磁贴换成新值发布出去。"""
+        out = settings_api.write(self._config, group_id, body, audit=self._audit_log())
+        if out["changed"]:
+            log.info("配置全景：改了设置 %s（%s）", group_id, "、".join(out["changed"]))      # 只记是哪几项，不记值
+            if self._apply is not None:
+                try:
+                    self._apply()
+                except Exception:  # noqa: BLE001 - 设置已经存好了；应用链出错不该让页面以为没存上
+                    log.exception("配置全景：应用设置改动时出错")
+            self._settings_dirty = self._busy       # 有一轮采集正在路上：它是拿旧设置开的头，回来时要再盖一次
+            self._republish()
+        return out
+
+    def _republish(self) -> None:
+        """（界面线程）设置变了：拿上一次发布用的事实，把「功能」那一段按现在的配置重读，再发布一次。不重新探测。"""
+        last = self._last_published
+        if last is None:
+            return
+        facts, out_dir = last
+        try:
+            fresh = {**facts, "features": features.read_all(copy.deepcopy(self._config.data))}
+            self._publish(fresh, out_dir)
+        except Exception:  # noqa: BLE001 - 重画失败不影响已经存好的设置
+            log.exception("配置全景：设置改动后重新发布失败")
 
     def _page_target(self, snapshot: str) -> str:
         """（GUI 线程）浏览器该打开什么：本机服务的网址；服务起不来就退回快照文件。"""
@@ -194,7 +301,7 @@ class PanoramaService(QObject):
                 from ..claude_hooks import run_wsl
 
                 reader = Reader(config_dir=self._config.dir, home=Path.home(), run_wsl=run_wsl)
-                self._server = PanoramaServer(build_router(self._feed, files=reader))
+                self._server = PanoramaServer(build_router(self._feed, files=reader, settings=self))
             self._server.start()
             return self._server.page_url()
         except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看
@@ -204,6 +311,10 @@ class PanoramaService(QObject):
     def _on_stage(self, generation: int, stage: str, text: str) -> None:
         if generation != self._generation:
             return
+        if self._settings_dirty and stage in ("page", "done"):
+            self._republish()                   # 这一轮是拿旧设置开的头：它刚发布的那份按现在的设置再盖一次
+        if stage != "page":
+            self._settings_dirty = False
         if stage == "page":
             target = self._page_target(text)
             # 网址里的 # 片段是令牌，不进日志

@@ -3488,7 +3488,9 @@ class AppShell:
         if service is None or not shiboken6.isValid(service):
             from .panorama.service import PanoramaService
 
-            service = self._panorama_service = PanoramaService(self.config, health=self._panorama_health, parent=self.app)
+            # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条
+            service = self._panorama_service = PanoramaService(self.config, health=self._panorama_health,
+                                                               apply=self._apply_external_config_change, parent=self.app)
         service.open()
 
     def _panorama_health(self) -> tuple[str, str]:
