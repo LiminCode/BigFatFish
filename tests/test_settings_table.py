@@ -170,6 +170,50 @@ def test_group_lookup():
         st.group("no-such-group")
 
 
+# ───────────────────────── 数字的上下限（M4 起：Slack 关注的两个分钟数） ─────────────────────────
+
+def test_slack_watch_is_declared_with_the_features_own_bounds_and_builtin_prompt():
+    from pet import slack_watch as sw
+
+    group = st.group("slack_watch")
+    assert group.config_key == sw.CONFIG_KEY and group.zone == "work" and group.normalize is sw.normalize
+    by_id = {s.id: s for s in group.settings}
+    assert list(by_id) == ["enabled", "interval_minutes", "idle_minutes", "model", "effort", "prompt"]
+    assert by_id["interval_minutes"].bounds == sw.INTERVAL_RANGE and by_id["idle_minutes"].bounds == sw.IDLE_RANGE
+    assert by_id["interval_minutes"].unit and by_id["idle_minutes"].unit
+    assert by_id["prompt"].disclosure == "advanced" and by_id["prompt"].builtin(sw.normalize({})) == sw.default_prompt_template()
+    assert group.unavailable_text and group.available is not None
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_every_unit_has_its_text_in_both_languages(language):
+    table = i18n.table(language)
+    units = [s.unit for g in st.GROUPS for s in g.settings if s.unit]
+    assert units and [key for key in units if not str(table.get(key) or "").strip()] == []
+
+
+@pytest.mark.parametrize("value, code", [(4, "out_of_range"), (241, "out_of_range"), (7.5, "rejected"), ("15", "type")])
+def test_a_number_outside_its_bounds_is_named_as_out_of_range(value, code):
+    group = st.group("slack_watch")
+    assert st.check_changes(group, {}, {"interval_minutes": value}) == (None, [{"id": "interval_minutes", "code": code}])
+    final, errors = st.check_changes(group, {}, {"interval_minutes": 5, "idle_minutes": 240})
+    assert errors == [] and final["interval_minutes"] == 5 and final["idle_minutes"] == 240
+
+
+def test_validate_rejects_bounds_that_cannot_work():
+    group = st.group("slack_watch")
+
+    def broken(setting):
+        settings = tuple(setting if s.id == setting.id else s for s in group.settings)
+        with pytest.raises(ValueError):
+            st.validate((st.Group(**{**{f: getattr(group, f) for f in group.__dataclass_fields__}, "settings": settings}),))
+
+    broken(st.Setting("enabled", "toggle", bounds=(0, 1)))                 # 只有数字有上下限
+    broken(st.Setting("interval_minutes", "number", bounds=(240, 5)))       # 下限比上限大
+    broken(st.Setting("interval_minutes", "number", bounds=(30, 60)))       # 默认的 15 不在范围里
+    broken(st.Setting("interval_minutes", "number", bounds=(5,)))
+
+
 def test_module_does_not_import_qt():
     """设置表要被本机服务的请求线程、以后的同步器、测试直接用：它和它带进来的模块都不能把 Qt 拉起来。"""
     tree = ast.parse(Path(st.__file__).read_text(encoding="utf-8"))

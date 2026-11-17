@@ -190,6 +190,38 @@ def test_a_number_is_sent_as_a_number_and_a_non_number_is_not_sent(engine):
     assert out["state"]["errors"] == {"count": "type"} and "类型不对" in out["html"]
 
 
+def _bounded(**extra) -> dict:
+    desc = _desc()
+    desc["settings"][3].update({"min": 5, "max": 240, "unit": "分钟", **extra})
+    return desc
+
+
+def test_a_number_with_bounds_shows_them_and_its_unit(engine):
+    html = _run(engine, _bounded(), [], "")["html"]
+    assert 'min="5"' in html and 'max="240"' in html and 'step="1"' in html and ">分钟<" in html
+    plain = _run(engine, _desc(), [], "")["html"]
+    assert 'min="' not in plain and 'class="funit"' not in plain              # 没声明的不画
+
+
+def test_a_number_outside_its_bounds_is_not_sent_and_the_row_says_the_range(engine):
+    desc = _bounded()
+    out = _run(engine, desc, [_ok(desc, count=30)], """
+        fire('change', {set: 'count'}, '3'); fire('change', {set: 'count'}, '241'); fire('change', {set: 'count'}, '7.5');
+        fire('change', {set: 'count'}, '30');""")
+    assert out["sent"] == [{"changes": {"count": 30}, "base": "v1"}]
+    assert out["state"]["errors"] == {}
+    bad = _run(engine, desc, [], "fire('change', {set: 'count'}, '3');")
+    assert bad["state"]["errors"] == {"count": "out_of_range"} and "5" in bad["html"] and "240" in bad["html"]
+    assert "{min}" not in bad["html"]
+
+
+def test_the_service_naming_a_number_out_of_range_shows_the_range(engine):
+    desc = _bounded()
+    out = _run(engine, desc, [{"status": 422, "body": {"error": "invalid", "errors": [{"id": "count", "code": "out_of_range"}]}}],
+               "fire('change', {set: 'count'}, '30');")
+    assert out["state"]["errors"] == {"count": "out_of_range"} and "240" in out["html"]
+
+
 # ───────────────────────── 文本：等用户点保存 ─────────────────────────
 
 def test_typing_in_text_does_not_send_marks_it_unsaved_and_save_sends_it(engine):
@@ -298,6 +330,22 @@ def test_the_real_description_of_the_work_briefing_draws_every_setting(engine, m
     assert 'data-custom="time"' in html and 'value="07:05"' in html and 'data-custom="model"' in html
     assert html.count('data-builtin="') == 2                              # 两种语言的提示词
     assert "panorama." not in html
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_the_real_description_of_slack_watch_draws_every_setting(engine, monkeypatch, language):
+    from pet import slack_watch as sw
+
+    monkeypatch.setattr(st.claude_hooks, "wsl_exe", lambda: "wsl.exe")
+    i18n.set_language(language)
+    desc = api.describe(st.group("slack_watch"), {"interval_minutes": 30, "model": "claude-haiku-5-5"})
+    out = _run(engine, desc, [], "fire('click', {advanced: ''});", language=language)
+    html = out["html"]
+    for row in desc["settings"]:
+        assert f'data-row="{row["id"]}"' in html, row["id"]
+    assert html.count('role="switch"') == 1 and 'value="30"' in html and 'data-custom="model"' in html
+    assert f'max="{sw.INTERVAL_RANGE[1]}"' in html and html.count('class="funit"') == 2
+    assert html.count('data-builtin="') == 1 and "settings." not in html.replace("data-", "")
 
 
 def test_every_form_string_exists_in_both_languages():

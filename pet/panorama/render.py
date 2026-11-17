@@ -48,7 +48,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
              *("form_" + key for key in (
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",
                  "using_builtin", "dirty", "custom", "custom_label", "advanced", "err_unknown", "err_type", "err_not_a_choice",
-                 "err_rejected")))
+                 "err_rejected", "err_out_of_range")))
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 

@@ -16,7 +16,7 @@
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
 | `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | 「笔记」页与「Slack 关注」页（同一个面板，`slack=True` 切换）；详情底部的信息栏 |
-| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**工作简报的设置已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里那一节只剩跳转那一行和流程说明 |
+| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**工作简报和 Slack 关注的设置已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里那两节只剩跳转那一行和流程说明 |
 | `pet/claude_hooks.py` | `run_wsl` / `wsl_exe`；`HEADLESS_ENV` 与 hook 脚本里认它的那一行 |
 
 ## 机制与不变量
@@ -108,6 +108,8 @@ flowchart LR
 
 ### Slack 关注
 
+- **设置在配置全景上改**：点「Slack 关注」磁贴的「设置」。两个分钟数的范围（间隔 5–240、离开 1–240）照抄 `slack_watch` 的
+  `INTERVAL_RANGE` / `IDLE_RANGE`，改范围时两处一起改（`tests/test_settings_table.py` 会对）。右键菜单里的开关和间隔由主进程直接写，照旧可用。
 - **人在才跑**（`session_active`）：输入桌面名是 `Default`（`OpenInputDesktop` + `GetUserObjectInformationW`；锁屏 / 安全桌面
   时打不开或是 `Winlogon`）**且**最近 `idle_minutes` 分钟内动过键鼠（`GetLastInputInfo`）。探测出错按「不在」算。不用
   `session_watcher` 收到的 WTS 锁屏消息：它是关机闸门的一部分，没有可查询的锁屏状态；直接问系统一次 0.04 ms。

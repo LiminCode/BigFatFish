@@ -19,7 +19,10 @@
 - ``disclosure``：``primary`` 直接露出，``advanced`` 收在「高级」里；
 - ``depends_on``：同组的一个开关；它关着时这一项变灰；
 - ``builtin``：只给长文本用——留空时功能实际用的那段内置文字（给页面当底稿显示，也是「恢复内置」的目标）。
-  它是个函数，参数是这一组当前生效的值：内置提示词会随别的设置变（勾了哪些来源）。
+  它是个函数，参数是这一组当前生效的值：内置提示词会随别的设置变（勾了哪些来源）；
+- ``bounds``：只给数字用——``(下限, 上限)``，抄功能自己 ``normalize`` 夹值用的那一对。页面拿它画输入框的范围，
+  写入时超出范围报 ``out_of_range``（不然 ``normalize`` 会悄悄夹到边上，用户以为存的是 3，其实是 5）；
+- ``unit``：数字后面的单位（文案键），比如「分钟」。
 
 文字不在这里：标题和说明在字表里，键由 ``title_key`` / ``hint_key`` 给出（默认 ``settings.<组>.<id>`` 和它加 ``_hint``；
 从 Qt 设置窗口搬过来的那些直接沿用原来的键，不抄第二份）。
@@ -33,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import claude_hooks
+from . import slack_watch as sw
 from . import work_briefing as wb
 
 ZONES = ("personal", "work")                # 这一组设置管的是哪个账号那一侧的功能
@@ -53,6 +57,8 @@ class Setting:
     builtin: Callable[[dict], str] | None = None
     text: str = ""                          # 标题的文案键；空 = settings.<组>.<id>
     hint: str = ""                          # 说明的文案键；空 = 标题的键加 _hint
+    bounds: tuple = ()                      # 数字的 (下限, 上限)；空 = 不限
+    unit: str = ""                          # 数字的单位（文案键）
 
     @property
     def commit_policy(self) -> str:
@@ -156,7 +162,9 @@ def _type_error(setting: Setting, value: Any) -> str:
     if setting.control == "toggle":
         return "" if isinstance(value, bool) else "type"
     if setting.control == "number":
-        return "" if isinstance(value, (int, float)) and not isinstance(value, bool) else "type"
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return "type"
+        return "out_of_range" if setting.bounds and not setting.bounds[0] <= value <= setting.bounds[1] else ""
     if setting.control == "choice":
         return "" if value in setting.choices else "not_a_choice"
     return "" if isinstance(value, str) else "type"
@@ -166,7 +174,7 @@ def check_changes(group: Group, raw: Any, changes: Any) -> tuple[dict | None, li
     """页面提交的改动 ``{项: 新值}`` 能不能存。能：返回（整组的新值，``[]``）；不能：返回（``None``，错误清单）。
 
     错误清单一项一条 ``{"id", "code"}``：``unknown`` 表里没有这一项；``type`` 类型不对；``not_a_choice`` 不在可选值里；
-    ``rejected`` 功能自己的校验不认。只要有一条错误，整次改动都不存。
+    ``out_of_range`` 数字超出声明的上下限；``rejected`` 功能自己的校验不认。只要有一条错误，整次改动都不存。
 
     **``rejected`` 是这里最要紧的一条。** 功能的 ``normalize`` 遇到不合法的值不报错，而是悄悄换成默认值（时间写错 → 09:00，
     模型名里有空格 → sonnet）。读配置时这样是对的；写的时候不行——用户以为存上了，其实存的是默认值。所以把改动合进去、
@@ -247,6 +255,10 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
                 raise bad(f"{setting.id}: the feature's normalize() does not produce this key")
             if not _fits(setting.control, produced[setting.id]):
                 raise bad(f"{setting.id}: a {setting.control} cannot hold the default {produced[setting.id]!r}")
+            if (setting.bounds or setting.unit) and setting.control != "number":
+                raise bad(f"{setting.id}: only a number has bounds or a unit")
+            if setting.bounds and (len(setting.bounds) != 2 or not setting.bounds[0] <= produced[setting.id] <= setting.bounds[1]):
+                raise bad(f"{setting.id}: bounds must be (low, high) around the default {produced[setting.id]!r}")
         for setting in item.settings:
             if setting.depends_on and (setting.depends_on not in by_id or by_id[setting.depends_on].control != "toggle"):
                 raise bad(f"{setting.id}: depends_on must name a toggle in the same group")
@@ -279,4 +291,18 @@ GROUPS: tuple[Group, ...] = (
         Setting("priority_rules", "long_text", text="briefing.settings.priority_rules"),
     ), title_key="briefing.settings.section", available=lambda: bool(claude_hooks.wsl_exe()),
         unavailable_text="briefing.settings.no_wsl"),
+    # Slack 关注：电脑在用时每隔一阵让 WSL 里公司账号的 Claude Code 经 Slack 连接器只读地看一眼。模型名、effort 同样拼进
+    # shell 命令，过 slack_watch.normalize（它借用工作简报的白名单）。两个分钟数由它夹在范围里，范围照抄在这里给页面看。
+    Group("slack_watch", "briefing", sw.CONFIG_KEY, "work", sw.normalize, (
+        Setting("enabled", "toggle", text="settings.slack.check_automatically_while_i_m", hint="settings.slack.enabled_hint"),
+        Setting("interval_minutes", "number", bounds=sw.INTERVAL_RANGE, unit="settings.unit.minutes",
+                text="settings.slack.check_interval", hint="settings.slack.interval_hint"),
+        Setting("idle_minutes", "number", bounds=sw.IDLE_RANGE, unit="settings.unit.minutes",
+                text="settings.slack.away_after", hint="settings.slack.idle_hint"),
+        Setting("model", "choice_or_text", choices=_MODEL_CHOICES, text="settings.slack.model"),
+        Setting("effort", "choice", choices=wb.EFFORT_CHOICES, text="settings.slack.effort"),
+        Setting("prompt", "long_text", disclosure="advanced", builtin=lambda _effective: sw.default_prompt_template(),
+                text="settings.slack.prompt"),
+    ), title_key="settings.dlg.slack_watch", available=lambda: bool(claude_hooks.wsl_exe()),
+        unavailable_text="settings.slack.no_wsl_hint"),
 )
