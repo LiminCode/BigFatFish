@@ -13,8 +13,8 @@ import json
 import re
 
 import pytest
-from PySide6.QtCore import QCoreApplication
 from PySide6.QtQml import QJSEngine
+from PySide6.QtWidgets import QApplication
 
 from pet import i18n
 from pet.panorama import render, sources
@@ -79,7 +79,9 @@ REPORT = ("var el = document.getElementById;"
 
 @pytest.fixture(scope="module")
 def engine():
-    app = QCoreApplication.instance() or QCoreApplication([])
+    # 必须是 QApplication，不能是光秃的 QCoreApplication：这个文件要是先跑，后面要建窗口的测试会拿到这个实例，
+    # 建第一个控件时整个进程直接退出（没有异常、没有栈）。
+    app = QApplication.instance() or QApplication([])
     js = QJSEngine()
     yield js
     del js, app
