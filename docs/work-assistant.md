@@ -16,7 +16,7 @@
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
 | `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | 「笔记」页与「Slack 关注」页（同一个面板，`slack=True` 切换）；详情底部的信息栏 |
-| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「自动化与联动」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`） |
+| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**工作简报的设置已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里那一节只剩跳转那一行和流程说明 |
 | `pet/claude_hooks.py` | `run_wsl` / `wsl_exe`；`HEADLESS_ENV` 与 hook 脚本里认它的那一行 |
 
 ## 机制与不变量
@@ -90,7 +90,7 @@ flowchart LR
 - **提示词按界面语言整套切换**（`_PROMPTS["zh" / "en"]`），不是在中文提示词里加一句「用英文写」——周围全是中文时模型遵从
   不稳。`parse_output` 同时认 `概要：` 与 `Summary:`（含加粗、反引号写法，`SUMMARY_PREFIXES`），第一行拆出来给气泡，没有
   这一行就用兜底概要。已生成的简报 / 笔记不会重译。
-- 用户可在设置页改提示词（`prompt_zh` / `prompt_en`，空 = 内置）。填占位符只用 `render_template`，**不要换成 `str.format`**：
+- 用户可改提示词（`prompt_zh` / `prompt_en`，空 = 内置；工作简报的在配置全景上改，其余的在设置页）。填占位符只用 `render_template`，**不要换成 `str.format`**：
   模板里有 JSON 示例的花括号。
 - 改过模板之后，来源开关只管 Claude 能用哪些工具，提示词里提不提某个来源由用户自己写。模板和内置一字不差时存空串，
   以后内置模板更新能跟上。

@@ -365,3 +365,33 @@ def test_settings_command_belongs_to_overlay_host_not_app(tmp_path):
     finally:
         shell._teardown_config_watcher()
         _teardown(overlay)
+
+
+def test_open_panorama_command_opens_it_at_the_group_from_the_overlay_host(tmp_path):
+    """设置窗口里「到配置全景里改」：设置进程写指令 → 壳消费 → 应用打开配置全景并翻到那一组。"""
+    from pet import overlay_settings_command as cmd
+
+    shell, inst, overlay = _make_overlay_app(tmp_path)
+    opened = []
+    shell.open_config_panorama = lambda focus="": opened.append(focus)
+    try:
+        assert cmd.write_command(overlay._config.dir, cmd.CMD_OPEN_PANORAMA, focus="work_briefing")
+        shell._poll_settings_process()                                  # app 侧在 overlay 下照旧让路
+        assert opened == [] and cmd.command_path(overlay._config.dir).exists()
+        overlay._on_settings_command_dir_changed(str(overlay._config.dir))
+        assert opened == ["work_briefing"] and not cmd.command_path(overlay._config.dir).exists()
+    finally:
+        _teardown(overlay)
+
+
+def test_open_panorama_command_is_handled_by_the_app_in_the_legacy_topology(tmp_path):
+    from types import SimpleNamespace
+
+    from pet import overlay_settings_command as cmd
+
+    opened = []
+    fake = SimpleNamespace(_overlay_shell=None, config=SimpleNamespace(dir=tmp_path),
+                           open_config_panorama=lambda focus="": opened.append(focus))
+    assert cmd.write_command(tmp_path, cmd.CMD_OPEN_PANORAMA, focus="work_briefing")
+    AppShell._consume_settings_command(fake)
+    assert opened == ["work_briefing"]

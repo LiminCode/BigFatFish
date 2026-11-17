@@ -246,6 +246,37 @@ def test_the_token_never_reaches_the_log(tmp_path, caplog):
     assert "http://127.0.0.1:54321/" in caplog.text and "TOKEN-NOT-FOR-LOGS" not in caplog.text
 
 
+def test_opening_at_a_settings_group_names_it_in_the_address(tmp_path):
+    h = _Harness(tmp_path)
+    h.service.open(focus="work_briefing")
+    assert h.opened == [_FakeServer.URL + "&settings=work_briefing"]     # 跟在令牌后面，也在 # 片段里，不上服务器
+    h.service.open()
+    assert h.opened[-1] == _FakeServer.URL                               # 只用这一次
+
+
+def test_a_group_that_is_not_in_the_settings_table_is_left_out_of_the_address(tmp_path):
+    h = _Harness(tmp_path)
+    h.service.open(focus="no_such_group")
+    assert h.opened == [_FakeServer.URL]
+
+
+def test_the_snapshot_fallback_ignores_the_group(tmp_path):
+    h = _Harness(tmp_path, server_fails=True)
+    h.service.open(focus="work_briefing")
+    assert h.opened == [str(tmp_path / "panorama" / render.PAGE_NAME)]
+
+
+def test_opening_at_a_group_while_a_round_is_running_still_lands_on_it(tmp_path):
+    held = []
+    h = _Harness(tmp_path, spawn=held.append)
+    h.service.open()
+    page = tmp_path / "panorama" / render.PAGE_NAME
+    page.parent.mkdir()
+    page.write_text("x", encoding="utf-8")
+    assert h.service.open(focus="work_briefing") is False
+    assert h.opened == [_FakeServer.URL + "&settings=work_briefing"]
+
+
 def test_real_service_serves_what_was_published_and_stops_on_quit(tmp_path):
     """不换假货：真的起本机服务，用页面的方式（带令牌的请求头）把数据要回来。"""
     import http.client

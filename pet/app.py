@@ -1654,6 +1654,30 @@ class AppShell:
             except Exception:
                 logging.exception("设置页占用提示失败")
 
+    def _warn_settings_window_from_before(self) -> None:
+        """启动时设置窗口已经开着：那是重启前拉起的，跑的还是旧代码。
+
+        设置正一组一组搬到配置全景（ADR 0014）。旧代码的设置窗口里还有已经搬走的那几组，它一保存就把页面上
+        刚改的值盖回去（它保存前会重读，但会把自己表单里的每一组写回去）。提醒一句关掉重开；不替用户关，里面可能有没存的改动。
+        走右下角通知：设置开着时肥鱼气泡本来就被抑制。
+        """
+        if not bool(self.config.get("system_notifications_enabled", True)):
+            return
+        try:
+            running = self._settings_process_running()
+        except Exception:  # noqa: BLE001 - 只是个提醒，探测失败就不提
+            logging.exception("启动时探测设置进程失败")
+            return
+        if not running:
+            return
+        logging.info("启动时发现设置窗口是重启前打开的，提示用户重开")
+        notify = getattr(self, "system_notify", None)
+        if callable(notify):
+            try:
+                notify(t("app.ui.fish_settings"), t("app.ui.settings_window_from_before_restart"))
+            except Exception:  # noqa: BLE001
+                logging.exception("提示重开设置窗口失败")
+
     def _settings_process_running(self) -> bool:
         """settings.lock 是否被活着的设置进程持有。
 
@@ -1779,6 +1803,10 @@ class AppShell:
 
         command = overlay_settings_command.consume_command(config_dir)
         if command is None:
+            return
+        if command.get("command") == overlay_settings_command.CMD_OPEN_PANORAMA:
+            logging.info("收到设置进程指令 → 打开配置全景（%s）", command.get("focus") or "不翻页")
+            self.open_config_panorama(focus=command.get("focus") or "")
             return
         if command.get("command") != overlay_settings_command.CMD_EXIT_SPAWNED_PETS:
             return  # consume 已按白名单过滤，这里只是防御
@@ -1988,6 +2016,7 @@ class AppShell:
         # 设置页进程隔离：启动即装 config 目录 watcher，独立设置进程落盘后由它
         # 合并进运行期（开关关闭时不装，完全走旧路径）。
         self._install_config_watcher()
+        QTimer.singleShot(2500, self._warn_settings_window_from_before)
         QTimer.singleShot(3500, self.instance._check_autostart_wanted)
         QTimer.singleShot(4000, self._maybe_autostart_harness)
         # 启动时补一次：点击动画绑定对话框不走设置页保存信号，改动要等下次启动才被
@@ -3482,8 +3511,10 @@ class AppShell:
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("配置自动备份接线失败")
 
-    def open_config_panorama(self) -> None:
-        """打开「配置全景」：后台采一轮本机的 AI 配置，写成本地页面，用默认浏览器打开。"""
+    def open_config_panorama(self, focus: str = "") -> None:
+        """打开「配置全景」：后台采一轮本机的 AI 配置，写成本地页面，用默认浏览器打开。
+
+        ``focus``：页面画完就直接翻到的那一组设置（设置窗口里「到配置全景里改」经指令通道传来）。"""
         service = getattr(self, "_panorama_service", None)
         if service is None or not shiboken6.isValid(service):
             from .panorama.service import PanoramaService
@@ -3491,7 +3522,7 @@ class AppShell:
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条
             service = self._panorama_service = PanoramaService(self.config, health=self._panorama_health,
                                                                apply=self._apply_external_config_change, parent=self.app)
-        service.open()
+        service.open(focus=focus)
 
     def _panorama_health(self) -> tuple[str, str]:
         """岛上那个体检器对「使用中的模型服务」的最近结论；没有体检器（没开岛）就是不知道。"""

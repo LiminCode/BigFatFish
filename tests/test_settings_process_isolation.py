@@ -711,3 +711,40 @@ def test_clear_spawned_pets_chain_consumed_by_overlay_shell(tmp_path, monkeypatc
         dialog.deleteLater()
         shell._teardown_settings_command_watch()
         shell._delete_runtime_marker()
+
+
+# ---------------------------------------------------------------- 重启前就开着的设置窗口（M3：设置一组一组搬到配置全景）
+
+def test_a_settings_window_left_open_across_a_restart_gets_a_warning(tmp_path):
+    """重启肥鱼（多半是升级）时开着的设置窗口还跑着旧代码，里面可能还有已经搬到配置全景的那几组；
+    它一保存就把页面上改的值盖回去。主进程起来时发现它在，提醒一句关掉重开。"""
+    config = Config(base=tmp_path)
+    shell = _bare_shell(config)
+    shown = []
+    shell.system_notify = lambda title, text: shown.append((title, text))
+    shell._warn_settings_window_from_before()
+    assert shown == []                                                  # 没开着：不吭声
+    config.dir.mkdir(parents=True, exist_ok=True)
+    held = QLockFile(str(config.dir / "settings.lock"))
+    assert held.tryLock(0)
+    try:
+        shell._warn_settings_window_from_before()
+        assert len(shown) == 1 and "重新打开" in shown[0][1]
+    finally:
+        held.unlock()
+
+
+def test_the_warning_respects_the_notification_switch(tmp_path):
+    config = Config(base=tmp_path)
+    config.set("system_notifications_enabled", False)
+    shell = _bare_shell(config)
+    shown = []
+    shell.system_notify = lambda title, text: shown.append(text)
+    config.dir.mkdir(parents=True, exist_ok=True)
+    held = QLockFile(str(config.dir / "settings.lock"))
+    assert held.tryLock(0)
+    try:
+        shell._warn_settings_window_from_before()
+        assert shown == []
+    finally:
+        held.unlock()

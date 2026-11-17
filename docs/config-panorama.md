@@ -22,7 +22,7 @@
 | `pet/panorama/places.py` | 存储画在图上哪里：`PLACES`（一个地方 = 几个根 + 分区 + 列 + 谁往这里写）、`OWN_TILE`、`ALSO_ON` |
 | `pet/panorama/model.py` | 图模型 `Graph`：账号带 `ZONES`、层 `TIERS`、分区、列、节点、连线、待处理；状态取值校验。没有坐标 |
 | `pet/panorama/sources.py` | 来源：若干 `@source` 纯函数，把事实翻译成节点 / 连线 / 待处理；`build(facts)` |
-| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单，还没有入口）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
+| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单）、`settings.js`（设置面板：开、关、跨重画存活）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
 | `pet/panorama/render.py` | 把图变成页面要的那份数据（`page_data` / `payload`）；`shell()` / `asset()` 给本机服务；`render()` / `write()` 出离线快照 |
 | `pet/panorama/service.py` | `PanoramaService`：应用里的后台两段采集与发布；持有本机服务 |
 | `pet/panorama/server.py` | 本机回环服务 `PanoramaServer` + 路由表 `Router`：生命周期、守门检查、分发。**只用标准库、不碰 Qt** |
@@ -165,7 +165,7 @@
 ### 改设置：写入链路
 
 本机服务第一批**会改东西**的接口：`GET /api/settings/<组>`（值、版本、每一项怎么画）、`PATCH /api/settings/<组>`、
-`GET /api/audit`。页面上还没有入口（表单是路线图 M3 的后面几步），所以现在只有测试在用它们。
+`GET /api/audit`。页面上的入口见下面「改设置：页面上的入口」；审计记录还没有地方翻（路线图 M3 最后一项）。
 
 ```mermaid
 sequenceDiagram
@@ -206,7 +206,7 @@ sequenceDiagram
 - 日志里只记改了哪一组的哪几项，**不记值**。
 
 **页面这一侧的表单**是 `page/form.js` 的 `settingsForm(host, S, send, on)`：`show(描述)` 按 `GET /api/settings/<组>` 的回答画，
-页面里没有任何一项设置的名字。路线图 M3 第 4 步才把它挂到页面上；现在它只在测试里跑，本机服务把它当静态文件发、没人导入。
+页面里没有任何一项设置的名字。
 
 - 六种控件：开关（`role="switch"` 的复选框）、下拉、可自填的下拉（值不在可选值里就自动打开自填框）、数字、单行文本、长文本。
   收在「高级」里的折起来，标出有几项。每个控件都有 `<label for>` 指着它；状态行是 `role="status"`。
@@ -219,6 +219,39 @@ sequenceDiagram
 - 交出去之后、回答到之前，所有控件变灰，再点也不会发第二次；点下去的那个值先显示着（开关不会先弹回去）。
 - 依赖开关（`depends_on`）关着时，那一项变灰。这一组在这台机器上用不了（`available` 是假）时，整张表单变灰，顶上说为什么。
 - 样式在 `app.css` 的 `.sform`，控件颜色一律用 `--m-*` 令牌；尊重系统的「减少动效」。
+
+### 改设置：页面上的入口
+
+现在只有**工作简报**这一组搬过来了（2026-11-17）。设置窗口里那一组的控件和保存代码同时删掉，原处留一行说明和一个按钮
+（ADR 0014：任何时刻一项设置只有一个编辑入口）。
+
+```mermaid
+flowchart LR
+    Q["设置窗口（另一个进程）<br/>「到配置全景里改」"] -- "写 overlay-settings-command.json<br/>open_panorama + focus=组" --> M["主进程<br/>壳 / AppShell 消费指令"]
+    M -- "open_config_panorama(focus)" --> S["PanoramaService.open"]
+    S -- "浏览器打开 …/#令牌&settings=组" --> B["boot.js：取走令牌，抹掉地址"]
+    B -- "第一张图画完 → openSettings(组)" --> P["选中那块磁贴，打开设置面板"]
+    T["磁贴详情的「设置」按钮"] --> P
+    P -- "GET /api/settings/组" --> F["form.js 画表单"]
+    F -- "api.patch：PATCH {base, changes}" --> W["写入链路（上一节）"]
+```
+
+- **哪块磁贴有「设置」按钮**：功能表（`features.py`）里那项功能的配置键，在设置表里登记了一组（`settings_table.group_for_config_key`），
+  图上的节点就带 `settings: <组 id>`，页面据此出按钮；这块磁贴就不再写「去设置窗口哪一页」（`page`），测试守着两者不同时出现。
+  离线快照里按钮是灰的，悬停说为什么。
+- **面板跨重画存活**（`settings.js`）。改完一项，服务重新发布一次图，页面原地重画、`interact()` 整个重跑——可打开着的面板和里面
+  打了一半的字不能跟着没。所以面板是整页只有一个的东西：第一次调 `settingsPanel()` 时建好、之后每次重画拿到的都是它；它的
+  监听不挂在那一次画图的中止信号上（这是页面上唯一一个这样的监听），表单的监听挂在表单自己的宿主元素上，面板关掉时随元素一起扔掉。
+- 关面板（按钮、点外面、Esc）时有没保存的文字：先在标题栏说一句，再关一次才丢。别的组还开着、又有没保存的字时，不切换。
+- **写请求**是 `boot.js` 给的 `api.patch`：JSON、PATCH、带令牌头；浏览器自己带上 `Origin` 和 `Sec-Fetch-Site`，过的是同一套守门。
+  服务的每一种回答（包括 4xx、5xx）原样交给表单，只有连不上才算失败。
+- **从设置窗口跳过来**：按钮（`pet/settings_moved.py` 的 `moved_row`，以后每搬一组都用它）经设置进程 → 主进程的指令通道
+  （`overlay_settings_command`，指令 `open_panorama`，`focus` 只许是 `[a-z][a-z0-9_]*` 的组名）请主进程打开配置全景。
+  overlay 拓扑由壳消费、转给 `AppShell.open_config_panorama(focus)`，legacy 拓扑由 `AppShell` 自己消费；主进程没在跑时指令
+  两分钟后作废。`PanoramaService.open(focus)` 只认设置表里有的组，把 `&settings=<组>` 接在令牌后面——同在 `#` 片段里，
+  不发给服务器、不进日志，页面取走后整段从地址栏抹掉。服务起不来、退回离线快照时不带组名。
+- **升级时开着的旧设置窗口**：它跑的是旧代码，里面还有搬走的那一组，一保存就把页面改的值盖回去。主进程启动 2.5 秒后发现设置窗口
+  已经开着，就弹一条通知请用户关掉重开（`AppShell._warn_settings_window_from_before`，跟着「系统通知」总开关）。不替用户关：里面可能有没存的改动。
 
 ### 文件查看（只读）
 
@@ -327,6 +360,7 @@ sequenceDiagram
 - 右键菜单动作 `config_panorama`（`pet/context_menus/registry.py`，默认布局 `modern-default-v1.json` 的 tools 段）；宿主有
   `on_open_config_panorama` 才显示，两种渲染拓扑都接到 `AppShell.open_config_panorama`。用户已保存的菜单布局会自动并入新动作。
 - 岛的连接面板按钮（`pet/island_connections_ui.py` 的 `panorama_btn`）：单独一行（英文下并排会把面板撑宽），点了先收起面板。
+- 设置窗口里已经搬走的那一组原处的按钮：打开配置全景并直接翻到那一组（见「改设置：页面上的入口」）。
 - 「使用中的模型服务」那条线通不通，取[灵动岛](island.md)上 API 体检器**最近一次**的结论（`AppShell._panorama_health`），
   不是点击那一刻现查；没开岛或走命令行入口时是 `unknown`。
 
@@ -338,7 +372,9 @@ sequenceDiagram
   所以 `boot.js` 只用 `.then`，不用 `async` / `await`。同一个文件里还有一条用例让 JS 引擎按真正的模块规则加载 `app.js`
   （`importModule`），并要求它和拼出来的脚本画出同一张图：哪个模块导入了别人没导出的名字，或者两条交付路径分了叉，都在这里红。
   重画也在这里测：按页面的顺序 `capture → dispose → start(新, kept)` 跑两张图，看选中的节点带过去了、不存在了就放下、
-  监听摘掉又挂上同样多。
+  监听摘掉又挂上同样多（只差设置面板那一个整页的监听）。
+- `tests/test_panorama_form.py` 跑表单本身；`tests/test_panorama_settings_panel.py` 跑入口：哪块磁贴有按钮、离线快照里是灰的、
+  面板和没保存的字跨重画还在、关面板的提醒、网址里带组名就直接翻过去、`api.patch` 的请求长什么样、4xx 原样交给表单。
 - `tests/test_panorama_feed.py`、`test_panorama_routes.py` 测「等新数据」：用线程加 `join` 断言结果，不赌先后——
   先发布再等、先等再发布，等的人拿到的都该是同一份。
 - `tests/test_panorama_render.py` 守两条：离线快照不向任何地方要东西；外壳和静态文件里没有采到的数据、没有内联脚本。
@@ -449,6 +485,9 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 | 改设置得到 503 `busy` | 界面线程 10 秒没空。这次写入已经作废，没有存；等肥鱼缓过来再试 |
 | 表单里打的字点了保存却没交出去 | 那一项依赖的开关关着（变灰了），或者上一次保存还没回来（整张表单是灰的） |
 | 改设置得到 409 `unavailable` | 这一组在这台机器上用不了（工作简报要 WSL） |
+| 设置窗口里点「到配置全景里改」，浏览器没打开 | 主进程要在跑（它三秒内取走 `overlay-settings-command.json`）；日志里找「收到设置进程指令 → 打开配置全景」。没有这行就看配置目录里那个文件还在不在、是不是超过两分钟作废了 |
+| 页面上改好的工作简报设置又变回去了 | 多半是升级前就开着的设置窗口（旧代码，里面还有这一组）保存了一次。关掉重开；肥鱼启动时发现它开着会弹通知提醒 |
+| 磁贴上没有「设置」按钮 | 那项功能的设置还没搬过来（还在设置窗口，磁贴上写着哪一页）；或者这是离线快照，按钮是灰的 |
 | 「查看」按钮是灰的 | 打开的是离线快照（地址栏是 `file://`）：没有服务可问。从肥鱼里点「配置全景」打开 |
 | 该有「查看」的地方没有按钮 | 存储不在 `files.VIEWABLE` 里（登录凭据、钥匙串永远不在）；或存储探针没数到这台机器上有它的文件；或它在 WSL 一侧 |
 | 查看面板说「读不到」 | 文件刚被删了 / 改名了，或服务停了（页面顶上会有红条）；浏览器网络面板里看 `/api/file` 回的代码 |

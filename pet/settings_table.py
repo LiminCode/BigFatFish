@@ -202,6 +202,12 @@ def group(group_id: str) -> Group:
     raise KeyError(group_id)
 
 
+def group_for_config_key(config_key: str) -> str:
+    """配置里这个顶层键下的设置已经搬到页面上了吗：搬了返回那一组的 id，没搬是空串。
+    配置全景的功能磁贴靠它决定出「设置」按钮，还是写「去设置窗口哪一页」。"""
+    return next((item.id for item in GROUPS if item.config_key == config_key), "")
+
+
 # ───────────────────────── 自检 ─────────────────────────
 
 def _fits(control: str, default: Any) -> bool:

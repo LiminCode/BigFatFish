@@ -5,6 +5,7 @@
 import {esc} from './util.js';
 import {viewer} from './viewer.js';
 import {memory} from './memory.js';
+import {settingsPanel} from './settings.js';
 
 export function interact(M, E, map, kept, api) {
 const {G, R, N, W, H} = M;
@@ -12,6 +13,7 @@ const S = G.strings, STATE = S.state, ESTATE = S.edge_state;
 const off = new AbortController(), on = {signal: off.signal};
 const files = viewer(api, S, on);
 const memo = memory(G, S, on, api ? files.open : null);
+const panel = settingsPanel(api, S);      /* 整页只有一个，重画时拿到的还是它（见 settings.js） */
 /* 「查看」按钮：从肥鱼打开的页面才有服务可问；离线快照里按钮是灰的，悬停说明为什么 */
 const viewBtn = (store, title, cls) => `<button class="${cls}" data-view="${esc(store)}" data-title="${esc(title)}"${api ? '' : ` disabled title="${esc(S.view_needs_service)}"`}>${esc(S.view)}</button>`;
 let selected = null, lineOn = null;
@@ -49,7 +51,7 @@ function detail(id) { const box = document.getElementById('detail');
     ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small>${r.view ? viewBtn(r.view, r.name, 'peek') : ''}</div>` +
       (r.more ? `<dl class="more">${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : '')).join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
-    <div class="btns">${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
+    <div class="btns">${n.settings ? `<button class="btn" data-settings="${esc(n.settings)}" data-title="${esc(n.title)}"${api ? '' : ` disabled title="${esc(S.settings_needs_service)}"`}>${esc(S.settings_open)}</button>` : ''}${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }
@@ -62,6 +64,7 @@ map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); sele
 document.getElementById('detail').addEventListener('click', ev => {
   const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);
   const see = ev.target.closest('[data-view]'); if (see) return files.open(see.dataset.view, see.dataset.title);
+  const set = ev.target.closest('[data-settings]'); if (set) return panel.open(set.dataset.settings, set.dataset.title);
   if (ev.target.closest('[data-memory]')) return memo.open();
   const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } }, on);
 document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span></div>`).join('');
@@ -91,7 +94,11 @@ detail(null);
 if (kept && kept.selected && N[kept.selected]) select(kept.selected);
 else if (kept && kept.lineOn && G.lines[kept.lineOn]) pickLine(kept.lineOn);
 else if (kept && kept.query) { document.getElementById('q').value = kept.query; search(kept.query); }
-return {select: id => select(N[id] ? id : null),
+/* 翻到某一组设置：选中管它的那块磁贴，打开它的设置面板（设置窗口里「到配置全景里改」经网址传来） */
+function openSettings(group) { const n = G.nodes.find(m => m.settings === group);
+  if (!n || !api) return false;
+  select(n.id); panel.open(group, n.title); return true; }
+return {select: id => select(N[id] ? id : null), openSettings,
   capture: () => ({selected, lineOn, query: document.getElementById('q').value}),
   dispose: () => off.abort()};
 }
