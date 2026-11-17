@@ -28,10 +28,28 @@ def home(*, hooks=None, connectors=None, wsl=False) -> dict:
                       "managed_block": True, "managed_rules": 2, "managed_updated": "2026-01-01 10:00"},
         "projects": 4, "memory_count": 1,
         "memory_projects": [{"name": "C--Users-dev-tomato", "path": claude + sep + "projects", "mtime": "2026-01-02 03:04", "files": 2}],
-        "distilled_files": 1, "memory_index": memory_index(wsl=wsl), "credentials_path": claude + sep + ".credentials.json", "credentials_file": True,
+        "distilled_files": 1, "memory_index": memory_index(wsl=wsl), "workspaces": workspaces(wsl=wsl), "credentials_path": claude + sep + ".credentials.json", "credentials_file": True,
         "tools": [".config/gh"] if wsl else [".cursor"], "ssh_hosts": ["github.com", "10.0.0.1"] if wsl else [],
         "connectors": connectors, "mcp_probe_seconds": 6.1 if connectors is not None else None,
     }
+
+
+def workspaces(*, wsl=False) -> dict:
+    """``claude_home_probe.workspaces`` 的一份结果：一个正常的、一个认不出路径的、一个目录已经删掉的。"""
+    def project(name: str, path: str, exists, sessions: int, last: str, size: int, memory: int, **last_session) -> dict:
+        return {"name": name, "path": path, "exists": exists, "sessions": sessions, "last": last, "bytes": size, "memory": memory,
+                "last_session": last_session}
+
+    if wsl:
+        return {"projects": [project("-home-dev-carrot", "/home/dev/carrot", True, 4, "2026-01-02 02:00", 500_000, 1,
+                                     cost=0.4, minutes=5, added=10, removed=2)],
+                "total": 1, "empty": 0, "sessions": 4, "bytes": 500_000, "missing": 0, "truncated": False}
+    return {"projects": [
+        project("C--Users-dev-tomato", "C:\\Users\\dev\\tomato", True, 3, "2026-01-02 03:04", 1_048_576, 3,
+                cost=1.23, minutes=13, added=120, removed=30),
+        project("mystery-folder", "", None, 1, "2026-01-01 10:00", 100_000, 0),
+        project("C--Users-dev-potato", "C:\\Users\\dev\\potato", False, 2, "2025-12-20 09:00", 100_000, 1)],
+        "total": 5, "empty": 2, "sessions": 6, "bytes": 1_248_576, "missing": 1, "truncated": False}
 
 
 def memory_index(*, wsl=False) -> dict:

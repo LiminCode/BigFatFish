@@ -39,7 +39,8 @@ function detail(id) { const box = document.getElementById('detail');
   const target = !src.path ? '' : src.env !== 'wsl' ? 'vscode://file/' + src.path.replace(/\\/g, '/')
     : src.distro ? `vscode://vscode-remote/wsl+${src.distro}${src.path}${src.dir ? '' : ':1'}` : '';
   const link = target && target + '?windowId=_blank';
-  const rank = r => r.state === 'off' ? 2 : r.state === 'ok' ? 1 : 0;     /* 要处理的在前，这台机器上没有的垫底 */
+  /* 要处理的（坏了、待授权、警告）在前，这台机器上没有的垫底；探测不到的和正常的不分先后，保持数据给的顺序 */
+  const rank = r => r.state === 'off' ? 2 : r.state === 'ok' || r.state === 'unknown' || r.state === 'live' ? 1 : 0;
   const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
   const nb = (list, key) => list.map(e => `<button data-go="${e[key]}"><i class="dot ${e.state === 'broken' ? 'bad' : e.state}"></i>${esc(N[e[key]].title)}${e.label ? ' · ' + esc(e.label) : ''}<span style="color:var(--muted)">${ESTATE[e.state]}</span></button>`).join('');
   box.innerHTML = `<h2>${esc(k.name || n.kind)} · ${esc(R[n.region].title)}</h2><h3>${esc(n.title)}</h3>

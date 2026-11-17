@@ -25,6 +25,9 @@ MEMORY_LIST_LIMIT = 40
 MEMORY_ENTRY_LIMIT = 600        # 记忆索引最多收这么多条（所有项目加起来）
 MEMORY_TEXT_LIMIT = 240         # 说明、规矩正文最多留这么多字
 MEMORY_HEAD_BYTES = 4096        # 每个记忆文件只读开头这么多：名字和说明都在文件头里
+WORKSPACE_LIMIT = 60            # 工作空间最多列这么多个项目（最近用过的在前；总数照实报）
+SESSION_HEAD_BYTES = 65536      # 认项目路径时，一份会话记录只读开头这么多
+_CWD_RE = re.compile(r'"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _FRONT_RE = re.compile(r"\ufeff?---\r?\n(.*?)\r?\n---", re.S)
 _RULE_RE = re.compile(r"^- \*\*(.+?)\*\*[ \t]*(?:[—–-]+[ \t]*)?(.*)$", re.M)
 TOOL_DIRS = (".config/gh", ".aws", ".kube", ".cursor", ".gemini")
@@ -194,6 +197,87 @@ def mcp_detail(state):
     return found
 
 
+def encode_project_path(path):
+    """Claude Code 给项目目录起名的办法：绝对路径里不是字母数字的字符都换成 ``-``。"""
+    return re.sub(r"[^A-Za-z0-9]", "-", str(path))
+
+
+def _session_cwd(path):
+    """一份会话记录开头记着的工作目录；读不到就是空串。只找这一个字段，别的不看。"""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            found = _CWD_RE.search(fh.read(SESSION_HEAD_BYTES))
+        return json.loads('"' + found.group(1) + '"') if found else ""
+    except (OSError, ValueError):
+        return ""
+
+
+def _exists(path):
+    """这个目录还在不在。路径是另一个系统的写法（在 WSL 里看到 ``C:\\…``，或者反过来）就答不了：``None``。"""
+    if not path:
+        return None
+    if bool(re.match(r"^[A-Za-z]:[\\/]", path)) != (os.name == "nt"):
+        return None
+    return os.path.isdir(path)
+
+
+def _last_session(cfg):
+    """``~/.claude.json`` 里记的这个项目上一次会话的几个数：花了多少、多久、改了多少行。全是零就当没有。"""
+    def number(key):
+        try:
+            return float(cfg.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    out = {"cost": round(number("lastCost"), 2), "minutes": int(round(number("lastDuration") / 60000)),
+           "added": int(number("lastLinesAdded")), "removed": int(number("lastLinesRemoved"))}
+    return out if any(out.values()) else {}
+
+
+def workspaces(claude, state):
+    """这个 Claude Code 干过活的项目：``projects/`` 下每个有会话记录或有记忆的目录一条，最近用过的在前。
+
+    真实路径优先取 ``~/.claude.json`` 里登记的那个（按 ``encode_project_path`` 对上目录名）；没登记的，
+    最新一份会话记录里的工作目录**编码后正好等于目录名**才用——对不上就留空，不猜（会话中途换过目录的对不上）。
+    既没有会话也没有记忆的目录只数个数（``empty``）。只读文件名、大小、时间和那一个字段，不带会话内容。
+    """
+    out = {"projects": [], "total": 0, "empty": 0, "sessions": 0, "bytes": 0, "missing": 0, "truncated": False}
+    known = {}
+    registered = state.get("projects") if isinstance(state.get("projects"), dict) else {}
+    for path, cfg in registered.items():
+        known.setdefault(encode_project_path(path), (str(path), cfg if isinstance(cfg, dict) else {}))
+    rows = []
+    for folder in glob.glob(os.path.join(claude, "projects", "*", "")):
+        folder = folder.rstrip("\\/")
+        name = os.path.basename(folder)
+        stamps = []
+        for session in glob.glob(os.path.join(folder, "*.jsonl")):
+            try:
+                stamps.append((os.path.getmtime(session), os.path.getsize(session), session))
+            except OSError:
+                continue
+        memory = [m for m in glob.glob(os.path.join(folder, "memory", "*.md")) if os.path.basename(m) != "MEMORY.md"]
+        out["total"] += 1
+        if not stamps and not memory:
+            out["empty"] += 1
+            continue
+        newest = max(stamps) if stamps else (0.0, 0, "")
+        path, cfg = known.get(name, ("", {}))
+        if not path and newest[2]:
+            cwd = _session_cwd(newest[2])
+            path = cwd if cwd and encode_project_path(cwd) == name else ""
+        exists = _exists(path)
+        rows.append({"name": name, "path": path, "exists": exists, "sessions": len(stamps),
+                     "last": _mtime(newest[2]) if newest[2] else "", "bytes": sum(size for _, size, _ in stamps),
+                     "memory": len(memory), "last_session": _last_session(cfg), "_stamp": newest[0]})
+        out["sessions"] += len(stamps)
+        out["bytes"] += rows[-1]["bytes"]
+        out["missing"] += exists is False
+    rows.sort(key=lambda row: (-row.pop("_stamp"), row["name"]))
+    out["projects"], out["truncated"] = rows[:WORKSPACE_LIMIT], len(rows) > WORKSPACE_LIMIT
+    return out
+
+
 def parse_mcp_list(output):
     """``claude mcp list`` 的输出 → ``[{name, state: ok | auth | bad, detail, kind: remote | local, target}]``。"""
     rows = []
@@ -265,7 +349,7 @@ def probe(home, with_mcp=False, mcp_timeout=90):
         "projects": len(glob.glob(os.path.join(claude, "projects", "*", ""))),
         "memory_count": len(memory), "memory_projects": memory[:MEMORY_LIST_LIMIT],
         "distilled_files": len(glob.glob(os.path.join(claude, "projects", "*", "memory", "distill-*.md"))),
-        "memory_index": memory_index(claude),
+        "memory_index": memory_index(claude), "workspaces": workspaces(claude, state),
         "credentials_path": os.path.join(claude, ".credentials.json"),
         "credentials_file": os.path.isfile(os.path.join(claude, ".credentials.json")),
         "tools": [name for name in TOOL_DIRS if os.path.exists(os.path.join(home, *name.split("/")))],

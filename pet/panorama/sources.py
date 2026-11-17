@@ -104,6 +104,40 @@ def _mcp_rows(servers: list[dict]) -> list[dict]:
     return rows
 
 
+def _workspace_tile(g: Graph, node_id: str, region: str, owner_node: str, zone: str, spaces: dict | None, folder: str,
+                    src: dict | None, probed: str) -> None:
+    """一个 Claude Code 干过活的项目：一条一个，最近用过的在前；目录已经删掉的变淡，认不出路径的照实说不知道。"""
+    if not spaces:
+        return
+    rows = []
+    for project in spaces.get("projects") or []:
+        exists, last = project.get("exists"), project.get("last_session") or {}
+        rows.append({
+            "name": memory_scope.project_label(project.get("name", "")),
+            "state": "ok" if exists else "off" if exists is False else "unknown",
+            "detail": L("ws.item", n=project["sessions"], when=project.get("last", "")) if project.get("sessions") else L("ws.item_memory_only"),
+            "more": _pairs(
+                [L("ws.path"), project.get("path") or L("ws.path_unknown")],
+                [L("ws.state"), L("ws.gone") if exists is False else ""],
+                [L("ws.sessions"), L("ws.sessions_value", n=project["sessions"], size=_size(project.get("bytes", 0))) if project.get("sessions") else ""],
+                [L("ws.memory"), L("store.entries", n=project["memory"]) if project.get("memory") else ""],
+                [L("ws.last_session"), L("ws.last_session_value", minutes=last.get("minutes", 0), cost=f"{last.get('cost', 0):.2f}",
+                                         added=last.get("added", 0), removed=last.get("removed", 0)) if last else ""])})
+    listed, missing, empty = spaces.get("total", 0) - spaces.get("empty", 0), spaces.get("missing", 0), spaces.get("empty", 0)
+    g.node(node_id, region, 0, "workspace", L("node.workspaces"),
+           L("ws.sub_missing", n=listed, missing=missing) if missing else L("ws.sub", n=listed), "ok", items=rows,
+           facts=_pairs([L("fact.location"), folder],
+                        [L("ws.sessions_total"), L("ws.sessions_value", n=spaces.get("sessions", 0), size=_size(spaces.get("bytes", 0)))],
+                        [L("ws.empty"), L("count", n=empty) if empty else ""], [L("conn.probed"), probed],
+                        [L("fact.note"), L("ws.truncated", n=len(rows)) if spaces.get("truncated") else ""]),
+           source=src)
+    g.edge(owner_node, node_id, "config")
+    if missing:
+        g.quest("info", L("quest.ws_missing", side=L(f"zone.{zone}"), n=missing), node_id)
+    if empty >= WORKSPACE_EMPTY_NOTE:
+        g.quest("info", L("quest.ws_empty", side=L(f"zone.{zone}"), n=empty), node_id)
+
+
 def _connector_tiles(g: Graph, prefix: str, region: str, col: int, items: list[dict], owner: str, how: str,
                      probed: str = "") -> list[str]:
     """一组 connector 拆成最多两块：通的一块、其余一块——这样连线才能一条流动、一条断开 / 待处理。"""
@@ -125,6 +159,7 @@ def _connector_tiles(g: Graph, prefix: str, region: str, col: int, items: list[d
     return made
 
 
+WORKSPACE_EMPTY_NOTE = 20       # 空的项目目录多到这个数才单独提一句：零星几个不值得说
 _EDGE_FOR_NODE = {"live": "live", "ok": "ok", "bad": "broken", "warn": "warn", "off": "off"}
 
 
@@ -176,6 +211,10 @@ def claude_code_windows(g: Graph, f: dict) -> None:
                                  "detail": L("memory.item", n=m["files"], when=m["mtime"])} for m in c["memory_projects"]],
            facts=[[L("fact.location"), "~/.claude/projects/<project>/memory/"]],
            source=_src(c["memory_projects"][0]["path"] if c["memory_projects"] else ""))
+    home_win = c.get("home", "")
+    win_projects = home_win + ("\\" if "\\" in home_win else "/") + ".claude" + ("\\" if "\\" in home_win else "/") + "projects" if home_win else ""
+    _workspace_tile(g, "ws_win", "win", "cc_win", "personal", c.get("workspaces"), win_projects, _src(win_projects, folder=True),
+                    c.get("probed_at", ""))
     g.node("plug_win", "win", 0, "plugin", L("node.plugins"), _join(p.split("@")[0] for p in c["plugins"]) or L("none"), "ok",
            facts=[[L("fact.installed"), _join(c["plugins"])]])
     g.node("desktop", "win", 1, "entry", L("node.claude_desktop"), L("desktop.sub"), "ok", icon="window",
@@ -309,6 +348,8 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
     g.node("mem_wsl", "wsl", 0, "memory", L("node.project_memory"), L("memory.sub", n=w["memory_count"], total=w["projects"]), "ok",
            icon="stack", facts=[[L("fact.location"), "~/.claude/projects/<project>/memory/"], [L("fact.distilled"), L("count", n=w["distilled_files"])]],
            source=src(home + "/.claude/projects", folder=True))
+    _workspace_tile(g, "ws_wsl", "wsl", WSL_ENTRY, "work", w.get("workspaces"), home + "/.claude/projects",
+                    src(home + "/.claude/projects", folder=True), w.get("probed_at", ""))
     g.node("mcp_wsl", "wsl", 1, "connector", L("node.local_mcp"), _join(w["mcp_servers"]) or L("none"), "ok", gap=74,
            items=_mcp_rows(w.get("mcp_detail")),
            facts=_pairs([L("fact.source"), "~/.claude.json → mcpServers"], [L("conn.probed"), w.get("probed_at", "")]),
