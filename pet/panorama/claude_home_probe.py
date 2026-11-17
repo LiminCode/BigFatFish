@@ -5,7 +5,8 @@
 ``pet.panorama.probes.wsl_side`` 把这个文件的文本从标准输入喂给发行版里的 ``python3 -``。两边由同一份
 实现来读，不会各写一套然后慢慢读出两个结果。所以这里不能 import 肥鱼的任何模块。
 
-这里什么都不写；凭据文件只看在不在，不读内容。
+这里什么都不写；凭据文件只看在不在，不读内容。连接器「连到哪」会带出来，但地址里的账号口令和查询串、
+命令行里跟在 ``--token`` 这类参数后面的值、``KEY=值`` 里的值都换成占位符；环境变量和请求头只留名字。
 """
 from __future__ import annotations
 
@@ -128,8 +129,73 @@ def memory_index(claude):
     return out
 
 
+_SECRETISH = re.compile(r"(?i)key|token|secret|passw|auth|credential|bearer")
+
+
+def _now():
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def safe_url(url):
+    """地址里去掉 ``账号:口令@`` 和查询串（查询串里常带 token）；去掉了查询串就留一个 ``?…`` 表示原来有。"""
+    url = re.sub(r"^(\w+://)[^/@\s]+@", r"\1", str(url or "").strip())
+    head, mark, _query = url.partition("?")
+    return head.split("#", 1)[0] + ("?…" if mark else "")
+
+
+def safe_command(parts):
+    """命令行拼回一行：``--token X`` 的 X、``TOKEN=X`` 的 X 换成 ``***``。认的是参数名字像不像密钥，不是值。"""
+    out, hide_next = [], False
+    for part in (str(part) for part in parts):
+        name, equals, _value = part.partition("=")
+        if hide_next:
+            out.append("***")
+            hide_next = False
+        elif equals and _SECRETISH.search(name):
+            out.append(name + "=***")
+        else:
+            out.append(part)
+            hide_next = part.startswith("-") and bool(_SECRETISH.search(part))
+    return " ".join(out)
+
+
+def _target(text):
+    """``claude mcp list`` 里那一段「地址或命令」→（远程还是本地，能给人看的写法）。"""
+    text = str(text or "").strip()
+    if re.match(r"^https?://", text):
+        return "remote", safe_url(text)
+    return "local", safe_command(text.split())
+
+
+def mcp_detail(state):
+    """``~/.claude.json`` 里登记的 MCP 服务器：用户级的（``mcpServers``）在前，项目级的（``projects.<路径>.mcpServers``）在后。
+
+    每条：名字、``kind``（配置里的 ``type``，没写就按有没有 ``url`` 猜 http / stdio）、``target``（地址或命令行，
+    密钥换成占位符）、``env``（环境变量和请求头的**名字**）、``project``（项目级的才有）。
+    """
+    def rows(servers, project):
+        out = []
+        for name, cfg in sorted(servers.items()) if isinstance(servers, dict) else ():
+            if not isinstance(cfg, dict):
+                continue
+            url = cfg.get("url")
+            args = cfg.get("args") if isinstance(cfg.get("args"), list) else []
+            names = [key for field in ("env", "headers") if isinstance(cfg.get(field), dict) for key in cfg[field]]
+            out.append({"name": str(name), "kind": str(cfg.get("type") or ("http" if url else "stdio")),
+                        "target": safe_url(url) if url else safe_command([cfg.get("command") or "", *args]).strip(),
+                        "env": sorted(str(key) for key in names), "project": project})
+        return out
+
+    found = rows(state.get("mcpServers"), "")
+    projects = state.get("projects")
+    for path, cfg in sorted(projects.items()) if isinstance(projects, dict) else ():
+        if isinstance(cfg, dict):
+            found += rows(cfg.get("mcpServers"), str(path))
+    return found
+
+
 def parse_mcp_list(output):
-    """``claude mcp list`` 的输出 → ``[{name, state: ok | auth | bad, detail}]``。"""
+    """``claude mcp list`` 的输出 → ``[{name, state: ok | auth | bad, detail, kind: remote | local, target}]``。"""
     rows = []
     for line in output.splitlines():
         name, colon, rest = line.strip().partition(": ")          # ``名字: 地址或命令 - 状态``；命令里可以有空格
@@ -138,7 +204,8 @@ def parse_mcp_list(output):
             continue
         status = status.strip()
         state = "ok" if "Connected" in status else "auth" if "authentication" in status.lower() else "bad"
-        rows.append({"name": name, "state": state, "detail": status})
+        kind, shown = _target(target)
+        rows.append({"name": name, "state": state, "detail": status, "kind": kind, "target": shown})
     return rows
 
 
@@ -176,11 +243,12 @@ def probe(home, with_mcp=False, mcp_timeout=90):
         memory.append({"name": os.path.basename(os.path.dirname(folder)), "path": folder, "mtime": _mtime(index),
                        "files": max(0, len(glob.glob(os.path.join(folder, "*.md"))) - 1)})
     memory.sort(key=lambda row: row["mtime"], reverse=True)
-    connectors, seconds = None, None
+    connectors, seconds, mcp_probed_at = None, None, ""
     if with_mcp:
         started = time.time()
         connectors = _mcp_list(mcp_timeout)
         seconds = round(time.time() - started, 1)
+        mcp_probed_at = _now() if connectors is not None else ""
     account = state.get("oauthAccount") or {}
     return {
         "home": home, "platform": sys.platform, "distro": os.environ.get("WSL_DISTRO_NAME", ""),
@@ -191,6 +259,7 @@ def probe(home, with_mcp=False, mcp_timeout=90):
         "hooks": hooks_summary(settings), "allow_rules": len((settings.get("permissions") or {}).get("allow") or []),
         "plugins": sorted(set(settings.get("enabledPlugins") or {}) | set(installed.get("plugins") or {})),
         "mcp_servers": sorted(state.get("mcpServers") or {}), "state_path": os.path.join(home, ".claude.json"),
+        "mcp_detail": mcp_detail(state), "probed_at": _now(), "mcp_probed_at": mcp_probed_at,
         "ever_connected": [str(name) for name in state.get("claudeAiMcpEverConnected") or []],
         "claude_md": claude_md_summary(os.path.join(claude, "CLAUDE.md")),
         "projects": len(glob.glob(os.path.join(claude, "projects", "*", ""))),

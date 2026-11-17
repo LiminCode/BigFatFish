@@ -211,7 +211,7 @@ def test_a_storage_tile_lists_each_store_with_what_where_who_and_restore_source(
     stores = [i for i in next(n for n in graph["nodes"] if n["id"] == "st_fish_local")["items"]]
     assert out["detail"].count('<dl class="more">') == len(stores)
     assert "memory-distill/entries.json" in out["detail"] and "丢了从哪恢复" in out["detail"]
-    plain = _redraw(engine, graph, graph, "view.select('conn_w_ok');")       # 没有说明的清单照旧，不多出空壳
+    plain = _redraw(engine, graph, graph, "view.select('plug_wsl');")        # 没有说明的清单照旧，不多出空壳
     assert '<dl class="more">' not in plain["detail"]
 
 

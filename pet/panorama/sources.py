@@ -86,22 +86,42 @@ def _claude_md_node(g: Graph, node_id: str, region: str, md: dict, writer: str, 
                   [L("fact.modified"), md.get("mtime", "")], [L("fact.writer"), writer]], source=src)
 
 
-def _connector_tiles(g: Graph, prefix: str, region: str, col: int, items: list[dict], owner: str, how: str) -> list[str]:
+def _pairs(*rows) -> list:
+    """清单里一行下面的说明：值是空的那几对不要。"""
+    return [[label, value] for label, value in rows if value]
+
+
+def _mcp_rows(servers: list[dict]) -> list[dict]:
+    """登记在 ``~/.claude.json`` 里的 MCP 服务器，一条一行：是远程服务还是本地命令、连到哪、用了哪些环境变量。"""
+    rows = []
+    for server in servers or []:
+        target, kind = str(server.get("target") or ""), str(server.get("kind") or "")
+        label = L("conn.kind_remote") if re.match(r"^https?://", target) or kind in ("http", "sse") else L("conn.kind_local")
+        rows.append({"name": server.get("name", ""), "state": "ok", "detail": label,
+                     "more": _pairs([L("conn.kind"), L("conn.kind_detail", kind=label, type=kind) if kind else label],
+                                    [L("conn.target"), target], [L("conn.env"), _join(server.get("env") or [])],
+                                    [L("conn.project_only"), server.get("project", "")])})
+    return rows
+
+
+def _connector_tiles(g: Graph, prefix: str, region: str, col: int, items: list[dict], owner: str, how: str,
+                     probed: str = "") -> list[str]:
     """一组 connector 拆成最多两块：通的一块、其余一块——这样连线才能一条流动、一条断开 / 待处理。"""
     good = [i for i in items if i["state"] == "ok"]
     rest = [i for i in items if i["state"] != "ok"]
+    known = [[L("fact.how_known"), how], *_pairs([L("conn.probed"), probed])]
     made = []
     if good or not items:
         made.append(g.node(f"{prefix}_ok", region, col, "connector", L("conn.ok_title", owner=owner),
                            L("count", n=len(good)) if items else L("conn.none"), "live" if good else "unknown", "tall",
-                           items=good, facts=[[L("fact.how_known"), how]]))
+                           items=good, facts=known))
     if rest:
         counts = [(sum(i["state"] == state for i in rest), state) for state in ("bad", "auth", "unknown")]
         state = "bad" if counts[0][0] else "warn" if counts[1][0] else "unknown"
         title = L("conn.unknown_title", owner=owner) if state == "unknown" else L("conn.rest_title", owner=owner)
         made.append(g.node(f"{prefix}_rest", region, col, "connector", title,
                            " · ".join(L(f"conn.count_{name}", n=n) for n, name in counts if n), state, "tall",
-                           icon="plugoff", items=rest, facts=[[L("fact.how_known"), how]]))
+                           icon="plugoff", items=rest, facts=known))
     return made
 
 
@@ -138,8 +158,15 @@ def claude_code_windows(g: Graph, f: dict) -> None:
     link_on = f["features"]["link_win"]["enabled"]
     g.node("cc_win", "win", 0, "entry", L("node.claude_cli"), _model_line(c["model"], c["effort"]), "ok",
            facts=[[L("fact.model"), c["model"]], [L("fact.effort"), c["effort"]], [L("fact.allow_rules"), L("count", n=c["allow_rules"])],
-                  [L("fact.local_mcp"), _join(c["mcp_servers"]) or L("none")], [L("fact.other_tools"), _join(c["tools"])]],
+                  [L("fact.local_mcp"), _join(c["mcp_servers"]) or L("none")], [L("fact.other_tools"), _join(c["tools"])],
+                  [L("conn.probed"), c.get("probed_at", "")]],
            source=_src(c["settings_path"]))
+    if c.get("mcp_detail"):            # 这台机器上登记了 MCP 服务器才多这一块（和 WSL 一侧那块对应）
+        g.node("mcp_win", "win", 0, "connector", L("node.local_mcp"), _join(s["name"] for s in c["mcp_detail"]), "ok",
+               items=_mcp_rows(c["mcp_detail"]), facts=_pairs([L("fact.source"), "~/.claude.json → mcpServers"],
+                                                              [L("conn.probed"), c.get("probed_at", "")]),
+               source=_src(c.get("state_path", ""), "mcpServers"))
+        g.edge("cc_win", "mcp_win", "connector")
     g.node("set_win", "win", 0, "config", "settings.json", L("hooks.sub", n=len(hooks)), "live" if hooks else "bad" if link_on else "off",
            facts=[[L("fact.hooks_fish"), _join(hooks) or L("none")], [L("fact.hooks_all"), _join(c["hooks"])],
                   [L("fact.modified"), c["settings_mtime"]]], source=_src(c["settings_path"], "hooks"))
@@ -257,15 +284,24 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
            facts=[[L("fact.account"), account["email"]], [L("fact.organization"), account["organization"]],
                   [L("fact.credentials"), L("fact.credentials_oauth")]], source=src(w["credentials_path"]))
     detail = {"ok": L("conn.connected"), "auth": L("conn.needs_auth")}
-    items = [{"name": row["name"].replace("claude.ai ", ""), "state": row["state"], "detail": detail.get(row["state"], row["detail"])}
+    checked = w.get("mcp_probed_at", "")
+    items = [{"name": row["name"].replace("claude.ai ", ""), "state": row["state"], "detail": detail.get(row["state"], row["detail"]),
+              **({"more": more} if (more := _pairs(
+                  [L("conn.target"), row.get("target", "")],
+                  [L("conn.kind"), L(f"conn.kind_{row['kind']}") if row.get("kind") in ("remote", "local") else ""],
+                  [L("conn.probed"), checked if row.get("target") else ""])) else {})}
              for row in w.get("connectors") or []]
+    looked = w.get("probed_at", "")
+    if looked and f.get("refreshing"):                     # 图上垫着上一轮的结果，新的一轮还在路上
+        looked = L("probe.refreshing", when=looked)
     how = L("conn.how_work", seconds=w.get("mcp_probe_seconds")) if w.get("connectors") is not None else L("conn.how_skipped")
-    tiles = _connector_tiles(g, "conn_w", "cloud_work", 2, items, L("zone.work"), how)
+    tiles = _connector_tiles(g, "conn_w", "cloud_work", 2, items, L("zone.work"), how, checked)
     hooks = _hook_events(w["hooks"])
     link_on = f["features"]["link_wsl"]["enabled"]
     g.node(WSL_ENTRY, "wsl", 0, "entry", L("node.claude_cli"), _model_line(w["model"], w["effort"]), "ok",
            facts=[[L("fact.model"), w["model"]], [L("fact.effort"), w["effort"]], [L("fact.allow_rules"), L("count", n=w["allow_rules"])],
-                  [L("fact.distro"), distro], [L("fact.how_called"), L("wsl.how_called")]], source=src(w["settings_path"]))
+                  [L("fact.distro"), distro], [L("fact.how_called"), L("wsl.how_called")], [L("conn.probed"), looked]],
+           source=src(w["settings_path"]))
     g.node("set_wsl", "wsl", 0, "config", "settings.json", L("hooks.sub", n=len(hooks)), "live" if hooks else "bad" if link_on else "off",
            facts=[[L("fact.hooks_fish"), _join(hooks) or L("none")], [L("fact.hooks_all"), _join(w["hooks"])],
                   [L("fact.modified"), w["settings_mtime"]]], source=src(w["settings_path"], "hooks"))
@@ -274,7 +310,9 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
            icon="stack", facts=[[L("fact.location"), "~/.claude/projects/<project>/memory/"], [L("fact.distilled"), L("count", n=w["distilled_files"])]],
            source=src(home + "/.claude/projects", folder=True))
     g.node("mcp_wsl", "wsl", 1, "connector", L("node.local_mcp"), _join(w["mcp_servers"]) or L("none"), "ok", gap=74,
-           facts=[[L("fact.source"), "~/.claude.json → mcpServers"]], source=src(w["state_path"], "mcpServers"))
+           items=_mcp_rows(w.get("mcp_detail")),
+           facts=_pairs([L("fact.source"), "~/.claude.json → mcpServers"], [L("conn.probed"), w.get("probed_at", "")]),
+           source=src(w["state_path"], "mcpServers"))
     g.node("plug_wsl", "wsl", 1, "plugin", L("node.plugins"), L("plugins.sub", n=len(w["plugins"])), "ok",
            items=[{"name": p.split("@")[0], "state": "ok", "detail": "@" + p.split("@")[-1] if "@" in p else ""} for p in w["plugins"]],
            source=src(w["settings_path"], "enabledPlugins"))

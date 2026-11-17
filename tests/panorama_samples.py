@@ -20,6 +20,9 @@ def home(*, hooks=None, connectors=None, wsl=False) -> dict:
         "settings_path": claude + sep + "settings.json", "settings_mtime": "2026-01-02 03:04",
         "model": "sonnet", "effort": "high", "hooks": copy.deepcopy(FISH_HOOKS if hooks is None else hooks), "allow_rules": 3,
         "plugins": ["notes@acme"], "mcp_servers": ["acme-tools"] if wsl else [], "state_path": root + sep + ".claude.json",
+        "mcp_detail": [{"name": "acme-tools", "kind": "stdio", "target": "npx -y @acme/tools --api-key ***", "env": ["ACME_TOKEN"],
+                        "project": ""}] if wsl else [],
+        "probed_at": "2026-01-02 03:04:05", "mcp_probed_at": "2026-01-02 03:04:11" if connectors is not None else "",
         "ever_connected": [] if wsl else ["claude.ai Calendar", "claude.ai Mail"],
         "claude_md": {"exists": True, "path": claude + sep + "CLAUDE.md", "bytes": 120, "lines": 9, "mtime": "2026-01-02 03:04",
                       "managed_block": True, "managed_rules": 2, "managed_updated": "2026-01-01 10:00"},
@@ -51,8 +54,9 @@ def memory_index(*, wsl=False) -> dict:
 
 def wsl_home(**kwargs) -> dict:
     connectors = kwargs.pop("connectors", [
-        {"name": "claude.ai Docs", "state": "ok", "detail": "✔ Connected"},
-        {"name": "claude.ai Tickets", "state": "auth", "detail": "! Needs authentication"},
+        {"name": "claude.ai Docs", "state": "ok", "detail": "✔ Connected", "kind": "remote", "target": "https://docs.acme.example/mcp"},
+        {"name": "claude.ai Tickets", "state": "auth", "detail": "! Needs authentication", "kind": "remote",
+         "target": "https://tickets.acme.example/sse"},
     ])
     return home(wsl=True, connectors=connectors, **kwargs)
 
