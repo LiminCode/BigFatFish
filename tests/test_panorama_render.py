@@ -35,7 +35,9 @@ def test_page_carries_the_whole_graph_and_its_strings():
     assert set(data["strings"]) == set(render.PAGE_KEYS) | {"state", "edge_state"}
     assert "2026-01-02 03:04:05" in data["meta"]["summary"] and "6.5" in data["meta"]["summary"]
     assert '<html lang="zh-CN">' in page and not re.search(r"__[A-Z]+__", page)
-    assert "http://" not in page and "https://" not in page.replace("https://api.acme.example", "").replace("https://github.com/", "")
+    # 页面自己不带任何网址；数据里的（样例的服务地址、仓库远端、连接器连到哪）是给人看的文字，不是页面要去取的东西
+    ours = re.sub(r"https://(api\.acme\.example|github\.com/|docs\.acme\.example|tickets\.acme\.example)", "", page)
+    assert "http://" not in page and "https://" not in ours
 
 
 def test_snapshot_is_self_contained():
