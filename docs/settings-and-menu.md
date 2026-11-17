@@ -174,6 +174,19 @@
 `capability_requirement / platform_availability`、`disclosure_level`（`primary` | `advanced`）、`dependency`、`preview_target`、
 `commit_policy`（`immediate` | `on_finish` | `confirm`）、`migration`、`recovery`。
 
+**搬到配置全景页面上的设置，这份记录写在代码里**：`pet/settings_table.py` 的 `GROUPS`（决定见
+[ADR 0014](adr/0014-panorama-becomes-the-console.md)）。一个 `Group` 是配置里一个顶层键下的一组设置，绑着那个功能自己的
+`normalize`；一个 `Setting` 声明它的 `id`（点号表示字典的下一层）、控件（开关 / 下拉 / 可自填的下拉 / 数字 / 文本 / 长文本）、
+可选值、保存时机、披露层级、依赖。读、默认值、校验都不另写：一律走 `normalize`，所以表里的默认值就是 `normalize({})` 的结果。
+
+- 这张表只有声明和纯函数，不碰 Qt。它现在**只登记了工作简报这一组，还没有任何东西用它**：页面上的表单和写入链路是
+  路线图 M3 后面几步；在那之前工作简报仍然只在设置窗口里改。
+- `tests/test_settings_table.py` 是守卫：功能的 `normalize` 多给出一个键，却既没在表里声明、也没写进那一组的 `not_editable`
+  说明为什么不给改，测试就红；表里的每个可选值存下去再读回来必须还是它；每一项在两张字表里都得有标题。
+- 文字不抄第二份：从设置窗口搬过去的项直接沿用原来的文案键（`Setting.text` / `.hint`），只有新出现的才用
+  `settings.<组>.<id>` 这个默认的键。
+- 版本（`settings_table.version`）是一组**生效值**的指纹，给以后的写入链路判断「页面看到的值是不是旧了」用。
+
 新增一级能力域还要证明：它代表长期独立的用户目标，预计至少有两个稳定设置组，且放进现有域会显著降低可发现性。
 平台名称、代码模块和短期功能品牌不能单独构成能力域。
 

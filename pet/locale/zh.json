@@ -1776,6 +1776,8 @@
   "briefing.settings.effort_hint": "传给 claude -p --effort：low / medium / high / xhigh。越高越慢、越贵，默认 high。",
   "briefing.settings.prompt": "发给 Claude 的提示词",
   "briefing.settings.prompt_hint": "就是每次生成时发出去的那段话，可以直接改。占位符发送前替换：{now} 当前时间、{hours} 回看几小时、{prs} 肥鱼用 gh 查好的 PR 列表、{priority_rules} 下面的优先级偏好。没改过时按上面的来源开关拼出来；改过之后来源开关只管 Claude 能用哪些工具，提示词里要不要提某个来源由你自己写。中 / 英文界面各存一份。",
+  "settings.work_briefing.prompt_zh": "发给 Claude 的提示词（界面是中文时用）",
+  "settings.work_briefing.prompt_en": "发给 Claude 的提示词（界面是英文时用）",
   "briefing.settings.priority_rules": "优先级偏好",
   "briefing.settings.priority_rules_hint": "简报里每条前面的 ★★★ / ★★ / ★ 由 Claude 判断；在这里写你的规矩（例如「QA 报的 bug 一律 ★★★」「文档类工单最多 ★」），会作为「我的优先级偏好」追加进提示词。留空 = 全凭它判断。",
   "briefing.settings.section": "工作简报",

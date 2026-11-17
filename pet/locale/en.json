@@ -1784,6 +1784,8 @@
   "briefing.settings.effort_hint": "Passed to claude -p --effort: low / medium / high / xhigh. Higher is slower and costs more; default high.",
   "briefing.settings.prompt": "Prompt sent to Claude",
   "briefing.settings.prompt_hint": "This is the exact text sent on every run; edit it freely. Placeholders are filled before sending: {now} current time, {hours} how many hours to look back, {prs} the PR list the fish fetched with gh, {priority_rules} the priority preferences below. Untouched, it is assembled from the source toggles above; once edited, the toggles only decide which tools Claude may use — whether a source is mentioned is up to your text. One copy per interface language.",
+  "settings.work_briefing.prompt_zh": "Prompt sent to Claude (used when the interface is Chinese)",
+  "settings.work_briefing.prompt_en": "Prompt sent to Claude (used when the interface is English)",
   "briefing.settings.priority_rules": "Priority preferences",
   "briefing.settings.priority_rules_hint": "Claude rates every line ★★★ / ★★ / ★. Write your own rules here (e.g. “bugs reported by QA are always ★★★”, “documentation issues at most ★”); they are appended to the prompt as “my priority preferences”. Leave empty to let it judge alone.",
   "briefing.settings.section": "Work briefing",
