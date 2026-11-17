@@ -57,7 +57,7 @@ class Graph:
 
     def node(self, node_id: str, region: str, col: int, kind: str, title: str, sub: str = "", state: str = "ok",
              size: str = "std", **extra) -> str:
-        """``extra``：icon lines badge facts items source page group head anchor gap view（空值不写进去）。"""
+        """``extra``：icon lines badge facts items source page group head anchor gap view memory（空值不写进去）。"""
         if state not in NODE_STATES or size not in SIZES or kind not in KINDS:
             raise ValueError(f"bad node {node_id}: state={state} size={size} kind={kind}")
         if self.has(node_id):

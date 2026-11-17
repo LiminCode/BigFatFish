@@ -14,7 +14,7 @@ from typing import Callable
 
 from .. import data_stores as ds
 from ..i18n import t
-from . import features, files, places
+from . import features, files, memory_scope, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
 
 FISH_NODE = "pet"
@@ -508,6 +508,60 @@ def feature_writes(g: Graph, f: dict) -> None:
             g.edge(f"f_{feature.id}", target, line, state)
 
 
+# ───────────────────────── 记忆按作用域 ─────────────────────────
+
+_MEMORY_TILES = {"win": ("mem_win", "md_win"), "wsl": ("mem_wsl", "md_wsl")}
+
+
+def _memory_sides(f: dict) -> list[tuple[str, dict | None]]:
+    sides = [("win", f["win"].get("memory_index"))]
+    if _wsl_ready(f):
+        sides.append(("wsl", f["wsl"].get("memory_index")))
+    return sides
+
+
+def memory_view(f: dict) -> dict:
+    """页面上「记忆一览」要的那一份：``memory_scope.analyse`` 的结果配上界面文字。
+
+    每个标记带一句话说明和「另一份在哪」；这台机器上打得开的条目带 ``view``（WSL 一侧的这一步还打不开）。
+    """
+    view = memory_scope.analyse(_memory_sides(f))
+    titles = {"win": L("memory.side.win"), "wsl": L("memory.side.wsl", distro=(f.get("wsl") or {}).get("distro", "")).rstrip(" ·")}
+    short = {"win": L("zone.personal"), "wsl": L("zone.work")}
+
+    def dress(row: dict) -> None:
+        where = _join(dict.fromkeys(L("memory.twin", side=short.get(t["side"], t["side"]), where=t["project"] or L("memory.global_short"))
+                                    for t in row.pop("twins")))
+        row["flags"] = [{"kind": flag, "label": L(f"memory.flag.{flag}"), "tip": L(f"memory.tip.{flag}", where=where)} for flag in row["flags"]]
+
+    for side in view["sides"]:
+        side["title"] = titles.get(side["id"], side["id"])
+        local = side["id"] == "win"
+        for rule in side["rules"]:
+            dress(rule)
+            if local and files.viewable("claude_md"):
+                rule["view"] = {"store": "claude_md", "path": "CLAUDE.md"}
+        for project in side["projects"]:
+            for entry in project["entries"]:
+                dress(entry)
+                if local and files.viewable("claude_memory"):
+                    entry["view"] = {"store": "claude_memory", "path": f"projects/{project['name']}/memory/{entry['file']}"}
+    return view
+
+
+@source
+def memory_scopes(g: Graph, f: dict) -> None:
+    """记忆磁贴上挂「记忆一览」的入口；哪一侧有重复的、像是放错作用域的，各留一条提示。"""
+    for side in memory_scope.analyse(_memory_sides(f))["sides"]:
+        memory_tile, rules_tile = _MEMORY_TILES[side["id"]]
+        g.mark(memory_tile, memory=side["id"])
+        g.mark(rules_tile, memory=side["id"])
+        counts = side["counts"]
+        if counts["dup"] or counts["misplaced"]:
+            g.quest("info", L("quest.memory_flags", side=L(f"zone.{'personal' if side['id'] == 'win' else 'work'}"),
+                              dup=counts["dup"], misplaced=counts["misplaced"]), memory_tile)
+
+
 def skeleton() -> dict:
     return {
         "zones": [{"id": zone, "title": L(f"zone.{zone}"), "accent": accent} for zone, accent in ZONES],
@@ -524,7 +578,7 @@ def build(facts: dict) -> dict:
         fn(graph, facts)
     timing = facts.get("timing") or {}
     wsl = facts.get("wsl") or {}
-    return {**skeleton(), **graph.to_dict(),
+    return {**skeleton(), **graph.to_dict(), "memory": memory_view(facts),
             "meta": {"taken_at": facts.get("taken_at", ""), "timing": timing, "bridge": L("bridge"),
                      # 页面据此自己隔几秒重读：WSL 那半张还没探，或者垫着上一轮的结果、新的还在路上
                      "pending": bool(wsl.get("pending")) or not wsl or bool(facts.get("refreshing")),

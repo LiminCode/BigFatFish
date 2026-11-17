@@ -394,6 +394,92 @@ def test_windows_links_keep_their_shape_and_a_wsl_link_without_a_distro_is_not_o
     assert "vscode://" not in detail and "/home/dev/.claude/CLAUDE.md" in detail      # 路径还在，只是不给一个打不开的链接
 
 
+# ---------------------------------------------------------------- 记忆一览
+
+def _memory(engine, graph: dict, steps: str, *, open_file: bool = True) -> dict:
+    """只跑记忆面板这一个模块。``steps`` 里用 ``m`` 操作面板；点「查看」会把参数记进 ``opened``。"""
+    strings = json.dumps(render.page_strings(), ensure_ascii=False)
+    data = json.dumps({"memory": graph["memory"]}, ensure_ascii=False)
+    opener = "function (store, title, path) { opened.push([store, title, path]); }" if open_file else "null"
+    return _evaluate(engine, FAKE_DOM + render.bundle(("util.js", "memory.js")) + f"""
+        var opened = [];
+        var m = memory({data}, {strings}, {{}}, {opener});
+        {steps}
+        return JSON.stringify({{hidden: document.getElementById('memory').hidden, html: document.getElementById('memory').innerHTML}});""")
+
+
+def test_memory_panel_lists_each_machine_then_global_then_projects(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    out = _memory(engine, graph, "m.open();")
+    html = out["html"]
+    assert out["hidden"] is False and html.count("<section>") == 2
+    assert html.index("个人 · 这台机器") < html.index("公司 · WSL")
+    personal = html[:html.index("公司 · WSL")]
+    assert personal.index("全局 · CLAUDE.md") < personal.index("项目 · potato") < personal.index("项目 · tomato")
+    for text in ("画图只画机制", "默认中文", "本机测试方法", "番茄的发布流程", "Carrot notes", "pytest 要设环境变量才能跑起来", "我的规矩"):
+        assert text in html
+    assert html.count('class="flag f-to_global"') == 2 and html.count('class="flag f-in_global"') == 1
+    assert 'title="同一条在两个以上的项目里各记了一份' in html
+
+
+def test_memory_panel_offers_view_only_for_files_this_machine_can_open(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    html = _memory(engine, graph, "m.open();")["html"]
+    assert 'data-path="projects/C--Users-dev-tomato/memory/run.md"' in html and 'data-store="claude_md"' in html
+    assert "carrot/memory" not in html                                   # WSL 一侧的没有「查看」
+    assert "data-store=" not in _memory(engine, graph, "m.open();", open_file=False)["html"]      # 离线快照：一个按钮都没有
+
+
+def test_memory_panel_can_show_only_what_is_flagged(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    html = _memory(engine, graph, "m.open(true);")["html"]
+    assert "番茄的发布流程" not in html and "我的规矩" not in html and "本机测试方法" in html
+    assert "看全部" in html and "只看有标记的" not in html
+
+
+def test_memory_panel_escapes_names_and_descriptions(engine):
+    i18n.set_language("zh")
+    win = samples.home()
+    win["memory_index"]["projects"][0]["entries"][0].update(name="<img src=x onerror=1>", description="<script>x</script>")
+    win["memory_index"]["rules"][0].update(title="<b>bold</b>", text='"quoted" & <i>')
+    html = _memory(engine, sources.build(samples.facts(win=win)), "m.open();")["html"]
+    assert "<img" not in html and "<script>" not in html and "<b>bold" not in html
+    assert "&lt;script&gt;x&lt;/script&gt;" in html and "&amp; &lt;i&gt;" in html
+
+
+def test_memory_panel_closes_and_survives_a_graph_without_memory(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    closed = _memory(engine, graph, "m.open(); m.close();")
+    assert closed["hidden"] is True and closed["html"] == ""
+    empty = _memory(engine, {"memory": {"sides": []}}, "m.open();")
+    assert "没有读到记忆" in empty["html"]
+
+
+def test_memory_tiles_and_the_header_offer_the_overview(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    assert 'data-memory="1"' in _details(engine, graph, "mem_win", "undefined")
+    assert 'data-memory="1"' in _details(engine, graph, "md_wsl", "undefined")
+    assert "data-memory" not in _details(engine, graph, "set_win", "undefined")
+    data = json.dumps(render.page_data(graph), ensure_ascii=False)
+    out = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"""
+        start({data}); return JSON.stringify({{button: document.getElementById('memory-open').textContent}});""")
+    assert out["button"] == "记忆一览"
+
+
+def test_viewer_can_be_opened_straight_at_one_file(engine):
+    listing = {"store": "claude_memory", "truncated": False, "files": [
+        {"path": "projects/a/memory/first.md", "label": "a / first.md", "bytes": 1, "mtime": ""},
+        {"path": "projects/a/memory/second.md", "label": "a / second.md", "bytes": 1, "mtime": ""}]}
+    out = _view(engine, [listing, _file("projects/a/memory/second.md", "two")],
+                "v.open('claude_memory', 't', 'projects/a/memory/second.md');")
+    assert out["asked"][1] == "/api/file?store=claude_memory&path=projects%2Fa%2Fmemory%2Fsecond.md" and "two" in out["text"]
+
+
 # ---------------------------------------------------------------- 原生模块
 
 def test_modules_link_as_real_es_modules_and_draw_the_same_page_as_the_bundle(engine):

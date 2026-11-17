@@ -25,10 +25,28 @@ def home(*, hooks=None, connectors=None, wsl=False) -> dict:
                       "managed_block": True, "managed_rules": 2, "managed_updated": "2026-01-01 10:00"},
         "projects": 4, "memory_count": 1,
         "memory_projects": [{"name": "C--Users-dev-tomato", "path": claude + sep + "projects", "mtime": "2026-01-02 03:04", "files": 2}],
-        "distilled_files": 1, "credentials_path": claude + sep + ".credentials.json", "credentials_file": True,
+        "distilled_files": 1, "memory_index": memory_index(wsl=wsl), "credentials_path": claude + sep + ".credentials.json", "credentials_file": True,
         "tools": [".config/gh"] if wsl else [".cursor"], "ssh_hosts": ["github.com", "10.0.0.1"] if wsl else [],
         "connectors": connectors, "mcp_probe_seconds": 6.1 if connectors is not None else None,
     }
+
+
+def memory_index(*, wsl=False) -> dict:
+    """``claude_home_probe.memory_index`` 的一份结果。两边故意放了几条一样的：全局里已有的、两个项目各记一份的、两台机器都有的。"""
+    def entry(file: str, name: str, description: str, kind: str = "feedback") -> dict:
+        return {"file": file, "name": name, "description": description, "type": kind, "bytes": 300, "mtime": "2026-01-02 03:04"}
+
+    if wsl:
+        return {"rules": [{"title": "画图只画机制", "text": "不画装饰"}], "sections": ["Team rules"], "entries": 1, "truncated": False,
+                "projects": [{"name": "-home-dev-carrot", "entries": [entry("notes.md", "Carrot notes", "pytest 要设环境变量才能跑起来", "project")]}]}
+    return {"rules": [{"title": "画图只画机制", "text": "不画装饰"}, {"title": "默认中文", "text": "解释用中文"}], "sections": ["我的规矩"],
+            "entries": 4, "truncated": False,
+            "projects": [
+                {"name": "C--Users-dev-potato", "entries": [entry("run-env.md", "本机测试方法", "换了一种说法的说明文字", "project")]},
+                {"name": "C--Users-dev-tomato", "entries": [
+                    entry("release.md", "番茄的发布流程", "先打标签再推送", "project"),
+                    entry("reply.md", "默认中文", "所有解释默认都用中文来写"),
+                    entry("run.md", "本机测试方法", "pytest 要设环境变量才能跑起来", "project")]}]}
 
 
 def wsl_home(**kwargs) -> dict:
