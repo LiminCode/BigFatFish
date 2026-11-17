@@ -236,6 +236,7 @@ STORES: tuple[Store, ...] = (
     Store("panorama_snapshot", "mixed", "data", ("panorama/*",), "cache", ("panorama",), _REBUILD),
     # ── 日志、锁和标记 ──
     Store("logs", "personal", "data", ("pet-*.log*", "pet-overlay-gate.log"), "log", ("app", "overlay_instance_gate"), _DISPOSABLE),
+    Store("settings_audit", "mixed", "data", ("settings-audit.jsonl",), "log", ("settings_audit",), _DISPOSABLE),
     Store("agent_events", "mixed", "data", ("agent-events/*.jsonl", "agent-events/*"), "log", ("claude_code", "agent_link"),
           _DISPOSABLE),
     Store("runtime_markers", "personal", "data",

@@ -13,7 +13,12 @@
   文件，要令牌。能读哪些由 ``files.py`` 把关；这里只把它的拒绝翻成状态码（``not_viewable`` / ``not_found`` → 404，
   ``bad_path`` → 400，``unavailable`` → 503：要去 WSL 里读而那边没回话）。没给读取器（``files=None``）时这两个网址不存在。
 
-以后加接口（读写设置、写文件、动作）就在 ``build_router`` 里多登记一条，或者拆成各自的登记函数在这里汇总。
+- ``GET /api/settings/<组>``、``PATCH /api/settings/<组>``、``GET /api/audit``：读、改一组设置，翻审计记录，都要令牌。
+  这是本机服务第一批**会改东西**的接口。守门检查（来源、令牌、JSON、大小）在 ``server.py``；改之前的每一道校验在
+  ``settings_api.py``；这里只把结果和拒绝翻成响应。拒绝时除了代码还带着页面用得上的东西（哪几项不对、现在的值）。
+  没给设置入口（``settings=None``）时这三个网址不存在。
+
+以后加接口（写文件、动作）就在 ``build_router`` 里多登记一条，或者拆成各自的登记函数在这里汇总。
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ from urllib.parse import parse_qs
 from . import render
 from .feed import Feed
 from .files import FileError
+from .settings_api import Busy, SettingsError
 from .server import JSON_TYPE, HttpError, Request, Response, Router
 
 #: 一次「等新数据」最多挂多久。比常见的中间环节的空闲超时（30 秒起）短；页面拿到 204 会立刻再来。
@@ -46,7 +52,32 @@ def _add_file_routes(router: Router, reader) -> None:
     router.add("GET", "/api/file", lambda request: guarded(lambda: reader.read(one(request, "store"), one(request, "path"))))
 
 
-def build_router(feed: Feed, *, files=None, wait_seconds: float = LONG_POLL_SECONDS) -> Router:
+AUDIT_DEFAULT, AUDIT_MAX = 100, 500
+
+
+def _add_settings_routes(router: Router, port) -> None:
+    """``port`` 有三个方法：``read_settings(组)``、``write_settings(组, 请求体)``、``read_audit(条数)``。
+    前两个它自己负责转到界面线程上去办（``PanoramaService.on_gui``）。"""
+    def guarded(call) -> Response:
+        try:
+            return Response.json(call())
+        except SettingsError as exc:
+            return Response.json({"error": exc.code, **exc.detail}, exc.status)
+        except Busy:
+            return Response.error(503, "busy")
+
+    def audit(request: Request) -> Response:
+        asked = parse_qs(request.query).get("limit", [""])[-1]
+        limit = int(asked) if asked.isdigit() and 1 <= int(asked) <= AUDIT_MAX else AUDIT_DEFAULT
+        return Response.json({"entries": port.read_audit(limit)})
+
+    router.add("GET", "/api/settings/{group}", lambda request: guarded(lambda: port.read_settings(request.params["group"])))
+    router.add("PATCH", "/api/settings/{group}",
+               lambda request: guarded(lambda: port.write_settings(request.params["group"], request.json())))
+    router.add("GET", "/api/audit", audit)
+
+
+def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float = LONG_POLL_SECONDS) -> Router:
     router = Router()
     router.static("/", lambda: render.shell().encode("utf-8"), "text/html; charset=utf-8")
     for name, content_type in render.ASSETS.items():
@@ -73,4 +104,6 @@ def build_router(feed: Feed, *, files=None, wait_seconds: float = LONG_POLL_SECO
     router.add("GET", "/api/graph", graph)
     if files is not None:
         _add_file_routes(router, files)
+    if settings is not None:
+        _add_settings_routes(router, settings)
     return router
