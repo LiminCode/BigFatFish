@@ -1,0 +1,230 @@
+# -*- coding: utf-8 -*-
+"""设置表：每一项能在配置全景页面上改的设置声明一次（决定见 docs/adr/0014-panorama-becomes-the-console.md）。
+
+**只有声明和几个纯函数，不碰 Qt，不读写任何文件。** 谁用它：
+
+- 本机服务按它回答「这一组有哪些设置、各用什么控件、现在是什么值」，页面照着画通用控件——页面里没有任何一项设置的名字；
+- 写入链路按它校验页面提交的改动（哪一项、什么类型、在不在可选值里）；
+- 测试拿它当守卫：功能多读了一个设置键却没登记，``tests/test_settings_table.py`` 就红。
+
+**搬一组设置到页面上 = 在 ``GROUPS`` 里加一个 ``Group``。** 读和校验不另写：一律走那个功能自己的 ``normalize``，
+所以表里的默认值就是 ``normalize({})`` 的结果，页面上看到的就是功能实际生效的值。
+
+一项设置要声明的东西对应 ``docs/settings-and-menu.md`` 里「准入记录」要求的字段：
+
+- ``id``：组内标识，也是它在那一组配置字典里的位置；点号表示下一层（``sources.jira``）；
+- ``control``：页面上用哪种控件（``CONTROLS``）；
+- ``choices``：下拉的可选值。``choice`` 只能选其中之一，``choice_or_text`` 还可以自己填；
+- ``commit``：什么时候算存上。不写就按控件定——开关和下拉一动就存（``immediate``），文本框等用户点保存（``on_finish``）；
+- ``disclosure``：``primary`` 直接露出，``advanced`` 收在「高级」里；
+- ``depends_on``：同组的一个开关；它关着时这一项变灰；
+- ``builtin``：只给长文本用——留空时功能实际用的那段内置文字（给页面当底稿显示，也是「恢复内置」的目标）。
+  它是个函数，参数是这一组当前生效的值：内置提示词会随别的设置变（勾了哪些来源）。
+
+文字不在这里：标题和说明在字表里，键由 ``title_key`` / ``hint_key`` 给出（默认 ``settings.<组>.<id>`` 和它加 ``_hint``；
+从 Qt 设置窗口搬过来的那些直接沿用原来的键，不抄第二份）。
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from . import claude_hooks
+from . import work_briefing as wb
+
+ZONES = ("personal", "work")                # 这一组设置管的是哪个账号那一侧的功能
+CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text")
+COMMITS = ("immediate", "on_finish", "confirm")
+DISCLOSURES = ("primary", "advanced")
+_TEXT_CONTROLS = ("text", "long_text")
+
+
+@dataclass(frozen=True)
+class Setting:
+    id: str
+    control: str
+    choices: tuple = ()
+    commit: str = ""                        # 空 = 按控件定，见 commit_policy
+    disclosure: str = "primary"
+    depends_on: str = ""
+    builtin: Callable[[dict], str] | None = None
+    text: str = ""                          # 标题的文案键；空 = settings.<组>.<id>
+    hint: str = ""                          # 说明的文案键；空 = 标题的键加 _hint
+
+    @property
+    def commit_policy(self) -> str:
+        return self.commit or ("on_finish" if self.control in _TEXT_CONTROLS else "immediate")
+
+
+@dataclass(frozen=True)
+class Group:
+    id: str
+    domain: str                             # 归哪个能力域（和 Qt 设置窗口的域同名）
+    config_key: str                         # 这一组存在 config.json 的哪个顶层键下
+    zone: str
+    normalize: Callable[[Any], dict]        # 那个功能自己的归一化：读、默认值、校验都靠它
+    settings: tuple[Setting, ...]
+    title_key: str = ""                     # 这一组叫什么
+    available: Callable[[], bool] | None = None     # 这台机器上用不用得了；None = 总能用
+    unavailable_text: str = ""              # 用不了时的说明（文案键）
+    not_editable: dict = field(default_factory=dict)    # normalize 给出、但有意不放到页面上改的键 → 为什么
+
+
+def title_key(group: Group, setting: Setting) -> str:
+    return setting.text or f"settings.{group.id}.{setting.id}"
+
+
+def hint_key(group: Group, setting: Setting) -> str:
+    return setting.hint or title_key(group, setting) + "_hint"
+
+
+# ───────────────────────── 在嵌套字典里按点号取放 ─────────────────────────
+
+def flatten(value: dict, prefix: str = "") -> dict:
+    """``{"a": 1, "b": {"c": 2}}`` → ``{"a": 1, "b.c": 2}``。只展开字典，列表当作一个值。"""
+    out: dict = {}
+    for key, item in value.items():
+        path = f"{prefix}{key}"
+        if isinstance(item, dict):
+            out.update(flatten(item, path + "."))
+        else:
+            out[path] = item
+    return out
+
+
+def get_path(value: dict, path: str, default: Any = None) -> Any:
+    current: Any = value
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return default
+        current = current[part]
+    return current
+
+
+def set_path(value: dict, path: str, item: Any) -> dict:
+    """返回一份改过的副本；原来那份不动。"""
+    out = copy.deepcopy(value) if isinstance(value, dict) else {}
+    current = out
+    parts = path.split(".")
+    for part in parts[:-1]:
+        if not isinstance(current.get(part), dict):
+            current[part] = {}
+        current = current[part]
+    current[parts[-1]] = item
+    return out
+
+
+# ───────────────────────── 读一组设置 ─────────────────────────
+
+def values(group: Group, raw: Any) -> dict:
+    """这一组每一项现在生效的值（按表里声明的顺序）。``raw`` 是配置里那个键下存着的东西，可以是任何样子。"""
+    effective = group.normalize(raw)
+    return {setting.id: get_path(effective, setting.id) for setting in group.settings}
+
+
+def defaults(group: Group) -> dict:
+    """什么都没配时的值：就是功能对空配置给出的结果。"""
+    return values(group, {})
+
+
+def version(group: Group, raw: Any) -> str:
+    """这一组当前值的指纹。页面读的时候带上它，写的时候交回来：对不上就是页面看到的值已经旧了。
+
+    按**生效值**算，不按配置文件里的原样：配置里多一个没用的键、或者少写一个等于默认的键，版本不变。
+    """
+    canonical = json.dumps(group.normalize(raw), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def is_available(group: Group) -> bool:
+    """这一组在这台机器上用不用得了。条件自己出错按用不了算，不往外抛。"""
+    if group.available is None:
+        return True
+    try:
+        return bool(group.available())
+    except Exception:  # noqa: BLE001 - 探测条件失败不该让读设置的接口报错
+        return False
+
+
+def group(group_id: str) -> Group:
+    for item in GROUPS:
+        if item.id == group_id:
+            return item
+    raise KeyError(group_id)
+
+
+# ───────────────────────── 自检 ─────────────────────────
+
+def _fits(control: str, default: Any) -> bool:
+    if control == "toggle":
+        return isinstance(default, bool)
+    if control == "number":
+        return isinstance(default, (int, float)) and not isinstance(default, bool)
+    if control in ("text", "long_text", "choice_or_text"):
+        return isinstance(default, str)
+    return True
+
+
+def validate(groups: tuple[Group, ...] | None = None) -> None:
+    """表里有不自洽的地方就抛 ``ValueError``（导入时不跑，测试里跑）。"""
+    groups = GROUPS if groups is None else groups
+    seen_groups = set()
+    for item in groups:
+        def bad(message: str, item=item) -> ValueError:
+            return ValueError(f"settings group {item.id!r}: {message}")
+
+        if item.id in seen_groups:
+            raise bad("duplicate group id")
+        seen_groups.add(item.id)
+        if item.zone not in ZONES or not item.config_key or not item.settings:
+            raise bad("zone, config_key and settings are required")
+        produced = flatten(item.normalize({}))
+        by_id: dict[str, Setting] = {}
+        for setting in item.settings:
+            if setting.id in by_id:
+                raise bad(f"{setting.id} is declared twice")
+            by_id[setting.id] = setting
+            if setting.control not in CONTROLS or setting.disclosure not in DISCLOSURES or setting.commit_policy not in COMMITS:
+                raise bad(f"{setting.id}: unknown control, disclosure or commit policy")
+            if setting.control in ("choice", "choice_or_text") and not setting.choices:
+                raise bad(f"{setting.id}: a choice needs choices")
+            if setting.id not in produced:
+                raise bad(f"{setting.id}: the feature's normalize() does not produce this key")
+            if not _fits(setting.control, produced[setting.id]):
+                raise bad(f"{setting.id}: a {setting.control} cannot hold the default {produced[setting.id]!r}")
+        for setting in item.settings:
+            if setting.depends_on and (setting.depends_on not in by_id or by_id[setting.depends_on].control != "toggle"):
+                raise bad(f"{setting.id}: depends_on must name a toggle in the same group")
+
+
+# ───────────────────────── 表 ─────────────────────────
+
+_MODEL_CHOICES = ("sonnet", "haiku", "opus")
+
+
+def _briefing_prompt(language: str) -> Setting:
+    return Setting(f"prompt_{language}", "long_text", disclosure="advanced",
+                   builtin=lambda effective: wb.default_prompt_template(language, effective.get("sources")),
+                   text=f"settings.work_briefing.prompt_{language}", hint="briefing.settings.prompt_hint")
+
+
+GROUPS: tuple[Group, ...] = (
+    # 工作简报：到点让 WSL 里公司账号的 Claude Code 只读地汇总几个来源。模型名和 effort 会拼进 shell 命令、
+    # 提示词会交给带工具的 AI：这一组的每一项写入都要过 work_briefing.normalize 的白名单。
+    Group("work_briefing", "briefing", wb.CONFIG_KEY, "work", wb.normalize, (
+        Setting("enabled", "toggle", text="briefing.settings.enabled"),
+        # 时间和模型在 Qt 窗口里是「下拉 + 自定义」：功能本身收任何 HH:MM、任何合规的模型名，所以这里是可自填的下拉
+        Setting("time", "choice_or_text", choices=wb.TIME_CHOICES, text="briefing.settings.time"),
+        Setting("weekdays_only", "toggle", text="briefing.settings.weekdays"),
+        Setting("model", "choice_or_text", choices=_MODEL_CHOICES, text="briefing.settings.model"),
+        Setting("effort", "choice", choices=wb.EFFORT_CHOICES, text="briefing.settings.effort"),
+        *(Setting(f"sources.{source}", "toggle", text=f"briefing.settings.source.{source}") for source in wb.SOURCES),
+        _briefing_prompt("zh"),
+        _briefing_prompt("en"),
+        Setting("priority_rules", "long_text", text="briefing.settings.priority_rules"),
+    ), title_key="briefing.settings.section", available=lambda: bool(claude_hooks.wsl_exe()),
+        unavailable_text="briefing.settings.no_wsl"),
+)

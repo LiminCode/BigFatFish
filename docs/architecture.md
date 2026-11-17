@@ -56,6 +56,9 @@
   `tests/test_data_stores.py` 扫源码里的文件名字面量，漏了就红。两张字表里各补三句话
   （`stores.<id>.name` / `.holds` / `.why`）；用了一个新的根，还要在 `pet/panorama/places.py` 里说它画在配置全景的哪里。
   详见 [配置与数据](config-and-data.md) 的「存储表」。
+- **给一个已经搬到配置全景的功能加设置项**（现在只有工作简报登记在案）要在 `pet/settings_table.py` 那一组里声明一个
+  `Setting`，或者写进那一组的 `not_editable` 说明为什么不给改。`tests/test_settings_table.py` 拿功能的 `normalize({})`
+  对表，漏了就红。详见 [设置与右键菜单](settings-and-menu.md) 的「准入记录」。
 - **设置页控件必须包在 `SettingRow` 里**。域聚合用 `findChildren(SettingRow)` 收集再搬进共享卡片，
   页面自己布局里的普通控件（包括按钮）搬不过去，会直接消失。行的键在 `objectName`（`settingRow_<key>`）。
 
