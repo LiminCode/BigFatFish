@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """只读地探一个 Claude Code 家目录（``~/.claude`` 和 ``~/.claude.json``）。
 
-**只用标准库**，这是有意的：同一份源码跑两遍。Windows 这边直接 import 调 ``probe()``；WSL 那边由
+**只用标准库**，这是有意的：同一份源码跑两遍（WSL 那边还会把存储表和走目录的代码拼在它前面，见文件末尾）。Windows 这边直接 import 调 ``probe()``；WSL 那边由
 ``pet.panorama.probes.wsl_side`` 把这个文件的文本从标准输入喂给发行版里的 ``python3 -``。两边由同一份
 实现来读，不会各写一套然后慢慢读出两个结果。所以这里不能 import 肥鱼的任何模块。
 
@@ -358,4 +358,9 @@ def probe(home, with_mcp=False, mcp_timeout=90):
 
 
 if __name__ == "__main__":
-    print(json.dumps(probe(os.path.expanduser("~"), with_mcp="--mcp" in sys.argv), ensure_ascii=False))
+    _result = probe(os.path.expanduser("~"), with_mcp="--mcp" in sys.argv)
+    # 被和存储表、走目录的代码拼在一起喂进来时（probes.wsl_source），那两样就在同一个作用域里：顺手数一遍存储
+    _walk, _belongs = globals().get("survey_tree"), globals().get("match")
+    if _walk and _belongs:
+        _result["storage"] = _walk("claude_home_wsl", os.path.join(os.path.expanduser("~"), ".claude"), _belongs)
+    print(json.dumps(_result, ensure_ascii=False))

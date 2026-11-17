@@ -11,7 +11,7 @@
 
 - ``GET /api/files?store=<存储>``、``GET /api/file?store=<存储>&path=<相对路径>``：只读地列出、读取一项存储名下的
   文件，要令牌。能读哪些由 ``files.py`` 把关；这里只把它的拒绝翻成状态码（``not_viewable`` / ``not_found`` → 404，
-  ``bad_path`` → 400）。没给读取器（``files=None``）时这两个网址不存在。
+  ``bad_path`` → 400，``unavailable`` → 503：要去 WSL 里读而那边没回话）。没给读取器（``files=None``）时这两个网址不存在。
 
 以后加接口（读写设置、写文件、动作）就在 ``build_router`` 里多登记一条，或者拆成各自的登记函数在这里汇总。
 """
@@ -28,7 +28,7 @@ from .server import JSON_TYPE, HttpError, Request, Response, Router
 LONG_POLL_SECONDS = 25.0
 
 
-_FILE_ERROR_STATUS = {"not_viewable": 404, "not_found": 404, "bad_path": 400}
+_FILE_ERROR_STATUS = {"not_viewable": 404, "not_found": 404, "bad_path": 400, "unavailable": 503}
 
 
 def _add_file_routes(router: Router, reader) -> None:

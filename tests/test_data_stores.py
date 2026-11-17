@@ -146,6 +146,7 @@ def test_names_seen_in_a_real_data_directory_are_recognised(name, expected):
     ("projects/C--work-thing/0f0f0f0f-aaaa/subagents/agent.json", "claude_transcripts"),
     ("skills/my-skill/SKILL.md", "claude_skills"), ("plugins/installed_plugins.json", "claude_plugins"),
     ("file-history/abc/1", "claude_scratch"), ("settings.json.before-statusline-removal-2026-10-10", "claude_scratch"),
+    ("settings.json.bak-2026-10-09", "claude_scratch"), ("remote/session-1/server.sock", "claude_scratch"),
 ])
 def test_names_seen_in_a_real_claude_home_are_recognised(name, expected):
     """记忆文件和会话原文在同一个项目目录下：记忆要认成记忆（该留），其余认成会话原文（有意不留）。"""

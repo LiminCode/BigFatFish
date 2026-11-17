@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
-from .. import claude_hooks, config_backup, personal_vault, work_notes
-from . import claude_home_probe, features, storage_probe
+from .. import claude_hooks, config_backup, data_stores, personal_vault, work_notes
+from . import claude_home_probe, features, storage_probe, store_walk
 
 SecretGet = Callable[[str], str]
 GitRunner = Callable[..., "tuple[int, str]"]
@@ -74,12 +74,24 @@ def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git) -> 
     return info
 
 
+def wsl_source() -> str:
+    """喂给 WSL 的那一份源码：存储表、走目录的代码、家目录探针，三个文件按这个顺序拼成一个。
+
+    三个都只用标准库。拼在一起后落在同一个作用域里：探针的入口看到 ``survey_tree`` 和 ``match`` 都在，
+    就顺手把 ``~/.claude`` 走一遍，按存储表数出每一项有多少（结果里的 ``storage``）。
+    ``from __future__`` 只能出现在文件开头，所以各自的那一行摘掉，开头统一放一行。
+    """
+    parts = [Path(module.__file__).read_text(encoding="utf-8") for module in (data_stores, store_walk, claude_home_probe)]
+    marker = "from __future__ import annotations\n"
+    return marker + "\n\n".join(part.replace(marker, "") for part in parts)
+
+
 def wsl_side(run_wsl: Callable[..., "tuple[int, str]"] = claude_hooks.run_wsl, *, with_mcp: bool = True) -> dict:
-    """WSL 默认发行版里的 Claude Code。把 ``claude_home_probe`` 的源码从标准输入喂给那边的 ``python3``。
+    """WSL 默认发行版里的 Claude Code。把 ``wsl_source()`` 从标准输入喂给那边的 ``python3``。
 
     返回探针结果；没有 WSL 是 ``{"absent": True}``；跑不起来是 ``{"error": 说明}``。
     """
-    source = Path(claude_home_probe.__file__).read_text(encoding="utf-8")
+    source = wsl_source()
     code, out = run_wsl(["-e", "python3", "-", *(["--mcp"] if with_mcp else [])], input_text=source, timeout=WSL_TIMEOUT_S)
     if code == 127:
         return {"absent": True}

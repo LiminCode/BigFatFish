@@ -186,7 +186,7 @@ def _claude_home(zone: str, root: str, suffix: str) -> tuple[Store, ...]:
         store("claude_scratch",
               ("file-history/*", "shell-snapshots/*", "sessions/*", "cache/*", "backups/*", "paste-cache/*", "debug/*",
                "session-env/*", "ide/*", "downloads/*", "chrome/*", "daemon/*", "spares/*", "state/*", "*.bak", "*.bak2",
-               ".last-*", "settings.json.before-*"), "state", ("claude_code",), _DISPOSABLE),
+               ".last-*", "settings.json.before-*", "*.bak-*", "remote/*"), "state", ("claude_code",), _DISPOSABLE),
     )
 
 

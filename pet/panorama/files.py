@@ -7,7 +7,8 @@
 1. 那一项存储在 ``VIEWABLE`` 里，种类不是登录凭据或密钥（``NEVER``），它的根在这台机器上读得到（``ROOTS``）；
 2. 路径是一条规规矩矩的相对路径：正斜杠、没有 ``..`` / ``.`` / 空段、不是绝对路径、不带盘符；
 3. 按存储表的模式，这条路径**正好属于这一项**（同一个目录下别的存储的文件不算，比如项目目录里的会话原文）；
-4. 解开符号链接之后仍然在根目录里面，而且是个普通文件。
+4. 路径上**不经过任何符号链接或目录联接**，而且是个普通文件。解开链接后的真实位置必须正好是「根 + 这条路径」：
+   只查「还在根里面」不够——根里面的一个链接可以让一条看着属于「项目记忆」的路径，真身落在登录凭据上。
 
 哪一关没过都只回一个短代码（``not_viewable`` / ``bad_path`` / ``not_found``），不说为什么，也不带任何内容。
 
@@ -17,18 +18,23 @@
 
 两样东西永远不在名单里，``viewable()`` 按种类再拦一次：登录凭据（``.credentials.json``）和钥匙串——
 看它们的原文没有用处，万一截图或投屏却会泄漏。不是文字的东西（图片、音效、语音缓存）、会话原文、日志、缓存也不在：
-前者显示不了，后者量大，要看再加。WSL 里那个家目录要经 ``wsl.exe`` 去读，这一步还没做。
+前者显示不了，后者量大，要看再加。
 
-**只用标准库、不碰 Qt。** 在本机服务的请求线程上跑。
+WSL 里那个家目录的文件（``claude_home_wsl``）经 ``wsl.exe`` 去读：前三关照旧在这边过，过不了的根本不会起进程；
+第四关只有在 WSL 里面才守得了，由 ``wsl_file_agent`` 守。构造 ``Reader`` 时没给 ``run_wsl`` 的话，那一侧的存储读不了。
+
+**只用标准库、不碰 Qt**（怎么起 ``wsl.exe`` 由调用方传进来）。在本机服务的请求线程上跑。
 """
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 from pathlib import Path, PurePosixPath
 
 from .. import data_stores as ds
+from . import wsl_file_agent
 from .claude_home_probe import BLOCK_RE
 
 #: 能在页面上打开看的存储：设置、人和 AI 写的文字内容、JSON 簿记。加一项之前先确认它是文字。
@@ -40,18 +46,23 @@ VIEWABLE = (
     "chat_sessions", "todo_items", "message_log",
     # 簿记
     "session_history", "config_backup_state", "distill_state", "assistant_state", "work_state",
+    # WSL 里公司 Claude Code 的家目录（经 wsl.exe 读）
+    "claude_settings_wsl", "claude_md_wsl", "claude_memory_wsl", "claude_skills_wsl",
 )
 #: 不管名单怎么写都不给看的种类。
 NEVER = ("secret", "login")
-#: 这台机器上直接读得到的根。``home`` 不会被走一遍：那个根下只有模式里写了确切名字的文件。
-ROOTS = ("data", "claude_home", "home")
+#: 读得到的根。``home`` 不会被走一遍：那个根下只有模式里写了确切名字的文件。``claude_home_wsl`` 在 WSL 里。
+ROOTS = ("data", "claude_home", "home", "claude_home_wsl")
+WSL_ROOT = "claude_home_wsl"
+WSL_TIMEOUT_S = 20.0        # 一次去 WSL 里列 / 读，最多等这么久（发行版冷启动要几秒）
+WSL_CANDIDATES = 20_000     # 让 WSL 那边最多报这么多个候选文件，这边再按存储表筛
 BINARY_PROBE = 8192         # 开头这么多字节里有 NUL 就当它不是文字
 MAX_BYTES = 512 * 1024      # 一个文件最多给页面这么多；再大就截断并说明
 LIST_LIMIT = 500            # 一项存储最多列这么多个文件
 
 
 class FileError(Exception):
-    """读不了。``code`` 给页面看：``not_viewable`` / ``bad_path`` / ``not_found``。"""
+    """读不了。``code`` 给页面看：``not_viewable`` / ``bad_path`` / ``not_found`` / ``unavailable``（WSL 没回话）。"""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -106,33 +117,69 @@ def _marks(text: str) -> list[dict]:
 
 
 class Reader:
-    """绑定了这台机器上两个根目录的读取器：``listing`` 列一项存储名下的文件，``read`` 读其中一个。"""
+    """绑定了几个根目录的读取器：``listing`` 列一项存储名下的文件，``read`` 读其中一个。
 
-    def __init__(self, *, config_dir: str | Path, home: str | Path) -> None:
+    ``run_wsl`` 是「在默认发行版里跑一条命令」的函数（``claude_hooks.run_wsl`` 那个样子）；不给就读不了 WSL 一侧。
+    """
+
+    def __init__(self, *, config_dir: str | Path, home: str | Path, run_wsl=None) -> None:
         self._roots = {"data": Path(config_dir), "claude_home": Path(home) / ".claude", "home": Path(home)}
+        self._run_wsl = run_wsl
 
-    def _store(self, store_id: str) -> tuple[ds.Store, Path]:
+    def _store(self, store_id: str) -> tuple[ds.Store, Path | None]:
         if not viewable(store_id):
             raise FileError("not_viewable")
         store = _STORES[store_id]
+        if store.root == WSL_ROOT:
+            if self._run_wsl is None:
+                raise FileError("not_viewable")
+            return store, None
         return store, self._roots[store.root]
+
+    def _ask_wsl(self, request: dict) -> dict:
+        """让 WSL 里的 ``wsl_file_agent`` 办一件事。请求写成源码里的一个字符串字面量，不经过命令行。"""
+        source = Path(wsl_file_agent.__file__).read_text(encoding="utf-8") + f"\nagent_main({json.dumps(request)!r})\n"
+        try:
+            code, out = self._run_wsl(["-e", "python3", "-"], input_text=source, timeout=WSL_TIMEOUT_S)
+            start = out.find("{")
+            answer = json.loads(out[start:]) if code == 0 and start >= 0 else None
+        except Exception:  # noqa: BLE001 - 起不来、超时、回的不是 JSON：对页面都是「那边没回话」
+            answer = None
+        if not isinstance(answer, dict):
+            raise FileError("unavailable")
+        if answer.get("error"):
+            raise FileError(answer["error"] if answer["error"] in ("not_found", "bad_path") else "unavailable")
+        return answer
+
+    @staticmethod
+    def _starts(store: ds.Store) -> list[str]:
+        """这一项的文件可能在哪些子目录下：每条带通配符的模式里，第一个通配符之前的那段目录（空串 = 根）。"""
+        return sorted({pattern.split("*", 1)[0].rsplit("/", 1)[0] if "/" in pattern.split("*", 1)[0] else ""
+                       for pattern in store.patterns if "*" in pattern})
 
     @staticmethod
     def _inside(root: Path, relative: str) -> Path | None:
-        """第四关：解开链接后的真实路径；跑到根外面去了、或者不是普通文件，返回 ``None``。"""
+        """第四关：解开链接后的真实路径。它必须正好是「根 + 这条相对路径」——路径上经过了链接（不管绕到根外面
+        还是根里面别的地方）、或者不是普通文件，返回 ``None``。"""
         try:
             real_root = root.resolve(strict=True)
             real = (root / relative).resolve(strict=True)
-        except (OSError, RuntimeError):
+            straight = real.relative_to(real_root).as_posix() == relative
+        except (OSError, RuntimeError, ValueError):
             return None
-        return real if real.is_file() and real_root in real.parents else None
+        return real if straight and real.is_file() else None
 
     def listing(self, store_id: str) -> dict:
         """这一项存储名下、这台机器上此刻有的文件（按路径排序，最多 ``LIST_LIMIT`` 个）。"""
         store, root = self._store(store_id)
+        if root is None:                                        # WSL 一侧：那边报候选，这边按存储表筛
+            answer = self._ask_wsl({"op": "list", "starts": self._starts(store), "limit": WSL_CANDIDATES,
+                                    "names": [pattern for pattern in store.patterns if "*" not in pattern]})
+            mine = [{"path": f["path"], "label": _label(store, f["path"]), "bytes": f.get("bytes", 0), "mtime": f.get("mtime", "")}
+                    for f in answer.get("files") or [] if ds.match(store.root, str(f.get("path") or "")) is store]
+            return {"store": store_id, "files": mine[:LIST_LIMIT], "truncated": len(mine) > LIST_LIMIT or bool(answer.get("truncated"))}
         found: list[dict] = []
-        for start in sorted({pattern.split("*", 1)[0].rsplit("/", 1)[0] if "/" in pattern.split("*", 1)[0] else ""
-                             for pattern in store.patterns if "*" in pattern}):
+        for start in self._starts(store):
             stack = [str(root / start) if start else str(root)]
             while stack:
                 try:
@@ -163,6 +210,11 @@ class Reader:
         relative = _clean(path)
         if ds.match(store.root, relative) is not store:
             raise FileError("bad_path")
+        if root is None:                                        # WSL 一侧：前三关过了才起进程，第四关在那边
+            answer = self._ask_wsl({"op": "read", "path": relative, "max": MAX_BYTES})
+            text = str(answer.get("text") or "")
+            return {"store": store_id, "path": relative, "text": text, "bytes": answer.get("bytes", 0), "mtime": answer.get("mtime", ""),
+                    "truncated": bool(answer.get("truncated")), "binary": bool(answer.get("binary")), "marks": _marks(text)}
         if not (root / relative).exists():
             raise FileError("not_found")
         real = self._inside(root, relative)
