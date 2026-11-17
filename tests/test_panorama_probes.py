@@ -120,7 +120,8 @@ def test_wsl_side_pipes_the_probe_source_into_python_inside_the_distro():
 
     assert probes.wsl_side(fake_wsl) == {"home": "/home/dev", "hooks": {}}
     assert seen["args"] == ["-e", "python3", "-", "--mcp"] and seen["timeout"] >= 60
-    assert seen["source"] == Path(claude_home_probe.__file__).read_text(encoding="utf-8")
+    assert seen["source"] == probes.wsl_source()
+    assert Path(claude_home_probe.__file__).read_text(encoding="utf-8").split("\n", 1)[1][:200] in seen["source"]
     probes.wsl_side(fake_wsl, with_mcp=False)
     assert seen["args"] == ["-e", "python3", "-"]
 

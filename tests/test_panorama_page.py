@@ -349,7 +349,7 @@ def test_view_buttons_appear_where_the_graph_offers_them_and_are_disabled_in_the
     assert listed.count("data-view=") == 3 and 'data-view="distill_entries"' in listed        # 样例里有文件的三项；密钥那一行没有
     assert 'data-view="claude_settings"' in _details(engine, graph, "set_win", "fakeApi([])") # 设置文件原样可看
     assert "data-view=" not in _details(engine, graph, "plug_win", "fakeApi([])")
-    assert "data-view=" not in _details(engine, graph, "md_wsl", "fakeApi([])")               # WSL 一侧这一步还读不了
+    assert 'data-view="claude_md_wsl"' in _details(engine, graph, "md_wsl", "fakeApi([])")    # WSL 一侧也能看了
 
 
 # ---------------------------------------------------------------- 「在 VS Code 打开」的链接
@@ -428,7 +428,7 @@ def test_memory_panel_offers_view_only_for_files_this_machine_can_open(engine):
     graph = sources.build(samples.facts())
     html = _memory(engine, graph, "m.open();")["html"]
     assert 'data-path="projects/C--Users-dev-tomato/memory/run.md"' in html and 'data-store="claude_md"' in html
-    assert "carrot/memory" not in html                                   # WSL 一侧的没有「查看」
+    assert 'data-store="claude_memory_wsl" data-path="projects/-home-dev-carrot/memory/notes.md"' in html     # WSL 一侧也有
     assert "data-store=" not in _memory(engine, graph, "m.open();", open_file=False)["html"]      # 离线快照：一个按钮都没有
 
 

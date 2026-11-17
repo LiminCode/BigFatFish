@@ -454,6 +454,9 @@ def _seen(f: dict) -> dict:
     """根 → {存储 id: 这台机器上此刻有多少}。没核对过的根不在里面（那些只按存储表列出，不说有没有）。"""
     surveyed = f.get("storage") or {}
     seen = {root: surveyed[root].get("stores") or {} for root in ("data", "claude_home", "home") if root in surveyed}
+    wsl_survey = (f.get("wsl") or {}).get("storage")
+    if isinstance(wsl_survey, dict) and _wsl_ready(f):         # WSL 那边的探针自己数的（老结果没有这一段）
+        seen["claude_home_wsl"] = wsl_survey.get("stores") or {}
     keys = sum(bool(p["key"]["present"]) for p in f["providers"]) + bool(f["github_token"]["present"])
     seen["keyring"] = {"api_keys": {"entries": keys}} if keys else {}
     return seen
@@ -515,8 +518,9 @@ def storage(g: Graph, f: dict) -> None:
 
     设计来自存储表，此刻的实际情况来自 ``facts["storage"]``（没有这一段也画得出来，只是不说各有多少）。
     """
-    surveyed, paths, seen = f.get("storage") or {}, _root_paths(f), _seen(f)
+    paths, seen = _root_paths(f), _seen(f)
     wsl = f.get("wsl") or {}
+    surveyed = {**(f.get("storage") or {}), **({"claude_home_wsl": wsl["storage"]} if "claude_home_wsl" in seen else {})}
     for place in places.PLACES:
         if not g.has(place.owner) or (place.wsl and not _wsl_ready(f)):
             continue
@@ -615,16 +619,17 @@ def memory_view(f: dict) -> dict:
 
     for side in view["sides"]:
         side["title"] = titles.get(side["id"], side["id"])
-        local = side["id"] == "win"
+        # WSL 一侧的要那边数过存储才给「查看」：没数过说明是老探针的结果，那边有没有这些文件都不知道
+        suffix = "" if side["id"] == "win" else "_wsl" if isinstance((f.get("wsl") or {}).get("storage"), dict) else None
         for rule in side["rules"]:
             dress(rule)
-            if local and files.viewable("claude_md"):
-                rule["view"] = {"store": "claude_md", "path": "CLAUDE.md"}
+            if suffix is not None and files.viewable("claude_md" + suffix):
+                rule["view"] = {"store": "claude_md" + suffix, "path": "CLAUDE.md"}
         for project in side["projects"]:
             for entry in project["entries"]:
                 dress(entry)
-                if local and files.viewable("claude_memory"):
-                    entry["view"] = {"store": "claude_memory", "path": f"projects/{project['name']}/memory/{entry['file']}"}
+                if suffix is not None and files.viewable("claude_memory" + suffix):
+                    entry["view"] = {"store": "claude_memory" + suffix, "path": f"projects/{project['name']}/memory/{entry['file']}"}
     return view
 
 

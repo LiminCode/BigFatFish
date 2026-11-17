@@ -12,14 +12,14 @@
 from __future__ import annotations
 
 import datetime as dt
-import os
 from pathlib import Path
 
 from .. import config_backup
 from .. import data_stores as ds
+from . import store_walk
 
-UNKNOWN_LIMIT = 30          # 不认得的文件最多报这么多个名字（总数照实报）
-MAX_FILES = 50_000          # 一个目录最多数这么多个文件：会话记录攒多了也不至于拖住采集
+UNKNOWN_LIMIT = store_walk.WALK_UNKNOWN_LIMIT       # 不认得的文件最多报这么多个名字（总数照实报）
+MAX_FILES = store_walk.WALK_MAX_FILES               # 一个目录最多数这么多个文件
 
 
 def _stamp(seconds: float) -> str:
@@ -48,39 +48,8 @@ def _finish(out: dict, tally: dict, unknown: list[str]) -> dict:
 
 
 def survey(root_key: str, root_dir: str | Path, *, max_files: int = MAX_FILES) -> dict:
-    """``root_dir`` 下每个文件归哪一项。不跟符号链接和目录联接进去（免得绕圈，也免得数到别处的东西）。"""
-    root = Path(root_dir)
-    out = _empty(root)
-    if not out["exists"]:
-        return out
-    tally: dict = {}
-    unknown: list[str] = []
-    prefix = len(str(root)) + 1
-    stack = [str(root)]
-    while stack and not out["truncated"]:
-        try:
-            entries = sorted(os.scandir(stack.pop()), key=lambda entry: entry.name)
-        except OSError:
-            continue
-        for entry in entries:
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    stack.append(entry.path)
-                    continue
-                stat = entry.stat(follow_symlinks=False)
-            except OSError:
-                continue
-            if out["files"] >= max_files:
-                out["truncated"] = True
-                break
-            out["files"] += 1
-            relative = entry.path[prefix:].replace(os.sep, "/")
-            store = ds.match(root_key, relative)
-            if store is None:
-                unknown.append(relative)
-            else:
-                _count(tally, store.id, stat.st_size, stat.st_mtime)
-    return _finish(out, tally, unknown)
+    """``root_dir`` 下每个文件归哪一项。走目录的那段代码在 ``store_walk``（WSL 那边跑的是同一段）。"""
+    return store_walk.survey_tree(root_key, str(Path(root_dir)), ds.match, max_files=max_files, unknown_limit=UNKNOWN_LIMIT)
 
 
 def named(root_key: str, root_dir: str | Path) -> dict:
@@ -113,7 +82,7 @@ def backup_state(cfg: dict, config_dir: str | Path, kb_repo: str = "") -> dict:
 
 
 def collect(cfg: dict, *, config_dir: str | Path, home: str | Path, kb_repo: str = "") -> dict:
-    """Windows 这一侧的全部存储事实。WSL 里那个家目录这一步还没逐个文件核对。"""
+    """Windows 这一侧的全部存储事实。WSL 里那个家目录由那边的探针自己数（见 ``probes.wsl_source``）。"""
     home = Path(home)
     return {"data": survey("data", config_dir), "claude_home": survey("claude_home", home / ".claude"),
             "home": named("home", home), "config_backup": backup_state(cfg, config_dir, kb_repo)}

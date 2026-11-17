@@ -70,7 +70,7 @@ def test_the_list_holds_settings_and_written_content_but_never_logins_or_keys():
     local = [s for s in ds.STORES if s.root in files.ROOTS and s.kind in ("settings", "content")]
     assert {s.id for s in local} - set(files.VIEWABLE) == {"island_icons", "user_assets"}
     assert files.viewable("claude_settings") and files.viewable("claude_json") and files.viewable("config")
-    assert not files.viewable("claude_md_wsl") and not files.viewable("no-such-store")
+    assert files.viewable("claude_md_wsl") and not files.viewable("claude_login_wsl") and not files.viewable("no-such-store")
 
 
 def test_a_login_or_key_cannot_be_made_viewable_by_adding_it_to_the_list(monkeypatch):
@@ -195,6 +195,22 @@ def test_a_directory_junction_that_leads_outside_the_root_is_refused(reader, tmp
     assert not any("sneaky" in f["path"] for f in reader.listing("claude_memory")["files"])
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="directory junctions are a Windows thing")
+def test_a_link_inside_the_root_cannot_pass_one_file_off_as_another(reader, tmp_path):
+    """根里面的一个联接指回根自己：``projects/x/memory/CLAUDE.md`` 看着是项目记忆，真身是全局规矩；
+    同样的办法能把登录凭据冒充成别的东西。真实位置不是「根 + 这条路径」就不给。"""
+    claude = tmp_path / "home" / ".claude"
+    alias = claude / "projects" / "C--alias" / "memory"
+    alias.parent.mkdir(parents=True)
+    if subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(claude)], capture_output=True).returncode != 0:
+        pytest.skip("cannot create a junction here")
+    with pytest.raises(files.FileError) as caught:
+        reader.read("claude_memory", "projects/C--alias/memory/CLAUDE.md")
+    assert caught.value.code == "bad_path"
+    assert not any("alias" in f["path"] for f in reader.listing("claude_memory")["files"])
+    assert reader.read("claude_md", "CLAUDE.md")["text"].startswith("# mine")              # 走正路照样读得到
+
+
 def test_a_large_file_is_cut_at_the_cap_and_says_so(reader, tmp_path):
     _write(tmp_path / "home" / ".claude" / "projects" / "p" / "memory" / "big.md", "é" * files.MAX_BYTES)
     out = reader.read("claude_memory", "projects/p/memory/big.md")
@@ -300,7 +316,8 @@ def test_the_graph_offers_viewing_only_where_there_is_something_viewable_on_this
     offered = {i["id"]: i.get("view") for n in graph["nodes"] for i in n.get("items", []) if "id" in i}
     assert offered["distill_entries"] == "distill_entries" and offered["claude_md"] == "claude_md"
     assert offered["distill_entries_work"] is None                       # 这台机器上没有这个文件
-    assert offered["claude_md_wsl"] is None and "view" not in nodes["md_wsl"]         # WSL 一侧这一步还读不了
+    assert offered["claude_md_wsl"] == "claude_md_wsl" and nodes["md_wsl"]["view"] == "claude_md_wsl"      # WSL 一侧经 wsl.exe 读
+    assert offered["claude_skills_wsl"] is None and offered["claude_login_wsl"] is None                    # 那边没有的、不许看的
     assert offered["config"] == "config" and offered["claude_settings"] == "claude_settings" and offered["claude_json"] == "claude_json"
     assert nodes["set_win"]["view"] == "claude_settings" and nodes["pet"]["view"] == "config"
     assert offered["api_keys"] is None and offered["claude_login"] is None and "view" not in nodes["plug_win"]

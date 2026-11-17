@@ -191,7 +191,9 @@ class PanoramaService(QObject):
                 from .routes import build_router
                 from .server import PanoramaServer
 
-                reader = Reader(config_dir=self._config.dir, home=Path.home())
+                from ..claude_hooks import run_wsl
+
+                reader = Reader(config_dir=self._config.dir, home=Path.home(), run_wsl=run_wsl)
                 self._server = PanoramaServer(build_router(self._feed, files=reader))
             self._server.start()
             return self._server.page_url()

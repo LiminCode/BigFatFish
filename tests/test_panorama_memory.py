@@ -188,7 +188,8 @@ def test_the_graph_carries_the_memory_view_for_both_sides_with_text_in_the_inter
     assert run["view"] == {"store": "claude_memory", "path": "projects/C--Users-dev-tomato/memory/run.md"}
     assert sides["win"]["rules"][0]["view"] == {"store": "claude_md", "path": "CLAUDE.md"}
     carrot = sides["wsl"]["projects"][0]["entries"][0]
-    assert "view" not in carrot and "view" not in sides["wsl"]["rules"][0]              # WSL 一侧的文件这一步还打不开
+    assert carrot["view"] == {"store": "claude_memory_wsl", "path": "projects/-home-dev-carrot/memory/notes.md"}     # 经 wsl.exe 读
+    assert sides["wsl"]["rules"][0]["view"] == {"store": "claude_md_wsl", "path": "CLAUDE.md"}
 
 
 def test_flags_become_one_note_per_side_and_the_memory_tiles_offer_the_view():

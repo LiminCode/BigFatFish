@@ -76,7 +76,19 @@ def wsl_home(**kwargs) -> dict:
         {"name": "claude.ai Tickets", "state": "auth", "detail": "! Needs authentication", "kind": "remote",
          "target": "https://tickets.acme.example/sse"},
     ])
-    return home(wsl=True, connectors=connectors, **kwargs)
+    out = home(wsl=True, connectors=connectors, **kwargs)
+    out["storage"] = wsl_storage()
+    return out
+
+
+def wsl_storage() -> dict:
+    """WSL 那边的探针自己数出来的存储（``store_walk.survey_tree`` 的结果）。"""
+    def seen(files: int, size: int) -> dict:
+        return {"files": files, "bytes": size, "mtime": "2026-01-02 03:04"}
+
+    stores = {"claude_settings_wsl": seen(1, 2000), "claude_md_wsl": seen(1, 300), "claude_memory_wsl": seen(2, 600),
+              "claude_transcripts_wsl": seen(4, 500_000), "claude_login_wsl": seen(1, 400)}
+    return {"path": "/home/dev/.claude", "exists": True, "files": 9, "truncated": False, "stores": stores, "unknown": [], "unknown_count": 0}
 
 
 def provider(provider_id="api-1", *, active=True, key=True) -> dict:

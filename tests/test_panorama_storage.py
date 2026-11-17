@@ -228,7 +228,9 @@ def test_keyring_entries_are_counted_from_what_the_probe_already_knows():
 
 
 def test_the_wsl_side_is_shown_from_the_registry_alone_until_it_is_surveyed():
-    graph = sources.build(samples.facts())
+    older = samples.wsl_home()
+    older.pop("storage")                                                 # 老探针的结果：那边没数过存储
+    graph = sources.build(samples.facts(wsl=older))
     local = _node(graph, "st_cc_wsl_local")
     assert all(i["detail"] == "" and i["state"] == "warn" for i in local["items"])
     assert not any(n["id"].startswith("st_cc_wsl") for n in sources.build(samples.facts(wsl="pending"))["nodes"])
