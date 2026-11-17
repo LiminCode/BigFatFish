@@ -117,6 +117,23 @@
   命令行里名字像密钥的参数（`--token X`、`--api-key=X`、`TOKEN=X`）把值换成 `***`。认的是**参数名字**像不像，不是值，
   所以直接把密钥当位置参数写在命令行里的认不出来。要看原文，点「查看」开 `~/.claude.json`（那条路不脱敏）。
 
+### 工作空间（「项目与会话」磁贴）
+
+两个 Claude Code 各有一块：它在哪些项目目录里干过活、各有多少次会话、上次什么时候。
+
+- 数据由家目录探针带回来（`claude_home_probe.workspaces`）：`~/.claude/projects/` 下每个**有会话记录或有记忆**的目录一条，
+  最近用过的在前，最多列 60 个（总数照实报）。既没有会话也没有记忆的目录只数个数。
+- **真实路径不猜。** 目录名是绝对路径编码出来的（不是字母数字的字符全换成 `-`），反过来解不回去。所以：先拿 `~/.claude.json`
+  里登记的项目路径编码后去对目录名；没登记的，看最新一份会话记录开头的工作目录，**编码后正好等于目录名才用**
+  （会话中途换过目录的对不上）；都不行就写「不知道」，灰点。
+- **目录还在不在**：路径知道、目录已经删掉的显示成未启用（变淡、垫底），并合成一条提示——它的会话记录和记忆还占着地方。
+  路径是另一个系统的写法（在 WSL 里看到 `C:\…`）答不了，也是灰点。
+- 每条下面：路径、会话原文多少次多大、记忆几条、上一次会话的几个数（时长、花费、增删行数——来自 `~/.claude.json`
+  里那个项目的 `lastDuration` / `lastCost` / `lastLinesAdded` / `lastLinesRemoved`，没登记的项目没有）。
+- **只读文件名、大小、时间**，外加会话记录开头的那一个 `cwd` 字段。会话里说了什么不读、不带。没有会话标题：
+  那要读会话内容，这一步不做。
+- 空的项目目录攒到 20 个以上单独提一句（自动化跑出来的一次性目录会留下很多）。
+
 ### 记忆按作用域（「记忆一览」）
 
 页面右上角的「记忆一览」，和 `CLAUDE.md`、项目记忆这四块磁贴详情里的同名按钮，打开一张面板：每台机器一栏，
@@ -312,6 +329,9 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
   `effortLevel`、`permissions.allow`、`enabledPlugins`。
 - `~/.claude.json`：`oauthAccount.emailAddress` / `organizationName`、`mcpServers`、`claudeAiMcpEverConnected`。
 - `~/.claude/plugins/installed_plugins.json` 的 `plugins`；`~/.claude/.credentials.json`（只看在不在）。
+- `~/.claude/projects/<目录名>/`：目录名 = 项目绝对路径里非字母数字的字符全换成 `-`；里面每个 `*.jsonl` 是一次会话，
+  开头几行带 `"cwd"`。`~/.claude.json` 的 `projects.<路径>` 下有 `lastCost`、`lastDuration`（毫秒）、`lastLinesAdded`、
+  `lastLinesRemoved`。
 - `claude mcp list` 的输出行 `名字: 地址或命令 - 状态`：按首个 `: ` 和末个 ` - ` 切（命令里可以有空格）；状态含 `Connected` = 通，
   含 `authentication` = 待授权，其余 = 坏。中间那一段以 `http://` / `https://` 开头算远程服务，否则算本地命令。
 - `~/.claude.json` 的 `mcpServers` 和 `projects.<路径>.mcpServers`：每个服务器的 `type`、`url` 或 `command` + `args`、`env`、`headers`。
@@ -337,6 +357,8 @@ Claude Code 升级后先核对 `claude_home_probe.py` 读的这些：
 | 点「在 VS Code 打开」开出一个空白窗口 | WSL 里的文件被当成文件夹开了：链接结尾少了 `:1`（来源被错标成了目录），或 VS Code 改了规则。见「外部格式依赖」 |
 | 「在 VS Code 打开」把文件开进了现有的窗口 | 链接结尾少了 `?windowId=_blank`，或 VS Code 改了规则。见「外部格式依赖」 |
 | WSL 一侧的磁贴没有「在 VS Code 打开」 | 发行版名字没探到（探针读的是 `WSL_DISTRO_NAME`）；路径仍然可以复制 |
+| 「项目与会话」里很多项目的路径是「不知道」 | 那些项目没在 `~/.claude.json` 里登记，会话记录里的目录又和文件夹对不上（常见于在工作区里开的会话）。不猜 |
+| 「项目与会话」说有上千个空的项目目录 | 如实反映：`~/.claude/projects` 下攒了很多既没有会话也没有记忆的目录。它们不占多少地方，但会拖慢按目录找东西的工具 |
 | 连接器那一行下面没有「连到哪」 | 那是个人账号在 claude.ai 上的连接器（本机只知道连过），或者这一轮没有跑 `claude mcp list` |
 | 「上次探测」后面一直挂着「正在重新探测」 | WSL 那一半的新结果还没到：标签页在后台时不更新，切回来就换；一直不换看日志里「WSL 一侧探完」 |
 | 连接器的命令行里露出了一段像密钥的东西 | 它是当位置参数写的，没有 `--token` 这样的名字可认。把它挪到环境变量里，或者告诉我加规则 |

@@ -27,6 +27,7 @@ KINDS = {
     "account": ("#aa00ff", "key"), "connector": ("#d80073", "plug"), "memory": ("#1ba1e2", "book"),
     "config": ("#647687", "gear"), "plugin": ("#87794e", "puzzle"), "repo": ("#6d8764", "repo"),
     "tools": ("#825a2c", "wrench"), "store": ("#f0a30a", "disk"),
+    "workspace": ("#a4c400", "folder"),
 }
 LINES = {
     "personal": "#3fc9bb", "work": "#a78bfa", "memory": "#56b8e6", "account": "#c98bf5",
