@@ -200,6 +200,32 @@ def test_a_number_outside_its_bounds_is_named_as_out_of_range(value, code):
     assert errors == [] and final["interval_minutes"] == 5 and final["idle_minutes"] == 240
 
 
+# ───────────────────────── 工作笔记（M4 第二项） ─────────────────────────
+
+def test_work_notes_is_declared_with_both_prompts_and_the_features_own_normalize():
+    from pet import work_notes as wn
+
+    group = st.group("work_notes")
+    assert group.config_key == wn.CONFIG_KEY and group.zone == "work" and group.normalize is wn.normalize
+    by_id = {s.id: s for s in group.settings}
+    assert list(by_id) == ["enabled", "repo_dir", "model", "effort", "prompt_zh", "prompt_en"]
+    assert by_id["repo_dir"].control == "text" and by_id["model"].control == "choice_or_text"
+    for language in ("zh", "en"):
+        prompt = by_id[f"prompt_{language}"]
+        assert prompt.disclosure == "advanced" and prompt.builtin(wn.normalize({})) == wn.default_prompt_template(language)
+    assert group.unavailable_text == "notes.settings.no_wsl" and group.available is not None
+
+
+def test_work_notes_writes_go_through_its_normalize():
+    group = st.group("work_notes")
+    final, errors = st.check_changes(group, {}, {"repo_dir": "  E:\\mem  ", "model": "claude-sonnet-5-5"})
+    assert errors == [] and final["repo_dir"] == "E:\\mem" and final["model"] == "claude-sonnet-5-5"
+    assert st.check_changes(group, {}, {"model": "bad model!"}) == (None, [{"id": "model", "code": "rejected"}])
+    # 清空目录：功能会退回默认目录，写的时候不能悄悄这样做
+    assert st.check_changes(group, {}, {"repo_dir": ""}) == (None, [{"id": "repo_dir", "code": "rejected"}])
+    assert st.check_changes(group, {}, {"effort": "max"}) == (None, [{"id": "effort", "code": "not_a_choice"}])
+
+
 def test_validate_rejects_bounds_that_cannot_work():
     group = st.group("slack_watch")
 

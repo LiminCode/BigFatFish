@@ -2172,8 +2172,7 @@ class ModernSettingsDialog(QDialog):
         settings_language.save_language_setting(self)
         settings_vscode.save_workspace_settings(self)
         settings_notifications.save_notification_settings(self)
-        # 工作简报、Slack 关注不在这里存了：设置搬到了配置全景（那两节只剩跳转），这扇窗保存时不碰那两个键
-        settings_work_notes.save_work_notes_settings(self)
+        # 工作简报、Slack 关注、工作笔记不在这里存了：设置搬到了配置全景（那几节只剩跳转），这扇窗保存时不碰那几个键
         settings_personal.save_personal_settings(self)
         settings_memory_distill.save_distill_settings(self)
         if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):

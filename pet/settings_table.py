@@ -38,6 +38,7 @@ from typing import Any, Callable
 from . import claude_hooks
 from . import slack_watch as sw
 from . import work_briefing as wb
+from . import work_notes as wn
 
 ZONES = ("personal", "work")                # 这一组设置管的是哪个账号那一侧的功能
 CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text")
@@ -275,6 +276,12 @@ def _briefing_prompt(language: str) -> Setting:
                    text=f"settings.work_briefing.prompt_{language}", hint="briefing.settings.prompt_hint")
 
 
+def _notes_prompt(language: str) -> Setting:
+    return Setting(f"prompt_{language}", "long_text", disclosure="advanced",
+                   builtin=lambda _effective: wn.default_prompt_template(language),
+                   text=f"settings.work_notes.prompt_{language}", hint="notes.settings.prompt_hint")
+
+
 GROUPS: tuple[Group, ...] = (
     # 工作简报：到点让 WSL 里公司账号的 Claude Code 只读地汇总几个来源。模型名和 effort 会拼进 shell 命令、
     # 提示词会交给带工具的 AI：这一组的每一项写入都要过 work_briefing.normalize 的白名单。
@@ -305,4 +312,15 @@ GROUPS: tuple[Group, ...] = (
                 text="settings.slack.prompt"),
     ), title_key="settings.dlg.slack_watch", available=lambda: bool(claude_hooks.wsl_exe()),
         unavailable_text="settings.slack.no_wsl_hint"),
+    # 工作笔记：每记一条，让 WSL 里公司账号的 Claude Code 只读地读链接、写摘要；笔记存进仓库副本目录。模型名、effort
+    # 拼进 shell 命令，过 work_notes.normalize（同样借工作简报的白名单）。目录清空会被它退回默认目录，所以清空算 rejected。
+    Group("work_notes", "briefing", wn.CONFIG_KEY, "work", wn.normalize, (
+        Setting("enabled", "toggle", text="notes.settings.enabled"),
+        Setting("repo_dir", "text", text="notes.settings.repo_dir"),
+        Setting("model", "choice_or_text", choices=_MODEL_CHOICES, text="notes.settings.model"),
+        Setting("effort", "choice", choices=wb.EFFORT_CHOICES, text="notes.settings.effort"),
+        _notes_prompt("zh"),
+        _notes_prompt("en"),
+    ), title_key="notes.settings.section", available=lambda: bool(claude_hooks.wsl_exe()),
+        unavailable_text="notes.settings.no_wsl"),
 )
