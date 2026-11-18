@@ -390,51 +390,6 @@ def _vision_call(monkeypatch, config, **kwargs):
     return vision._post_vision_request(b"jpeg", "notepad.exe | 记事本", "你是肥鱼", config, **kwargs), seen
 
 
-def test_screen_reading_goes_through_the_claude_channel(monkeypatch):
-    text, seen = _vision_call(monkeypatch, _claude(), pet_name="大肥鱼")
-    assert text == "看到了"
-    assert seen["model"] == "claude-opus-5", "Claude 模型本身多模态，识屏直接用聊天模型"
-    assert seen["api_key"] == "sk-ant-test" and seen["system"] == "你是肥鱼"
-    assert "屏幕截图" in seen["user_text"] and "大肥鱼" in seen["user_text"]
-
-
-def test_screen_reading_respects_the_daily_budget(monkeypatch):
-    from pet import vision
-
-    monkeypatch.setattr(ap, "describe_image", lambda *a, **k: pytest.fail("额度用完后不该再发请求"))
-    with pytest.raises(vision.VisionError, match="每日请求上限"):
-        vision._post_vision_request(b"jpeg", "", "s", _claude(), consume_budget=lambda: False)
-
-
-def test_screen_reading_on_a_separate_claude_endpoint_never_uses_the_chat_key(monkeypatch):
-    """聊天用 DeepSeek、识屏单独指到 Claude：发过去的只能是识屏自己的 Key。"""
-    config = ProviderConfig("ds", api_key="sk-deepseek-chat")
-    config.vision_same_as_chat = False
-    config.vision_base_url = "https://api.anthropic.com"
-    config.vision_model = "claude-opus-5"
-    config.vision_api_key = "sk-ant-vision"
-
-    _text, seen = _vision_call(monkeypatch, config)
-    assert seen["api_key"] == "sk-ant-vision" and seen["model"] == "claude-opus-5"
-
-    from pet import vision
-
-    config.vision_api_key = ""
-    with pytest.raises(vision.VisionError, match="未配置 API Key"):
-        vision._post_vision_request(b"jpeg", "", "s", config)
-
-
-def test_claude_errors_surface_as_vision_errors(monkeypatch):
-    from pet import vision
-
-    def _boom(*_a, **_k):
-        raise ProviderError("认证失败：API Key 无效或已失效", 401)
-
-    monkeypatch.setattr(ap, "describe_image", _boom)
-    with pytest.raises(vision.VisionError, match="认证失败"):
-        vision._post_vision_request(b"jpeg", "", "s", _claude())
-
-
 # ---------------------------------------------------------------- 实机事故回归（2026-10-10）
 # 设置页点「测试连接」后按钮永远停在「测试中…」：Key 为空时 SDK 抛的是 TypeError
 # （不是它自己的 AnthropicError），一路逃出 test_connection，测试线程直接死掉，

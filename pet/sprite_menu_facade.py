@@ -23,8 +23,7 @@ OverlayShell + 被点 sprite + 行为控制器，使**两套建造器原样复�
     on_show_balance / on_open_todo_panel /
     on_voice_chime_* / on_festival_*                          → AppShell（进程级服务）
     toggle_agent_link                                         → agent_link_manager（共享 manager）
-    toggle_proactive_enabled / set_proactive_option           → proactive_watcher（共享监视器）
-    trigger_golden_spin / look_at_screen / rename_character   → 壳的 sprite 等价实现（作用被点 sprite）
+    trigger_golden_spin / rename_character                    → 壳的 sprite 等价实现（作用被点 sprite）
     install_music_lyric / _music_lyric                        → 壳的音乐（歌词）宿主
     set_edge_probe_enabled                                    → config（探头世界每 tick 热读）
     set_context_menu_template / reopen_context_menu           → config + 菜单原位重开
@@ -320,22 +319,6 @@ class SpriteMenuFacade:
         sprite = self.sprite
         return lambda: opener(sprite)
 
-    @property
-    def on_look_screen(self):
-        """「看看屏幕」：``OverlayShell.look_at_screen(sprite)``（PetWindow.look_at_screen
-        的 sprite 等价物，同样只在聊天可用时注入）。
-
-        闭包绑定本次菜单的作用对象：答复气泡归被点的那一只（旧版一窗一宠天然
-        如此），不绑就等于右击子肥鱼却让主肥鱼答话。
-        """
-        if not self._chat_enabled():
-            return None
-        fn = getattr(self._shell, "look_at_screen", None)
-        if not callable(fn):
-            return None
-        sprite = self.sprite
-        return lambda: fn(sprite)
-
     # ---------------------------------------------------------------- 进程级服务（AppShell）
     @property
     def on_show_balance(self):
@@ -527,56 +510,6 @@ class SpriteMenuFacade:
 
     def request_quit(self) -> None:  # add_quit 的调用面
         self.close()
-
-    # ---------------------------------------------------------------- 主动识屏
-    def _proactive_watcher(self):
-        """共享识屏监视器：壳注入面优先，缺失时从 AppShell 的 SharedSubsystems
-        回填（等价 window.py ``_ensure_proactive_watcher`` 的懒创建）。"""
-        watcher = getattr(self._shell, "proactive_watcher", None)
-        if watcher is None:
-            shared = getattr(self._app_shell, "_shared", None)
-            watcher = getattr(shared, "proactive", None)
-            if watcher is not None:
-                try:
-                    self._shell.proactive_watcher = watcher
-                except Exception:
-                    log.debug("overlay: 回填 proactive 监视器失败", exc_info=True)
-        return watcher
-
-    def _apply_proactive(self) -> None:
-        apply_config = getattr(self._proactive_watcher(), "apply_config", None)
-        if callable(apply_config):
-            try:
-                apply_config()
-            except Exception:
-                log.debug("overlay: proactive apply_config 失败", exc_info=True)
-
-    def toggle_proactive_enabled(self, on: bool) -> None:
-        """主动识屏总开关（window.py ``_toggle_proactive_enabled`` 等价）。"""
-        pro_data = dict(self.cfg.get("proactive_screen", {}) or {})
-        pro_data["enabled"] = bool(on)
-        self.cfg.set("proactive_screen", pro_data)
-        self._save()
-        self._apply_proactive()
-        if on:
-            from .proactive import effective_proactive_config
-
-            eff = effective_proactive_config(self.cfg.get("proactive_screen", {}))
-            if eff["whitelist"]:
-                self._bubble(t("menu.facade.screen_awareness_i_ll_glance"), 4000)
-            else:
-                self._bubble(
-                    t("menu.facade.screen_awareness_but_allow_list"),
-                    6000,
-                )
-
-    def set_proactive_option(self, key: str, value) -> None:
-        """主动识屏子项（window.py ``_set_proactive_option`` 等价）。"""
-        pro_data = dict(self.cfg.get("proactive_screen", {}) or {})
-        pro_data[key] = value
-        self.cfg.set("proactive_screen", pro_data)
-        self._save()
-        self._apply_proactive()
 
     # ---------------------------------------------------------------- Agent 联动
     def _agent_manager(self):

@@ -101,7 +101,7 @@ flowchart LR
 - [x] 工作笔记
 - [x] 个人助理
 - [x] 会话记忆蒸馏（个人侧与公司侧）
-- [ ] ~~文件解读、看屏幕~~ 2026-11-18 定：不搬，两个功能整个删掉（[ADR 0016](adr/0016-drop-screen-watching-and-file-interpret.md)）。文件解读已删，看屏幕待删
+- [x] ~~文件解读、看屏幕~~ 2026-11-18 定：不搬，两个功能整个删掉（[ADR 0016](adr/0016-drop-screen-watching-and-file-interpret.md)）
 - [ ] Claude Code 联动与 hooks 修复动作
 - [ ] 模型服务列表与密钥、连接测试
 

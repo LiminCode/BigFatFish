@@ -129,10 +129,3 @@ def test_set_sprite_visible_hides_main_bubble_only(tmp_path):
 
 
 # ---------------------------------------------------------------- 识屏发起者默认值
-def test_look_sprite_initialized_at_build(tmp_path):
-    """``_look_sprite`` 构造期必须有确定值（B2 遗留：靠 getattr 兜底）。"""
-    shell, _lib, _follower = _make_shell(tmp_path)
-    try:
-        assert shell._look_sprite is None
-    finally:
-        shell._delete_runtime_marker()

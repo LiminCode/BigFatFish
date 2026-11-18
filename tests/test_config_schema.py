@@ -6,9 +6,9 @@ pet/config.py 里 __init__ 的默认值 dict（约 498-566 行）与 reload() �
 
 实测两集合**不一致**（现状文档化，不修产品代码）：
 - 默认值 dict 共 80 键；reload 白名单共 75 键。
-- 差异 = 默认值多出 4 键：{version, proactive_screen, agent_link, chat}。
-  这 4 键在 reload() 里走专门路径（version 末尾强制回写 4；
-  proactive_screen / agent_link / chat 分别经 _merge_*_data 合并），
+- 差异 = 默认值多出 3 键：{version, agent_link, chat}（proactive_screen 2026-11-18 随看屏幕删掉）。
+  这 3 键在 reload() 里走专门路径（version 末尾强制回写 4；
+  agent_link / chat 分别经 _merge_*_data 合并），
   不属于普通白名单键，故不并入白名单元组。
 
 护栏语义（新增键漏登记立即红）：
@@ -176,7 +176,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
 
 # 默认值 dict 里不走普通白名单、由 reload() 专门路径处理的键（现状文档化）。
 # 2026-09-19 加入 file_interpret，2026-11-18 随拖文件解读下线移除（ADR 0016）。
-SPECIAL_CASED_KEYS = frozenset({"version", "proactive_screen", "agent_link", "chat"})
+SPECIAL_CASED_KEYS = frozenset({"version", "agent_link", "chat"})
 
 # 默认值 dict 键集合现状快照 = 白名单 ∪ 特例键。
 # 2026-09-17 加入 music_player_paths（交付前审查 P1-3 登记）。

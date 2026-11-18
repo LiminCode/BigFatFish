@@ -82,8 +82,7 @@ def _make_overlay_app(tmp_path, *, chat_ui_style: str | None = None):
     overlay = OverlayShell(
         app, inst, screen=cap.FakeScreen((0, 0, 1920, 1080), (0, 0, 1920, 1040)),
         sprite_factory=lambda lib, pos, scale: PetSprite(lib, pos=pos, scale=scale),
-        agent_link_manager=shell._shared.agent_link,
-        proactive_watcher=shell._shared.proactive)
+        agent_link_manager=shell._shared.agent_link)
     overlay.on_self_talk_speak = shell.speak_self_talk
     shell._overlay_shell = overlay
     return shell, inst, overlay

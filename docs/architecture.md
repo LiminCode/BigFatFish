@@ -8,7 +8,7 @@
 | 层 | 放什么 | 约束 |
 |---|---|---|
 | 纯逻辑 | 不需要界面就能测的函数与数据：`collision.py`、`physics.py`、`sprite_collision.py`、`speech_bubble_text.py`、`voice_chime.py`、各功能的 `*_run.py` / 解析模块 | 不 import Qt；网络库、`edge_tts` 这类重依赖也不进这一层 |
-| 服务 | 调度、线程、IO、播放：`voice_chime_service.py`、`agent_link.py`、`proactive.py`、各 `*_service.py` | Qt 惰性导入；不继承 `QObject` 的服务由 `AppShell` 持有引用，否则会被回收 |
+| 服务 | 调度、线程、IO、播放：`voice_chime_service.py`、`agent_link.py`、`todo_reminder.py`、各 `*_service.py` | Qt 惰性导入；不继承 `QObject` 的服务由 `AppShell` 持有引用，否则会被回收 |
 | 界面 | 窗口、设置、菜单、气泡、岛：`overlay_shell.py`、`modern_settings_dialog.py`、`context_menus/`、`island*.py` | 跨线程只经 queued 信号回 GUI 线程 |
 
 新功能按这三层各放一个模块（参照 `voice_chime.py` / `voice_chime_service.py` / `voice_chime_settings.py`），
@@ -46,7 +46,7 @@
 
 - **新增顶层配置键**要改三处：`pet/config.py` 的默认值字典、`Config.reload()` 的白名单、
   `tests/test_config_schema.py` 的两个快照。白名单里没有的键，保存后读不回来。
-  `version` / `proactive_screen` / `agent_link` / `chat` 走各自的合并路径，不进普通白名单。
+  `version` / `agent_link` / `chat` 走各自的合并路径，不进普通白名单。
   `config_domains.py` 只做取子键和聚合，不写第二份清洗逻辑。详见 [配置与数据](config-and-data.md)。
 - **新增右键菜单项**要同步四处：`context_menus/registry.py` 的动作、`menu_templates/modern-default-v1.json`
   的节点、`tests/test_menu_layout.py`、`tests/test_desktop_pet_features.py` 的期望标签。

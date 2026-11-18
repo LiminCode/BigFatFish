@@ -1571,25 +1571,6 @@ def test_session_switch_lands_at_bottom(tmp_path: Path):
     app.processEvents()
 
 
-def test_append_look_sync_persists_to_session(tmp_path: Path):
-    """「看看屏幕」结果必须同步进当前会话并持久化（PR#11 重写后丢失）。"""
-    from PySide6.QtWidgets import QApplication
-
-    from pet.chat.widgets import ChatWindow
-    from pet.config import Config
-
-    app = QApplication.instance() or QApplication([])
-    window = ChatWindow(Config(tmp_path), "shenshen")
-    before = len(window.session.messages)
-    window.append_look_sync("[看看屏幕] 前台窗口：测试", "这是屏幕分析结果")
-    after = len(window.session.messages)
-    assert after == before + 2
-    reloaded = window.store.load(window.session.session_id, "shenshen")
-    assert reloaded is not None and len(reloaded.messages) == after
-    window.close()
-    app.processEvents()
-
-
 def test_quit_closes_active_context_menu_before_leaving_event_loop(monkeypatch):
     import time
     from PySide6.QtWidgets import QApplication

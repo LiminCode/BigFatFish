@@ -15,7 +15,7 @@
 1. legacy 模板 ≡ build_legacy_menu(PetWindow)（条件显示项对齐：聊天门/win32 门）；
 2. modern 模板 ≡ build_modern_menu(PetWindow)（注册表 + 用户编排 + 图标分组）；
 3. 显式清单：用户点名的缺失条目（AI 对话/黄金回旋/
-   边缘探头/大小/DeepSeek Harness/打开网页版 DeepSeek/主动识屏/Agent 联动/
+   边缘探头/大小/DeepSeek Harness/打开网页版 DeepSeek/Agent 联动/
    切换菜单模板）逐项在树里；
 4. 无聊天变体：聊天门条目在两侧一起消失；
 5. （「音乐」子菜单 2026-10-13 已从右键菜单下线，见 test_menu_music_entries_removed）；
@@ -79,16 +79,10 @@ REQUIRED_LABELS = (
     "黄金回旋",
     "边缘探头",
     "大小",
-    "主动识屏",
     "Agent 联动",
     "切换到新版菜单",
 )
-CHAT_GATED_LABELS = ("AI 对话", "AI 设置", "看看屏幕", "主动识屏")
-# Windows 专有项：主动识屏 v1 依赖 win32 前台窗口/截屏能力（vision.py /
-# proactive.py 仅 win32 起监视器），菜单注册处 shared.add_proactive_menu 与
-# registry proactive_screen 均按 sys.platform == "win32" 门控——posix 上
-# 两侧建造器都不产出该项，期望模板须按平台分流（test_menu_layout.py 同先例）。
-WIN32_ONLY_LABELS = ("主动识屏",)
+CHAT_GATED_LABELS = ("AI 对话", "AI 设置")
 
 
 # ---------------------------------------------------------------- 假件
@@ -191,7 +185,6 @@ def _reference_window(config, *, chat=True):
     win.on_open_chat = (lambda: None) if chat else None
     win.on_open_chat_settings = (lambda: None) if chat else None
     win.on_show_balance = (lambda parent=None: None) if chat else None
-    win.on_look_screen = win.look_at_screen if chat else None
     win.on_open_modern_settings = lambda: None
     win.on_open_legacy_settings = None          # app.py:457 恒注入 None
     win.on_spawn_pet = lambda: None
@@ -327,13 +320,7 @@ def test_legacy_template_missing_entries_all_present(tmp_path):
     try:
         menu = build_sprite_full_menu(shell)
         labels = _all_labels(menu)
-        expected = REQUIRED_LABELS
-        if sys.platform != "win32":
-            expected = tuple(
-                label for label in REQUIRED_LABELS if label not in WIN32_ONLY_LABELS)
-            for label in WIN32_ONLY_LABELS:
-                assert label not in labels, f"posix 不应出现 Windows 专有项：{label}"
-        for label in expected:
+        for label in REQUIRED_LABELS:
             assert label in labels, f"legacy 模板缺项：{label}"
         # overlay 侧保留的、legacy.py 没有的三个入口（删掉就是实机可见回退）
         for label in ("肥鱼设置", "隐藏肥鱼"):
@@ -369,7 +356,6 @@ def test_chat_gated_entries_follow_chat_availability(tmp_path):
         _assert_reference_contained(overlay, reference)
         labels = _all_labels(overlay)
         assert "AI 对话" not in labels and "AI 设置" not in labels
-        assert "主动识屏" not in labels
         # 与基准逐点一致：基准也不含这些
         assert set(CHAT_GATED_LABELS).isdisjoint(_all_labels(reference))
     finally:
@@ -395,15 +381,12 @@ def test_menu_routes_legacy_service_semantics(tmp_path, monkeypatch):
     """逐项点击路由：每项落到与 legacy 窗侧同一服务/同一配置键。"""
     shell, instance, config = _make_overlay(tmp_path, template="legacy")
     manager_calls: list[tuple] = []
-    watcher_calls: list[str] = []
     spin_calls: list[str] = []
     reopened: list = []
     try:
         shell.agent_link_manager = type("_M", (), {
             "set_enabled": lambda self, key, on: (
                 manager_calls.append((key, on)), True)[1]})()
-        shell.proactive_watcher = type("_W", (), {
-            "apply_config": lambda self: watcher_calls.append("apply")})()
         monkeypatch.setattr(shell, "trigger_golden_spin",
                             lambda sprite=None: spin_calls.append(sprite))
         monkeypatch.setattr(shell.overlay, "reopen_context_menu",
@@ -433,13 +416,6 @@ def test_menu_routes_legacy_service_semantics(tmp_path, monkeypatch):
                               if int(round(CANVAS_W * s)) == px)
         assert abs(shell.sprite.scale - expected_scale) < 1e-9
         assert config.get("scale") == shell.sprite.scale
-        # 主动识屏 → proactive_screen 配置 + 共享监视器 apply_config
-        # （Windows 专有：posix 菜单按设计不含该项，路由无从点击）
-        if sys.platform == "win32":
-            proactive_menu = _find(menu, "主动识屏").menu()
-            _find(proactive_menu, "开启主动识屏").setChecked(True)
-            assert config.get("proactive_screen", {}).get("enabled") is True
-            assert watcher_calls, "主动识屏开关必须让共享监视器重读配置"
         # Agent 联动 → 共享 manager.set_enabled
         link_menu = _find(menu, "Agent 联动").menu()
         _find(link_menu, "Claude Code").setChecked(True)
@@ -644,40 +620,6 @@ def test_golden_spin_skips_while_throw_egg_active(tmp_path):
         shell._throw_egg = _BusyEgg()
         shell.trigger_golden_spin()
         assert shell._golden_spin_timer is None or not shell._golden_spin_timer.isActive()
-    finally:
-        shell._delete_runtime_marker()
-
-
-def test_look_screen_throttles_and_syncs_reply(tmp_path, monkeypatch):
-    """「看看屏幕」：忙碌/冷却提示 + worker 结果回 GUI（sync_look_to_chat）。"""
-    shell, instance, _config = _make_overlay(tmp_path, template="modern")
-    started: list = []
-
-    class _Thread:
-        def __init__(self, *args, **kwargs):
-            started.append(kwargs.get("target"))
-
-        def start(self):
-            pass
-
-    try:
-        monkeypatch.setattr("pet.overlay_shell.threading.Thread", _Thread)
-        assert shell.on_look_synced is not None
-        shell.show_bubble  # 确保气泡面存在（首次冒泡惰性建气泡）
-        shell.look_at_screen()
-        assert shell._look_busy is True
-        assert started, "worker 线程必须被启动"
-        # 忙碌期再点：提示而不重复起线程
-        shell.look_at_screen()
-        assert len(started) == 1
-        # worker 回报：忙碌复位 + 同步进聊天（on_look_synced 路由）
-        shell._on_look_done("我看到了浏览器", "[看看屏幕] 前台窗口：chrome", False)
-        assert shell._look_busy is False
-        assert ("sync_look_to_chat", "[看看屏幕] 前台窗口：chrome",
-                "我看到了浏览器") in instance.calls
-        # 冷却期：不重复起线程
-        shell.look_at_screen()
-        assert len(started) == 1
     finally:
         shell._delete_runtime_marker()
 

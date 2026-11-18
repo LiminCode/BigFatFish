@@ -13,7 +13,7 @@ Modern（``widgets.py``）与 Classic（``legacy_widgets.py``）两套聊天窗�
 * **不许带着在飞 worker 一起死**：``ChatService`` 的 worker 是 ``QThread``，
   运行中被销毁会让进程直接崩（``service.shutdown`` 的 docstring 记着同款）。
   关闭时先 ``stop()``，仍有余下的 worker 就等它们的 ``finished`` 再删。
-* **销毁只排一次**：X / Esc / ``reject`` / ``append_look_sync`` 之外的多条收口
+* **销毁只排一次**：X / Esc / ``reject`` 等多条收口
   路径都会走到 ``QDialog.done()``，重复 ``deleteLater`` 虽无害但会让「谁负责
   收口」变模糊，所以用实例标记钉一次。
 """

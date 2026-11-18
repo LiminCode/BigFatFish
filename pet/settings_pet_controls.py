@@ -635,10 +635,6 @@ def build_pet_controls(host) -> None:
         str(image_dir.resolve()), directory=True, image_preview=True, parent=host,
     )
 
-# ------------------------------------------------------------ 主动识屏
-    if sys.platform == "win32" and host.include_ai:
-        host._build_proactive_controls()
-
 
 # ------------------------------------------------------------ 灵动岛联动控制器
 

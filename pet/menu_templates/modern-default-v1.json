@@ -7,7 +7,6 @@
     {"type": "action", "id": "rally_pets", "visible": true, "section": "interaction"},
     {"type": "action", "id": "lineup_pets", "visible": true, "section": "interaction"},
     {"type": "action", "id": "chat", "visible": true, "section": "interaction"},
-    {"type": "action", "id": "look_screen", "visible": true, "section": "interaction"},
     {"type": "separator", "id": "default.separator-interaction", "visible": true},
     {"type": "action", "id": "animations_hub", "visible": true, "section": "playback"},
     {"type": "action", "id": "character", "visible": true, "section": "playback"},
@@ -50,7 +49,6 @@
       ]
     },
     {"type": "action", "id": "agent_link", "visible": true, "section": "tools"},
-    {"type": "action", "id": "proactive_screen", "visible": true, "section": "tools"},
     {"type": "action", "id": "todo_panel", "visible": true, "section": "tools"},
     {"type": "action", "id": "config_panorama", "visible": true, "section": "tools"},
     {"type": "action", "id": "voice_chime_now", "visible": false, "section": "tools"},

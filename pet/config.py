@@ -104,6 +104,8 @@ _MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quar
     "agent_cost",
     # 2026-10-14 DeepSeek 的三个入口下线（余额查询 / Harness 启动器代码保留，只摘菜单）
     "balance", "harness", "deepseek_web",
+    # 2026-11-18 看屏幕整个删掉（ADR 0016）：「看看屏幕」和「主动识屏」子菜单（它在编排里是一个动作）
+    "look_screen", "proactive_screen",
 })
 
 
@@ -234,25 +236,6 @@ def _clean_quick_launch_apps(value):
         elif path and name:
             cleaned.append({"name": name, "path": path, "kind": "application"})
     return cleaned
-
-
-def _default_proactive_screen_data() -> dict:
-    return {
-        "enabled": False,
-        "dry_run": False,
-        "preset": "balanced",
-        "allow_when_mouse_through": True,
-        "whitelist": [],
-        "dwell_seconds": 45,
-        "require_idle": False,
-        "min_idle_seconds": 30,
-        "cooldown_minutes": 5,
-        "daily_cap": 15,
-        "min_request_interval_seconds": 60,
-        "change_threshold": 8,
-        "prefer_free_provider": True,
-        "pre_cue": True,
-    }
 
 
 def _default_agent_link_data() -> dict:
@@ -428,13 +411,6 @@ def _clean_agent_link_data(raw: Any) -> dict:
     # 布尔/百分比前身）：读入即丢弃，保存时不再写回，配置里不留死键。
     for dead_key in _AGENT_LINK_REMOVED_KEYS:
         result.pop(dead_key, None)
-    return result
-
-
-def _merge_proactive_screen_data(raw: Any) -> dict:
-    result = _default_proactive_screen_data()
-    if isinstance(raw, dict):
-        result.update(raw)
     return result
 
 
@@ -1009,7 +985,6 @@ class Config:
             "character_profiles": {},  # 角色档案：{角色id: {click_talk_bindings: {动画id: [台词]}}}
             "chat_always_on_top": False,  # 聊天窗置顶
             "dynamic_island": _default_dynamic_island_data(),
-            "proactive_screen": _default_proactive_screen_data(),
             "agent_link": _default_agent_link_data(),
             "chat_ui_style": "modern",  # modern / classic（仅聊天窗口保留双实现）
             "chat_follow_pet": False,  # 聊天窗口是否跟随肥鱼移动
@@ -1348,8 +1323,6 @@ class Config:
                 # 默认（只对 _NULL_ACCEPTING_KEYS 生效，口径见该常量）。
                 continue
             self.data[key] = value
-        if "proactive_screen" in raw:
-            self.data["proactive_screen"] = _merge_proactive_screen_data(raw["proactive_screen"])
         if "agent_link" in raw:
             self.data["agent_link"] = _merge_agent_link_data(raw["agent_link"])
         self._migrate_click_sound_config(raw)
@@ -1823,11 +1796,6 @@ class Config:
         from .config_domains import AgentLinkConfig
 
         return AgentLinkConfig.from_dict(self.data.get("agent_link", {}))
-
-    def proactive_config(self):
-        from .config_domains import ProactiveConfig
-
-        return ProactiveConfig.from_dict(self.data.get("proactive_screen", {}))
 
     def collision_config(self):
         from .config_domains import CollisionConfig

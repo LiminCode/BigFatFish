@@ -45,10 +45,6 @@ def _chat(cfg):
     return _settings(chat.get("enabled", True) is not False, prompt_chars=_chars(chat, "default_system_prompt", "about_user"))
 
 
-def _screen(cfg):
-    return _settings(_section(cfg, "proactive_screen").get("enabled") is True)
-
-
 def _distill(side):
     def read(cfg):
         s = md.side_settings(md.normalize(cfg.get(md.CONFIG_KEY)), side)
@@ -116,8 +112,6 @@ FEATURES: tuple[Feature, ...] = (
             writes=(("set_win", "config", _always),), note="link_win"),
     Feature("chat", "personal", "chat", "chat", _chat, page="ai_chat", follows_provider=True,
             writes=(("gh_personal", "github", _chat_uses_github),)),
-    Feature("screen", "personal", "eye", "proactive_screen", _screen, page="automation_screen", note="screen",
-            follows_provider=True),
     # 会话记忆蒸馏的设置也搬到了配置全景；一个配置键分两组，所以两块磁贴各自写明是哪一组
     Feature("distill_personal", "personal", "funnel", "memory_distill", _distill(md.SIDE_PERSONAL), settings_group="distill_personal",
             writes=(("md_win", "memory", _always), ("mem_win", "memory", _always),

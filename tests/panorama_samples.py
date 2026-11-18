@@ -147,7 +147,6 @@ def all_on_config() -> dict:
     return {
         "chat": {"enabled": True, "default_system_prompt": "be brief", "about_user": "", "github_connector": True,
                  "knowledge_base_enabled": True},
-        "proactive_screen": {"enabled": True},
         "memory_distill": {"enabled": True, "work_distill": True}, "personal": {"enabled": True},
         "work_briefing": {"enabled": True}, "slack_watch": {"enabled": True}, "work_notes": {"enabled": True},
         "agent_link": {"claude": True, "claude_wsl": True},

@@ -1,7 +1,6 @@
 """Action registration and tree rendering for the shared Menu Action Model."""
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Callable
 
@@ -25,10 +24,8 @@ from .shared import (
     add_edge_probe,
     add_golden_spin,
     add_hide_pet,
-    add_look_screen,
     add_no_move,
     add_on_top,
-    add_proactive_menu,
     add_lineup_pets,
     add_quit,
     add_rally_pets,
@@ -48,7 +45,7 @@ from ..i18n import maybe_t, t
 
 #: 动作的中文名（zh 原文；键是内部标识）。显示时经 MENU_ACTIONS.label() 取 menu.action.* 跟随界面语言。
 ACTION_LABELS = {
-    "ojingjing": "厉害了我的鲸", "chat": "AI 对话", "look_screen": "看看屏幕",
+    "ojingjing": "厉害了我的鲸", "chat": "AI 对话",
     "animations_hub": "播放动画", "character": "切换角色", "playback_speed": "播放速率",
     "size": "大小", "drag_physics": "拖动物理", "no_move": "不移动",
     "on_top": "窗口置顶", "autostart": "开机自启",
@@ -60,7 +57,7 @@ ACTION_LABELS = {
     "claude_desktop": "Claude Desktop", "wsl_claude_code": "Claude Code（WSL）",
     "quick_launch": "快捷启动",
     "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
-    "proactive_screen": "主动识屏", "todo_panel": "待办提醒",
+    "todo_panel": "待办提醒",
     "config_panorama": "配置全景",
     "modern_settings": "肥鱼设置", "quit": "退出",
 }
@@ -72,7 +69,7 @@ Enablement = Callable[[object], bool]
 
 
 ACTION_ICONS = {
-    "ojingjing": "pet", "chat": "chat", "look_screen": "screen",
+    "ojingjing": "pet", "chat": "chat",
     "animations_hub": "play", "character": "character", "playback_speed": "speed",
     "size": "size", "drag_physics": "physics", "no_move": "pause",
     "on_top": "pin", "autostart": "autostart",
@@ -83,7 +80,7 @@ ACTION_ICONS = {
     "vscode_workspaces": "application", "youtube_music": "play",
     "claude_desktop": "sparkle", "wsl_claude_code": "ubuntu",
     "quick_launch": "application", "github_project": "web", "agent_link": "automation",
-    "proactive_screen": "screen", "todo_panel": "todo",
+    "todo_panel": "todo",
     "config_panorama": "branch",
     "modern_settings": "settings", "quit": "quit",
     "voice_chime_now": "chat", "voice_chime_toggle": "chat",
@@ -214,7 +211,6 @@ class MenuActionRegistry:
                 disabled_reason="menu.registry.easter_egg_entry_turned_off",
             ),
             "chat": MenuActionSpec(_build_chat, _callback_available("on_open_chat")),
-            "look_screen": MenuActionSpec(add_look_screen, _callback_available("on_look_screen")),
             "animations_hub": MenuActionSpec(_build_animations),
             "character": MenuActionSpec(lambda menu, pet: build_character_menu(menu, pet)),
             "playback_speed": MenuActionSpec(lambda menu, pet: build_speed_menu(menu, pet)),
@@ -259,10 +255,6 @@ class MenuActionRegistry:
             ),
             "github_project": MenuActionSpec(_build_github),
             "agent_link": MenuActionSpec(add_agent_link_menu),
-            "proactive_screen": MenuActionSpec(
-                add_proactive_menu,
-                lambda pet: sys.platform == "win32" and callable(getattr(pet, "on_open_chat", None)),
-            ),
             "modern_settings": MenuActionSpec(
                 _build_settings, _callback_available("on_open_modern_settings")
             ),

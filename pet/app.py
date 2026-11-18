@@ -457,8 +457,6 @@ class PetInstance:
         win.on_open_quick_chat = self._slot_wrap(self.open_quick_chat) if self.enable_chat else None
         win.on_open_chat_settings = self._slot_wrap(self.open_chat_settings) if self.enable_chat else None
         win.on_show_balance = self._slot_wrap(self.shell.show_balance) if self.enable_chat else None
-        win.on_look_synced = self._slot_wrap(self.sync_look_to_chat) if self.enable_chat else None
-        win.on_look_screen = win.look_at_screen if self.enable_chat and hasattr(win, "look_at_screen") else None
         win.on_open_legacy_settings = None
         win.on_open_modern_settings = self._slot_wrap(self.open_modern_settings)
         # 肥鱼隐藏时的气泡改道面（DSH 联动等非交互反馈气泡 → 灵动岛，见
@@ -501,7 +499,7 @@ class PetInstance:
         """
         if lib is None:
             lib = self._create_library(character_id)
-        # 4.4b：进程级共享子系统（agent_link / proactive / 全屏 watcher）常建，
+        # 4.4b：进程级共享子系统（agent_link / 全屏 watcher）常建，
         # 各窗引用同一份；窗口全屏监视交由共享 watcher（本窗不再自建线程）。
         shared = getattr(self.shell, "_shared", None)
         # 批5.2a §③.5：**子窗**构造期日志加 [slot-N] 前缀（主窗 slot 0 保持
@@ -512,8 +510,7 @@ class PetInstance:
         try:
             win = PetWindow(lib, self.config,
                             broker_facade=self.broker_facade,
-                            agent_link_manager=shared.agent_link if shared else None,
-                            proactive_watcher=shared.proactive if shared else None)
+                            agent_link_manager=shared.agent_link if shared else None)
         finally:
             _pet_log_slot.slot = _prev_slot
         win.shared_fullscreen_watcher_active = shared is not None
@@ -755,7 +752,7 @@ class PetInstance:
 
         关窗即销毁（``pet/chat/lifecycle.py``）之后，槽位必须跟着窗口走——否则下次打开会去
         show 一个已排队删除的对象，而 ``self.chat_window`` 这类裸引用会在死对象上抛
-        "Internal C++ object already deleted"（``sync_look_to_chat`` / 设置页刷新都读它）。
+        "Internal C++ object already deleted"（设置页刷新等都读它）。
         """
         window.finished.connect(lambda _result=0, window=window: self._forget_chat_window(window))
 
@@ -965,7 +962,6 @@ class PetInstance:
         # 关着时这里是 no-op；点了「编辑点击动画绑定」后直接 Esc 关设置也能一起收）
         self.shell.precache_self_talk_voice(t("app.ui.after_saving_settings"))
 
-
     def _dock_hidden_recovery_message(self) -> str:
         return (
             t("app.ui.dock_icon_hidden_fish_keeps")
@@ -1022,42 +1018,6 @@ class PetInstance:
                 setter(enabled, visible=visible)
 
     # ------------------------------------------------------------ 其它窗口级
-    def sync_look_to_chat(self, user_text: str, reply: str) -> None:
-        """把「看看屏幕/主动识屏」的问答同步进 AI 对话记录（issue #24）。
-
-        聊天窗口已创建 → 走窗口内同步（含界面即时刷新）；
-        聊天窗口从未打开 → 直接写入当前角色最新会话（无则新建），之后再打开
-        聊天窗口即可在历史里回看全文——气泡里被省略/分页的内容不再无处可查。
-        """
-        if not self.enable_chat or not str(reply or "").strip():
-            return
-        if self.chat_window is not None and hasattr(self.chat_window, "append_look_sync"):
-            self.chat_window.append_look_sync(user_text, reply)
-            return
-        try:
-            from .chat.models import ChatMessage
-            from .chat.session_store import SessionStore
-
-            store = SessionStore(self.config.dir, getattr(self.config, "instance_id", ""))
-            character_id = str(self.config.get("character", catalog.DEFAULT_CHARACTER))
-            sessions = store.list(character_id)
-            if sessions:
-                session = sessions[0]
-            else:
-                settings = self.config.chat_settings()
-                session = store.create(
-                    character_id,
-                    settings.active_provider,
-                    settings.default_system_prompt,
-                )
-            msgs = [ChatMessage("user", str(user_text)), ChatMessage("assistant", str(reply))]
-            synced, _absorbed = store.append_messages(session, msgs)
-            if synced is None:
-                # 会话已被并发删除等边界：本地兜底（保持旧行为）
-                session.messages.extend(msgs)
-                store.save(session)
-        except Exception:
-            logging.exception("同步识屏问答到会话记录失败")
 
     def _set_autostart(self, enabled: bool, win=None) -> bool:
         ok = autostart_mod.set_enabled(bool(enabled))
@@ -1191,7 +1151,7 @@ class AppShell:
         self._decode_hub = DecodeFanoutHub(
             enabled=bool(config.get('experimental_shared_decode', True)))
         # 4.4b（T6「multi_window_shared 不删，常开化」）：进程级共享子系统
-        # （agent_link / proactive / 全屏 watcher）**恒建**，各窗经 PetWindow
+        # （agent_link / 全屏 watcher）**恒建**，各窗经 PetWindow
         # 构造参数引用同一份，崩溃/换角色不重建。sprite 拓扑里共享子系统缺位
         # 即静默缺失（agent_link/主动识屏/全屏 watcher 无人承载）。
         #（位置在 _instances 就绪之后，共享 manager 构造期即遍历窗集合）。
@@ -1956,7 +1916,7 @@ class AppShell:
         from .overlay_shell import is_overlay_topology
         if is_overlay_topology():
             from .overlay_shell import OverlayShell
-            # 4.3 后半：把进程级共享子系统（agent_link / proactive）注入 sprite
+            # 4.3 后半：把进程级共享子系统（agent_link）注入 sprite
             # 世界的壳——overlay 拓扑下 instances[].win 恒为 None，扇出目标就是
             # 这个壳（见 multi_window_shared.presentation_targets）。D0 已保证
             # overlay 拓扑下 _shared 常建；拿不到时传 None，壳内呈现面静默
@@ -1964,8 +1924,7 @@ class AppShell:
             shared = getattr(self, "_shared", None)
             self._overlay_shell = OverlayShell(
                 self.app, self.instance,
-                agent_link_manager=getattr(shared, "agent_link", None),
-                proactive_watcher=getattr(shared, "proactive", None))
+                agent_link_manager=getattr(shared, "agent_link", None))
             # 会话增减 / 换阶段 → 灵动岛卡片（显示 Claude 会话时）跟着刷新。
             # 附加能力：壳没有会话登记表（替身 / 旧实现）时跳过，绝不阻断启动。
             sessions_changed = getattr(self._claude_session_registry(), "sessions_changed", None)
@@ -2114,7 +2073,6 @@ class AppShell:
             webm_clip_mod.set_session_ending(True)
         except Exception:
             logging.exception("置位会话结束闸门失败")
-
 
     def _create_ui_with_character_fallback(self, character_id: str) -> None:
         """启动路径创建主窗；配置记住的角色素材目录已被删/搬走（如 DLC 卸载）
@@ -2379,7 +2337,7 @@ class AppShell:
                 logging.warning("退出时会话写盘 worker 未干净关闭")
         except Exception:
             logging.exception("退出时关闭会话写盘 worker 失败")
-        # 批5.2a：进程级共享子系统收口（agent_link / proactive / 全屏 watcher）。
+        # 批5.2a：进程级共享子系统收口（agent_link / 全屏 watcher）。
         # 单窗关闭（退出这只）不触发——只有「全部退出」才停共享子系统。
         if self._shared is not None:
             try:
@@ -2511,7 +2469,7 @@ class AppShell:
         """批5.2a：把新窗接入进程级共享子系统（agent_link 联动动作链分发）。
 
         共享 manager 在 AppShell.__init__ 已创建（此刻尚无窗，set_link_next_provider
-        落入空集），新窗出现后经 proxy 重新分发；proactive 经构造参数引用同一份；
+        落入空集），新窗出现后经 proxy 重新分发；
         全屏 watcher 经 _on_shared_fullscreen/_on_shared_cursor 动态遍历，无需单独连。
         """
         shared = self._shared

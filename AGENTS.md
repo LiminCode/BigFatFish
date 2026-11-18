@@ -75,7 +75,7 @@ stay gone and are never imported again. Collision math is pure (`pet/collision.p
 `sprite_collision.capsule_circles` via `pet/island_bridge.py`.
 
 `pet/multi_window_shared.py` is always on: one process-wide agent_link /
-proactive / fullscreen watcher fanned out to every window or sprite. Under the
+fullscreen watcher fanned out to every window or sprite. Under the
 overlay topology the shared fullscreen watcher is not started (the overlay shell
 owns its own `FullscreenCursorWatcher`). The DSH bridge directory has exactly one
 reader: `DshMonitor` (one `DirGlobTailer` + one polling thread; parsed records feed

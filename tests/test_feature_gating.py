@@ -77,7 +77,6 @@ def test_petwindow_disabled_optional_services_not_constructed(tmp_path):
     cfg = _disabled_config(tmp_path)
     win = PetWindow(FakeLibrary(), cfg)
     try:
-        assert win.proactive_watcher is None
         assert win.agent_link_manager is None
     finally:
         win.close()
@@ -91,9 +90,7 @@ def test_petwindow_lazy_ensure_creates_optional_services(tmp_path):
     cfg = _disabled_config(tmp_path)
     win = PetWindow(FakeLibrary(), cfg)
     try:
-        assert win.proactive_watcher is None
         assert win.agent_link_manager is None
-        assert win._ensure_proactive_watcher() is not None
         assert win._ensure_agent_link_manager() is not None
     finally:
         win.close()
@@ -143,57 +140,5 @@ def test_petwindow_agent_link_enabled_at_startup_constructs_manager(tmp_path):
         mgr = win.agent_link_manager
         if mgr is not None:
             mgr.shutdown()
-        win.close()
-        app.processEvents()
-
-
-def test_petwindow_proactive_toggle_creates_watcher(tmp_path, monkeypatch):
-    from tests.pet_window_fakes import FakeLibrary
-
-    app = _qapp()
-    cfg = _disabled_config(tmp_path)
-    win = PetWindow(FakeLibrary(), cfg)
-    try:
-        bubbles = []
-        monkeypatch.setattr(win, "show_bubble", lambda text, duration_ms=3200: bubbles.append(text))
-        assert win.proactive_watcher is None
-        win._toggle_proactive_enabled(True)
-        assert win.proactive_watcher is not None
-    finally:
-        win.close()
-        app.processEvents()
-
-
-def test_petwindow_proactive_enabled_at_startup_starts_watcher(tmp_path, monkeypatch):
-    """单进程 spawn=false 路径：配置里已 enabled 的主动识屏必须**开机自启**。
-
-    用户报告 v4.2.0 的第二个问题：``PetWindow.__init__`` 不调
-    ``sync_optional_services()``，``proactive_watcher`` 只在设置对话框关闭
-    （``refresh_pet_settings``）或右键开关时懒创建，于是重启后配置里开着的
-    主动识屏不自启，必须每次手工开一次设置。既有 #99 回归只钉了 agent_link
-    通道，这里补上主动识屏这一半（``_disabled_config`` 只关碰撞/待办等，
-    不碰 ``proactive_screen``）。
-
-    主动识屏 v1 仅 Windows（``apply_config`` 有平台守卫），故固定平台为
-    win32，保证 Linux/macOS CI 上同样确定性。
-    """
-    import sys
-
-    from tests.pet_window_fakes import FakeLibrary
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    app = _qapp()
-    cfg = _disabled_config(tmp_path)
-    cfg.set("proactive_screen", {"enabled": True, "whitelist": ["code.exe"]})
-    win = PetWindow(FakeLibrary(), cfg)
-    try:
-        # 不能只断言「对象被创建」：真正生效靠 apply_config() 起表。
-        assert win.proactive_watcher is not None, "开机配置已开时必须装配观察器"
-        assert win.proactive_watcher.is_running() is True, (
-            "重启后无需展开菜单/开关设置，配置里开着的主动识屏就应自启")
-    finally:
-        watcher = win.proactive_watcher
-        if watcher is not None:
-            watcher.pause()
         win.close()
         app.processEvents()

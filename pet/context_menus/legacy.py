@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QMenu
 from .shared import (
     add_action,
     add_agent_link_menu,
-    add_proactive_menu,
     add_autostart,
     add_clear_spawned_pets,
     add_drag_physics,
@@ -77,7 +76,6 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
 
     menu.addSeparator()
     # 「DeepSeek Harness」「打开网页版 DeepSeek」2026-10-14 下线（DeepSeek 的东西用不到了）
-    add_proactive_menu(menu, pet)
     add_agent_link_menu(menu, pet)
 
     menu.addSeparator()

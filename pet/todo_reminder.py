@@ -2,7 +2,7 @@
 """待办提醒：纯逻辑决策 + 条目存储 + GUI 线程调度服务。
 
 模块顶部为纯函数与纯文件 IO（零 Qt），可在无 Qt 环境导入测试；
-TodoReminderService 在 __init__ 内惰性导入 Qt（同 pet/proactive.py 约定），
+TodoReminderService 在 __init__ 内惰性导入 Qt，
 QTimer 全程运行在 GUI 线程，无跨线程对象。
 
 条目持久化在独立文件 todo_items[-<instance_id>].json（config.dir 下），
@@ -277,7 +277,7 @@ class TodoStore:
 class TodoReminderService:
     """待办提醒调度服务（AppShell 持有，GUI 线程）。
 
-    同 ProactiveScreenWatcher：本类不继承 QObject（Qt 在 __init__ 内惰性
+    本类不继承 QObject（Qt 在 __init__ 内惰性
     导入，模块顶层保持无 Qt），持有无主 QTimer，由 AppShell 持有引用保证
     生命周期。tick → 纯函数 advance_todo_state → 肥鱼可见且设置未抑制时
     冒气泡，否则走 app.system_notify 桌面通知（受
