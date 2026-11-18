@@ -125,7 +125,7 @@ FEATURES: tuple[Feature, ...] = (
     Feature("distill_personal", "personal", "funnel", "memory_distill", _distill(md.SIDE_PERSONAL), page="briefing_distill",
             writes=(("md_win", "memory", _always), ("mem_win", "memory", _always),
                     ("vault_personal", "memory", _distill_flag("mirror_to_vault")))),
-    Feature("assistant", "personal", "user", "personal", _personal, page="briefing_personal", note="assistant",
+    Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
             writes=(("vault_personal", "memory", _always),)),
     Feature("link_wsl", "link", "link", "agent_link.claude_wsl", _link("claude_wsl", sys.platform == "win32"),
             page="menu_agent_link", writes=(("set_wsl", "config", _always),), note="link_wsl"),

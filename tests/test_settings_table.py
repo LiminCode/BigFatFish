@@ -226,6 +226,50 @@ def test_work_notes_writes_go_through_its_normalize():
     assert st.check_changes(group, {}, {"effort": "max"}) == (None, [{"id": "effort", "code": "not_a_choice"}])
 
 
+# ───────────────────────── 个人助理（M4 第三项）：选项可以带显示文字 ─────────────────────────
+
+def test_personal_is_declared_with_labelled_choices_for_following_chat():
+    from pet import personal_vault as pv
+
+    group = st.group("personal")
+    assert group.config_key == pv.CONFIG_KEY and group.zone == "personal" and group.normalize is pv.normalize
+    by_id = {s.id: s for s in group.settings}
+    assert list(by_id) == ["enabled", "repo_dir", "time", "model", "effort"]
+    assert by_id["time"].control == "choice_or_text" and by_id["time"].choices == pv.TIME_CHOICES
+    assert by_id["model"].choices == ("", *pv.MODEL_CHOICES) and by_id["effort"].choices == ("", *pv.EFFORT_LEVELS)
+    assert dict(by_id["model"].labels)[""] == "personal.settings.same_as_chat"
+    assert set(dict(by_id["effort"].labels)) == {"", *pv.EFFORT_LEVELS}
+    assert group.available is None                                          # 不靠 WSL，也不靠 git
+
+
+def test_personal_writes_go_through_its_normalize():
+    group = st.group("personal")
+    final, errors = st.check_changes(group, {}, {"time": "21:00", "model": "", "effort": "max", "repo_dir": " E:\\AI-Base "})
+    assert errors == [] and (final["time"], final["model"], final["effort"], final["repo_dir"]) == ("21:00", "", "max", "E:\\AI-Base")
+    assert st.check_changes(group, {}, {"time": "25:00"}) == (None, [{"id": "time", "code": "rejected"}])
+    assert st.check_changes(group, {}, {"model": "bad model!"}) == (None, [{"id": "model", "code": "rejected"}])
+    assert st.check_changes(group, {}, {"effort": "huge"}) == (None, [{"id": "effort", "code": "not_a_choice"}])
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_every_choice_label_has_its_text_in_both_languages(language):
+    table = i18n.table(language)
+    keys = [key for g in st.GROUPS for s in g.settings for _value, key in s.labels]
+    assert keys and [key for key in keys if not str(table.get(key) or "").strip()] == []
+
+
+def test_validate_rejects_labels_that_cannot_work():
+    group = st.group("personal")
+
+    def broken(setting):
+        settings = tuple(setting if s.id == setting.id else s for s in group.settings)
+        with pytest.raises(ValueError):
+            st.validate((st.Group(**{**{f: getattr(group, f) for f in group.__dataclass_fields__}, "settings": settings}),))
+
+    broken(st.Setting("repo_dir", "text", labels=(("", "personal.settings.same_as_chat"),)))       # 只有下拉有选项文字
+    broken(st.Setting("effort", "choice", choices=("", "low"), labels=(("max", "personal.settings.effort.max"),)))  # 不是可选值
+
+
 def test_validate_rejects_bounds_that_cannot_work():
     group = st.group("slack_watch")
 

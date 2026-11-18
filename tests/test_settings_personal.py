@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""设置页「个人助理」一节：开关、克隆目录、时间、模型（可单独选）、思考强度（可单独选）能存回去；流程说明折叠节；中英文。"""
+"""设置窗口里的「个人助理」一节：设置已经搬到配置全景（ADR 0014，路线图 M4），这里只剩一行说明、一个跳过去的按钮
+和折叠的「这个功能怎么运作」说明。
+
+和前面几组一样要守住「一项设置只有一个编辑入口」：设置窗口里没有这一组的控件，保存时也不碰 ``personal`` 这个键。
+"""
 from __future__ import annotations
 
 import os
@@ -10,11 +14,14 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
+from pet import overlay_settings_command as cmd
 from pet import personal_vault as pv
-from pet import settings_personal as sp
 from pet.config import Config
+from pet.settings_widgets import SettingRow
 
 app = QApplication.instance() or QApplication([])
+
+OLD_ROWS = ("personal_enabled", "personal_repo_dir", "personal_time", "personal_model", "personal_model_custom", "personal_effort")
 
 
 @pytest.fixture(autouse=True)
@@ -23,22 +30,24 @@ def _chinese_again():
     i18n.set_language("zh")
 
 
-def _dialog(tmp_path, monkeypatch, *, git: bool = True, language: str = "zh", **settings):
+def _dialog(tmp_path, monkeypatch, *, language: str = "zh", **settings):
     from pet import modern_settings_dialog as settings_mod
 
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    monkeypatch.setattr(sp.pv, "git_exe", lambda: r"C:\Program Files\Git\cmd\git.exe" if git else None)
     config = Config(tmp_path)
     config.set("ui_language", language)
     if settings:
-        config.set(pv.CONFIG_KEY, {**pv.normalize(None), **settings})
+        config.set(pv.CONFIG_KEY, pv.normalize(settings))
+    config.save()
     return config, settings_mod.ModernSettingsDialog(config, include_ai=False)
 
 
-def _row_page(dialog, row_id: str) -> str:
-    from pet.settings_widgets import SettingRow
+def _row(dialog, row_id: str):
+    return dialog.findChild(SettingRow, f"settingRow_{row_id}")
 
-    row = dialog.findChild(SettingRow, f"settingRow_{row_id}")
+
+def _page_of(dialog, row_id: str) -> str:
+    row = _row(dialog, row_id)
     assert row is not None, row_id
     for index in range(dialog.pages.count()):
         if dialog.pages.widget(index).isAncestorOf(row):
@@ -52,67 +61,59 @@ def _close(dialog):
     app.processEvents()
 
 
-def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, repo_dir=r"D:\vault\AI-Base", time="07:30",
-                             model="claude-haiku-5-5", effort="low")
+def test_the_section_only_says_where_the_settings_went(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, repo_dir=r"D:\vault\AI-Base", time="07:30")
     try:
-        for row_id in ("personal_flow", "personal_enabled", "personal_repo_dir", "personal_time", "personal_model", "personal_effort"):
-            assert _row_page(dialog, row_id) == "简报与笔记", row_id
-        assert dialog.personal_enabled_check.isChecked()
-        assert dialog.personal_repo_edit.text() == r"D:\vault\AI-Base"
-        assert dialog.personal_time_select.currentData() == "07:30"
-        assert dialog.personal_model_select.currentData() == "claude-haiku-5-5" and dialog.personal_model_edit.isHidden()
-        assert dialog.personal_effort_select.currentData() == "low"
-        assert "<b>" in dialog.personal_flow_label.text() and "只读" in dialog.personal_flow_label.text()
+        assert all(_row(dialog, row_id) is None for row_id in OLD_ROWS), "控件留在这里就是两个编辑入口"
+        assert not hasattr(dialog, "personal_enabled_check") and not hasattr(dialog, "personal_model_select")
+        assert _page_of(dialog, "personal_moved") == "简报与笔记"
+        moved = _row(dialog, "personal_moved")
+        assert "个人助理" in moved.hint_label.text() and "配置全景" in moved.hint_label.text()
+        assert dialog.personal_open_panorama.text() == "到配置全景里改"
     finally:
         _close(dialog)
 
 
-def test_model_and_effort_can_be_chosen_separately_and_follow_chat_when_blank(tmp_path, monkeypatch):
+def test_the_flow_still_lives_in_a_collapsed_section(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch)
+    try:
+        section = dialog.personal_flow_section
+        assert section.toggle is not None and not section.card.isVisibleTo(section), "默认收起"
+        assert "<b>" in dialog.personal_flow_label.text() and "只读" in dialog.personal_flow_label.text()
+        assert _page_of(dialog, "personal_flow") == "简报与笔记"
+    finally:
+        _close(dialog)
+
+
+def test_the_button_asks_the_fish_to_open_the_panorama_at_this_group(tmp_path, monkeypatch):
     config, dialog = _dialog(tmp_path, monkeypatch)
     try:
-        assert dialog.personal_model_select.currentData() == "" and dialog.personal_effort_select.currentData() == ""
-        assert dialog.personal_model_select.itemText(0) == "跟 AI 对话一致" and dialog.personal_effort_select.itemText(0) == "跟 AI 对话一致"
-        assert [dialog.personal_effort_select.itemData(i) for i in range(1, dialog.personal_effort_select.count())] == list(pv.EFFORT_LEVELS)
-        dialog.personal_enabled_check.setChecked(True)
-        dialog.personal_time_select.setCurrentIndex(dialog.personal_time_select.findData("21:00"))
-        dialog.personal_model_select.setCurrentIndex(dialog.personal_model_select.findData(sp.CUSTOM))
-        assert not dialog.personal_model_edit.isHidden()
-        dialog.personal_model_edit.setText(" claude-fable-5-1 ")
-        dialog.personal_effort_select.setCurrentIndex(dialog.personal_effort_select.findData("xhigh"))
-        sp.save_personal_settings(dialog)
-        assert config.get(pv.CONFIG_KEY) == {"enabled": True, "repo_dir": pv.default_repo_dir(), "time": "21:00",
-                                             "model": "claude-fable-5-1", "effort": "xhigh"}
-        dialog.personal_model_select.setCurrentIndex(0)
-        dialog.personal_effort_select.setCurrentIndex(0)
-        sp.save_personal_settings(dialog)
-        assert config.get(pv.CONFIG_KEY)["model"] == "" and config.get(pv.CONFIG_KEY)["effort"] == ""
+        dialog.personal_open_panorama.click()
+        command = cmd.consume_command(config.dir)
+        assert command["command"] == cmd.CMD_OPEN_PANORAMA and command["focus"] == "personal"
     finally:
         _close(dialog)
 
 
-def test_a_custom_model_round_trips_and_a_missing_git_is_only_a_hint(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, git=False, model="claude-opus-5")
+def test_saving_the_window_leaves_what_the_page_wrote_alone(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=False, time="08:30")
     try:
-        assert dialog.personal_model_select.currentData() == sp.CUSTOM and dialog.personal_model_edit.text() == "claude-opus-5"
-        assert dialog.personal_enabled_check.isEnabled(), "简报不需要 git，开关照常可用"
-        from pet.settings_widgets import SettingRow
-
-        row = dialog.findChild(SettingRow, "settingRow_personal_enabled")
-        assert "git" in row.hint_label.text()
+        page = Config(tmp_path)                                               # 窗口开着的时候，页面经主进程改了这一组
+        page.set(pv.CONFIG_KEY, pv.normalize({"enabled": True, "repo_dir": r"E:\AI-Base", "time": "21:00",
+                                              "model": "claude-haiku-5-5", "effort": "max"}))
+        assert page.save()
+        assert dialog._write_config()
+        saved = pv.normalize(Config(tmp_path).get(pv.CONFIG_KEY))
+        assert saved == {"enabled": True, "repo_dir": r"E:\AI-Base", "time": "21:00", "model": "claude-haiku-5-5", "effort": "max"}
     finally:
         _close(dialog)
 
 
 def test_the_section_speaks_english(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, language="en")
+    _config, dialog = _dialog(tmp_path, monkeypatch, language="en")
     try:
-        from pet.settings_widgets import SettingRow
-
-        row = dialog.findChild(SettingRow, "settingRow_personal_model")
-        assert row.findChild(type(row), None) is None or True
-        assert dialog.personal_model_select.itemText(0) == "Same as AI chat"
-        assert dialog.personal_effort_select.itemText(2).startswith("Medium")
+        assert dialog.personal_open_panorama.text() == "Change them in Config panorama"
+        assert "Personal assistant" in _row(dialog, "personal_moved").hint_label.text()
         assert "How the personal assistant flows" in dialog.personal_flow_label.text()
     finally:
         _close(dialog)

@@ -362,6 +362,23 @@ def test_the_real_description_of_work_notes_draws_every_setting(engine, monkeypa
     assert "settings." not in html.replace("data-", "") and "notes.settings" not in html
 
 
+@pytest.mark.parametrize("language, follow, medium", [("zh", "跟 AI 对话一致", "中 · medium"), ("en", "Same as AI chat", "Medium · medium")])
+def test_the_real_description_of_personal_shows_choice_labels(engine, language, follow, medium):
+    i18n.set_language(language)
+    desc = api.describe(st.group("personal"), {"time": "07:05"})
+    rows = {r["id"]: r for r in desc["settings"]}
+    assert len(rows["effort"]["labels"]) == len(rows["effort"]["choices"]) and rows["time"]["labels"] == []
+    out = _run(engine, desc, [], "", language=language)
+    html = out["html"]
+    for row in desc["settings"]:
+        assert f'data-row="{row["id"]}"' in html, row["id"]
+    assert f'<option value="" selected>{follow}</option>' in html               # 模型、effort 默认都跟着聊天
+    assert html.count(f'>{follow}</option>') == 2 and f'<option value="medium">{medium}</option>' in html
+    assert '<option value="claude-haiku-5-5">claude-haiku-5-5</option>' in html  # 没写文字的选项照原样
+    assert 'data-custom="time"' in html and 'value="07:05"' in html
+    assert "personal.settings" not in html
+
+
 def test_every_form_string_exists_in_both_languages():
     keys = [key for key in render.PAGE_KEYS if key.startswith("form_")]
     assert len(keys) >= 15
