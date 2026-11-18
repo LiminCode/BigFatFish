@@ -114,8 +114,7 @@ def host_icon(widget, kind: str, size: int, *, ink: str | None = None,
 
     ``ink`` 只管手绘记号的颜色（``#rrggbb``；缺省跟 widget 的主题色），真图标与它无关——所以
     真图标按 (种类, 尺寸, 缩放) 缓存一份，记号再按颜色各缓存一份。"""
-    from .context_menus.icons import vector_widget_icon
-    from .context_menus.quick_launch import fitted_application_icon
+    from .context_menus.icons import fitted_application_icon, vector_widget_icon
 
     glyph = FALLBACK_GLYPHS.get(kind)
     if not glyph:

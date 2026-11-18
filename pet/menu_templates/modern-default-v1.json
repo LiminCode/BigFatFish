@@ -36,18 +36,7 @@
         {"type": "action", "id": "edge_probe", "visible": true}
       ]
     },
-    {"type": "action", "id": "quick_launch", "visible": true, "section": "pet"},
     {"type": "separator", "id": "default.separator-pet", "visible": true},
-    {
-      "type": "submenu",
-      "id": "tools_help",
-      "label": "工具与帮助",
-      "visible": true,
-      "section": "tools",
-      "children": [
-        {"type": "action", "id": "github_project", "visible": true}
-      ]
-    },
     {"type": "action", "id": "agent_link", "visible": true, "section": "tools"},
     {"type": "action", "id": "todo_panel", "visible": true, "section": "tools"},
     {"type": "action", "id": "config_panorama", "visible": true, "section": "tools"},

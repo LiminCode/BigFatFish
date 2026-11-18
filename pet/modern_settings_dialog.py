@@ -73,7 +73,6 @@ from .click_sound import warm_click_sound_effects
 from .config import (
     DEFAULT_CONTEXT_MENU_APPEARANCE,
     DEFAULT_MENU_EASTER_EGG,
-    DEFAULT_QUICK_LAUNCH_APPS,
     DEFAULT_SELF_TALK_BUBBLE_STYLE,
     DEFAULT_SELF_TALK_DURATION_SECONDS,
     DEFAULT_SELF_TALK_MAX_INTERVAL,
@@ -86,7 +85,6 @@ from .context_menus.icons import (
     custom_icon_file_error,
     vector_widget_icon,
 )
-from .context_menus.quick_launch import fitted_application_icon
 from .context_menus.registry import CUSTOM_ICON_CHOICES, MENU_ACTIONS
 from .fun_image_popup import oijingjing_image_path, resolve_fun_asset, store_fun_asset
 from .menu_layout import (
@@ -151,8 +149,6 @@ from .settings_widgets import (
     SettingsTabContainer,
     _SettingsPageShell,
     _line_edit,
-    QuickLaunchItemRow,
-    QuickLaunchEditor,
     _system_dark,
 )
 from .settings_theme_qss import _settings_stylesheet
@@ -736,8 +732,6 @@ class ModernSettingsDialog(QDialog):
             menu_available_actions.difference_update({"chat", "balance"})
         self.menu_available_actions = frozenset(menu_available_actions)
         menu_enabled_actions = set(menu_available_actions)
-        if not self.config.get("quick_launch_apps", DEFAULT_QUICK_LAUNCH_APPS):
-            menu_enabled_actions.discard("quick_launch")
         if not self.config.get("menu_easter_egg", DEFAULT_MENU_EASTER_EGG).get("enabled", True):
             menu_enabled_actions.discard("ojingjing")
         self.menu_layout_editor = MenuLayoutEditor(
@@ -759,31 +753,6 @@ class ModernSettingsDialog(QDialog):
         menu_page_layout.addStretch(1)
         self._add_page(t("settings.dlg.menu"), "application", self._page_shell(t("settings.dlg.menu"), menu_content))
 
-        launcher_content = QWidget()
-        launcher_layout = QVBoxLayout(launcher_content)
-        launcher_layout.setContentsMargins(0, 0, 0, 0)
-        launcher_layout.setSpacing(18)
-        self.quick_launch_editor = QuickLaunchEditor(
-            self.config.get("quick_launch_apps", DEFAULT_QUICK_LAUNCH_APPS),
-            launcher_content,
-        )
-        launcher_layout.addWidget(
-            SettingsSection(
-                t("settings.dlg.configured_apps"),
-                [
-                    SettingRow(
-                        "quick_launch_apps",
-                        t("settings.dlg.app_quick_launch"),
-                        t("settings.dlg.these_apps_appear_their_icon"),
-                        self.quick_launch_editor,
-                        stacked=True,
-                    ),
-                ],
-                launcher_content,
-            )
-        )
-        launcher_layout.addStretch(1)
-        self._add_page(t("settings.dlg.quick_launch"), "application", self._page_shell(t("settings.dlg.quick_launch"), launcher_content))
 
         # AI rows are composed directly into the final capability domain by
         # _rebuild_domain_navigation. Do not temporarily hand the controller
@@ -819,7 +788,6 @@ class ModernSettingsDialog(QDialog):
         self.island_info_check.toggled.connect(self._update_island_info_controls)
         self.egg_enabled_check.toggled.connect(self._update_egg_controls)
         self.egg_enabled_check.toggled.connect(self._sync_menu_action_states)
-        self.quick_launch_editor.changed.connect(self._sync_menu_action_states)
         self.collision_enabled_check.toggled.connect(self._update_collision_controls)
         self.collision_sound_check.toggled.connect(self._update_collision_sound_controls)
         self.spawn_inherit_size_check.toggled.connect(self._update_spawn_size_controls)
@@ -855,8 +823,6 @@ class ModernSettingsDialog(QDialog):
 
     def _sync_menu_action_states(self, *_args) -> None:
         enabled = set(self.menu_available_actions)
-        if not self.quick_launch_editor.apps():
-            enabled.discard("quick_launch")
         if not self.egg_enabled_check.isChecked():
             enabled.discard("ojingjing")
         self.menu_layout_editor.set_enabled_actions(enabled)
@@ -1328,15 +1294,6 @@ class ModernSettingsDialog(QDialog):
             page_content(
                 [
                     (t("settings.dlg.content_layout"), claim("menu_template", "context_menu_layout")),
-                ]
-            ),
-        )
-        menu.addTab(
-            "launcher",
-            t("settings.dlg.quick_launch"),
-            page_content(
-                [
-                    (t("settings.dlg.configured_apps"), claim("quick_launch_apps")),
                 ]
             ),
         )
@@ -1852,7 +1809,6 @@ class ModernSettingsDialog(QDialog):
                 "image_dir": store_fun_asset(self.egg_image_dir_picker.text(), oijingjing_image_path().parent),
             },
         )
-        self.config.set("quick_launch_apps", self.quick_launch_editor.apps())
         if self.ai_page is not None:
             self.ai_page.save()
         settings_tray.save_tray_icon_setting(self)

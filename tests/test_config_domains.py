@@ -47,7 +47,7 @@ COLLISION_KEYS = (
     "collision_mass_scale", "collision_impulse_cap",
     "collision_sound_enabled", "collision_sound_volume",
 )
-MENU_KEYS = ("context_menu_appearance", "menu_easter_egg", "quick_launch_apps")
+MENU_KEYS = ("context_menu_appearance", "menu_easter_egg")
 
 # 各域脏输入：非法类型/越界/缺字段混在一起，normalize 产出必须与 Config 加载路径一致。
 CHAT_DIRTY = {
@@ -88,11 +88,6 @@ MENU_DIRTY = {
         "light_background": "not-a-color", "future_subkey": 1,
     },
     "menu_easter_egg": None,             # None → 默认彩蛋（reload 白名单跳过 None）
-    "quick_launch_apps": [
-        42,                              # 非 dict 条目丢弃
-        {"kind": "default_browser", "name": ""},
-        {"kind": "application", "name": "App", "path": "C:/x.exe"},
-    ],
 }
 
 # 往返稳定性用例：(facade, 输入列表)，输入覆盖合法/脏/None。
@@ -118,7 +113,6 @@ ROUNDTRIP_CASES = [
     (MenuConfig, [
         {"context_menu_appearance": {"theme": "light"}},
         {"menu_easter_egg": {"title": "x"}},
-        {"quick_launch_apps": [{"kind": "application", "name": "A", "path": "C:/a.exe"}]},
         None,
     ]),
 ]

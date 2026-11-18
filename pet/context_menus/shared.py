@@ -22,10 +22,6 @@ from .menu_styles.common import inherit_menu_style
 
 log = logging.getLogger(__name__)
 
-#: 「GitHub 项目页」打开的地址（上游仓库）
-REPO_URL = "https://github.com/MerZlin/dsh-pet-indesktop"
-
-
 class _AnimationIconSignals(QObject):
     ready = Signal(object)
 

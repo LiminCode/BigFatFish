@@ -27,9 +27,7 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "wsl_claude_code",
         "default.separator-playback",
         "pet_controls",
-        "quick_launch",
         "default.separator-pet",
-        "tools_help",
         "agent_link",
         "todo_panel",
         "config_panorama",
@@ -188,8 +186,6 @@ def test_runtime_feature_state_does_not_filter_menu_layout_actions():
         def get(self, key, default=None):
             if key == "menu_easter_egg":
                 return {"enabled": False}
-            if key == "quick_launch_apps":
-                return []
             return default
 
     class Pet:
@@ -198,10 +194,12 @@ def test_runtime_feature_state_does_not_filter_menu_layout_actions():
         on_show_balance = lambda self, parent=None: None
         on_open_modern_settings = lambda self: None
         on_spawn_pet = lambda self: None
+        on_rally_pets = lambda self: None
+        has_small_pets = False
 
     pet = Pet()
-    assert {"ojingjing", "quick_launch"} <= MENU_ACTIONS.available_ids(pet)
-    assert {"ojingjing", "quick_launch"}.isdisjoint(MENU_ACTIONS.enabled_ids(pet))
+    assert {"ojingjing", "rally_pets"} <= MENU_ACTIONS.available_ids(pet)
+    assert {"ojingjing", "rally_pets"}.isdisjoint(MENU_ACTIONS.enabled_ids(pet))
 
 
 def test_runtime_menu_renders_alias_icon_separator_and_disabled_item():
@@ -211,12 +209,14 @@ def test_runtime_menu_renders_alias_icon_separator_and_disabled_item():
 
     class Config:
         def get(self, key, default=None):
-            return [] if key == "quick_launch_apps" else default
+            return default
 
     class Pet:
         cfg = Config()
         on_open_chat = lambda self: None
         on_open_modern_settings = lambda self: None
+        on_rally_pets = lambda self: None
+        has_small_pets = False
         request_quit = lambda self: None
 
     app = QApplication.instance() or QApplication([])
@@ -224,7 +224,7 @@ def test_runtime_menu_renders_alias_icon_separator_and_disabled_item():
     nodes = (
         {"type": "action", "id": "chat", "alias": "和鲸鱼聊聊", "icon": "screen"},
         {"type": "separator", "id": "user.separator-1"},
-        {"type": "action", "id": "quick_launch"},
+        {"type": "action", "id": "rally_pets"},
     )
     MENU_ACTIONS.populate(menu, Pet(), nodes)
 
@@ -232,10 +232,9 @@ def test_runtime_menu_renders_alias_icon_separator_and_disabled_item():
     assert actions[0].text() == "和鲸鱼聊聊"
     assert not actions[0].icon().isNull()
     assert actions[1].isSeparator()
-    assert actions[2].text() == "快捷启动"
+    assert actions[2].text() == "护驾"
     assert not actions[2].isEnabled()
-    assert actions[2].toolTip() == "尚未配置快捷启动应用"
-    assert actions[2].menu().actions()[0].text() == "尚未配置快捷项"
+    assert actions[2].toolTip() == "还没有小肥鱼"
     menu.close()
     app.processEvents()
 
@@ -250,16 +249,16 @@ def test_menu_editor_customizes_alias_icon_separator_and_shows_runtime_state():
     editor = MenuLayoutEditor(
         None,
         available_actions=MENU_ACTIONS.ids,
-        enabled_actions=MENU_ACTIONS.ids - {"quick_launch"},
+        enabled_actions=MENU_ACTIONS.ids - {"rally_pets"},
     )
 
     assert [editor.tree.headerItem().text(index) for index in range(3)] == [
         "菜单项", "状态", "位置",
     ]
-    quick_launch = editor.item_for_action("quick_launch")
-    assert quick_launch is not None
-    assert quick_launch.text(1) == "已停用"
-    assert quick_launch.flags() & __import__("PySide6").QtCore.Qt.ItemFlag.ItemIsEnabled
+    rally = editor.item_for_action("rally_pets")
+    assert rally is not None
+    assert rally.text(1) == "已停用"
+    assert rally.flags() & __import__("PySide6").QtCore.Qt.ItemFlag.ItemIsEnabled
 
     editor.set_item_alias("chat", "和鲸鱼聊聊")
     editor.set_item_icon("chat", "screen")
@@ -325,8 +324,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "lineup_pets",
         "golden_spin",
         "edge_probe",
-        "quick_launch",
-        "github_project",
         "agent_link",
         "todo_panel",
         "config_panorama",
@@ -360,8 +357,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "claude_desktop",
         "wsl_claude_code",
         "pet_controls",
-        "quick_launch",
-        "tools_help",
         "agent_link",
         "todo_panel",
         "config_panorama",
@@ -524,8 +519,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "Claude Desktop",
         "Claude Code（WSL）",
         "肥鱼控制",
-        "快捷启动",
-        "工具与帮助",
         "Agent 联动",
         "肥鱼设置",
         "退出",
@@ -540,8 +533,8 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "护驾", "列队", "AI 对话", "|",
         "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music",
         "Claude Desktop", "Claude Code（WSL）", "|",
-        "肥鱼控制", "快捷启动", "|",
-        "工具与帮助", "Agent 联动", "|",
+        "肥鱼控制", "|",
+        "Agent 联动", "|",
         "肥鱼设置", "退出",
     ]
     # tools 段顺序：… Agent 联动 待办提醒 配置全景 | 肥鱼设置 退出
@@ -562,10 +555,8 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "黄金回旋",
         "边缘探头",
     ]
-    tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    # 「DeepSeek 余额 / DeepSeek Harness / 打开网页版 DeepSeek」2026-10-14 下线：工具与帮助只剩项目页
-    expected_tools = ["GitHub 项目页"]
-    assert [action.text() for action in tools.actions() if not action.isSeparator()] == expected_tools
+    # 「工具与帮助」（最后只剩「GitHub 项目页」）2026-11-18 整个删掉
+    assert all(action.text() != "工具与帮助" for action in menu.actions())
     menu.close()
     app.processEvents()
 
@@ -844,7 +835,6 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     # 配图概率属于「自言自语」组（必须是显式 claim 的成员，否则掉进「待分类」）。
     assert owner("self_talk_image_chance") == "互动"
     assert owner("menu_theme") == "菜单"
-    assert owner("quick_launch_apps") == "菜单"
     assert owner("dynamic_island_enabled") == "桌面组件"
     assert owner("api_url") == "AI 与对话"
     assert owner("voice_chime_enabled") == "语音"
@@ -1203,20 +1193,14 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
-    assert tabs.keys() == ("layout", "launcher", "appearance")
-    assert tabs.labels() == ("菜单编排", "快捷启动", "外观")
+    assert tabs.keys() == ("layout", "appearance")
+    assert tabs.labels() == ("菜单编排", "外观")
 
     layout_row = dialog.findChild(SettingRow, "settingRow_context_menu_layout")
-    launcher_row = dialog.findChild(SettingRow, "settingRow_quick_launch_apps")
     appearance_row = dialog.findChild(SettingRow, "settingRow_menu_theme")
     assert tabs.key_for_descendant(layout_row) == "layout"
-    assert tabs.key_for_descendant(launcher_row) == "launcher"
     assert tabs.key_for_descendant(appearance_row) == "appearance"
-
-    dialog.search_edit.setText("应用快捷启动")
-    app.processEvents()
-    assert dialog.sidebar.currentItem().text() == "菜单"
-    assert tabs.currentKey() == "launcher"
+    assert dialog.findChild(SettingRow, "settingRow_quick_launch_apps") is None
     dialog.reject()
     app.processEvents()
 
@@ -1234,12 +1218,9 @@ def test_runtime_toggles_refresh_menu_status_without_rewriting_tree(tmp_path, mo
     before = dialog.menu_layout_editor.value()["nodes"]
 
     dialog.egg_enabled_check.setChecked(False)
-    dialog.quick_launch_editor.list.clear()
-    dialog.quick_launch_editor._sync_content_height()
     app.processEvents()
 
     assert dialog.menu_layout_editor.item_for_action("ojingjing").text(1) == "已停用"
-    assert dialog.menu_layout_editor.item_for_action("quick_launch").text(1) == "已停用"
     assert dialog.menu_layout_editor.value()["nodes"] == before
     dialog.reject()
     app.processEvents()
@@ -1719,7 +1700,6 @@ def test_menu_preview_and_runtime_qmenu_share_the_same_layout_structure():
             values = {
                 "context_menu_layout": layout,
                 "menu_easter_egg": {"enabled": False},
-                "quick_launch_apps": [],
             }
             return values.get(key, default)
 
@@ -1999,7 +1979,15 @@ def test_menu_editor_refuses_to_nest_one_submenu_inside_another():
     from pet.modern_settings_dialog import MenuLayoutEditor
 
     app = QApplication.instance() or QApplication([])
-    editor = MenuLayoutEditor(None)
+    editor = MenuLayoutEditor({
+        "schema_version": 1, "layout_id": "user", "nodes": [
+            {"type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True,
+             "children": [{"type": "action", "id": "no_move", "visible": True}]},
+            {"type": "submenu", "id": "user.group-1", "label": "别的组", "visible": True,
+             "children": [{"type": "action", "id": "todo_panel", "visible": True}]},
+            {"type": "action", "id": "quit", "visible": True},
+        ],
+    })
     root = editor.tree.invisibleRootItem()
     source = next(
         root.child(index)
@@ -2008,7 +1996,7 @@ def test_menu_editor_refuses_to_nest_one_submenu_inside_another():
     )
     editor.tree.setCurrentItem(source)
     editor.move_menu.aboutToShow.emit()
-    next(action for action in editor.move_menu.actions() if action.data() == "tools_help").trigger()
+    next(action for action in editor.move_menu.actions() if action.data() == "user.group-1").trigger()
 
     assert source.parent() is None
     editor.close()
@@ -2191,21 +2179,19 @@ def test_settings_action_popups_share_the_modern_select_visual_tokens():
     from PySide6.QtWidgets import QApplication
 
     from pet.context_menus.registry import MENU_ACTIONS
-    from pet.modern_settings_dialog import MenuLayoutEditor, QuickLaunchEditor
+    from pet.modern_settings_dialog import MenuLayoutEditor
 
     app = QApplication.instance() or QApplication([])
     editor = MenuLayoutEditor(None, available_actions=MENU_ACTIONS.ids)
-    launcher = QuickLaunchEditor([])
     menus = [
         editor.order_menu, editor.move_menu, editor.submenu_menu,
-        editor.customize_menu, editor.more_menu, launcher.add_menu,
+        editor.customize_menu, editor.more_menu,
     ]
     assert all(menu.objectName() == "SettingsPopup" for menu in menus)
     assert all("border-radius: 0" in menu.styleSheet() for menu in menus), "Metro：弹出面板也是方角"
     assert all("padding: 6px" in menu.styleSheet() for menu in menus)
     assert all("min-height: 22px" in menu.styleSheet() for menu in menus)
     editor.close()
-    launcher.close()
     app.processEvents()
 
 
@@ -2213,7 +2199,7 @@ def test_action_popups_use_the_exact_same_popup_surface_as_menu_mode():
     from PySide6.QtWidgets import QApplication
 
     from pet.context_menus.registry import MENU_ACTIONS
-    from pet.modern_settings_dialog import MenuLayoutEditor, ModernSelect, QuickLaunchEditor
+    from pet.modern_settings_dialog import MenuLayoutEditor, ModernSelect
 
     app = QApplication.instance() or QApplication([])
     select = ModernSelect(width=156)
@@ -2223,11 +2209,10 @@ def test_action_popups_use_the_exact_same_popup_surface_as_menu_mode():
     select.showPopup()
     app.processEvents()
     editor = MenuLayoutEditor(None, available_actions=MENU_ACTIONS.ids)
-    launcher = QuickLaunchEditor([])
 
     reference = select._popup
     assert reference is not None
-    for popup in (editor.order_menu, editor.customize_menu, launcher.add_menu):
+    for popup in (editor.order_menu, editor.customize_menu):
         assert popup.objectName() == reference.objectName()
         assert popup.styleSheet() == reference.styleSheet()
         assert popup.property("settingsPopup") is True
@@ -2235,7 +2220,6 @@ def test_action_popups_use_the_exact_same_popup_surface_as_menu_mode():
     reference.close()
     select.close()
     editor.close()
-    launcher.close()
     app.processEvents()
 
 

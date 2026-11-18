@@ -308,7 +308,7 @@ def test_legacy_template_is_flat_and_modern_is_grouped(tmp_path):
         shell._config.set("context_menu_template", "modern")
         modern = build_sprite_full_menu(shell)
         root = [a.text() for a in modern.actions() if not a.isSeparator()]
-        assert "肥鱼控制" in root and "工具与帮助" in root
+        assert "肥鱼控制" in root and "工具与帮助" not in root
         assert "回到右下角" not in root          # 收进分组子菜单
     finally:
         shell._delete_runtime_marker()
@@ -339,9 +339,7 @@ def test_modern_template_exposes_same_capabilities(tmp_path):
             assert label in labels, f"modern 模板缺项：{label}"
         controls = _find(menu, "肥鱼控制").menu()
         assert _find(controls, "生小肥鱼") is not None
-        tools = _find(menu, "工具与帮助").menu()
-        for label in ("GitHub 项目页",):
-            assert _find(tools, label) is not None
+        assert "工具与帮助" not in labels and "快捷启动" not in labels and "GitHub 项目页" not in labels
     finally:
         shell._delete_runtime_marker()
 

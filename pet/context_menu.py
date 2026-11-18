@@ -29,7 +29,6 @@ _FALLBACK_TEMPLATES = {
             {"id": "interaction", "items": ["ojingjing", "chat"]},
             {"id": "playback", "items": ["animations_hub", "character"]},
             {"id": "functions", "items": ["playback_speed", "size", "drag_physics", "return_corner", "no_move", "on_top", "autostart", "spawn_pet"]},
-            {"id": "tools", "items": ["quick_launch"]},
             {"id": "settings", "items": ["modern_settings"]},
             {"id": "template", "items": ["switch_template"]},
             {"id": "exit", "items": ["quit"]},
