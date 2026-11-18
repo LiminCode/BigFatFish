@@ -442,23 +442,6 @@ def _merge_agent_link_data(raw: Any) -> dict:
     return _clean_agent_link_data(raw)
 
 
-def _default_file_interpret_data() -> dict:
-    """拖文件解读（file_interpret）默认值；消费方 pet/file_interpret.py。"""
-    return {
-        # 拖文件后提供「解读」确认气泡；关闭则拖放只有吃动画，不询问
-        "enabled": True,
-        # 进度汇报间隔（秒），产品区间 [5,120]；PR3 增加 progress_mode（heartbeat/chunked）
-        "progress_interval_seconds": 15.0,
-    }
-
-
-def _merge_file_interpret_data(raw: Any) -> dict:
-    result = _default_file_interpret_data()
-    if isinstance(raw, dict):
-        result.update(raw)
-    return result
-
-
 def _default_chat_data():
     return {
         "enabled": True,
@@ -1028,7 +1011,6 @@ class Config:
             "dynamic_island": _default_dynamic_island_data(),
             "proactive_screen": _default_proactive_screen_data(),
             "agent_link": _default_agent_link_data(),
-            "file_interpret": _default_file_interpret_data(),
             "chat_ui_style": "modern",  # modern / classic（仅聊天窗口保留双实现）
             "chat_follow_pet": False,  # 聊天窗口是否跟随肥鱼移动
             "system_notifications_enabled": True,  # 对话完成/失败/需要授权时弹桌面系统通知
@@ -1370,8 +1352,6 @@ class Config:
             self.data["proactive_screen"] = _merge_proactive_screen_data(raw["proactive_screen"])
         if "agent_link" in raw:
             self.data["agent_link"] = _merge_agent_link_data(raw["agent_link"])
-        if "file_interpret" in raw:
-            self.data["file_interpret"] = _merge_file_interpret_data(raw["file_interpret"])
         self._migrate_click_sound_config(raw)
         self._migrate_decode_broker_config(raw)
         self.data["version"] = 4
@@ -1694,14 +1674,6 @@ class Config:
         self.data["experimental_shared_decode"] = _bool_or_default(self.data.get("experimental_shared_decode"), True)
         # 设置页进程隔离：同规防字符串布尔误开；默认开（关掉 = 回退进程内设置页）。
         self.data["settings_process_isolation"] = _bool_or_default(self.data.get("settings_process_isolation"), True)
-        # 拖文件解读（file_interpret）：嵌套键归一化（布尔/秒数钳制），
-        # 未认识的键随 _merge_file_interpret_data 保留（对齐 agent_link 宽容策略）
-        fi = self.data.get("file_interpret")
-        if isinstance(fi, dict):
-            fi["enabled"] = _bool_or_default(fi.get("enabled", True), True)
-            fi["progress_interval_seconds"] = _float_or_default(
-                fi.get("progress_interval_seconds"), 15.0, 5.0, 120.0
-            )
         self.data.update(_clean_collision_data(self.data))
 
     def get(self, key, default=None):
@@ -1799,7 +1771,6 @@ class Config:
             "slingshot_enabled",
             "throw_strength",
             "agent_link",
-            "file_interpret",
             "idle_low_fps_enabled",
             "idle_low_fps_threshold",
             "media_prewarm",

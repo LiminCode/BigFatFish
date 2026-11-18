@@ -101,7 +101,6 @@ SETTINGS_DOMAIN_NAV = (
     ("简报与笔记", "briefing"),   # 2026-10-24：定时让 AI 读、AI 协助记的功能（简报 / Slack 关注 / 笔记 / 个人助理）
     ("自动化与联动", "automation"),
     ("语音", "sound"),
-    ("文件识别", "file"),
 )
 
 #: 侧栏能力域的中文名 → 文案键。中文名是内部标识（测试、深链接 select_page、页面字典都按它认），
@@ -117,7 +116,6 @@ SETTINGS_DOMAIN_KEYS = {
     "简报与笔记": "settings.domain.briefing",
     "自动化与联动": "settings.domain.automation",
     "语音": "settings.domain.voice",
-    "文件识别": "settings.domain.file",
 }
 
 

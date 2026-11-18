@@ -521,8 +521,6 @@ class PetInstance:
         # 文件投喂（拖文件模拟吃掉）：PR73 引入的接线在批5.2 重构时被丢，
         # 必须随每只窗的创建（启动/切角色/多窗）挂载，缺失则拖放无效。
         win.install_file_eater()
-        # 拖文件解读（确认 → 新会话请求 → 进度冒泡 → 摘要），与投喂共用接缝。
-        win.install_file_interpreter()
         # 预热点击音效：首次创建 QSoundEffect/QMediaPlayer 池并等待加载完成，
         # 在显示窗口前完成，避免窗口出现后主线程被音频初始化阻塞、
         # 首次点击 Q 弹卡顿。音效关闭时不预热，避免无谓拉起 QtMultimedia 池。
@@ -1982,15 +1980,6 @@ class AppShell:
             # AttributeError（见 _precache 段同款注释）。
             self._overlay_shell.on_self_talk_speak = self.speak_self_talk
             self._overlay_shell.start()
-            # 拖文件解读：legacy 由 PetWindow.install_file_interpreter 注入
-            # （window_optional_services.py:96-105）；overlay 无 PetWindow，
-            # 由壳作宿主（cfg/show_bubble/show_alert/resolve_alert 同名面）。
-            try:
-                from .file_interpret import FileInterpretController
-                self._overlay_shell.set_file_interpret_offer(
-                    FileInterpretController(self._overlay_shell).offer)
-            except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
-                logging.exception("overlay: 拖文件解读接线失败")
             self._start_work_briefing()
             self._start_slack_watch()
             self._start_personal()

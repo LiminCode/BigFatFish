@@ -1280,23 +1280,7 @@ class OverlayShell(QObject):
         self._feeding = SpriteFeedingController(
             self.overlay, self.sprite, self._config, self.behavior)
         self._feeding._bubble_cb = self._say_feeding_bubble
-        # 解读询问接缝由壳持有：重建控制器时回填，否则主宠提升/屏迁移之后
-        # 拖文件解读静默失效。
-        self._feeding.interpret_offer = getattr(self, "_file_interpret_offer", None)
         self.overlay._feeding = self._feeding
-
-    def set_file_interpret_offer(self, offer) -> None:
-        """注入拖文件解读询问回调（app 侧 ``FileInterpretController.offer``）。
-
-        overlay 拓扑下 PetWindow 不构造，``file_eater`` 的 ``interpret_offer``
-        接缝没有别的宿主：AppShell 持有解读控制器，经本方法把 ``offer(paths)``
-        挂到当前投喂控制器上（``sprite_feeding`` 吃完后调用，口径同旧
-        ``file_eater.eat_paths:183-186``）。传 None = 解除。
-        """
-        self._file_interpret_offer = offer
-        feeding = getattr(self, "_feeding", None)
-        if feeding is not None:
-            feeding.interpret_offer = offer
 
     def _bind_bubble(self) -> None:
         """主 sprite 的气泡跟随器；重建前先关旧跟随器（防旧顶层气泡残留）。

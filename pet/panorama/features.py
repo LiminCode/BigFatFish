@@ -49,10 +49,6 @@ def _screen(cfg):
     return _settings(_section(cfg, "proactive_screen").get("enabled") is True)
 
 
-def _file(cfg):
-    return _settings(_section(cfg, "file_interpret").get("enabled", True) is not False)
-
-
 def _distill(side):
     def read(cfg):
         s = md.side_settings(md.normalize(cfg.get(md.CONFIG_KEY)), side)
@@ -122,7 +118,6 @@ FEATURES: tuple[Feature, ...] = (
             writes=(("gh_personal", "github", _chat_uses_github),)),
     Feature("screen", "personal", "eye", "proactive_screen", _screen, page="automation_screen", note="screen",
             follows_provider=True),
-    Feature("file", "personal", "file", "file_interpret", _file, follows_provider=True),
     # 会话记忆蒸馏的设置也搬到了配置全景；一个配置键分两组，所以两块磁贴各自写明是哪一组
     Feature("distill_personal", "personal", "funnel", "memory_distill", _distill(md.SIDE_PERSONAL), settings_group="distill_personal",
             writes=(("md_win", "memory", _always), ("mem_win", "memory", _always),

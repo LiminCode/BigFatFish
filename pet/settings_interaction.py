@@ -11,7 +11,7 @@
 标签就是两个同级任务：**点击与音效**（输入 + 点击反馈）、**自言自语**（周期气泡的
 台词与配图）。
 
-**接线契约**（与 ``settings_file_interpret`` 同口径）：
+**接线契约**：
 
 - 行在本模块构建、由 ``build_interaction_domain`` 挂进「互动」域；
 - 行**不在** ``_rebuild_domain_navigation`` 开头的 ``all_rows`` 快照里，因此不需要
