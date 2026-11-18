@@ -206,23 +206,9 @@ def test_wsl_scan_can_be_switched_off_and_failures_do_not_break_the_windows_scan
     assert got == [1] and service.last_error == "" and service.stats()["wsl"]["state"] == "failed"
 
 
-def test_scan_wsl_setting_defaults_on_and_round_trips(tmp_path):
-    from PySide6.QtWidgets import QWidget
-
-    from pet import settings_memory_distill as sd
-
+def test_scan_wsl_setting_defaults_on():
     assert md.normalize(None)["scan_wsl"] is True
     assert md.normalize({"scan_wsl": False})["scan_wsl"] is False
-    config = Config(tmp_path / "appdata")
-    dialog = QWidget()
-    dialog.config = config
-    rows = sd.distill_rows(dialog)
-    assert [row.objectName() for row in rows][:2] == ["settingRow_distill_enabled", "settingRow_distill_scan_wsl"]
-    assert dialog.distill_scan_wsl_check.isChecked() and dialog.distill_scan_wsl_check.accessibleName() == "也扫 WSL 里的会话"
-    dialog.distill_scan_wsl_check.setChecked(False)
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["scan_wsl"] is False
-    dialog.deleteLater()
 
 
 class _Host:

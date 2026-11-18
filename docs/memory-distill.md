@@ -15,7 +15,7 @@
 | `pet/memory_distill_wsl_sink.py` | 公司侧落盘：经 `wsl.exe` 的 `read_text` / `write_text` / `remove`、`apply_proposal`（失败回滚条目库） |
 | `pet/memory_distill_service.py` | `MemoryDistillService(QObject)`：定时、后台线程、信号回 GUI、`review()`、两侧镜像推送 |
 | `pet/memory_distill_ui.py` | 流程页窗口与控制器（流程图、入口磁贴、提案页） |
-| `pet/settings_memory_distill.py` | 设置页「自动化与联动」里的一节 |
+| `pet/settings_memory_distill.py` | 设置窗口「简报与笔记」里的一节：只剩两行「到配置全景里改」和流程说明（设置本身在 `settings_table` 的 `distill_personal` / `distill_work` 两组） |
 
 ## 机制与不变量
 
@@ -140,6 +140,14 @@ flowchart TD
 `work_distill`、`work_daily_at`、`work_model`（Claude Code 别名，默认同工作简报）、`work_effort`、`work_prompt_*`、
 `work_mirror_to_vault`。提示词明文可改，占位符 `{candidates}` / `{memory}` / `{dismissed}` 由 `work_briefing.render_template`
 填（只换白名单里的名字，模板里的 JSON 花括号不会炸）。
+
+**在配置全景上改**（2026-11-18 起，设置窗口那一节只剩跳转）：一个配置键分成两组，对应两块磁贴的「设置」按钮。
+
+- 「抽取与个人侧」（`distill_personal`）：总开关、扫不扫 WSL、候选保留天数（1–3650）、公司目录（一行一个）、个人侧的时刻 / 模型 / 强度 /
+  镜像 / 两份提示词。总开关放这一组，因为它首先管抽取，抽取在 Windows 这边跑，不靠 WSL。
+- 「公司侧」（`distill_work`）：`work_*` 那几项。这台电脑上找不到 WSL 时这一组整组不能改。
+- 两组的版本号都按整个 `memory_distill` 算：一边刚存过，另一边开着的面板再交会得到「值已经变了」，换成现在的值再改。
+- 公司目录一行都不剩会被拒（功能会悄悄退回默认目录）；保留天数带小数也拒（功能会取整）。
 
 ## 设计取舍
 

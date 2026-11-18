@@ -293,7 +293,7 @@ def fish_features(g: Graph, f: dict) -> None:
         g.node(node_id, "win", column, kind, L(f"feature.{feature.id}"), sub, "ok" if s["enabled"] else "off", "row",
                icon=feature.icon, group=FISH_NODE, facts=facts, source=_src(f["cfg_path"], feature.config_key),
                page=L(f"page.{feature.page}") if feature.page else "",
-               settings=settings_table.group_for_config_key(feature.config_key))
+               settings=feature.settings_group or settings_table.group_for_config_key(feature.config_key))
         if not s["enabled"]:
             off.append(L(f"feature.{feature.id}"))
         if feature.route == "personal" and active:

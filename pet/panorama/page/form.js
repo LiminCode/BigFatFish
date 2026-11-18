@@ -2,8 +2,8 @@
 
    页面里没有任何一项设置的名字：画什么、叫什么、能选什么都在描述里（pet/panorama/settings_api.describe），
    能不能存由服务说了算（pet/settings_table.check_changes）。这里只管三件事：
-   - 画六种控件：开关、下拉、可自填的下拉、数字、单行文本、长文本；收在「高级」里的默认折起来；
-   - 什么时候交：开关、下拉、数字一动就交；文本等用户点「保存」，没存的标出来，可以撤销；
+   - 画七种控件：开关、下拉、可自填的下拉、数字、单行文本、长文本、一行一个的列表；收在「高级」里的默认折起来；
+   - 什么时候交：开关、下拉、数字一动就交；文本和列表等用户点「保存」，没存的标出来，可以撤销；
    - 服务每一种回答的样子：存上了 / 值已经变了（换成现在的值）/ 哪几项不对 / 忙 / 用不了 / 连接断了。
    用户打到一半的文字，除非存上了，否则任何回答都不会把它冲掉。
 
@@ -18,11 +18,16 @@ export function settingsForm(host, S, send, on) {
 const CUSTOM = '__custom__';
 let st = null;
 const row = id => st.desc.settings.find(r => r.id === id);
-const textual = r => r.control === 'text' || r.control === 'long_text';
+const textual = r => r.control === 'text' || r.control === 'long_text' || r.control === 'lines';
+const listy = r => r.control === 'lines';
 const hasBuiltin = r => r.builtin !== null && r.builtin !== undefined;
-/* 文本框里的字存下去是什么：去掉首尾空白；和内置文字一样就是空 */
-const stored = (r, text) => { const v = String(text).trim(); return hasBuiltin(r) && v === String(r.builtin).trim() ? '' : v; };
-const dirty = r => textual(r) && r.id in st.drafts && stored(r, st.drafts[r.id]) !== r.value;
+/* 文本框里的字存下去是什么：去掉首尾空白；和内置文字一样就是空。列表：一行一项，去掉首尾空白，空行不要 */
+const stored = (r, text) => {
+  if (listy(r)) return String(text).split('\n').map(s => s.trim()).filter(Boolean);
+  const v = String(text).trim(); return hasBuiltin(r) && v === String(r.builtin).trim() ? '' : v;
+};
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const dirty = r => textual(r) && r.id in st.drafts && !same(stored(r, st.drafts[r.id]), r.value);
 /* 正在交出去的那个值先显示出来（不然开关点了会先弹回去再跳过来） */
 const shown = r => st.busy && r.id in st.pending ? st.pending[r.id] : r.value;
 const locked = r => st.busy || !st.desc.available || (!!r.depends_on && !!row(r.depends_on) && shown(row(r.depends_on)) !== true);
@@ -69,14 +74,14 @@ function control(r) {
     return `<select data-set="${key}"${off} id="${id}">${options}</select>` + (custom ?
       `<input type="text" class="fcustom" data-custom="${key}" value="${esc(r.choices.indexOf(value) < 0 ? value : '')}"${off} aria-label="${esc(S.form_custom_label)}">` : '');
   }
-  const text = r.id in st.drafts ? st.drafts[r.id] : (r.value === '' && hasBuiltin(r) ? r.builtin : r.value);
+  const text = r.id in st.drafts ? st.drafts[r.id] : listy(r) ? (r.value || []).join('\n') : (r.value === '' && hasBuiltin(r) ? r.builtin : r.value);
   if (r.control === 'text') return `<input type="text" data-draft="${key}" value="${esc(text)}"${off} id="${id}">` + buttons(r);
-  return `<textarea data-draft="${key}"${off} id="${id}" rows="${hasBuiltin(r) ? 12 : 4}" spellcheck="false">${esc(text)}</textarea>` + buttons(r);
+  return `<textarea data-draft="${key}"${off} id="${id}" rows="${hasBuiltin(r) ? 12 : listy(r) ? 3 : 4}" spellcheck="false">${esc(text)}</textarea>` + buttons(r);
 }
 
 function rowHtml(r) {
   const error = st.errors[r.id];
-  return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
+  return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' || listy(r) ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
     `<div class="flabel"><label for="${idOf(r)}">${esc(r.title)}</label>${r.hint ? `<small>${esc(r.hint)}</small>` : ''}</div>` +
     `<div class="fctl">${control(r)}</div>` +
     (error ? `<p class="ferr" role="alert">${esc(errorText(r, error))}</p>` : '') + '</div>';

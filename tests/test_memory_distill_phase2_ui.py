@@ -367,19 +367,3 @@ def test_scheduled_run_bubbles_and_review_tile_opens_the_tab(tmp_path):
     finally:
         window.close()
         window.deleteLater()
-
-
-def test_settings_mirror_toggle_round_trips(tmp_path):
-    from PySide6.QtWidgets import QWidget
-
-    from pet import settings_memory_distill as sd
-
-    config = Config(tmp_path / "appdata")
-    dialog = QWidget()
-    dialog.config = config
-    rows = sd.distill_rows(dialog)      # 行对象持有控件，得留着
-    assert rows and dialog.distill_mirror_check.isChecked(), "默认镜像"
-    dialog.distill_mirror_check.setChecked(False)
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["mirror_to_vault"] is False
-    dialog.deleteLater()

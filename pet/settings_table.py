@@ -13,9 +13,9 @@
 一项设置要声明的东西对应 ``docs/settings-and-menu.md`` 里「准入记录」要求的字段：
 
 - ``id``：组内标识，也是它在那一组配置字典里的位置；点号表示下一层（``sources.jira``）；
-- ``control``：页面上用哪种控件（``CONTROLS``）；
+- ``control``：页面上用哪种控件（``CONTROLS``）。``lines`` 是字符串列表，页面上一行一个（会话记忆蒸馏的公司目录）；
 - ``choices``：下拉的可选值。``choice`` 只能选其中之一，``choice_or_text`` 还可以自己填；
-- ``commit``：什么时候算存上。不写就按控件定——开关和下拉一动就存（``immediate``），文本框等用户点保存（``on_finish``）；
+- ``commit``：什么时候算存上。不写就按控件定——开关和下拉一动就存（``immediate``），文本框和列表等用户点保存（``on_finish``）；
 - ``disclosure``：``primary`` 直接露出，``advanced`` 收在「高级」里；
 - ``depends_on``：同组的一个开关；它关着时这一项变灰；
 - ``builtin``：只给长文本用——留空时功能实际用的那段内置文字（给页面当底稿显示，也是「恢复内置」的目标）。
@@ -38,13 +38,14 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import claude_hooks
+from . import memory_distill as md
 from . import personal_vault as pv
 from . import slack_watch as sw
 from . import work_briefing as wb
 from . import work_notes as wn
 
 ZONES = ("personal", "work")                # 这一组设置管的是哪个账号那一侧的功能
-CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text")
+CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text", "lines")
 COMMITS = ("immediate", "on_finish", "confirm")
 DISCLOSURES = ("primary", "advanced")
 _TEXT_CONTROLS = ("text", "long_text")
@@ -67,7 +68,7 @@ class Setting:
 
     @property
     def commit_policy(self) -> str:
-        return self.commit or ("on_finish" if self.control in _TEXT_CONTROLS else "immediate")
+        return self.commit or ("on_finish" if self.control in (*_TEXT_CONTROLS, "lines") else "immediate")
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,8 @@ def _type_error(setting: Setting, value: Any) -> str:
         return "out_of_range" if setting.bounds and not setting.bounds[0] <= value <= setting.bounds[1] else ""
     if setting.control == "choice":
         return "" if value in setting.choices else "not_a_choice"
+    if setting.control == "lines":
+        return "" if isinstance(value, list) and all(isinstance(item, str) for item in value) else "type"
     return "" if isinstance(value, str) else "type"
 
 
@@ -202,10 +205,19 @@ def check_changes(group: Group, raw: Any, changes: Any) -> tuple[dict | None, li
         passed.append(key)
     final = group.normalize(merged)
     for key in passed:
-        wanted = changes[key].strip() if by_id[key].control in _TEXT_CONTROLS else changes[key]
+        wanted = _as_stored(by_id[key], changes[key])
         if get_path(final, key) != wanted:
             errors.append({"id": key, "code": "rejected"})
     return (None, errors) if errors else (final, [])
+
+
+def _as_stored(setting: Setting, value: Any) -> Any:
+    """提交的值存下去应该是什么样：文本去掉首尾空白；列表每行去掉首尾空白、空行不要。其余原样。"""
+    if setting.control in _TEXT_CONTROLS:
+        return value.strip()
+    if setting.control == "lines":
+        return [item.strip() for item in value if item.strip()]
+    return value
 
 
 def group(group_id: str) -> Group:
@@ -230,6 +242,8 @@ def _fits(control: str, default: Any) -> bool:
         return isinstance(default, (int, float)) and not isinstance(default, bool)
     if control in ("text", "long_text", "choice_or_text"):
         return isinstance(default, str)
+    if control == "lines":
+        return isinstance(default, list)
     return True
 
 
@@ -277,11 +291,25 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
 _MODEL_CHOICES = ("sonnet", "haiku", "opus")
 _FOLLOW_CHAT = "personal.settings.same_as_chat"
 
+#: 会话记忆蒸馏两组共用一个配置键：一组的键在另一组里写明去哪改
+_DISTILL_WORK = ("work_distill", "work_daily_at", "work_model", "work_effort", "work_mirror_to_vault", "work_prompt_zh",
+                 "work_prompt_en")
+_DISTILL_PERSONAL = ("enabled", "scan_wsl", "keep_days", "work_roots", "daily_at", "model", "effort", "mirror_to_vault",
+                     "prompt_zh", "prompt_en")
+
 
 def _briefing_prompt(language: str) -> Setting:
     return Setting(f"prompt_{language}", "long_text", disclosure="advanced",
                    builtin=lambda effective: wb.default_prompt_template(language, effective.get("sources")),
                    text=f"settings.work_briefing.prompt_{language}", hint="briefing.settings.prompt_hint")
+
+
+def _distill_prompt(prefix: str, language: str) -> Setting:
+    hint = "distill.settings.work_prompt_hint" if prefix else "distill.settings.prompt_hint"
+    side = "distill_work" if prefix else "distill_personal"
+    return Setting(f"{prefix}prompt_{language}", "long_text", disclosure="advanced",
+                   builtin=lambda _effective: md.default_prompt_template(language),
+                   text=f"settings.{side}.prompt_{language}", hint=hint)
 
 
 def _notes_prompt(language: str) -> Setting:
@@ -343,4 +371,39 @@ GROUPS: tuple[Group, ...] = (
                 labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS)),
                 text="personal.settings.effort"),
     ), title_key="personal.settings.section"),
+    # 会话记忆蒸馏：一个配置键（memory_distill）分两组，和配置全景上的两块磁贴一一对应。
+    # 个人侧这组还管抽取（总开关、扫不扫 WSL、保留几天、哪些目录算公司）：抽取在 Windows 这边跑，不靠 WSL。
+    # 个人侧的模型存空串 = 跟 AI 对话一致；公司侧的模型名拼进 shell 命令（claude -p --model），过 normalize 的白名单。
+    Group("distill_personal", "briefing", md.CONFIG_KEY, "personal", md.normalize, (
+        Setting("enabled", "toggle", text="distill.settings.enabled"),
+        Setting("scan_wsl", "toggle", text="distill.settings.scan_wsl_label", hint="distill.settings.scan_wsl_hint"),
+        Setting("keep_days", "number", bounds=md.KEEP_DAYS_RANGE, unit="settings.unit.days",
+                text="distill.settings.keep_days_label", hint="distill.settings.keep_days_hint"),
+        Setting("work_roots", "lines", text="distill.settings.work_roots_label", hint="distill.settings.work_roots_hint"),
+        Setting("daily_at", "choice_or_text", choices=md.TIME_CHOICES, text="distill.settings.daily_at_label",
+                hint="distill.settings.daily_at_hint"),
+        Setting("model", "choice_or_text", choices=("", *md.MODEL_CHOICES), labels=(("", "distill.settings.same_as_chat"),),
+                text="distill.settings.model_label", hint="distill.settings.model_hint"),
+        Setting("effort", "choice", choices=wb.EFFORT_CHOICES, text="distill.settings.effort_label",
+                hint="distill.settings.effort_hint"),
+        Setting("mirror_to_vault", "toggle", text="distill.settings.mirror_label", hint="distill.settings.mirror_hint"),
+        _distill_prompt("", "zh"),
+        _distill_prompt("", "en"),
+    ), title_key="distill.settings.section_personal",
+        not_editable={key: "公司侧那一组（distill_work）里改" for key in _DISTILL_WORK}),
+    Group("distill_work", "briefing", md.CONFIG_KEY, "work", md.normalize, (
+        Setting("work_distill", "toggle", text="distill.settings.work_distill_label", hint="distill.settings.work_distill_hint"),
+        Setting("work_daily_at", "choice_or_text", choices=md.TIME_CHOICES, text="distill.settings.work_daily_at_label",
+                hint="distill.settings.work_daily_at_hint"),
+        Setting("work_model", "choice_or_text", choices=md.WORK_MODEL_CHOICES, text="distill.settings.work_model_label",
+                hint="distill.settings.work_model_hint"),
+        Setting("work_effort", "choice", choices=wb.EFFORT_CHOICES, text="distill.settings.work_effort_label",
+                hint="distill.settings.work_effort_hint"),
+        Setting("work_mirror_to_vault", "toggle", text="distill.settings.work_mirror_label",
+                hint="distill.settings.work_mirror_hint"),
+        _distill_prompt("work_", "zh"),
+        _distill_prompt("work_", "en"),
+    ), title_key="distill.settings.section_work", available=lambda: bool(claude_hooks.wsl_exe()),
+        unavailable_text="distill.settings.work_no_wsl",
+        not_editable={key: "个人侧那一组（distill_personal）里改；总开关也在那里，它同时管抽取" for key in _DISTILL_PERSONAL}),
 )

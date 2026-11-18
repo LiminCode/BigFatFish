@@ -1,26 +1,21 @@
 # -*- coding: utf-8 -*-
-"""设置页「会话记忆蒸馏」一节（自动化与联动）：开关、保留天数、公司目录、每日时刻、模型、思考强度、提示词，
-以及折叠的流程说明。
+"""设置窗口里的「会话记忆蒸馏」一节（简报与笔记）。
 
-控件、提示、保存都在这里；逻辑见 ``memory_distill.py``。按用户 2026-10-24 的规矩，让 AI 干活的功能一开始就把
-提示词明文摆出来、模型与 effort 可选、时机可调——第一期还不调模型，但这些项已经在。文案全部走 ``i18n.t``。
+这一节的设置搬到了配置全景（ADR 0014，路线图 M4），在 ``pet/settings_table.py`` 里分成两组声明：
+「抽取与个人侧」（``distill_personal``：总开关、扫不扫 WSL、保留天数、公司目录、个人侧的时刻 / 模型 / 强度 / 镜像 / 提示词）
+和「公司侧」（``distill_work``：``work_*`` 那几项）。这里只剩两行「搬到哪了」和折叠的「这个功能怎么运作」说明。
+这扇窗保存时不碰 ``memory_distill`` 这个键，页面改的值不会被它盖回去。逻辑见 ``memory_distill.py``。
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 
-from . import memory_distill as md
 from .i18n import t
-from .settings_prompt_editor import PromptEditor
-from .settings_widgets import ModernSelect, SettingRow, SettingsSection, ToggleSwitch
-from .settings_work_briefing import effort_select
+from .settings_moved import moved_row
+from .settings_widgets import SettingRow, SettingsSection
 
-KEEP_DAYS_CHOICES = (30, 60, 90, 180, 365)
-SAME = ""              # 下拉里「跟 AI 对话一致」对应的值（配置里存空串）
-CUSTOM = "__custom__"
-TIME_CHOICES = ("20:00", "21:00", "21:30", "22:00", "23:00")
-ROOTS_SEPARATOR = ";"
+GROUP_IDS = ("distill_personal", "distill_work")
 
 
 def section_title() -> str:
@@ -44,175 +39,5 @@ def flow_section(dialog) -> SettingsSection:
 
 
 def distill_rows(dialog) -> list[SettingRow]:
-    """建出控件并返回设置行。挂在 ``dialog`` 上：``distill_enabled_check``、``distill_keep_days_select``、
-    ``distill_roots_edit``、``distill_time_select``、``distill_model_edit``、``distill_effort_select``、``distill_prompt_editor``。"""
-    settings = md.normalize(dialog.config.get(md.CONFIG_KEY))
-
-    check = ToggleSwitch(dialog)
-    check.setChecked(bool(settings["enabled"]))
-    dialog.distill_enabled_check = check
-
-    scan_wsl = ToggleSwitch(dialog)
-    scan_wsl.setChecked(bool(settings["scan_wsl"]))
-    scan_wsl.setAccessibleName(t("distill.settings.scan_wsl_label"))
-    dialog.distill_scan_wsl_check = scan_wsl
-
-    keep = ModernSelect(dialog, width=120)
-    for days in sorted({*KEEP_DAYS_CHOICES, settings["keep_days"]}):
-        keep.addItem(t("distill.settings.days", days=days), days)
-    keep.setCurrentIndex(max(0, keep.findData(settings["keep_days"])))
-    dialog.distill_keep_days_select = keep
-
-    roots = QLineEdit(dialog)
-    roots.setText(ROOTS_SEPARATOR.join(settings["work_roots"]))
-    roots.setPlaceholderText(md.default_work_root())
-    roots.setMinimumWidth(200)
-    roots.setAccessibleName(t("distill.settings.work_roots_label"))
-    dialog.distill_roots_edit = roots
-
-    time_select = ModernSelect(dialog, width=120)
-    for choice in sorted({*TIME_CHOICES, settings["daily_at"]}):
-        time_select.addItem(choice, choice)
-    time_select.setCurrentIndex(max(0, time_select.findData(settings["daily_at"])))
-    dialog.distill_time_select = time_select
-
-    # 模型下拉（用户 2026-10-31：蒸馏模型要可选）：跟 AI 对话一致 / 几个常用名 / 自定义
-    model_select = ModernSelect(dialog, width=200)
-    model_select.addItem(t("distill.settings.same_as_chat"), SAME)
-    for value in md.MODEL_CHOICES:
-        model_select.addItem(value, value)
-    model_select.addItem(t("distill.settings.custom_choice"), CUSTOM)
-    model_edit = QLineEdit(dialog)
-    model_edit.setPlaceholderText(md.MODEL_CHOICES[1])
-    model_edit.setAccessibleName(t("distill.settings.custom_model"))
-    if settings["model"] in (SAME, *md.MODEL_CHOICES):
-        model_select.setCurrentIndex(max(0, model_select.findData(settings["model"])))
-    else:
-        model_select.setCurrentIndex(max(0, model_select.findData(CUSTOM)))
-        model_edit.setText(settings["model"])
-    model_edit.setVisible(model_select.currentData() == CUSTOM)
-    model_select.currentIndexChanged.connect(lambda _index: model_edit.setVisible(model_select.currentData() == CUSTOM))
-    dialog.distill_model_select = model_select
-    dialog.distill_model_edit = model_edit
-    effort = effort_select(dialog, settings["effort"])
-    dialog.distill_effort_select = effort
-
-    mirror = ToggleSwitch(dialog)
-    mirror.setChecked(bool(settings["mirror_to_vault"]))
-    dialog.distill_mirror_check = mirror
-
-    language = md.wb.prompt_language()
-    prompt = PromptEditor(dialog, default=md.default_prompt_template(language), stored=settings[f"prompt_{language}"],
-                          accessible_name=t("distill.settings.prompt"))
-    dialog.distill_prompt_editor = prompt
-    dialog.distill_prompt_language = language
-
-    return [
-        SettingRow("distill_enabled", t("distill.settings.enabled"), t("distill.settings.enabled_hint"), check),
-        SettingRow("distill_scan_wsl", t("distill.settings.scan_wsl_label"), t("distill.settings.scan_wsl_hint"), scan_wsl),
-        SettingRow("distill_keep_days", t("distill.settings.keep_days_label"), t("distill.settings.keep_days_hint"), keep),
-        SettingRow("distill_work_roots", t("distill.settings.work_roots_label"), t("distill.settings.work_roots_hint"), roots),
-        SettingRow("distill_daily_at", t("distill.settings.daily_at_label"), t("distill.settings.daily_at_hint"), time_select),
-        SettingRow("distill_model", t("distill.settings.model_label"), t("distill.settings.model_hint"), model_select),
-        SettingRow("distill_model_custom", t("distill.settings.custom_model"), "", model_edit, stacked=True),
-        SettingRow("distill_effort", t("distill.settings.effort_label"), t("distill.settings.effort_hint"), effort),
-        SettingRow("distill_mirror", t("distill.settings.mirror_label"), t("distill.settings.mirror_hint"), mirror),
-        SettingRow("distill_prompt", t("distill.settings.prompt"), t("distill.settings.prompt_hint"), prompt, stacked=True),
-        *_work_rows(dialog, settings, language),
-    ]
-
-
-def _work_rows(dialog, settings: dict, language: str) -> list[SettingRow]:
-    """公司侧那一组：每日蒸馏开关、时刻、模型、强度、提示词——都和个人侧分开存（``work_*``）。挂在 ``dialog`` 上：
-    ``distill_work_check``、``distill_work_time_select``、``distill_work_model_select`` / ``_edit``、
-    ``distill_work_effort_select``、``distill_work_prompt_editor``。"""
-    check = ToggleSwitch(dialog)
-    check.setChecked(bool(settings["work_distill"]))
-    check.setAccessibleName(t("distill.settings.work_distill_label"))
-    dialog.distill_work_check = check
-
-    time_select = ModernSelect(dialog, width=120)
-    for choice in sorted({*TIME_CHOICES, settings["work_daily_at"]}):
-        time_select.addItem(choice, choice)
-    time_select.setCurrentIndex(max(0, time_select.findData(settings["work_daily_at"])))
-    dialog.distill_work_time_select = time_select
-
-    # 公司侧的模型名是 Claude Code 的别名（claude -p --model <名>），不是 API 模型 id
-    model_select = ModernSelect(dialog, width=200)
-    for value in md.WORK_MODEL_CHOICES:
-        model_select.addItem(value, value)
-    model_select.addItem(t("distill.settings.custom_choice"), CUSTOM)
-    model_edit = QLineEdit(dialog)
-    model_edit.setPlaceholderText(md.WORK_DEFAULT_MODEL)
-    model_edit.setAccessibleName(t("distill.settings.work_custom_model"))
-    if settings["work_model"] in md.WORK_MODEL_CHOICES:
-        model_select.setCurrentIndex(max(0, model_select.findData(settings["work_model"])))
-    else:
-        model_select.setCurrentIndex(max(0, model_select.findData(CUSTOM)))
-        model_edit.setText(settings["work_model"])
-    model_edit.setVisible(model_select.currentData() == CUSTOM)
-    model_select.currentIndexChanged.connect(lambda _index: model_edit.setVisible(model_select.currentData() == CUSTOM))
-    dialog.distill_work_model_select = model_select
-    dialog.distill_work_model_edit = model_edit
-
-    effort = effort_select(dialog, settings["work_effort"])
-    dialog.distill_work_effort_select = effort
-
-    mirror = ToggleSwitch(dialog)
-    mirror.setChecked(bool(settings["work_mirror_to_vault"]))
-    mirror.setAccessibleName(t("distill.settings.work_mirror_label"))
-    dialog.distill_work_mirror_check = mirror
-
-    prompt = PromptEditor(dialog, default=md.default_prompt_template(language), stored=settings[f"work_prompt_{language}"],
-                          accessible_name=t("distill.settings.work_prompt"))
-    dialog.distill_work_prompt_editor = prompt
-
-    return [
-        SettingRow("distill_work_distill", t("distill.settings.work_distill_label"), t("distill.settings.work_distill_hint"), check),
-        SettingRow("distill_work_daily_at", t("distill.settings.work_daily_at_label"), t("distill.settings.work_daily_at_hint"), time_select),
-        SettingRow("distill_work_model", t("distill.settings.work_model_label"), t("distill.settings.work_model_hint"), model_select),
-        SettingRow("distill_work_model_custom", t("distill.settings.work_custom_model"), "", model_edit, stacked=True),
-        SettingRow("distill_work_effort", t("distill.settings.work_effort_label"), t("distill.settings.work_effort_hint"), effort),
-        SettingRow("distill_work_mirror", t("distill.settings.work_mirror_label"), t("distill.settings.work_mirror_hint"), mirror),
-        SettingRow("distill_work_prompt", t("distill.settings.work_prompt"), t("distill.settings.work_prompt_hint"), prompt, stacked=True),
-    ]
-
-
-def chosen_work_model(dialog) -> str:
-    value = dialog.distill_work_model_select.currentData()
-    if value == CUSTOM:
-        value = dialog.distill_work_model_edit.text()
-    return str(value or "").strip()
-
-
-def chosen_model(dialog) -> str:
-    value = dialog.distill_model_select.currentData()
-    if value == CUSTOM:
-        value = dialog.distill_model_edit.text()
-    return str(value or "").strip()
-
-
-def save_distill_settings(dialog) -> None:
-    check = getattr(dialog, "distill_enabled_check", None)
-    if check is None:
-        return
-    current = md.normalize(dialog.config.get(md.CONFIG_KEY))
-    roots = [part.strip() for part in dialog.distill_roots_edit.text().split(ROOTS_SEPARATOR) if part.strip()]
-    dialog.config.set(md.CONFIG_KEY, md.normalize({
-        **current,
-        "enabled": check.isChecked(),
-        "scan_wsl": dialog.distill_scan_wsl_check.isChecked(),
-        "keep_days": dialog.distill_keep_days_select.currentData(),
-        "work_roots": roots,
-        "daily_at": dialog.distill_time_select.currentData(),
-        "model": chosen_model(dialog),
-        "effort": dialog.distill_effort_select.currentData(),
-        "mirror_to_vault": dialog.distill_mirror_check.isChecked(),
-        f"prompt_{dialog.distill_prompt_language}": dialog.distill_prompt_editor.value(),
-        "work_distill": dialog.distill_work_check.isChecked(),
-        "work_daily_at": dialog.distill_work_time_select.currentData(),
-        "work_model": chosen_work_model(dialog),
-        "work_effort": dialog.distill_work_effort_select.currentData(),
-        "work_mirror_to_vault": dialog.distill_work_mirror_check.isChecked(),
-        f"work_prompt_{dialog.distill_prompt_language}": dialog.distill_work_prompt_editor.value(),
-    }))
+    """两行「搬到配置全景了」：按钮挂在 ``dialog.distill_personal_open_panorama`` / ``dialog.distill_work_open_panorama``。"""
+    return [moved_row(dialog, group_id) for group_id in GROUP_IDS]

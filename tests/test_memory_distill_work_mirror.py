@@ -12,7 +12,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication
 
 from pet import i18n
 from pet import memory_distill as md
@@ -161,7 +161,7 @@ def test_review_status_names_the_work_vault(tmp_path):
 
 
 def test_work_mirror_can_be_switched_off_in_settings(tmp_path):
-    from pet import settings_memory_distill as sd
+    from pet import settings_table as st
 
     runner = _WslGit({CLAUDE_MD: ORIGINAL})
     service, _personal_vault, work_vault = _with_vault(tmp_path, runner, mirror=False)
@@ -169,16 +169,9 @@ def test_work_mirror_can_be_switched_off_in_settings(tmp_path):
     service.review(service.proposals().pending()[0].id, run.STATUS_ACCEPTED)
     assert not (work_vault / NOTE).exists() and runner.git == []
     assert md.normalize(None)["work_mirror_to_vault"] is True
-    config = Config(tmp_path / "appdata2")
-    dialog = QWidget()
-    dialog.config = config
-    rows = sd.distill_rows(dialog)
-    assert "settingRow_distill_work_mirror" in [row.objectName() for row in rows]
-    assert dialog.distill_work_mirror_check.isChecked()
-    dialog.distill_work_mirror_check.setChecked(False)
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["work_mirror_to_vault"] is False
-    dialog.deleteLater()
+    # 开关在配置全景「公司侧」那一组里（设置窗口那一节只剩跳转）
+    final, errors = st.check_changes(st.group("distill_work"), {}, {"work_mirror_to_vault": False})
+    assert errors == [] and final["work_mirror_to_vault"] is False
 
 
 def test_generated_at_is_stamped(tmp_path):

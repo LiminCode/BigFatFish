@@ -467,50 +467,7 @@ def test_flow_diagram_layout_is_two_rows_of_three_and_paints():
     assert image.pixelColor(rects["source"].center()).alpha() > 0
 
 
-# ---------------------------------------------------------------- 设置页一节
-
-
-class _Dialog:
-    def __init__(self, config) -> None:
-        self.config = config
-
-
-def test_settings_rows_round_trip(tmp_path):
-    from pet import settings_memory_distill as sd
-    from PySide6.QtWidgets import QWidget
-
-    config = Config(tmp_path / "appdata")
-    config.set(md.CONFIG_KEY, {**md.normalize(None), "keep_days": 60, "work_roots": [r"D:\Corp", r"E:\Work"]})
-    dialog = QWidget()
-    dialog.config = config
-    rows = sd.distill_rows(dialog)
-    assert [row.objectName() for row in rows] == [f"settingRow_distill_{k}" for k in (
-        "enabled", "scan_wsl", "keep_days", "work_roots", "daily_at", "model", "model_custom", "effort", "mirror", "prompt",
-        "work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort", "work_mirror", "work_prompt")]
-    assert dialog.distill_model_select.currentData() == "" and dialog.distill_model_edit.isHidden()
-    assert dialog.distill_keep_days_select.currentData() == 60
-    assert dialog.distill_roots_edit.text() == r"D:\Corp;E:\Work"
-    assert dialog.distill_time_select.currentData() == "21:30"
-    assert "{candidates}" in dialog.distill_prompt_editor.edit.toPlainText()
-    dialog.distill_enabled_check.setChecked(True)
-    dialog.distill_roots_edit.setText(r" F:\Only ; ")
-    dialog.distill_model_select.setCurrentIndex(dialog.distill_model_select.findData("claude-haiku-5-5"))
-    dialog.distill_keep_days_select.setCurrentIndex(dialog.distill_keep_days_select.findData(180))
-    sd.save_distill_settings(dialog)
-    saved = config.get(md.CONFIG_KEY)
-    assert saved["enabled"] is True and saved["work_roots"] == [r"F:\Only"] and saved["model"] == "claude-haiku-5-5"
-    assert saved["keep_days"] == 180 and saved["prompt_zh"] == "", "没改提示词就存空串（= 内置）"
-    dialog.distill_model_select.setCurrentIndex(dialog.distill_model_select.findData(sd.CUSTOM))
-    assert not dialog.distill_model_edit.isHidden()
-    dialog.distill_model_edit.setText("claude-opus-5-5[1m]")
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["model"] == "", "不合法的名字退回「跟 AI 对话一致」"
-    dialog.distill_model_edit.setText("my-custom-model")
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["model"] == "my-custom-model"
-    section = sd.flow_section(dialog)
-    assert section is dialog.distill_flow_section and "抽取" in dialog.distill_flow_label.text()
-    dialog.deleteLater()
+# ---------------------------------------------------------------- 提示词
 
 
 def test_prompt_template_follows_language_and_user_override():

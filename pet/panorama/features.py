@@ -112,6 +112,7 @@ class Feature:
     writes: tuple = ()                    # (目标节点 id, 连线种类, 生效条件 cfg→bool)
     note: str = ""                        # 额外一行说明：``panorama.note.<note>``
     follows_provider: bool = False        # 没有自己的模型，跟随使用中的模型服务
+    settings_group: str = ""              # 设置表里的哪一组；空 = 按 config_key 找（一个键分了几组的才要写）
 
 
 FEATURES: tuple[Feature, ...] = (
@@ -122,7 +123,8 @@ FEATURES: tuple[Feature, ...] = (
     Feature("screen", "personal", "eye", "proactive_screen", _screen, page="automation_screen", note="screen",
             follows_provider=True),
     Feature("file", "personal", "file", "file_interpret", _file, follows_provider=True),
-    Feature("distill_personal", "personal", "funnel", "memory_distill", _distill(md.SIDE_PERSONAL), page="briefing_distill",
+    # 会话记忆蒸馏的设置也搬到了配置全景；一个配置键分两组，所以两块磁贴各自写明是哪一组
+    Feature("distill_personal", "personal", "funnel", "memory_distill", _distill(md.SIDE_PERSONAL), settings_group="distill_personal",
             writes=(("md_win", "memory", _always), ("mem_win", "memory", _always),
                     ("vault_personal", "memory", _distill_flag("mirror_to_vault")))),
     Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
@@ -134,7 +136,7 @@ FEATURES: tuple[Feature, ...] = (
     Feature("slack", "work", "hash", "slack_watch", _slack),
     Feature("notes", "work", "note", "work_notes", _notes,
             writes=(("vault_work", "memory", _always),)),
-    Feature("distill_work", "work", "funnel", "memory_distill.work_*", _distill(md.SIDE_WORK), page="briefing_distill",
+    Feature("distill_work", "work", "funnel", "memory_distill.work_*", _distill(md.SIDE_WORK), settings_group="distill_work",
             writes=(("md_wsl", "memory", _always), ("mem_wsl", "memory", _always),
                     ("vault_work", "memory", _distill_flag("work_mirror_to_vault")))),
 )
