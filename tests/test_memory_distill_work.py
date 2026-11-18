@@ -13,7 +13,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication
 
 from pet import memory_distill as md
 from pet import memory_distill_run as run
@@ -184,34 +184,6 @@ def test_work_settings_have_their_own_model_effort_time_and_prompt():
     personal = md.side_settings(custom, md.SIDE_PERSONAL)
     assert (personal["model"], personal["effort"], personal["daily_at"], personal["prompt_zh"]) == (
         "claude-haiku-5-5", "xhigh", "20:00", "个人的")
-
-
-def test_settings_page_has_a_work_side_block_that_round_trips(tmp_path):
-    from pet import settings_memory_distill as sd
-
-    config = Config(tmp_path / "appdata")
-    dialog = QWidget()
-    dialog.config = config
-    rows = sd.distill_rows(dialog)
-    names = [row.objectName().removeprefix("settingRow_distill_") for row in rows]
-    assert names[-7:] == ["work_distill", "work_daily_at", "work_model", "work_model_custom", "work_effort",
-                          "work_mirror", "work_prompt"]
-    assert dialog.distill_work_check.isChecked() and dialog.distill_work_model_select.currentData() == "sonnet"
-    assert "{candidates}" in dialog.distill_work_prompt_editor.edit.toPlainText(), "提示词明文摆出来"
-    dialog.distill_work_check.setChecked(False)
-    dialog.distill_work_model_select.setCurrentIndex(dialog.distill_work_model_select.findData("opus"))
-    dialog.distill_work_effort_select.setCurrentIndex(dialog.distill_work_effort_select.findData("medium"))
-    dialog.distill_work_time_select.setCurrentIndex(dialog.distill_work_time_select.findData("22:00"))
-    dialog.distill_work_prompt_editor.edit.setPlainText("公司侧：{candidates}")
-    sd.save_distill_settings(dialog)
-    saved = config.get(md.CONFIG_KEY)
-    assert (saved["work_distill"], saved["work_model"], saved["work_effort"], saved["work_daily_at"]) == (False, "opus", "medium", "22:00")
-    assert saved["work_prompt_zh"] == "公司侧：{candidates}" and saved["prompt_zh"] == "", "两侧提示词各存各的"
-    dialog.distill_work_model_select.setCurrentIndex(dialog.distill_work_model_select.findData(sd.CUSTOM))
-    dialog.distill_work_model_edit.setText("claude-opus-5-5")
-    sd.save_distill_settings(dialog)
-    assert config.get(md.CONFIG_KEY)["work_model"] == "claude-opus-5-5"
-    dialog.deleteLater()
 
 
 # ---------------------------------------------------------------- 服务

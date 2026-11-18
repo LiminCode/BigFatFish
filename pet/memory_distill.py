@@ -38,6 +38,8 @@ STORE_DIR = "memory-distill"             # <配置目录>/memory-distill/
 CANDIDATES_DIR = "candidates"
 CURSORS_FILE = "cursors.json"
 DEFAULT_KEEP_DAYS = 90
+KEEP_DAYS_RANGE = (1, 3650)              # 候选保留天数能取的范围（配置全景照抄给页面看）
+TIME_CHOICES = ("20:00", "21:00", "21:30", "22:00", "23:00")     # 每日蒸馏时刻的常用值；任何 HH:MM 都收
 DEFAULT_DAILY_AT = "21:30"
 DEFAULT_MODEL = ""                       # 空 = 跟「AI 对话」里的模型一致（个人助理同一约定）；第二期才真的调用
 #: 设置页模型下拉里的几个常用名
@@ -551,7 +553,8 @@ def _normalize_days(value) -> int:
         days = int(value)
     except (TypeError, ValueError):
         return DEFAULT_KEEP_DAYS
-    return days if 1 <= days <= 3650 else DEFAULT_KEEP_DAYS
+    low, high = KEEP_DAYS_RANGE
+    return days if low <= days <= high else DEFAULT_KEEP_DAYS
 
 
 _TIME_RE = re.compile(r"\s*(\d{1,2})(?::(\d{2}))?\s*")

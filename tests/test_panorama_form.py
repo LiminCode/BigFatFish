@@ -379,6 +379,56 @@ def test_the_real_description_of_personal_shows_choice_labels(engine, language, 
     assert "personal.settings" not in html
 
 
+# ───────────────────────── 一行一个的列表（会话记忆蒸馏的公司目录） ─────────────────────────
+
+def _lines_desc() -> dict:
+    desc = _desc()
+    desc["settings"].append({"id": "roots", "control": "lines", "title": "T:roots", "hint": "H:roots", "value": ["/corp/a", "/corp/b"],
+                             "default": ["/corp/a"], "choices": [], "commit": "on_finish", "disclosure": "primary",
+                             "depends_on": "", "builtin": None})
+    return desc
+
+
+def test_a_list_is_drawn_one_item_per_line_and_saved_as_a_list(engine):
+    first = _run(engine, _lines_desc(), [], "")["html"]
+    assert 'data-row="roots"' in first and ">/corp/a\n/corp/b</textarea>" in first and 'data-save="roots"' in first
+    desc = _lines_desc()
+    out = _run(engine, desc, [_ok(desc, roots=["/only", "/two"])], """
+        fire('input', {draft: 'roots'}, ' /only \\n\\n /two\\n');
+        var dirty = f.state().dirty;
+        fire('click', {save: 'roots'});
+        sent.push({dirty: dirty});""")
+    assert out["sent"][-1] == {"dirty": ["roots"]}
+    assert out["sent"][0] == {"changes": {"roots": ["/only", "/two"]}, "base": "v1"}, "去掉首尾空白和空行"
+    assert out["state"]["dirty"] == [] and ">/only\n/two</textarea>" in out["html"]
+
+
+def test_a_list_typed_back_to_the_same_lines_is_not_unsaved(engine):
+    out = _run(engine, _lines_desc(), [], "fire('input', {draft: 'roots'}, '/corp/a  \\n  /corp/b\\n\\n');")
+    assert out["state"]["dirty"] == [] and out["sent"] == []
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+@pytest.mark.parametrize("group_id", ["distill_personal", "distill_work"])
+def test_the_real_description_of_memory_distill_draws_every_setting(engine, monkeypatch, language, group_id):
+    from pet import claude_hooks
+
+    monkeypatch.setattr(claude_hooks, "wsl_exe", lambda: "wsl.exe")
+    i18n.set_language(language)
+    desc = api.describe(st.group(group_id), {"work_roots": ["/corp/a", "/corp/b"], "daily_at": "07:05"})
+    assert desc["available"] is True
+    out = _run(engine, desc, [], "fire('click', {advanced: ''});", language=language)
+    html = out["html"]
+    for row in desc["settings"]:
+        assert f'data-row="{row["id"]}"' in html and row["title"] and row["hint"], row["id"]
+    assert "distill.settings" not in html and "settings.distill_" not in html and "settings.unit" not in html
+    if group_id == "distill_personal":
+        assert ">/corp/a\n/corp/b</textarea>" in html and 'data-custom="daily_at"' in html
+        assert 'max="3650"' in html and ("天" if language == "zh" else "days") in html
+        assert html.count("{candidates}") >= 2, "两份内置提示词都摆出来"
+    else:
+        assert '<option value="sonnet" selected>sonnet</option>' in html
+
 def test_every_form_string_exists_in_both_languages():
     keys = [key for key in render.PAGE_KEYS if key.startswith("form_")]
     assert len(keys) >= 15

@@ -130,10 +130,10 @@ def test_a_long_text_knows_what_is_used_when_it_is_left_empty():
     assert next(s for s in group.settings if s.id == "priority_rules").builtin is None
 
 
-def test_toggles_and_choices_commit_at_once_and_text_waits_for_the_user():
+def test_toggles_and_choices_commit_at_once_and_text_and_lists_wait_for_the_user():
     for group in st.GROUPS:
         for setting in group.settings:
-            expected = "on_finish" if setting.control in ("text", "long_text") else "immediate"
+            expected = "on_finish" if setting.control in ("text", "long_text", "lines") else "immediate"
             if not setting.commit:
                 assert setting.commit_policy == expected, f"{group.id}.{setting.id}"
 
@@ -292,3 +292,59 @@ def test_module_does_not_import_qt():
     probe = "import sys, pet.settings_table; print(any(m.startswith('PySide6') for m in sys.modules))"
     done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, cwd=Path(st.__file__).resolve().parents[1])
     assert done.returncode == 0 and done.stdout.strip() == "False", done.stderr[-400:]
+
+
+# ───────────────────────── 会话记忆蒸馏（M4 第四项）：一个配置键、两组，外加「一行一个」的列表 ─────────────────────────
+
+def test_memory_distill_is_two_groups_on_one_config_key():
+    from pet import memory_distill as md
+
+    personal, work = st.group("distill_personal"), st.group("distill_work")
+    assert personal.config_key == work.config_key == md.CONFIG_KEY and personal.normalize is work.normalize is md.normalize
+    assert (personal.zone, work.zone) == ("personal", "work")
+    mine = {s.id: s for s in personal.settings}
+    theirs = {s.id: s for s in work.settings}
+    assert list(mine) == ["enabled", "scan_wsl", "keep_days", "work_roots", "daily_at", "model", "effort", "mirror_to_vault",
+                          "prompt_zh", "prompt_en"]
+    assert list(theirs) == ["work_distill", "work_daily_at", "work_model", "work_effort", "work_mirror_to_vault",
+                            "work_prompt_zh", "work_prompt_en"]
+    assert not set(mine) & set(theirs), "一项设置只有一个编辑入口"
+    assert set(personal.not_editable) == set(theirs) and set(work.not_editable) == set(mine), "另一组的键写明去哪改"
+    assert mine["work_roots"].control == "lines" and mine["keep_days"].bounds == (1, 3650)
+    assert mine["model"].choices == ("", *md.MODEL_CHOICES) and dict(mine["model"].labels)[""] == "distill.settings.same_as_chat"
+    assert theirs["work_model"].choices == md.WORK_MODEL_CHOICES
+    for language in ("zh", "en"):
+        assert mine[f"prompt_{language}"].builtin(md.normalize({})) == md.default_prompt_template(language)
+        assert theirs[f"work_prompt_{language}"].builtin(md.normalize({})) == md.default_prompt_template(language)
+    assert personal.available is None, "抽取和个人侧蒸馏不靠 WSL"
+    assert work.available is not None and work.unavailable_text == "distill.settings.work_no_wsl"
+
+
+def test_memory_distill_writes_go_through_its_normalize_and_leave_the_other_side_alone():
+    personal, work = st.group("distill_personal"), st.group("distill_work")
+    raw = {"work_model": "opus", "work_daily_at": "22:00", "keep_days": 60}
+    final, errors = st.check_changes(personal, raw, {"keep_days": 180, "model": "", "work_roots": [" F:\Only ", "", "E:\Corp"]})
+    assert errors == [] and final["keep_days"] == 180 and final["work_roots"] == ["F:\Only", "E:\Corp"]
+    assert (final["work_model"], final["work_daily_at"]) == ("opus", "22:00"), "改个人侧不碰公司侧"
+    final, errors = st.check_changes(work, raw, {"work_model": "haiku", "work_effort": "low"})
+    assert errors == [] and final["keep_days"] == 60 and final["work_model"] == "haiku"
+    assert st.check_changes(personal, {}, {"keep_days": 0}) == (None, [{"id": "keep_days", "code": "out_of_range"}])
+    assert st.check_changes(personal, {}, {"keep_days": 90.5}) == (None, [{"id": "keep_days", "code": "rejected"}])
+    assert st.check_changes(personal, {}, {"work_roots": "D:\Corp"}) == (None, [{"id": "work_roots", "code": "type"}])
+    assert st.check_changes(personal, {}, {"work_roots": ["D:\Corp", 3]}) == (None, [{"id": "work_roots", "code": "type"}])
+    # 一行都不剩：功能会退回默认目录，写的时候不能悄悄这样做
+    assert st.check_changes(personal, {}, {"work_roots": [" ", ""]}) == (None, [{"id": "work_roots", "code": "rejected"}])
+    assert st.check_changes(personal, {}, {"model": "bad model!"}) == (None, [{"id": "model", "code": "rejected"}])
+    assert st.check_changes(work, {}, {"work_model": "a b; c"}) == (None, [{"id": "work_model", "code": "rejected"}])
+    assert st.check_changes(work, {}, {"enabled": True}) == (None, [{"id": "enabled", "code": "unknown"}]), "总开关在个人侧那一组"
+
+
+def test_a_list_of_lines_is_its_own_control():
+    group = st.group("distill_personal")
+    lines = next(s for s in group.settings if s.id == "work_roots")
+    assert "lines" in st.CONTROLS and lines.commit_policy == "on_finish", "一行一行打完再存"
+    with pytest.raises(ValueError):                                       # 默认值是一串字，装不进列表
+        st.validate((_group(settings=(st.Setting("time", "lines"),)),))
+    with pytest.raises(ValueError):                                       # 默认值是列表，单行文本装不下
+        st.validate((st.Group(**{**{f: getattr(group, f) for f in group.__dataclass_fields__},
+                                 "settings": (st.Setting("work_roots", "text"),), "not_editable": {}}),))

@@ -125,6 +125,7 @@ def test_rows_hints_and_buttons_speak_english(tmp_path, monkeypatch):
         assert "Config panorama" in row("slack_watch_moved").hint_label.text()
         assert "Work notes" in row("work_notes_moved").hint_label.text()
         assert "Personal assistant" in row("personal_moved").hint_label.text()
+        assert "Session memory distill" in row("distill_work_moved").hint_label.text()
         assert row("vscode_menu_limit").hint_label.text().startswith("Most items the menu lists")
         assert row("tray_icon").hint_label.text().startswith("The icon shown in the notification area")
         assert dialog.save_button.text() == "Save"

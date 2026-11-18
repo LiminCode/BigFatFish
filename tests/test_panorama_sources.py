@@ -76,8 +76,9 @@ def test_a_feature_whose_settings_moved_to_the_page_opens_them_there_instead_of_
     moved = {group.config_key: group.id for group in settings_table.GROUPS}
     for feature in features.FEATURES:
         node = _node(graph, f"f_{feature.id}")
-        if feature.config_key in moved:
-            assert node.get("settings") == moved[feature.config_key] and "page" not in node, feature.id
+        group_id = feature.settings_group or moved.get(feature.config_key)
+        if group_id:
+            assert node.get("settings") == group_id and "page" not in node, feature.id
             assert not feature.page, f"{feature.id}: 设置已经搬到页面上，别再指向设置窗口"
         else:
             assert "settings" not in node, feature.id
@@ -85,7 +86,10 @@ def test_a_feature_whose_settings_moved_to_the_page_opens_them_there_instead_of_
     assert _node(graph, "f_slack")["settings"] == "slack_watch"
     assert _node(graph, "f_notes")["settings"] == "work_notes"
     assert _node(graph, "f_assistant")["settings"] == "personal"
-    assert _node(graph, "f_distill_personal")["page"]                          # 还没搬的照旧
+    assert _node(graph, "f_distill_personal")["settings"] == "distill_personal"
+    assert _node(graph, "f_distill_work")["settings"] == "distill_work"           # 同一个配置键下的另一组
+    assert _node(graph, "f_screen")["page"]                                    # 还没搬的照旧
+    assert all(settings_table.group(f.settings_group) for f in features.FEATURES if f.settings_group)
 
 
 def test_session_link_line_is_broken_when_the_switch_is_on_but_the_hooks_are_gone():
