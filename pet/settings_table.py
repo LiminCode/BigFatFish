@@ -22,7 +22,9 @@
   它是个函数，参数是这一组当前生效的值：内置提示词会随别的设置变（勾了哪些来源）；
 - ``bounds``：只给数字用——``(下限, 上限)``，抄功能自己 ``normalize`` 夹值用的那一对。页面拿它画输入框的范围，
   写入时超出范围报 ``out_of_range``（不然 ``normalize`` 会悄悄夹到边上，用户以为存的是 3，其实是 5）；
-- ``unit``：数字后面的单位（文案键），比如「分钟」。
+- ``unit``：数字后面的单位（文案键），比如「分钟」；
+- ``labels``：只给下拉用——``((可选值, 文案键), ...)``，选项上显示的文字。没写的选项照原样显示值；写了的显示「文字 · 值」，
+  值是空串时只显示文字（个人助理的「跟 AI 对话一致」就是存空串）。
 
 文字不在这里：标题和说明在字表里，键由 ``title_key`` / ``hint_key`` 给出（默认 ``settings.<组>.<id>`` 和它加 ``_hint``；
 从 Qt 设置窗口搬过来的那些直接沿用原来的键，不抄第二份）。
@@ -36,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import claude_hooks
+from . import personal_vault as pv
 from . import slack_watch as sw
 from . import work_briefing as wb
 from . import work_notes as wn
@@ -60,6 +63,7 @@ class Setting:
     hint: str = ""                          # 说明的文案键；空 = 标题的键加 _hint
     bounds: tuple = ()                      # 数字的 (下限, 上限)；空 = 不限
     unit: str = ""                          # 数字的单位（文案键）
+    labels: tuple = ()                      # 下拉选项上显示的文字：((值, 文案键), ...)
 
     @property
     def commit_policy(self) -> str:
@@ -258,6 +262,9 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
                 raise bad(f"{setting.id}: a {setting.control} cannot hold the default {produced[setting.id]!r}")
             if (setting.bounds or setting.unit) and setting.control != "number":
                 raise bad(f"{setting.id}: only a number has bounds or a unit")
+            if setting.labels and (setting.control not in ("choice", "choice_or_text")
+                                   or any(value not in setting.choices for value, _key in setting.labels)):
+                raise bad(f"{setting.id}: labels belong to a choice and must name its choices")
             if setting.bounds and (len(setting.bounds) != 2 or not setting.bounds[0] <= produced[setting.id] <= setting.bounds[1]):
                 raise bad(f"{setting.id}: bounds must be (low, high) around the default {produced[setting.id]!r}")
         for setting in item.settings:
@@ -268,6 +275,7 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
 # ───────────────────────── 表 ─────────────────────────
 
 _MODEL_CHOICES = ("sonnet", "haiku", "opus")
+_FOLLOW_CHAT = "personal.settings.same_as_chat"
 
 
 def _briefing_prompt(language: str) -> Setting:
@@ -323,4 +331,16 @@ GROUPS: tuple[Group, ...] = (
         _notes_prompt("en"),
     ), title_key="notes.settings.section", available=lambda: bool(claude_hooks.wsl_exe()),
         unavailable_text="notes.settings.no_wsl"),
+    # 个人助理：肥鱼自己的 Claude（个人 key）读 AI-Base 克隆写简报。不靠 WSL；没有 Windows 的 git 时简报照样能用，所以总是可用。
+    # 模型和 effort 存空串 = 跟 AI 对话一致，下拉上用 labels 写出来。
+    Group("personal", "briefing", pv.CONFIG_KEY, "personal", pv.normalize, (
+        Setting("enabled", "toggle", text="personal.settings.enabled"),
+        Setting("repo_dir", "text", text="personal.settings.repo_dir"),
+        Setting("time", "choice_or_text", choices=pv.TIME_CHOICES, text="personal.settings.time"),
+        Setting("model", "choice_or_text", choices=("", *pv.MODEL_CHOICES), labels=(("", _FOLLOW_CHAT),),
+                text="personal.settings.model"),
+        Setting("effort", "choice", choices=("", *pv.EFFORT_LEVELS),
+                labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS)),
+                text="personal.settings.effort"),
+    ), title_key="personal.settings.section"),
 )

@@ -167,7 +167,7 @@ def test_read_describes_every_setting_with_its_text_value_and_control(env):
     assert list(rows) == [s.id for s in GROUP.settings]
     assert rows["enabled"] == {"id": "enabled", "control": "toggle", "title": "工作日自动生成", "hint": rows["enabled"]["hint"],
                                "value": False, "default": False, "choices": [], "commit": "immediate", "disclosure": "primary",
-                               "depends_on": "", "builtin": None, "min": None, "max": None, "unit": ""}
+                               "depends_on": "", "builtin": None, "min": None, "max": None, "unit": "", "labels": []}
     assert rows["effort"]["choices"] == ["low", "medium", "high", "xhigh"] and rows["time"]["control"] == "choice_or_text"
     assert rows["prompt_zh"]["commit"] == "on_finish" and rows["prompt_zh"]["builtin"] == wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
     assert rows["priority_rules"]["builtin"] is None and rows["enabled"]["hint"]

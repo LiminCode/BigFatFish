@@ -84,7 +84,8 @@ def test_a_feature_whose_settings_moved_to_the_page_opens_them_there_instead_of_
     assert _node(graph, "f_briefing")["settings"] == "work_briefing"
     assert _node(graph, "f_slack")["settings"] == "slack_watch"
     assert _node(graph, "f_notes")["settings"] == "work_notes"
-    assert _node(graph, "f_assistant")["page"]                                 # 还没搬的照旧
+    assert _node(graph, "f_assistant")["settings"] == "personal"
+    assert _node(graph, "f_distill_personal")["page"]                          # 还没搬的照旧
 
 
 def test_session_link_line_is_broken_when_the_switch_is_on_but_the_hooks_are_gone():

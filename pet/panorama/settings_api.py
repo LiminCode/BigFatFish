@@ -47,6 +47,14 @@ def _text(key: str) -> str:
     return "" if text == key else text
 
 
+def _labels(setting: st.Setting) -> list[str]:
+    """和 ``choices`` 一一对应的显示文字；空串 = 照原样显示值。一个都没写就是空列表。"""
+    if not setting.labels:
+        return []
+    named = dict(setting.labels)
+    return [_text(named.get(value, "")) for value in setting.choices]
+
+
 def describe(group: st.Group, raw) -> dict:
     """页面画这一组表单要的全部东西：每一项用什么控件、叫什么、现在是什么值、默认是什么，外加这一组的版本。"""
     effective = group.normalize(raw)
@@ -62,6 +70,7 @@ def describe(group: st.Group, raw) -> dict:
             "depends_on": setting.depends_on, "builtin": setting.builtin(effective) if setting.builtin else None,
             "min": setting.bounds[0] if setting.bounds else None, "max": setting.bounds[1] if setting.bounds else None,
             "unit": _text(setting.unit),
+            "labels": _labels(setting),
         } for setting in group.settings],
     }
 

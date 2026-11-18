@@ -54,6 +54,9 @@ function errorText(r, code) {
   return code === 'out_of_range' && bounded(r) ? text.replace('{min}', r.min).replace('{max}', r.max) : text;
 }
 
+/* 选项上显示什么：服务给了文字就是「文字 · 值」（值是空串时只有文字），没给就是值本身 */
+const optionText = (r, c, i) => { const name = r.labels && r.labels[i]; return name ? (c === '' ? name : `${name} · ${c}`) : c; };
+
 function control(r) {
   const id = idOf(r), key = esc(r.id), off = locked(r) ? ' disabled' : '', value = shown(r);
   if (r.control === 'toggle') return `<input type="checkbox" role="switch" data-set="${key}"${value === true ? ' checked' : ''}${off} id="${id}">`;
@@ -61,7 +64,7 @@ function control(r) {
     (r.unit ? `<span class="funit">${esc(r.unit)}</span>` : '');
   if (r.control === 'choice' || r.control === 'choice_or_text') {
     const free = r.control === 'choice_or_text', custom = free && (!!st.custom[r.id] || r.choices.indexOf(value) < 0);
-    const options = r.choices.map(c => `<option value="${esc(c)}"${!custom && c === value ? ' selected' : ''}>${esc(c)}</option>`).join('') +
+    const options = r.choices.map((c, i) => `<option value="${esc(c)}"${!custom && c === value ? ' selected' : ''}>${esc(optionText(r, c, i))}</option>`).join('') +
       (free ? `<option value="${CUSTOM}"${custom ? ' selected' : ''}>${esc(S.form_custom)}</option>` : '');
     return `<select data-set="${key}"${off} id="${id}">${options}</select>` + (custom ?
       `<input type="text" class="fcustom" data-custom="${key}" value="${esc(r.choices.indexOf(value) < 0 ? value : '')}"${off} aria-label="${esc(S.form_custom_label)}">` : '');
