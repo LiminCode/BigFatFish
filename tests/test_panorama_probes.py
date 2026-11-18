@@ -143,6 +143,6 @@ def test_windows_side_collects_everything_without_touching_wsl(tmp_path):
     assert "wsl" not in facts and facts["api_health"] == {"state": "ok", "detail": "fine"}
     assert facts["github_token"] == {"present": True, "tail": SECRET[-4:]} and facts["chat"]["github_connector"] is True
     assert facts["personal_vault"]["exists"] is False and facts["win"]["memory_count"] == 1
-    assert set(facts["features"]) == {"link_win", "chat", "screen", "file", "distill_personal", "assistant", "link_wsl",
+    assert set(facts["features"]) == {"link_win", "chat", "screen", "distill_personal", "assistant", "link_wsl",
                                       "briefing", "slack", "notes", "distill_work"}
     assert SECRET not in json.dumps(facts)

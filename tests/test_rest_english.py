@@ -19,7 +19,7 @@ from pet.quick_chat import QuickChatBubble
 
 app = QApplication.instance() or QApplication([])
 CJK = re.compile(r"[一-鿿]")
-NEW_PREFIXES = ("chat.", "vision.ui.", "quick_chat.ui.", "file_interpret.ui.", "proactive.ui.", "app.ui.", "overlay.ui.",
+NEW_PREFIXES = ("chat.", "vision.ui.", "quick_chat.ui.", "proactive.ui.", "app.ui.", "overlay.ui.",
                 "feeding.ui.", "island.ui.", "todo.ui.", "fun_image.ui.", "personal.service.", "session_jump.ui.", "vscode.ui.",
                 "lyrics.ui.", "click_talk.ui.", "slack.ui.", "agent_cost.ui.", "session_info.ui.")
 

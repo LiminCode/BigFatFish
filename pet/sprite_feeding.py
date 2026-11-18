@@ -52,9 +52,6 @@ class SpriteFeedingController:
         cfg_dir = getattr(config, "dir", None)
         self.stats_path = Path(cfg_dir) / STATS_FILE_NAME if cfg_dir else None
         self._bubble_cb = None  # 4.1c-④ 气泡反馈接缝（shell 接线）
-        # 解读询问接缝（壳接线，口径同旧 file_eater.eat_paths:183-186）：
-        # 未注入（无聊天变体/未接线）时为 None，静默降级。
-        self.interpret_offer = None
 
     # ---------------------------------------------------------------- 拖放判定
     def accepts(self, event) -> bool:
@@ -88,11 +85,6 @@ class SpriteFeedingController:
         stats = self._record(files, folders, files + folders, total_bytes)
         self._play_eating_animation()
         self._show_feedback(files, folders, total_bytes, stats)
-        # 解读询问接缝（壳注入 FileInterpretController.offer；未注入/无聊天模块
-        # 时为 None）——旧 ``file_eater.eat_paths`` 吃完后同一位置调用。
-        offer = self.interpret_offer
-        if callable(offer):
-            offer(paths)
         return {"files": files, "folders": folders,
                 "bytes": total_bytes, "stats": stats}
 

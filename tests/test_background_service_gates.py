@@ -63,9 +63,6 @@ class _StubOverlayShell:
     def start(self):
         self.started += 1
 
-    def set_file_interpret_offer(self, offer):
-        pass
-
 
 def _start_shell(tmp_path, monkeypatch, *, dsh=False, topology="legacy",
                  win=None, ui_stub=True):

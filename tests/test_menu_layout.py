@@ -844,7 +844,7 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
     # 2026-09-19 新增「文件识别」域（拖文件解读，settings_file_interpret）。
-    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
+    expected = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected
 
     def owner(setting_id):
@@ -863,7 +863,6 @@ def test_settings_sidebar_uses_stable_domains_and_owns_representative_rows(tmp_p
     assert owner("dynamic_island_enabled") == "桌面组件"
     assert owner("api_url") == "AI 与对话"
     assert owner("voice_chime_enabled") == "语音"
-    assert owner("file_interpret_enabled") == "文件识别"
     assert owner("music_lyric") == "肥鱼"
     assert "待分类（开发期）" not in [
         label.text() for label in dialog.findChildren(settings_mod.QLabel)
@@ -1215,7 +1214,7 @@ def test_menu_domain_uses_in_page_task_tabs_without_changing_sidebar(tmp_path, m
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音", "文件识别"]
+    expected_sidebar = ["常规", "肥鱼", "互动", "菜单", "桌面组件", "通知", "AI 与对话", "简报与笔记", "自动化与联动", "语音"]
     assert [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())] == expected_sidebar
     tabs = dialog.pages.widget(3).findChild(SettingsTabContainer, "settingsTaskTabs")
     assert tabs is not None
@@ -1587,7 +1586,6 @@ def test_settings_domains_use_semantic_sidebar_icons():
         ("简报与笔记", "briefing"),
         ("自动化与联动", "automation"),
         ("语音", "sound"),
-        ("文件识别", "file"),
     )
 
 
