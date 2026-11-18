@@ -723,7 +723,6 @@ def test_context_menu_defaults_to_modern_and_keeps_migration_metadata(tmp_path):
         "interaction",
         "playback",
         "functions",
-        "tools",
         "settings",
         "template",
         "exit",
@@ -875,8 +874,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "Claude Desktop",
         "Claude Code（WSL）",
         "肥鱼控制",
-        "快捷启动",
-        "工具与帮助",
         "Agent 联动",
     ]
     expected_labels.append("待办提醒")  # 待办管理面板入口（所有平台）
@@ -898,10 +895,8 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     ]
     assert next(action for action in menu.actions() if action.text() == "播放速率").menu() is not None
     assert next(action for action in menu.actions() if action.text() == "大小").menu() is not None
-    tools = next(action.menu() for action in menu.actions() if action.text() == "工具与帮助")
-    # 「打开网页版 DeepSeek」2026-10-14 下线：工具与帮助里剩下的外链入口是项目页
-    next(action for action in tools.actions() if action.text() == "GitHub 项目页").trigger()
-    assert opened_urls == [shared_menu_mod.REPO_URL]
+    # 「工具与帮助」（只剩「GitHub 项目页」）和「快捷启动」2026-11-18 删掉
+    assert all(action.text() not in ("工具与帮助", "快捷启动") for action in menu.actions())
     # 模板模式已迁入设置；默认菜单不再用低频迁移命令占据根菜单。
     assert all("旧版菜单" not in action.text() for action in menu.actions())
     menu.close()
@@ -952,7 +947,7 @@ def test_context_menu_has_no_deepseek_entries():
     labels = labels_in(menu)
     for label in ("DeepSeek 余额", "DeepSeek Harness", "启动 dsh web 界面", "启动桌面端界面", "停止服务", "打开网页版 DeepSeek"):
         assert label not in labels, label
-    assert "GitHub 项目页" in labels
+    assert "GitHub 项目页" not in labels
     menu.close()
     app.processEvents()
 
@@ -1429,7 +1424,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     section_titles = [label.text() for label in dialog.findChildren(settings_mod.QLabel, "sectionTitle")]
     assert {
         "应用启动", "窗口与系统", "动画与移动", "点击反馈", "自言自语",
-        "显示", "菜单外观", "对话窗口", "已配置应用", "内容与布局",
+        "显示", "菜单外观", "对话窗口", "内容与布局",
         "模型与连接",
         # 「语音」总域只收 TTS 类设置（2026-09-17 定稿口径）：语音报时 + 节日提醒
         "语音报时", "节日提醒",
@@ -1520,11 +1515,6 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     prompt_label = prompt_row.findChild(settings_mod.QLabel, "settingLabel")
     prompt_hint = prompt_row.findChild(settings_mod.QLabel, "settingHint")
     assert prompt_hint.y() - (prompt_label.y() + prompt_label.height()) <= 4
-    editor = dialog.quick_launch_editor
-    assert editor.list.dragDropMode() == settings_mod.QAbstractItemView.DragDropMode.InternalMove
-    assert editor.list.iconSize().width() >= 22
-    assert editor.list.item(0).flags() & Qt.ItemFlag.ItemIsUserCheckable
-    assert editor.list.item(0).checkState() == Qt.CheckState.Unchecked
     assert dialog.findChild(settings_mod.QDialogButtonBox, "settingsButtons") is None
     assert dialog.save_exit_button.parent() is dialog.findChild(settings_mod.QFrame, "sidebarPane")
     dialog.speed_select.setCurrentData(1.5)
@@ -1757,115 +1747,6 @@ def test_chat_appearance_options_follow_selected_window_and_persist_independentl
     app.processEvents()
 
 
-def test_quick_launch_editor_drag_order_and_checked_removal_drive_saved_menu_order(monkeypatch):
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-
-    app = QApplication.instance() or QApplication([])
-    editor = settings_mod.QuickLaunchEditor([
-        {"name": "A", "path": "/Applications/A.app", "kind": "application"},
-        {"name": "B", "path": "/Applications/B.app", "kind": "application"},
-    ])
-    moved = editor.list.takeItem(1)
-    editor.list.insertItem(0, moved)
-    assert [item["name"] for item in editor.apps()] == ["B", "A"]
-    editor.list.item(1).setCheckState(Qt.CheckState.Checked)
-    editor._remove_checked()
-    assert [item["name"] for item in editor.apps()] == ["B"]
-    editor.close()
-    app.processEvents()
-
-
-def test_quick_launch_editor_uses_content_sized_rows_and_grouped_add_menu():
-    from PySide6.QtWidgets import QApplication, QSizePolicy
-
-    import pet.modern_settings_dialog as settings_mod
-
-    app = QApplication.instance() or QApplication([])
-    editor = settings_mod.QuickLaunchEditor([
-        {"name": "默认浏览器", "path": "", "kind": "default_browser"},
-        {"name": "Finder", "path": "/System/Library/CoreServices/Finder.app", "kind": "application"},
-    ])
-    editor.resize(760, 300)
-    editor.show()
-    app.processEvents()
-
-    assert editor.count_label.text() == "2 个快捷项"
-    assert editor.add_button.text() == "添加"
-    assert [action.text() for action in editor.add_button.popupMenu().actions()] == [
-        "选择应用…", "添加默认浏览器",
-    ]
-    assert editor.list.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
-    assert editor.list.height() <= 124
-    first_row = editor.list.itemWidget(editor.list.item(0))
-    second_row = editor.list.itemWidget(editor.list.item(1))
-    assert first_row.name_label.text() == "默认浏览器"
-    assert "系统默认" in first_row.detail_label.text()
-    assert second_row.name_label.text() == "Finder"
-    assert "Finder.app" in second_row.detail_label.text()
-    assert editor.empty_label.isHidden()
-
-    editor.close()
-    app.processEvents()
-
-
-def test_quick_launch_editor_collapses_to_a_compact_empty_state_after_last_removal():
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-
-    app = QApplication.instance() or QApplication([])
-    editor = settings_mod.QuickLaunchEditor([
-        {"name": "默认浏览器", "path": "", "kind": "default_browser"},
-    ])
-    editor.show()
-    app.processEvents()
-
-    editor.list.item(0).setCheckState(Qt.CheckState.Checked)
-    editor._remove_checked()
-    app.processEvents()
-
-    assert editor.count_label.text() == "0 个快捷项"
-    assert editor.list.isHidden()
-    assert not editor.empty_label.isHidden()
-    assert editor.empty_label.height() <= 72
-
-    editor.close()
-    app.processEvents()
-
-
-def test_quick_launch_checkbox_can_be_selected_with_a_pointer_click():
-    from PySide6.QtCore import QPoint, Qt
-    from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication
-
-    import pet.modern_settings_dialog as settings_mod
-
-    app = QApplication.instance() or QApplication([])
-    editor = settings_mod.QuickLaunchEditor([
-        {"name": "默认浏览器", "path": "", "kind": "default_browser"},
-    ])
-    editor.resize(520, 140)
-    editor.show()
-    app.processEvents()
-
-    item = editor.list.item(0)
-    row = editor.list.visualItemRect(item)
-    QTest.mouseClick(
-        editor.list.viewport(),
-        Qt.MouseButton.LeftButton,
-        pos=QPoint(row.left() + 14, row.center().y()),
-    )
-    app.processEvents()
-
-    assert item.checkState() == Qt.CheckState.Checked
-    editor.close()
-    app.processEvents()
-
-
 def test_macos_tool_window_stays_visible_when_application_deactivates(monkeypatch):
     from PySide6.QtCore import Qt
 
@@ -1885,7 +1766,7 @@ def test_macos_tool_window_stays_visible_when_application_deactivates(monkeypatc
     assert "WA_MacAlwaysShowToolWindow, on" not in set_on_top_source
 
 
-def test_config_defaults_and_normalizes_menu_appearance_and_quick_launch(tmp_path):
+def test_config_defaults_and_normalizes_menu_appearance(tmp_path):
     from pet.config import Config
 
     config = Config(tmp_path)
@@ -1893,25 +1774,17 @@ def test_config_defaults_and_normalizes_menu_appearance_and_quick_launch(tmp_pat
     assert {key: appearance[key] for key in ("theme", "density", "corner_radius")} == {
         "theme": "system", "density": "standard", "corner_radius": 12,
     }
-    assert config.get("quick_launch_apps") == [
-        {"name": "默认浏览器", "path": "", "kind": "default_browser"}
-    ]
     config.set("context_menu_appearance", {"theme": "invalid", "density": "spacious", "corner_radius": 99})
-    config.set("quick_launch_apps", [{"name": "  Finder  ", "path": "/System/Library/CoreServices/Finder.app"}, {}])
     appearance = config.get("context_menu_appearance")
     assert {key: appearance[key] for key in ("theme", "density", "corner_radius")} == {
         "theme": "system", "density": "spacious", "corner_radius": 18,
     }
-    assert config.get("quick_launch_apps") == [
-        {"name": "Finder", "path": "/System/Library/CoreServices/Finder.app", "kind": "application"}
-    ]
 
 
-def test_modern_menu_adds_quick_launch_submenu_and_uses_saved_appearance(monkeypatch):
+def test_modern_menu_uses_saved_appearance(monkeypatch):
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication, QMenu
 
-    import pet.context_menus.quick_launch as quick_launch_mod
     from pet.context_menu import populate_context_menu
 
     class Config:
@@ -1920,10 +1793,6 @@ def test_modern_menu_adds_quick_launch_submenu_and_uses_saved_appearance(monkeyp
             "character": "shenshen",
             "on_top": True,
             "context_menu_appearance": {"theme": "dark", "density": "spacious", "corner_radius": 16},
-            "quick_launch_apps": [
-                {"name": "默认浏览器", "path": "", "kind": "default_browser"},
-                {"name": "Finder", "path": "/System/Library/CoreServices/Finder.app", "kind": "application"},
-            ],
         }
 
         def get(self, key, default=None):
@@ -1944,17 +1813,9 @@ def test_modern_menu_adds_quick_launch_submenu_and_uses_saved_appearance(monkeyp
         def __getattr__(self, name):
             return lambda *args, **kwargs: None
 
-    launched = []
-    monkeypatch.setattr(quick_launch_mod, "launch_quick_app", lambda app: launched.append(app) or True)
     app = QApplication.instance() or QApplication([])
     menu = QMenu()
     populate_context_menu(menu, Pet())
-    shortcut = next(action for action in menu.actions() if action.text() == "快捷启动")
-    assert shortcut.menu() is not None
-    assert [action.text() for action in shortcut.menu().actions()] == ["默认浏览器", "Finder"]
-    assert all(not action.icon().isNull() for action in shortcut.menu().actions())
-    shortcut.menu().actions()[1].trigger()
-    assert launched == [Config.values["quick_launch_apps"][1]]
     assert menu.property("modernTheme") == "dark"
     assert menu.property("modernDensity") == "spacious"
     assert "background-color: rgba(37, 37, 37, 240)" in menu.styleSheet()

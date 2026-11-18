@@ -17,6 +17,31 @@ CUSTOM_ICON_SUFFIXES = frozenset({
 CUSTOM_ICON_MAX_BYTES = 5 * 1024 * 1024
 
 
+def fitted_application_icon(icon: QIcon, size: int, widget) -> QIcon:
+    """裁掉系统图标自带的留白，铺满要的逻辑尺寸（宿主图标用它；原在快捷启动模块里，2026-11-18 挪过来）。"""
+    if icon.isNull():
+        return icon
+    dpr = max(1.0, widget.devicePixelRatioF())
+    source_size = max(32, round(size * dpr * 2))
+    source = icon.pixmap(source_size, source_size)
+    source.setDevicePixelRatio(1.0)
+    bounds = QRegion(source.mask()).boundingRect()
+    if bounds.isEmpty():
+        return icon
+    canvas = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
+    canvas.setDevicePixelRatio(dpr)
+    canvas.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(canvas)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    painter.drawPixmap(
+        QRectF(0.5, 0.5, size - 1.0, size - 1.0),
+        source,
+        QRectF(bounds),
+    )
+    painter.end()
+    return QIcon(canvas)
+
+
 def custom_icon_file_error(path: str | Path) -> str:
     """Return a user-facing validation error, or an empty string when valid."""
     candidate = Path(path).expanduser()

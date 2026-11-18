@@ -4,17 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QWidgetAction
 
 from ..config import DEFAULT_MENU_EASTER_EGG
 from .fun_entry import add_ojingjing_entry
 from .icons import custom_file_menu_icon, vector_menu_icon
-from .quick_launch import add_quick_launch_menu, configured_quick_apps
 from .shared import (
-    REPO_URL,
     add_action,
     add_agent_link_menu,
     add_autostart,
@@ -55,8 +51,7 @@ ACTION_LABELS = {
     "golden_spin": "黄金回旋", "edge_probe": "边缘探头",
     "vscode_workspaces": "VS Code 工作区", "youtube_music": "YouTube Music",
     "claude_desktop": "Claude Desktop", "wsl_claude_code": "Claude Code（WSL）",
-    "quick_launch": "快捷启动",
-    "github_project": "GitHub 项目页", "agent_link": "Agent 联动",
+    "agent_link": "Agent 联动",
     "todo_panel": "待办提醒",
     "config_panorama": "配置全景",
     "modern_settings": "肥鱼设置", "quit": "退出",
@@ -79,7 +74,7 @@ ACTION_ICONS = {
     "golden_spin": "play", "edge_probe": "corner",
     "vscode_workspaces": "application", "youtube_music": "play",
     "claude_desktop": "sparkle", "wsl_claude_code": "ubuntu",
-    "quick_launch": "application", "github_project": "web", "agent_link": "automation",
+    "agent_link": "automation",
     "todo_panel": "todo",
     "config_panorama": "branch",
     "modern_settings": "settings", "quit": "quit",
@@ -104,7 +99,6 @@ SUBMENU_LABEL_KEYS = {
     # 用户在 94b42b7 之前保存的编排里仍是「桌宠控制」，那也是模板原名而不是用户改的名，
     # 同样要跟界面语言走。
     "pet_controls": (("肥鱼控制", "桌宠控制"), "menu.submenu.pet_controls"),
-    "tools_help": (("工具与帮助",), "menu.submenu.tools_help"),
 }
 
 
@@ -186,16 +180,6 @@ def _build_festival_now(menu, pet):
     return add_action(menu, t("menu.registry.today_festival"), "todo", pet.on_festival_now, close_on_trigger=True)
 
 
-def _build_github(menu, _pet):
-    return add_action(
-        menu,
-        t("menu.registry.github_project_page"),
-        "web",
-        lambda: QDesktopServices.openUrl(QUrl(REPO_URL)),
-        close_on_trigger=True,
-    )
-
-
 class MenuActionRegistry:
     """Resolve capability-aware action IDs and render a resolved menu tree."""
 
@@ -248,12 +232,6 @@ class MenuActionRegistry:
                 _callback_available("trigger_golden_spin"),
             ),
             "edge_probe": MenuActionSpec(add_edge_probe),
-            "quick_launch": MenuActionSpec(
-                lambda menu, pet: add_quick_launch_menu(menu, pet.cfg),
-                enabled=lambda pet: bool(configured_quick_apps(pet.cfg)),
-                disabled_reason="menu.registry.no_quick_launch_apps_configured",
-            ),
-            "github_project": MenuActionSpec(_build_github),
             "agent_link": MenuActionSpec(add_agent_link_menu),
             "modern_settings": MenuActionSpec(
                 _build_settings, _callback_available("on_open_modern_settings")

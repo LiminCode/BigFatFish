@@ -6,7 +6,7 @@
   标题——它是配置里的内容（默认「厉害了我的鲸」，可在设置里改），不是界面文字；
 - 会话小鱼的右键菜单、托盘菜单（含逐只子菜单标题）英文；
 - 按文字找锚点的两处（新项插在「退出」前、「隐藏肥鱼」接在「退出子肥鱼」后）英文下照样对得上；
-- 模板自带的子菜单（「肥鱼控制」「工具与帮助」）即使存在用户保存的编排里，英文下也翻译；用户自建 / 改过名的原样；
+- 模板自带的子菜单（「肥鱼控制」）即使存在用户保存的编排里，英文下也翻译；用户自建 / 改过名的原样；
 - 导入时求值的表（动作名、图标选项、开关标签、置灰原因）显示时跟随语言；
 - 中文界面不受影响；menu.* 键中英占位符一致。
 """
@@ -84,7 +84,7 @@ def test_the_english_right_click_menu_has_no_chinese_but_the_easter_egg_title(tm
         assert top[-2:] == ["Fish Settings", "Quit"], "设置在「退出」前（按文字找锚点英文下也对得上）"
         assert "Claude Code (WSL)" in top and "Agent link" in top
         if template == "modern":
-            assert {"Fish controls", "Tools and help"} <= set(top), "模板自带子菜单名翻译"
+            assert "Fish controls" in set(top) and "Tools and help" not in set(top), "模板自带子菜单名翻译"
         else:
             assert "Switch to the new menu" in top
     finally:
@@ -95,7 +95,7 @@ def test_the_chinese_right_click_menu_is_unchanged(tmp_path, stubs):
     shell_, menu = _menu(tmp_path, "modern", "zh")
     try:
         top = _labels(menu)
-        for label in ("护驾", "AI 对话", "肥鱼控制", "工具与帮助", "Agent 联动", "肥鱼设置", "退出", "Claude Code（WSL）"):
+        for label in ("护驾", "AI 对话", "肥鱼控制", "Agent 联动", "肥鱼设置", "退出", "Claude Code（WSL）"):
             assert label in top, label
         assert top[-2:] == ["肥鱼设置", "退出"]
     finally:

@@ -6,6 +6,8 @@
   ``sprite_feeding``）不是它，留着。
 - 看屏幕（``proactive_screen`` 主动识屏 + 右键「看看屏幕」）：截屏交给视觉模型、冒一句话。``vision.py`` 里别处还在用的
   桌面探测函数（光标可见性、前台窗口信息、系统空闲秒数）留着。
+- 右键菜单的「快捷启动」和「工具与帮助」（里面只有一项「GitHub 项目页」，打开的是上游仓库）：连同快捷启动的设置页、
+  编辑器和 ``quick_launch_apps`` 配置键一起删。裁图标的 ``fitted_application_icon`` 别处还在用，挪到了 ``context_menus/icons.py``。
 """
 from __future__ import annotations
 
@@ -19,26 +21,32 @@ from pet.config import Config
 PET_DIR = Path(__file__).resolve().parent.parent / "pet"
 
 #: 已删除的模块：文件不许回来，pet/ 里任何地方都不许再 import
-RETIRED_FEATURE_MODULES = ("file_interpret", "settings_file_interpret", "proactive", "proactive_limiter", "proactive_memory")
+RETIRED_FEATURE_MODULES = ("file_interpret", "settings_file_interpret", "proactive", "proactive_limiter", "proactive_memory",
+                           "context_menus.quick_launch")
 #: 已删除的配置键：读进来就丢，下一次保存从 config.json 里消失
-RETIRED_CONFIG_KEYS = ("file_interpret", "proactive_screen")
+RETIRED_CONFIG_KEYS = ("file_interpret", "proactive_screen", "quick_launch_apps")
 #: 已删除的文案前缀
 RETIRED_TEXT_PREFIXES = ("file_interpret.", "settings.file.", "settings.domain.file", "panorama.feature.file",
                          "proactive.", "vision.", "panorama.feature.screen", "panorama.note.screen", "panorama.page.automation_screen",
                          "menu.action.look_screen", "menu.action.proactive_screen", "menu.shared.look_at_screen",
                          "menu.shared.screen_awareness", "menu.facade.screen_awareness", "overlay.ui.look_at_screen",
-                         "settings.dlg.screen_awareness", "settings.dlg.proactive_awareness")
+                         "settings.dlg.screen_awareness", "settings.dlg.proactive_awareness",
+                         "menu.action.quick_launch", "menu.action.github_project", "menu.submenu.tools_help",
+                         "settings.dlg.quick_launch", "settings.ui.no_quick_launch_items_yet", "menu.registry.github_project_page",
+                         "menu.registry.no_quick_launch_apps_configured")
 #: 已删除的右键菜单动作：旧的菜单编排里有它们，加载时清掉
-RETIRED_MENU_ACTIONS = ("look_screen", "proactive_screen")
+RETIRED_MENU_ACTIONS = ("look_screen", "proactive_screen", "quick_launch", "github_project")
+#: 已删除的右键子菜单（整组连壳清掉）
+RETIRED_MENU_SUBMENUS = ("tools_help",)
 
 
 def test_the_modules_are_gone_and_nothing_imports_them():
-    assert [name for name in RETIRED_FEATURE_MODULES if (PET_DIR / f"{name}.py").exists()] == []
+    assert [name for name in RETIRED_FEATURE_MODULES if (PET_DIR / (name.replace(".", "/") + ".py")).exists()] == []
     offenders = []
     for path in sorted(PET_DIR.rglob("*.py")):
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith(("from ", "import ")) and any(re.search(rf"\b{name}\b", stripped) for name in RETIRED_FEATURE_MODULES):
+            if stripped.startswith(("from ", "import ")) and any(re.search(rf"\b{name.split('.')[-1]}\b", stripped) for name in RETIRED_FEATURE_MODULES):
                 offenders.append(f"{path.relative_to(PET_DIR)}:{lineno}: {stripped}")
     assert offenders == []
 
@@ -49,6 +57,7 @@ def test_an_old_config_loses_the_retired_keys_on_the_next_save(tmp_path):
     path.write_text(json.dumps({
         "version": 4, "file_interpret": {"enabled": False, "progress_interval_seconds": 30}, "playback_speed": 1.5,
         "proactive_screen": {"enabled": True, "whitelist": ["code.exe"]},
+        "quick_launch_apps": [{"name": "记事本", "path": "C:/Windows/notepad.exe", "kind": "application"}],
     }), encoding="utf-8")
     config = Config(tmp_path)
     assert all(config.get(key) is None for key in RETIRED_CONFIG_KEYS)
@@ -89,13 +98,17 @@ def test_the_menu_has_no_entry_for_them_and_old_layouts_lose_them(tmp_path):
     template = (PET_DIR / "menu_templates" / "modern-default-v1.json").read_text(encoding="utf-8")
     assert all(f'"{action}"' not in template for action in RETIRED_MENU_ACTIONS)
     config = Config(tmp_path)
+    assert all(f'"{submenu}"' not in template for submenu in RETIRED_MENU_SUBMENUS)
     config.set("context_menu_layout", {"version": 1, "nodes": [
         {"type": "action", "id": "look_screen", "visible": True},
         {"type": "action", "id": "proactive_screen", "visible": True},
+        {"type": "action", "id": "quick_launch", "visible": True},
+        {"type": "submenu", "id": "tools_help", "label": "工具与帮助", "visible": True,
+         "children": [{"type": "action", "id": "github_project", "visible": True}]},
         {"type": "action", "id": "chat", "visible": True},
     ]})
     kept = [node.get("id") for node in (config.get("context_menu_layout") or {}).get("nodes", [])]
-    assert "chat" in kept and not set(RETIRED_MENU_ACTIONS) & set(kept)
+    assert "chat" in kept and not (set(RETIRED_MENU_ACTIONS) | set(RETIRED_MENU_SUBMENUS)) & set(kept)
 
 
 def test_nothing_looks_at_the_screen_any_more():
@@ -133,3 +146,24 @@ def test_providers_no_longer_carry_a_separate_vision_model_or_key(tmp_path):
     assert config.save()
     saved = path.read_text(encoding="utf-8")
     assert "vision" not in saved and "sk-plain" not in saved
+
+
+def test_the_settings_window_has_no_quick_launch_tab_and_the_icon_helper_moved(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from pet import modern_settings_dialog as settings_mod
+    from pet.context_menus.icons import fitted_application_icon
+    from pet.settings_widgets import SettingRow
+
+    assert callable(fitted_application_icon), "宿主图标还在用它裁图标"
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
+    dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=False)
+    try:
+        assert dialog.findChild(SettingRow, "settingRow_quick_launch_apps") is None
+        assert not hasattr(dialog, "quick_launch_editor")
+        assert "quick_launch" not in dialog.menu_available_actions
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()

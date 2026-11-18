@@ -53,13 +53,13 @@ def test_the_registry_and_templates_no_longer_know_the_three_actions():
 def test_an_old_saved_layout_loses_the_three_actions_on_load(tmp_path):
     config = Config(tmp_path)
     layout = json.loads(json.dumps(load_default_menu_layout("modern-default-v1")))
-    tools = next(node for node in layout["nodes"] if node.get("id") == "tools_help")
-    tools["children"] = [{"type": "action", "id": action_id, "visible": True} for action_id in GONE_IDS] + tools["children"]
+    controls = next(node for node in layout["nodes"] if node.get("id") == "pet_controls")
+    controls["children"] = [{"type": "action", "id": action_id, "visible": True} for action_id in GONE_IDS] + controls["children"]
     config.set("context_menu_layout", layout)
     config.save()
     reloaded = Config(tmp_path).get("context_menu_layout")
     assert set(GONE_IDS).isdisjoint(_ids(reloaded["nodes"]))
-    assert "github_project" in _ids(reloaded["nodes"])
+    assert "no_move" in _ids(reloaded["nodes"]), "同一个子菜单里别的项原样"
 
 
 def test_the_settings_page_has_no_harness_or_click_balance_rows(tmp_path, monkeypatch):

@@ -88,18 +88,12 @@ QLabel#settingHint {{ font-size: 12px; font-weight: 400; color: {muted}; }}
 QLabel#settingLabel:disabled, QLabel#settingHint:disabled {{ color: {disabled}; }}
 SettingRow[searchMatch="true"] {{ background: {match}; border-radius: 0; }}
 QScrollArea#settingsScroll, QScrollArea#settingsScroll > QWidget > QWidget {{ background: transparent; }}
-QLabel#quickLaunchCount, QLabel#menuLayoutEditorLabel, QLabel#menuLayoutPreviewLabel, QLabel#menuLayoutEditorHint {{
+QLabel#menuLayoutEditorLabel, QLabel#menuLayoutPreviewLabel, QLabel#menuLayoutEditorHint {{
     color: {muted};
     font-size: 12px;
     font-weight: 500;
     padding-left: 2px;
 }}
-QLabel#quickLaunchName {{ color: {text}; font-size: 13px; font-weight: 500; }}
-QLabel#quickLaunchDetail {{ color: {muted}; font-size: 11px; }}
-QLabel#quickLaunchEmpty {{ color: {muted}; background: {page}; border: 2px dashed {field_border}; border-radius: 0; }}
-QListWidget#quickLaunchList {{ background: {page}; border: none; border-radius: 0; outline: none; padding: 3px; }}
-QListWidget#quickLaunchList::item {{ min-height: 30px; padding: 3px 7px; border-radius: 0; }}
-QListWidget#quickLaunchList::item:selected {{ background: {selected}; color: {selected_text}; }}
 QListWidget#providerList {{ background: {page}; border: none; border-radius: 0; outline: none; padding: 3px; }}
 QListWidget#providerList::item {{ min-height: 30px; padding: 3px 9px; border-radius: 0; color: {text}; }}
 QListWidget#providerList::item:hover {{ background: {tile_hover}; }}

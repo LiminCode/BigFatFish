@@ -5,12 +5,11 @@
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import shiboken6
 
-from PySide6.QtCore import QEvent, QFileInfo, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -25,12 +24,10 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
-    QAbstractItemView,
     QBoxLayout,
     QColorDialog,
     QDoubleSpinBox,
     QFileDialog,
-    QFileIconProvider,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -52,14 +49,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .config import (
-    DEFAULT_QUICK_LAUNCH_APPS,
-)
 from .context_menus.icons import (
     CUSTOM_ICON_SUFFIXES,
     vector_widget_icon,
 )
-from .context_menus.quick_launch import fitted_application_icon
 from .i18n import maybe_t, t
 
 
@@ -1695,162 +1688,3 @@ def _line_edit(text: str = "", *, password: bool = False, width: int = 240) -> Q
     if password:
         edit.setEchoMode(QLineEdit.EchoMode.Password)
     return edit
-
-def _quick_launch_display_name(app: dict) -> str:
-    """列表里显示的名字：默认浏览器那一项若还是内置的中文名，按界面语言显示（配置里存的名字不动）。"""
-    name = str(app.get("name") or "")
-    if app.get("kind") == "default_browser" and name in ("", "默认浏览器"):
-        return t("settings.ui.default_browser")
-    return name
-
-
-class QuickLaunchItemRow(QWidget):
-    """Two-line quick-launch row; the owning list keeps selection and drag."""
-
-    def __init__(self, name: str, detail: str, parent=None):
-        super().__init__(parent)
-        self.setObjectName("quickLaunchItemRow")
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.name_label = QLabel(name, self)
-        self.name_label.setObjectName("quickLaunchName")
-        self.name_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.detail_label = QLabel(detail, self)
-        self.detail_label.setObjectName("quickLaunchDetail")
-        self.detail_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.detail_label.setToolTip(detail)
-        self.detail_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        copy = QVBoxLayout(self)
-        copy.setContentsMargins(62, 5, 10, 5)
-        copy.setSpacing(1)
-        copy.addWidget(self.name_label)
-        copy.addWidget(self.detail_label)
-
-class QuickLaunchEditor(QWidget):
-    """Small application picker persisted into the modern menu."""
-
-    changed = Signal()
-
-    def __init__(self, apps: list[dict], parent=None):
-        super().__init__(parent)
-        self.list = QListWidget(self)
-        self.list.setObjectName("quickLaunchList")
-        self.list.setMinimumHeight(116)
-        self.list.setIconSize(QSize(22, 22))
-        self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.list.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.list.setDragEnabled(True)
-        self.list.setAcceptDrops(True)
-        self.list.setDropIndicatorShown(True)
-        self.list.setSpacing(2)
-        self.list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.list.viewport().installEventFilter(self)
-        self.count_label = QLabel(t("settings.ui.x_0_shortcuts"), self)
-        self.count_label.setObjectName("quickLaunchCount")
-        self.empty_label = QLabel(t("settings.ui.no_quick_launch_items_yet"), self)
-        self.empty_label.setObjectName("quickLaunchEmpty")
-        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_label.setFixedHeight(64)
-        self.add_button = SettingsMenuButton(t("settings.ui.add"), self)
-        self.add_button.setIcon(vector_widget_icon(self, "add", 15))
-        self.add_menu = configure_settings_action_popup(SettingsPopupMenu(self.add_button))
-        self.choose_application_action = self.add_menu.addAction(t("settings.ui.choose_app"))
-        self.add_default_action = self.add_menu.addAction(t("settings.ui.add_default_browser"))
-        self.choose_application_action.triggered.connect(self._choose_application)
-        self.add_default_action.triggered.connect(self._add_default_browser)
-        self.add_button.setPopupMenu(self.add_menu)
-        self.remove_button = TiltButton(t("settings.ui.remove_selected"), self)
-        self.remove_button.setIcon(vector_widget_icon(self, "remove", 15))
-        self.remove_button.clicked.connect(self._remove_checked)
-
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 0, 0, 0)
-        toolbar.setSpacing(7)
-        toolbar.addWidget(self.count_label)
-        toolbar.addStretch(1)
-        toolbar.addWidget(self.add_button)
-        toolbar.addWidget(self.remove_button)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addLayout(toolbar)
-        layout.addWidget(self.list)
-        layout.addWidget(self.empty_label)
-        for item in apps:
-            self.add_app(item)
-        self._sync_content_height()
-
-    def add_app(self, app: dict) -> None:
-        app = dict(app)
-        if app.get("kind") == "default_browser":
-            icon = vector_widget_icon(self, "web", 22)
-            app = {"name": str(app.get("name") or t("settings.ui.default_browser")), "path": "", "kind": "default_browser"}
-        else:
-            path = str(app.get("path") or "")
-            if not path:
-                return
-            provider_icon = QFileIconProvider().icon(QFileInfo(path))
-            if provider_icon.isNull():
-                icon = vector_widget_icon(self, "application", 17)
-            else:
-                icon = fitted_application_icon(provider_icon, 22, self)
-            app = {"name": str(app.get("name") or Path(path).stem), "path": path, "kind": "application"}
-        item = QListWidgetItem(icon, "")
-        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-        item.setCheckState(Qt.CheckState.Unchecked)
-        item.setData(Qt.ItemDataRole.UserRole, app)
-        item.setToolTip(app["path"] or t("settings.ui.use_system_default_browser"))
-        item.setSizeHint(QSize(0, 52))
-        self.list.addItem(item)
-        detail = t("settings.ui.system_default_browser") if app["kind"] == "default_browser" else app["path"]
-        self.list.setItemWidget(item, QuickLaunchItemRow(_quick_launch_display_name(app), detail, self.list))
-        self._sync_content_height()
-
-    def apps(self) -> list[dict]:
-        return [dict(self.list.item(index).data(Qt.ItemDataRole.UserRole)) for index in range(self.list.count())]
-
-    def _choose_application(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            t("settings.ui.choose_app_quick_launch"),
-            "/Applications" if os.path.isdir("/Applications") else "",
-            t("settings.ui.applications_app_all_files"),
-        )
-        if path:
-            self.add_app({"name": Path(path).stem, "path": path, "kind": "application"})
-
-    def _remove_checked(self) -> None:
-        for index in range(self.list.count() - 1, -1, -1):
-            if self.list.item(index).checkState() == Qt.CheckState.Checked:
-                self.list.takeItem(index)
-        self._sync_content_height()
-
-    def _add_default_browser(self) -> None:
-        if not any(item.get("kind") == "default_browser" for item in self.apps()):
-            self.add_app(DEFAULT_QUICK_LAUNCH_APPS[0])
-
-    def _sync_content_height(self) -> None:
-        count = self.list.count()
-        self.count_label.setText(t("settings.ui.count_shortcuts", count=count))
-        self.empty_label.setVisible(count == 0)
-        self.list.setVisible(count > 0)
-        if count:
-            self.list.setFixedHeight(min(226, count * 56 + 10))
-        self.changed.emit()
-
-    def eventFilter(self, watched, event) -> bool:  # noqa: N802
-        if (
-            watched is self.list.viewport()
-            and event.type() == QEvent.Type.MouseButtonRelease
-            and event.button() == Qt.MouseButton.LeftButton
-        ):
-            point = event.position().toPoint()
-            item = self.list.itemAt(point)
-            if item is not None:
-                row = self.list.visualItemRect(item)
-                if point.x() <= row.left() + 36:
-                    checked = item.checkState() == Qt.CheckState.Checked
-                    item.setCheckState(
-                        Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked
-                    )
-                    return True
-        return super().eventFilter(watched, event)

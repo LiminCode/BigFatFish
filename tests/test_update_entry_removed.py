@@ -6,7 +6,7 @@
 
 移除范围：设置页「更新」页、右键菜单「检查更新」「夸克网盘下载」、托盘「检查更新」，
 以及只为它们服务的 ``pet/updater.py`` / ``pet/update_settings.py``。本文件守住它们
-不被合并悄悄带回来；保留下来的（版本号显示、设置页深链、GitHub 项目页）也在这里钉一下。
+不被合并悄悄带回来；保留下来的（版本号显示、设置页深链）也在这里钉一下。
 """
 
 from __future__ import annotations
@@ -53,7 +53,6 @@ def test_menu_registry_no_longer_offers_update_or_download():
         assert action_id not in MENU_ACTIONS.ids
         assert action_id not in ACTION_LABELS
         assert action_id not in ACTION_ICONS
-    assert "github_project" in MENU_ACTIONS.ids, "GitHub 项目页还在"
 
 
 def test_default_menu_layout_has_no_update_entries():
@@ -66,7 +65,6 @@ def test_default_menu_layout_has_no_update_entries():
 
     found = set(ids(load_default_menu_layout("modern-default-v1")["nodes"]))
     assert found.isdisjoint(REMOVED_ACTIONS)
-    assert "github_project" in found, "「工具与帮助」里的项目页原样"
     assert found.isdisjoint({"balance", "harness", "deepseek_web"}), "DeepSeek 三项 2026-10-14 下线"
 
 
@@ -83,10 +81,10 @@ def test_saved_layout_drops_the_removed_update_entries(tmp_path):
             {"type": "action", "id": "check_update", "visible": True},
             {"type": "action", "id": "modern_settings", "visible": True},
             {
-                "type": "submenu", "id": "tools_help", "label": "工具与帮助", "visible": True,
+                "type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True,
                 "children": [
                     {"type": "action", "id": "check_update", "visible": True},
-                    {"type": "action", "id": "github_project", "visible": True},
+                    {"type": "action", "id": "no_move", "visible": True},
                     {"type": "action", "id": "quark_download", "visible": True},
                 ],
             },
@@ -96,20 +94,8 @@ def test_saved_layout_drops_the_removed_update_entries(tmp_path):
     config.save()
 
     nodes = Config(tmp_path).get("context_menu_layout")["nodes"]
-    assert [node["id"] for node in nodes] == ["modern_settings", "tools_help", "quit"]
-    assert [child["id"] for child in nodes[1]["children"]] == ["github_project"]
-
-
-def test_github_project_link_still_opens_the_repo(monkeypatch):
-    from pet.context_menus import registry as registry_mod
-    from pet.context_menus import shared
-
-    opened: list = []
-    monkeypatch.setattr(registry_mod.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
-    menu = QMenu()
-    action = registry_mod._build_github(menu, None)
-    action.trigger()
-    assert opened == [shared.REPO_URL] and shared.REPO_URL.startswith("https://github.com/")
+    assert [node["id"] for node in nodes] == ["modern_settings", "pet_controls", "quit"]
+    assert [child["id"] for child in nodes[1]["children"]] == ["no_move"]
 
 
 @pytest.fixture

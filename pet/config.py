@@ -85,9 +85,6 @@ DEFAULT_MENU_EASTER_EGG = {
     "avatar": "assets/big_blue_fat_fish/ojingjing.jpg",
     "image_dir": "assets/big_blue_fat_fish",
 }
-DEFAULT_QUICK_LAUNCH_APPS = [
-    {"name": "默认浏览器", "path": "", "kind": "default_browser"},
-]
 
 
 # 2026-09-23：右键菜单去掉「鼠标穿透」（该开关的唯一入口收敛到肥鱼设置 + 托盘菜单），
@@ -106,11 +103,13 @@ _MENU_LAYOUT_DROPPED_ACTIONS = frozenset({"mouse_through", "check_update", "quar
     "balance", "harness", "deepseek_web",
     # 2026-11-18 看屏幕整个删掉（ADR 0016）：「看看屏幕」和「主动识屏」子菜单（它在编排里是一个动作）
     "look_screen", "proactive_screen",
+    # 2026-11-18 「快捷启动」和「工具与帮助」里唯一的「GitHub 项目页」整个删掉（连设置页和配置键）
+    "quick_launch", "github_project",
 })
 
 
 #: 整组下线的子菜单：连壳一起清掉（否则老布局里留一个只剩分隔线的空壳）
-_MENU_LAYOUT_DROPPED_SUBMENUS = frozenset({"music"})
+_MENU_LAYOUT_DROPPED_SUBMENUS = frozenset({"music", "tools_help"})
 
 
 def _drop_removed_menu_actions(nodes):
@@ -219,23 +218,6 @@ def _clean_menu_easter_egg(value):
         "avatar": avatar,
         "image_dir": image_dir,
     }
-
-
-def _clean_quick_launch_apps(value):
-    if not isinstance(value, list):
-        return [dict(item) for item in DEFAULT_QUICK_LAUNCH_APPS]
-    cleaned = []
-    for item in value[:20]:
-        if not isinstance(item, dict):
-            continue
-        kind = str(item.get("kind") or "application")
-        path = str(item.get("path") or "").strip()
-        name = str(item.get("name") or "").strip()[:60]
-        if kind == "default_browser":
-            cleaned.append({"name": name or "默认浏览器", "path": "", "kind": "default_browser"})
-        elif path and name:
-            cleaned.append({"name": name, "path": path, "kind": "application"})
-    return cleaned
 
 
 def _default_agent_link_data() -> dict:
@@ -935,7 +917,6 @@ class Config:
             "context_menu_layout": None,
             "context_menu_appearance": dict(DEFAULT_CONTEXT_MENU_APPEARANCE),
             "menu_easter_egg": dict(DEFAULT_MENU_EASTER_EGG),
-            "quick_launch_apps": [dict(item) for item in DEFAULT_QUICK_LAUNCH_APPS],
             "auto_hide_fullscreen": True,  # 全屏应用自动隐藏（Windows）
             "click_sound_enabled": True,  # 点击 Q 弹音效
             "click_sound_pack": _default_click_sound_pack(),
@@ -1231,7 +1212,6 @@ class Config:
             "shift_drag",
             "pet_opacity",
             "context_menu_appearance",
-            "quick_launch_apps",
             "menu_easter_egg",
             "auto_hide_fullscreen",
             "click_sound_enabled",
@@ -1540,7 +1520,6 @@ class Config:
         self.data["context_menu_layout"] = _clean_menu_layout_override(self.data.get("context_menu_layout"))
         self.data["context_menu_appearance"] = _clean_menu_appearance(self.data.get("context_menu_appearance"))
         self.data["menu_easter_egg"] = _clean_menu_easter_egg(self.data.get("menu_easter_egg"))
-        self.data["quick_launch_apps"] = _clean_quick_launch_apps(self.data.get("quick_launch_apps"))
         if self.data.get("chat_ui_style") not in {"modern", "classic"}:
             self.data["chat_ui_style"] = "modern"
         self.data["character_profiles"] = _clean_character_profiles(self.data.get("character_profiles"))
@@ -1738,7 +1717,6 @@ class Config:
             "self_talk_voice_precache_enabled",
             "context_menu_appearance",
             "context_menu_layout",
-            "quick_launch_apps",
             "menu_easter_egg",
             "click_sound_enabled",
             "click_sound_pack",

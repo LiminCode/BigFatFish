@@ -18,7 +18,6 @@ from .config import (
     _clean_collision_data,
     _clean_menu_appearance,
     _clean_menu_easter_egg,
-    _clean_quick_launch_apps,
     _merge_chat_data,
 )
 
@@ -91,10 +90,10 @@ class CollisionConfig(_DomainFacade):
 
 
 class MenuConfig(_DomainFacade):
-    """menu 域：右键菜单外观 / 彩蛋 / 快捷启动（3 个顶层键聚合视图）。
+    """menu 域：右键菜单外观 / 彩蛋（2 个顶层键聚合视图；快捷启动 2026-11-18 删掉）。
 
-    normalize 逐个复用 config._clean_menu_appearance / _clean_menu_easter_egg /
-    _clean_quick_launch_apps；缺失键按加载路径回退到清洗后的默认值。
+    normalize 逐个复用 config._clean_menu_appearance / _clean_menu_easter_egg；
+    缺失键按加载路径回退到清洗后的默认值。
     """
 
     @classmethod
@@ -103,5 +102,4 @@ class MenuConfig(_DomainFacade):
         return {
             "context_menu_appearance": _clean_menu_appearance(raw.get("context_menu_appearance")),
             "menu_easter_egg": _clean_menu_easter_egg(raw.get("menu_easter_egg")),
-            "quick_launch_apps": _clean_quick_launch_apps(raw.get("quick_launch_apps")),
         }

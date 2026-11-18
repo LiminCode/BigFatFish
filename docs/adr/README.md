@@ -64,3 +64,4 @@ PR 满足下面**任意一条**才新增一份 ADR：
 | [0014](0014-panorama-becomes-the-console.md) | 配置全景长成主控制台，设置逐步从 Qt 窗口搬到网页，经本机回环服务读写 |
 | [0015](0015-private-repos-are-home.md) | 私有仓库是数据的家，本机磁盘只是缓存；每种落盘数据都要登记从哪恢复 |
 | [0016](0016-drop-screen-watching-and-file-interpret.md) | 看屏幕和拖文件解读整个删掉，不按 0012 只摘入口 |
+| [0017](0017-drop-quick-launch-and-tools-help.md) | 右键菜单的「快捷启动」和「工具与帮助」整个删掉 |
