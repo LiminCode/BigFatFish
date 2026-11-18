@@ -17,10 +17,6 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "lineup_pets",
         "chat",
         "default.separator-interaction",
-        "animations_hub",
-        "character",
-        "playback_speed",
-        "size",
         "vscode_workspaces",
         "youtube_music",
         "claude_desktop",
@@ -348,10 +344,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "rally_pets",
         "lineup_pets",
         "chat",
-        "animations_hub",
-        "character",
-        "playback_speed",
-        "size",
         "vscode_workspaces",
         "youtube_music",
         "claude_desktop",
@@ -510,10 +502,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "护驾",
         "列队",
         "AI 对话",
-        "播放动画",
-        "切换角色",
-        "播放速率",
-        "大小",
         "VS Code 工作区",
         "YouTube Music",
         "Claude Desktop",
@@ -531,7 +519,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     expected_rendered = [
         "厉害了我的鲸", "|",
         "护驾", "列队", "AI 对话", "|",
-        "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music",
+        "VS Code 工作区", "YouTube Music",
         "Claude Desktop", "Claude Code（WSL）", "|",
         "肥鱼控制", "|",
         "Agent 联动", "|",
@@ -544,6 +532,10 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     assert rendered == expected_rendered
     pet_controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     assert [action.text() for action in pet_controls.actions() if not action.isSeparator()] == [
+        "播放动画",
+        "切换角色",
+        "播放速率",
+        "大小",
         "拖动物理",
         "不移动",
         "窗口置顶",
@@ -2508,3 +2500,62 @@ def test_system_font_stack_matches_platform():
     )
     assert "," not in custom, f"自选字体被拼成多族: {custom}"
     assert "Consolas" in custom
+
+
+def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
+    """2026-11-18：播放动画 / 切换角色 / 播放速率 / 大小都是控制角色动画的、不常用，收进「肥鱼控制」最上面一组，
+    用分隔线和原来的控制项隔开。编排只许一层子菜单，所以是并进去，不是再套一层。"""
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    from pet.context_menu import populate_context_menu
+
+    grouped = ["animations_hub", "character", "playback_speed", "size"]
+    layout = load_default_menu_layout("modern-default-v1")
+    root_ids = [node["id"] for node in layout["nodes"]]
+    assert not set(grouped) & set(root_ids)
+    controls = next(node for node in layout["nodes"] if node["id"] == "pet_controls")
+    child_ids = [child["id"] for child in controls["children"]]
+    assert child_ids[:4] == grouped and controls["children"][4]["type"] == "separator"
+    assert child_ids[5:] == ["drag_physics", "no_move", "on_top", "autostart", "return_corner", "hide_pet",
+                             "spawn_pet", "clear_spawned_pets", "golden_spin", "edge_probe"], "原来的控制项一个不少、顺序不变"
+
+    class FakePet:
+        cfg = type("Cfg", (), {"get": lambda self, key, default=None: default})()
+        idles = turns = moves = clicks = acts = []
+        playback_speed = scale = 1.0
+        drag_physics = no_move = False
+        on_open_chat = on_open_modern_settings = None
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+    app = QApplication.instance() or QApplication([])
+    menu = QMenu()
+    populate_context_menu(menu, FakePet())
+    root = [action.text() for action in menu.actions() if not action.isSeparator()]
+    assert not {"播放动画", "切换角色", "播放速率", "大小"} & set(root)
+    controls_menu = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
+    rendered = ["|" if action.isSeparator() else action.text() for action in controls_menu.actions()]
+    assert rendered[:5] == ["播放动画", "切换角色", "播放速率", "大小", "|"]
+    assert all(controls_menu.actions()[i].menu() is not None for i in range(4)), "四项照旧各带自己的下一级"
+    menu.close()
+    app.processEvents()
+
+
+def test_a_saved_layout_keeps_animation_controls_where_the_user_put_them():
+    """改默认树只影响没存过编排的人：用户编排里已有的动作照用户自己的位置，不会被搬进「肥鱼控制」。"""
+    from pet.context_menus.registry import MENU_ACTIONS
+
+    saved = {"schema_version": 1, "layout_id": "user", "nodes": [
+        {"type": "action", "id": "animations_hub", "visible": True},
+        {"type": "action", "id": "size", "visible": True},
+        {"type": "submenu", "id": "pet_controls", "label": "肥鱼控制", "visible": True,
+         "children": [{"type": "action", "id": "no_move", "visible": True}]},
+        {"type": "action", "id": "modern_settings", "visible": True},
+        {"type": "action", "id": "quit", "visible": True},
+    ]}
+    result = resolve_menu_layout(saved, registered_actions=MENU_ACTIONS.ids, available_actions=MENU_ACTIONS.ids)
+    root = [node["id"] for node in result.nodes]
+    assert root[:2] == ["animations_hub", "size"]
+    controls = next(node for node in result.nodes if node["id"] == "pet_controls")
+    assert not {"animations_hub", "size"} & {child["id"] for child in controls["children"]}
