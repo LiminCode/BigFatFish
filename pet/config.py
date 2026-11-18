@@ -441,6 +441,10 @@ def _default_chat_data():
     }
 
 
+#: 服务商条目里已经不用的键（视觉模型 / 视觉地址 / 视觉 Key，2026-11-18 随看屏幕删掉）
+_RETIRED_PROVIDER_KEYS = ("vision_model", "vision_same_as_chat", "vision_base_url", "vision_api_key_ref", "vision_api_key")
+
+
 def _merge_chat_data(raw):
     result = _default_chat_data()
     raw = raw if isinstance(raw, dict) else {}
@@ -461,6 +465,9 @@ def _merge_chat_data(raw):
                 # UI 从不暴露该字段，非主 provider 挂着主引用一定是继承错的。
                 if provider_id != "openai-main" and base.get("api_key_ref") == "provider/openai-main":
                     base["api_key_ref"] = f"provider/{provider_id}"
+                # 视觉模型那组设置随看屏幕删掉了（ADR 0016）：旧配置里的这几项读进来就丢，下次保存就从文件里消失
+                for retired in _RETIRED_PROVIDER_KEYS:
+                    base.pop(retired, None)
                 providers[str(provider_id)] = base
     else:
         providers = dict(result["providers"])
@@ -1145,9 +1152,9 @@ class Config:
         merged = dict(legacy)
         merged.update(chat)
         # secret 只进不出：磁盘重载不得冲掉内存中的 key。
-        # _redacted_data() 写盘时会剔除 chat.providers 下的明文 api_key /
-        # vision_api_key（keyring 不可用时 key 只存内存 self.data），因此磁盘文件
-        # 里没有这两项。这里若某 provider 在磁盘数据里缺 api_key/vision_api_key
+        # _redacted_data() 写盘时会剔除 chat.providers 下的明文 api_key
+        # （keyring 不可用时 key 只存内存 self.data），因此磁盘文件
+        # 里没有这一项。这里若某 provider 在磁盘数据里缺 api_key
         # 但合入前的内存里有，则保留内存值，避免设置对话框重开（自 config.reload()
         # 从磁盘重载）把用户未重启就丢掉的 key 覆盖成空。新旧两套设置对话框都走
         # 这条 reload() 路径，一处修复全覆盖。
@@ -1174,8 +1181,6 @@ class Config:
                     raw_provider = raw_provider if isinstance(raw_provider, dict) else {}
                     if "api_key" not in raw_provider and previous_provider.get("api_key"):
                         merged_provider["api_key"] = previous_provider["api_key"]
-                    if "vision_api_key" not in raw_provider and previous_provider.get("vision_api_key"):
-                        merged_provider["vision_api_key"] = previous_provider["vision_api_key"]
         for key in (
             "rx",
             "ry",
@@ -1334,9 +1339,9 @@ class Config:
         """加载时把磁盘遗留的明文 API Key 迁移进 keyring。
 
         v4.0.4/4.0.5 起 _redacted_data() 写盘时剔除 chat.providers 下的明文
-        api_key/vision_api_key，但 SecretStore.set 只在设置对话框保存时调用——
+        api_key，但 SecretStore.set 只在设置对话框保存时调用——
         老版本（≤v4.0.0）磁盘上的明文 key 从未进过 keyring，升级后首次写盘即被剔除，
-        重启后 resolve_api_key 拿不到任何值，聊天/视觉 401 静默失效。
+        重启后 resolve_api_key 拿不到任何值，聊天 401 静默失效。
         此处补迁移：keyring 已有值不覆盖（与 resolve_api_key 的 keyring 优先序一致），
         仅丢弃明文；set 失败（keyring 不可用）保留内存明文，维持原兜底行为。
         幂等：迁移成功后内存/磁盘均无明文，重复 reload 无副作用；不主动 save()，
@@ -1360,7 +1365,6 @@ class Config:
                 continue
             for key_field, ref_field, default_ref in (
                 ("api_key", "api_key_ref", f"provider/{provider_id}"),
-                ("vision_api_key", "vision_api_key_ref", f"provider/{provider_id}/vision"),
             ):
                 plaintext = str(provider.get(key_field) or "")
                 if not plaintext.strip():
@@ -1828,8 +1832,9 @@ class Config:
         """深拷贝待写盘数据，并剔除 chat.providers 下的明文 API Key。
 
         keyring 不可用时（SecretStore.set 返回 False）设置对话框会把 key 放进
-        provider.api_key / vision_api_key 供本次运行使用；写盘时必须剔除，
+        provider.api_key 供本次运行使用；写盘时必须剔除，
         避免明文落盘——key 只保留在内存（self.data），重启需重输。
+        ``vision_api_key`` 那一组设置已删（ADR 0016），加载时就丢掉了；这里照样剔除，多一道防线。
         """
         write_data = copy.deepcopy(self.data)
         chat = write_data.get("chat")

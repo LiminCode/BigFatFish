@@ -132,11 +132,6 @@ class _AiSettingsPage(QWidget):
         for style_id in CHAT_UI_STYLE_LABELS:
             self.chat_ui_style.addItem(chat_style_label(style_id), style_id)
         self.chat_ui_style.setCurrentData(str(config.get("chat_ui_style", "modern")))
-        self.vision_same = ToggleSwitch()
-        self.vision_same.setChecked(bool(provider.vision_same_as_chat))
-        self.vision_model = _line_edit(provider.vision_model)
-        self.vision_url = _line_edit(provider.vision_base_url)
-        self.vision_key = _line_edit(password=True)
         self.github_connector = ToggleSwitch()
         self.github_connector.setChecked(bool(self.settings.github_connector))
         self.github_token = _line_edit(password=True)
@@ -261,16 +256,6 @@ class _AiSettingsPage(QWidget):
                 self.system_notify_check,
             ),
         ], self))
-        vision_rows = [
-            SettingRow("vision_same", t("settings.ai.vision_reuses_chat_model"), t("settings.ai.when_compatible_vision_model_picked"), self.vision_same),
-            SettingRow("vision_model", t("settings.ai.vision_model"), t("settings.ai.multimodal_model_identifier_used_when"), self.vision_model),
-            SettingRow("vision_url", t("settings.ai.vision_api_address"), t("settings.ai.leave_blank_reuse_chat_service"), self.vision_url),
-            SettingRow("vision_key", t("settings.ai.vision_api_key"), t("settings.ai.leave_blank_reuse_chat_service_2"), self.vision_key),
-        ]
-        root.addWidget(SettingsSection(t("settings.ai.vision"), vision_rows, self))
-        self._vision_override_rows = vision_rows[1:]
-        self.vision_same.toggled.connect(self._update_vision_visibility)
-        self._update_vision_visibility(self.vision_same.isChecked())
         self._github_token_row = SettingRow(
             "github_token", "GitHub Token",
             t("settings.ai.personal_access_token_shared_by"),
@@ -415,13 +400,6 @@ class _AiSettingsPage(QWidget):
         self._capture_background_value()
         self._background_style = str(self.chat_ui_style.currentData() or "modern")
         self._populate_background_options(self._background_style)
-
-    def _update_vision_visibility(self, reuse_chat_model: bool) -> None:
-        for row in self._vision_override_rows:
-            row.setVisible(not reuse_chat_model)
-        card = self._vision_override_rows[0].parentWidget() if self._vision_override_rows else None
-        if isinstance(card, SettingsCard):
-            card.refresh_separators()
 
     def _update_github_visibility(self, _checked: bool = False) -> None:
         kb_on = self.knowledge_base.isChecked()
@@ -580,7 +558,6 @@ class _AiSettingsPage(QWidget):
             return
         existing = self._provider_drafts.get(pid, {})
         key_text = self.key.text()
-        vkey_text = self.vision_key.text()
         self._provider_drafts[pid] = {
             "name": self.name.text().strip(),
             "base_url": self.url.text().strip(),
@@ -592,10 +569,6 @@ class _AiSettingsPage(QWidget):
             "temperature": float(self.temperature.value()),
             "max_tokens": int(self.tokens.value()),
             "effort": str(self.effort.currentData() or "medium"),
-            "vision_model": self.vision_model.text().strip(),
-            "vision_same_as_chat": self.vision_same.isChecked(),
-            "vision_base_url": self.vision_url.text().strip(),
-            "vision_key": vkey_text if vkey_text else existing.get("vision_key", ""),
             "verify_ssl": not self.skip_ssl.isChecked(),
         }
 
@@ -614,10 +587,6 @@ class _AiSettingsPage(QWidget):
         self.temperature.setValue(float(draft.get("temperature", p.temperature)))
         self.tokens.setValue(int(draft.get("max_tokens", p.max_tokens)))
         self.effort.setCurrentData(str(draft.get("effort", p.effort) or "medium"))
-        self.vision_model.setText(draft.get("vision_model", p.vision_model))
-        self.vision_same.setChecked(bool(draft.get("vision_same_as_chat", p.vision_same_as_chat)))
-        self.vision_url.setText(draft.get("vision_base_url", p.vision_base_url))
-        self.vision_key.clear()
         self.skip_ssl.setChecked(not bool(draft.get("verify_ssl", p.verify_ssl)))
         self._update_provider_buttons()
 
@@ -653,10 +622,6 @@ class _AiSettingsPage(QWidget):
             temperature=base.temperature,
             max_tokens=base.max_tokens,
             effort=base.effort,
-            vision_model=base.vision_model,
-            vision_same_as_chat=base.vision_same_as_chat,
-            vision_base_url=base.vision_base_url,
-            vision_api_key_ref=f"provider/{new_id}/vision",
             verify_ssl=base.verify_ssl,
         )
         self.settings.providers[new_id] = new
@@ -669,10 +634,6 @@ class _AiSettingsPage(QWidget):
             "temperature": new.temperature,
             "max_tokens": new.max_tokens,
             "effort": new.effort,
-            "vision_model": new.vision_model,
-            "vision_same_as_chat": new.vision_same_as_chat,
-            "vision_base_url": new.vision_base_url,
-            "vision_key": "",
             "verify_ssl": new.verify_ssl,
         }
         self._loading_provider = True
@@ -726,21 +687,12 @@ class _AiSettingsPage(QWidget):
         p.temperature = float(draft.get("temperature", p.temperature))
         p.max_tokens = int(draft.get("max_tokens", p.max_tokens))
         p.effort = str(draft.get("effort", p.effort) or "medium")
-        p.vision_model = draft.get("vision_model", p.vision_model)
-        p.vision_same_as_chat = bool(draft.get("vision_same_as_chat", p.vision_same_as_chat))
-        p.vision_base_url = draft.get("vision_base_url", p.vision_base_url)
         p.verify_ssl = bool(draft.get("verify_ssl", p.verify_ssl))
         key = str(draft.get("key") or "")
         if key and key != self._stored_key(p):     # 输入框里是原样的 Key：不重写钥匙串
             p.api_key_ref = p.api_key_ref or f"provider/{provider_id}"
             if not self._secret_store_type().set(p.api_key_ref, key):
                 p.api_key = key
-                QMessageBox.warning(self, t("settings.ai.secure_storage_unavailable"), t("settings.ai.system_secure_storage_can_t"))
-        vkey = str(draft.get("vision_key") or "")
-        if vkey:
-            p.vision_api_key_ref = p.vision_api_key_ref or f"provider/{provider_id}/vision"
-            if not self._secret_store_type().set(p.vision_api_key_ref, vkey):
-                p.vision_api_key = vkey
                 QMessageBox.warning(self, t("settings.ai.secure_storage_unavailable"), t("settings.ai.system_secure_storage_can_t"))
 
     def provisional_config(self):

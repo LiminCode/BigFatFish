@@ -109,3 +109,27 @@ def test_nothing_looks_at_the_screen_any_more():
 
     assert callable(vision.get_cursor_visibility) and callable(vision.foreground_window_info)
     assert callable(vision.get_system_idle_seconds), "Slack 关注还在用"
+
+
+def test_providers_no_longer_carry_a_separate_vision_model_or_key(tmp_path):
+    """看屏幕删掉后，服务商里那组「视觉模型 / 视觉地址 / 视觉 Key」也没人用了：数据结构里没有，旧配置读进来就丢，
+    下一次保存从文件里消失。明文 Key 照样不落盘。"""
+    import dataclasses
+
+    from pet.chat import anthropic_provider
+    from pet.chat.models import ProviderConfig
+
+    assert not [f.name for f in dataclasses.fields(ProviderConfig) if f.name.startswith("vision")]
+    assert not hasattr(anthropic_provider, "describe_image")
+    path = Config(tmp_path).path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": 4, "chat": {"active_provider": "p1", "providers": {"p1": {
+        "name": "P", "base_url": "https://example.invalid", "model": "m", "vision_model": "glm-4v", "vision_same_as_chat": False,
+        "vision_base_url": "https://vision.invalid", "vision_api_key_ref": "provider/p1/vision", "vision_api_key": "sk-plain"}}}}),
+        encoding="utf-8")
+    config = Config(tmp_path)
+    provider = config.get("chat")["providers"]["p1"]
+    assert provider["model"] == "m" and not [key for key in provider if key.startswith("vision")]
+    assert config.save()
+    saved = path.read_text(encoding="utf-8")
+    assert "vision" not in saved and "sk-plain" not in saved

@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """Claude 通道（Anthropic Messages API，官方 SDK），与 OpenAI 兼容通道并存。
 
-肥鱼的会话、识屏、文件解读都按 OpenAI 的消息形状组织（``role`` + ``content``，
+肥鱼的会话按 OpenAI 的消息形状组织（``role`` + ``content``，
 图片是 ``image_url``）。本模块在边界上把它换成 Messages API 的形状，其余代码
 不必知道对面是哪家：
 
 - ``uses_anthropic(config)``：这个服务商走不走 Claude 通道。``api_format`` 明确写了
   就听它的；``auto``（默认）看地址是不是 ``api.anthropic.com``。
 - ``AnthropicProvider.stream``：与 ``OpenAICompatibleProvider.stream`` 同签名的流式对话。
-- ``describe_image``：识屏（一张截图 + 一段提示 → 一段话）。
 - ``RoutingProvider`` / ``test_connection``：按配置选通道，调用方只认这两个入口。
 
 与 OpenAI 兼容通道的几处有意差异：
@@ -34,7 +33,6 @@ SDK 在函数内按需导入：没装 ``anthropic`` 的环境（含未收集它�
 
 from __future__ import annotations
 
-import base64
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -332,34 +330,6 @@ class AnthropicProvider:
             if cancel_event.is_set():
                 return                                   # 取消时连接被关掉引出的错误不算失败
             raise _translate_error(sdk, exc, model) from exc
-
-
-def describe_image(jpeg_bytes: bytes, user_text: str, system_prompt: str, config: ProviderConfig, *,
-                   model: str, base_url: str, api_key: str) -> str:
-    """识屏：一张 JPEG + 一段提示 → 模型的一段话。失败抛 ProviderError。
-
-    不自动重试（``max_retries=0``）：主动识屏按真实请求次数扣每日额度，SDK 悄悄重试
-    会让实际请求数超过记账数。
-    """
-    sdk = _sdk()
-    model = str(model or "").strip() or DEFAULT_MODEL
-    client = _client(api_key, base_url, max(float(config.timeout), 60.0), config.verify_ssl, max_retries=0)
-    content = [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                     "data": base64.standard_b64encode(jpeg_bytes).decode("ascii")}},
-        {"type": "text", "text": user_text},
-    ]
-    try:
-        with _open_stream(client, model, system_prompt, [{"role": "user", "content": content}],
-                          _MIN_MAX_TOKENS, getattr(config, "effort", DEFAULT_EFFORT)) as stream:
-            final = stream.get_final_message()
-    except Exception as exc:
-        raise _translate_error(sdk, exc, model) from exc
-    _check_final(final)
-    text = "".join(block.text for block in final.content if block.type == "text").strip()
-    if not text:
-        raise ProviderError(t("chat.claude.claude_said_nothing_empty_reply"))
-    return text
 
 
 @dataclass

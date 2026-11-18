@@ -2,7 +2,7 @@
 """加载时把磁盘明文 API Key 迁移进 keyring 的回归测试。
 
 回归背景：v4.0.4/4.0.5 起 _redacted_data() 写盘时剔除 chat.providers 下的明文
-api_key/vision_api_key，但 SecretStore.set 只在设置对话框保存时调用——老版本
+api_key，但 SecretStore.set 只在设置对话框保存时调用——老版本
 (≤v4.0.0) 用户磁盘上的明文 key 从未进过 keyring，升级后首次写盘即被剔除，
 重启后 resolve_api_key 拿不到任何值，聊天/视觉 401 静默失效。
 """
@@ -106,17 +106,3 @@ def test_existing_keyring_value_not_overwritten(tmp_path):
     assert FakeStore.shared["provider/openai-main"] == "sk-already-in-keyring"
     provider = config.data["chat"]["providers"]["openai-main"]
     assert not provider.get("api_key")
-
-
-def test_vision_api_key_migrated_with_default_ref(tmp_path):
-    """vision_api_key 迁移：ref 为空时用默认 ref provider/<pid>/vision 并回填。"""
-    _write_disk_config(tmp_path, {
-        "openai-main": {"name": "DeepSeek", "vision_api_key": "vk-legacy-plaintext"},
-    })
-
-    config = Config(base=tmp_path)
-
-    assert FakeStore.shared["provider/openai-main/vision"] == "vk-legacy-plaintext"
-    provider = config.data["chat"]["providers"]["openai-main"]
-    assert not provider.get("vision_api_key")
-    assert provider["vision_api_key_ref"] == "provider/openai-main/vision"

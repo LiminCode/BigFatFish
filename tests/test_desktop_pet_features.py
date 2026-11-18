@@ -1430,7 +1430,7 @@ def test_modern_settings_panel_uses_sidebar_and_includes_ai_settings(tmp_path, m
     assert {
         "应用启动", "窗口与系统", "动画与移动", "点击反馈", "自言自语",
         "显示", "菜单外观", "对话窗口", "已配置应用", "内容与布局",
-        "模型与连接", "视觉能力",
+        "模型与连接",
         # 「语音」总域只收 TTS 类设置（2026-09-17 定稿口径）：语音报时 + 节日提醒
         "语音报时", "节日提醒",
     }.issubset(set(section_titles))
@@ -1558,7 +1558,6 @@ def test_modern_settings_progressively_reveals_dependent_controls(tmp_path, monk
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
     dialog = settings_mod.ModernSettingsDialog(Config(tmp_path), include_ai=True)
 
-    vision_model = dialog.findChild(settings_mod.SettingRow, "settingRow_vision_model")
     custom_background = dialog.findChild(settings_mod.SettingRow, "settingRow_chat_background_file")
     self_talk_rows = [
         dialog.findChild(settings_mod.SettingRow, f"settingRow_{key}")
@@ -1570,9 +1569,6 @@ def test_modern_settings_progressively_reveals_dependent_controls(tmp_path, monk
     ]
     opacity = dialog.findChild(settings_mod.SettingRow, "settingRow_menu_opacity")
 
-    assert vision_model.isHidden() is dialog.ai_page.vision_same.isChecked()
-    dialog.ai_page.vision_same.setChecked(False)
-    assert not vision_model.isHidden()
     assert custom_background.isHidden()
     dialog.ai_page.background_select.setCurrentData("custom")
     assert not custom_background.isHidden()

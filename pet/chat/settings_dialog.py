@@ -83,22 +83,6 @@ class ChatSettingsDialog(QDialog):
         self.tokens = QSpinBox()
         self.tokens.setRange(1, 32768)
         self.tokens.setValue(p.max_tokens)
-        # 视觉模型（看看屏幕）：默认同聊天模型推导；取消勾选可手填（如免费 glm-4.6v-flash）
-        self.vmodel = QLineEdit(p.vision_model)
-        self.vmodel.setPlaceholderText(t("chat.settings.leave_blank_derive_automatically_zhipu"))
-        self.vsame = QCheckBox(t("chat.settings.same_vision_model_as_chat"))
-        self.vsame.setChecked(p.vision_same_as_chat)
-        self.vurl = QLineEdit(p.vision_base_url)
-        self.vurl.setPlaceholderText(t("chat.settings.vision_api_address_leave_blank"))
-        self.vkey = QLineEdit()
-        self.vkey.setEchoMode(QLineEdit.EchoMode.Password)
-        self.vkey.setPlaceholderText(t("chat.settings.vision_api_key_leave_blank"))
-        _vextra = [self.vmodel, self.vurl, self.vkey]
-        def _vtoggle(c):
-            for w in _vextra:
-                w.setEnabled(not c)
-        _vtoggle(p.vision_same_as_chat)
-        self.vsame.toggled.connect(_vtoggle)
         # 聊天背景：纯色 / 内置主题 / 自定义图片 + 裁切取景
         self._bg_keys = [k for k, _ in theme_names()]
         self.bg_mode = QComboBox()
@@ -136,7 +120,7 @@ class ChatSettingsDialog(QDialog):
 
         form.insertRow(0, t("chat.settings.api_list"), provider_row)
         for label, w in [(t("chat.settings.provider_name"), self.name), (t("chat.settings.api_address"), self.url),
-                         (t("chat.settings.model"), self.model), ('', self.vsame), (t("chat.settings.vision_model"), self.vmodel), (t("chat.settings.vision_api_address"), self.vurl), (t("chat.settings.vision_api_key"), self.vkey),
+                         (t("chat.settings.model"), self.model),
                          ('API Key', self.key), ('', self.key_hint),
                          (t("chat.settings.system_notifications"), self.system_notify_check),
                          ('System Prompt', self.prompt),
@@ -179,7 +163,6 @@ class ChatSettingsDialog(QDialog):
             return
         existing = self._provider_drafts.get(pid, {})
         key_text = self.key.text()
-        vkey_text = self.vkey.text()
         self._provider_drafts[pid] = {
             'name': self.name.text().strip(),
             'base_url': self.url.text().strip(),
@@ -190,10 +173,6 @@ class ChatSettingsDialog(QDialog):
             'timeout': float(self.timeout.value()),
             'temperature': float(self.temp.value()),
             'max_tokens': int(self.tokens.value()),
-            'vision_model': self.vmodel.text().strip(),
-            'vision_same_as_chat': self.vsame.isChecked(),
-            'vision_base_url': self.vurl.text().strip(),
-            'vision_key': vkey_text if vkey_text else existing.get('vision_key', ''),
             'verify_ssl': not self.skip_ssl.isChecked(),
         }
 
@@ -211,10 +190,6 @@ class ChatSettingsDialog(QDialog):
         self.timeout.setValue(int(draft.get('timeout', p.timeout)))
         self.temp.setValue(float(draft.get('temperature', p.temperature)))
         self.tokens.setValue(int(draft.get('max_tokens', p.max_tokens)))
-        self.vmodel.setText(draft.get('vision_model', p.vision_model))
-        self.vsame.setChecked(bool(draft.get('vision_same_as_chat', p.vision_same_as_chat)))
-        self.vurl.setText(draft.get('vision_base_url', p.vision_base_url))
-        self.vkey.clear()
         self.skip_ssl.setChecked(not bool(draft.get('verify_ssl', p.verify_ssl)))
         self._update_provider_buttons()
 
@@ -248,10 +223,6 @@ class ChatSettingsDialog(QDialog):
             timeout=base.timeout,
             temperature=base.temperature,
             max_tokens=base.max_tokens,
-            vision_model=base.vision_model,
-            vision_same_as_chat=base.vision_same_as_chat,
-            vision_base_url=base.vision_base_url,
-            vision_api_key_ref=f'provider/{new_id}/vision',
             verify_ssl=base.verify_ssl,
         )
         self.settings.providers[new_id] = new
@@ -264,10 +235,6 @@ class ChatSettingsDialog(QDialog):
             'timeout': new.timeout,
             'temperature': new.temperature,
             'max_tokens': new.max_tokens,
-            'vision_model': new.vision_model,
-            'vision_same_as_chat': new.vision_same_as_chat,
-            'vision_base_url': new.vision_base_url,
-            'vision_key': '',
             'verify_ssl': new.verify_ssl,
         }
         self.provider_combo.addItem(self._provider_label(new), new_id)
@@ -403,21 +370,12 @@ class ChatSettingsDialog(QDialog):
         p.timeout = float(draft.get('timeout', p.timeout))
         p.temperature = float(draft.get('temperature', p.temperature))
         p.max_tokens = int(draft.get('max_tokens', p.max_tokens))
-        p.vision_model = draft.get('vision_model', p.vision_model)
-        p.vision_same_as_chat = bool(draft.get('vision_same_as_chat', p.vision_same_as_chat))
-        p.vision_base_url = draft.get('vision_base_url', p.vision_base_url)
         p.verify_ssl = bool(draft.get('verify_ssl', p.verify_ssl))
         key = str(draft.get('key') or '')
         if key:
             p.api_key_ref = p.api_key_ref or f'provider/{provider_id}'
             if not SecretStore().set(p.api_key_ref, key):
                 p.api_key = key
-                QMessageBox.warning(self, t("chat.settings.secure_storage_unavailable"), t("chat.settings.system_keychain_can_t_used"))
-        vkey = str(draft.get('vision_key') or '')
-        if vkey:
-            p.vision_api_key_ref = p.vision_api_key_ref or f'provider/{provider_id}/vision'
-            if not SecretStore().set(p.vision_api_key_ref, vkey):
-                p.vision_api_key = vkey
                 QMessageBox.warning(self, t("chat.settings.secure_storage_unavailable"), t("chat.settings.system_keychain_can_t_used"))
 
     def save(self):

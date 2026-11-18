@@ -94,14 +94,11 @@ def test_settings_window_with_every_dependent_row_visible_shows_no_free_row_wind
         tmp_path, monkeypatch):
     """依赖项全开：背景选了自定义图、视觉模型不复用、知识库开着时同样不许出现。
 
-    这是真实用户的配置形态——比默认配置多出「背景五行 / 视觉三行 / 知识库行」这条
+    这是真实用户的配置形态——比默认配置多出「背景五行 / 知识库行」这条
     动态显隐链，正是构造期 ``setVisible`` 叫得最响的时候。
     """
     def tune(config: Config) -> None:
         config.set("modern_chat_background", "C:/no/such/background.png")
-        chat = dict(config.get("chat") or {})
-        chat.update(vision_same=False)
-        config.set("chat", chat)
 
     dialog, watcher = _dialog(tmp_path, monkeypatch, tune)
     try:
