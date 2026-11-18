@@ -796,8 +796,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     from PySide6.QtWidgets import QApplication, QMenu
 
     import pet.window as window_mod
-    import pet.context_menus.registry as registry_mod
-    import pet.context_menus.shared as shared_menu_mod
 
     class FakeConfig:
         def __init__(self):
@@ -851,12 +849,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(window_mod.autostart_mod, "is_enabled", lambda: False)
     monkeypatch.setattr(window_mod.catalog, "list_available_characters", lambda: ["shenshen"])
-    opened_urls = []
-    monkeypatch.setattr(
-        registry_mod.QDesktopServices,
-        "openUrl",
-        lambda url: opened_urls.append(url.toString()) or True,
-    )
     pet = FakePet()
     menu = QMenu()
     window_mod._populate_context_menu(menu, pet)
@@ -865,10 +857,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "厉害了我的鲸",
         "护驾",
         "AI 对话",
-        "播放动画",
-        "切换角色",
-        "播放速率",
-        "大小",
         "VS Code 工作区",
         "YouTube Music",
         "Claude Desktop",
@@ -884,7 +872,9 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "退出",
     ])
     assert labels == expected_labels
-    animation_action = next(action for action in menu.actions() if action.text() == "播放动画")
+    # 播放动画 / 切换角色 / 播放速率 / 大小 2026-11-18 收进「肥鱼控制」
+    controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
+    animation_action = next(action for action in controls.actions() if action.text() == "播放动画")
     assert animation_action.menu() is not None
     assert [action.text() for action in animation_action.menu().actions()] == [
         "待机",
@@ -893,8 +883,8 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "点击回应",
         "随机动作",
     ]
-    assert next(action for action in menu.actions() if action.text() == "播放速率").menu() is not None
-    assert next(action for action in menu.actions() if action.text() == "大小").menu() is not None
+    assert next(action for action in controls.actions() if action.text() == "播放速率").menu() is not None
+    assert next(action for action in controls.actions() if action.text() == "大小").menu() is not None
     # 「工具与帮助」（只剩「GitHub 项目页」）和「快捷启动」2026-11-18 删掉
     assert all(action.text() not in ("工具与帮助", "快捷启动") for action in menu.actions())
     # 模板模式已迁入设置；默认菜单不再用低频迁移命令占据根菜单。
@@ -2007,7 +1997,8 @@ def test_modern_animation_leaf_icons_are_loaded_only_when_category_opens(monkeyp
     populate_context_menu(menu, pet)
     # Opening the root menu must not synchronously decode every animation.
     assert pet.icon_requests == 0
-    animations = next(submenu for submenu in menu._owned_submenus if submenu.title() == "播放动画")
+    controls = next(submenu for submenu in menu._owned_submenus if submenu.title() == "肥鱼控制")
+    animations = next(submenu for submenu in controls._owned_submenus if submenu.title() == "播放动画")
     idle = next(submenu for submenu in animations._owned_submenus if submenu.title() == "待机")
     assert idle.actions() == [], "根菜单构建不应同步填充动画分类动作"
     idle.aboutToShow.emit()
