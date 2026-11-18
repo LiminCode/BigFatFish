@@ -16,7 +16,7 @@
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
 | `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | 「笔记」页与「Slack 关注」页（同一个面板，`slack=True` 切换）；详情底部的信息栏 |
-| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**工作简报和 Slack 关注的设置已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里那两节只剩跳转那一行和流程说明 |
+| `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**三节的设置都已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里只剩跳转那一行和流程说明 |
 | `pet/claude_hooks.py` | `run_wsl` / `wsl_exe`；`HEADLESS_ENV` 与 hook 脚本里认它的那一行 |
 
 ## 机制与不变量
@@ -127,6 +127,8 @@ flowchart LR
 
 ### 工作笔记
 
+- **设置在配置全景上改**：点「工作笔记」磁贴的「设置」（开关、仓库副本目录、模型、effort；中 / 英文两份提示词收在「高级」里）。
+  目录清空会被 `work_notes.normalize` 退回默认目录，所以页面上清空目录会被拒（`rejected`），要换回默认就填默认路径。
 - **格式**：`note/YYYY-MM-DD-HHMM-<slug>.md`，frontmatter + `# 标题` + `## 原文` / `## AI 摘要` / `## 提醒` 三节。frontmatter
   读写是自写的最小子集（不引 PyYAML）。用户在 Obsidian 里手改过的文件要读得回来：缺节、缺字段、没 frontmatter 都容忍。
 - **原文逐字不动**；总结只改 frontmatter 和后两节。总结后标题换成 Claude 概括的，但**文件名永不跟着改**（改名要处理

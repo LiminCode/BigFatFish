@@ -132,7 +132,7 @@ FEATURES: tuple[Feature, ...] = (
     # 设置已经搬到配置全景（settings_table 里登记了这个键）：磁贴上是「设置」按钮，不再指向设置窗口的哪一页
     Feature("briefing", "work", "news", "work_briefing", _briefing),
     Feature("slack", "work", "hash", "slack_watch", _slack),
-    Feature("notes", "work", "note", "work_notes", _notes, page="briefing_notes",
+    Feature("notes", "work", "note", "work_notes", _notes,
             writes=(("vault_work", "memory", _always),)),
     Feature("distill_work", "work", "funnel", "memory_distill.work_*", _distill(md.SIDE_WORK), page="briefing_distill",
             writes=(("md_wsl", "memory", _always), ("mem_wsl", "memory", _always),

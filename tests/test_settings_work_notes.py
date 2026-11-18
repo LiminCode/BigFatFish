@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""设置页「工作笔记」一节：开关、仓库目录、模型能存回去；没装 WSL 时开关置灰；流程图标悬停讲整条流程；中英文。"""
+"""设置窗口里的「工作笔记」一节：设置已经搬到配置全景（ADR 0014，路线图 M4），这里只剩一行说明、一个跳过去的按钮
+和折叠的「这个功能怎么运作」说明（用户 2026-10-15：进设置页要带解释，免得日久忘了细节）。
+
+和工作简报、Slack 关注一样要守住「一项设置只有一个编辑入口」：设置窗口里没有这一组的控件，保存时也不碰 ``work_notes`` 这个键。
+"""
 from __future__ import annotations
 
 import os
@@ -10,11 +14,15 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
-from pet import settings_work_notes as swn
+from pet import overlay_settings_command as cmd
 from pet import work_notes as wn
 from pet.config import Config
+from pet.settings_widgets import SettingRow
 
 app = QApplication.instance() or QApplication([])
+
+OLD_ROWS = ("work_notes_enabled", "work_notes_repo_dir", "work_notes_model", "work_notes_model_custom",
+            "work_notes_effort", "work_notes_prompt")
 
 
 @pytest.fixture(autouse=True)
@@ -23,22 +31,24 @@ def _chinese_again():
     i18n.set_language("zh")
 
 
-def _dialog(tmp_path, monkeypatch, *, wsl: bool = True, language: str = "zh", **settings):
+def _dialog(tmp_path, monkeypatch, *, language: str = "zh", **settings):
     from pet import modern_settings_dialog as settings_mod
 
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    monkeypatch.setattr(swn.claude_hooks, "wsl_exe", lambda: r"C:\Windows\System32\wsl.exe" if wsl else None)
     config = Config(tmp_path)
     config.set("ui_language", language)
     if settings:
-        config.set(wn.CONFIG_KEY, {**wn.normalize(None), **settings})
+        config.set(wn.CONFIG_KEY, wn.normalize(settings))
+    config.save()
     return config, settings_mod.ModernSettingsDialog(config, include_ai=False)
 
 
-def _row_page(dialog, row_id: str) -> str:
-    from pet.settings_widgets import SettingRow
+def _row(dialog, row_id: str):
+    return dialog.findChild(SettingRow, f"settingRow_{row_id}")
 
-    row = dialog.findChild(SettingRow, f"settingRow_{row_id}")
+
+def _page_of(dialog, row_id: str) -> str:
+    row = _row(dialog, row_id)
     assert row is not None, row_id
     for index in range(dialog.pages.count()):
         if dialog.pages.widget(index).isAncestorOf(row):
@@ -52,21 +62,20 @@ def _close(dialog):
     app.processEvents()
 
 
-def test_the_rows_live_in_automation_and_show_the_saved_values(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, repo_dir=r"D:\notes\AI-Base-Memory", model="haiku")
+def test_the_section_only_says_where_the_settings_went(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, repo_dir=r"D:\notes\AI-Base-Memory", model="haiku")
     try:
-        for row_id in ("work_notes_flow", "work_notes_enabled", "work_notes_repo_dir", "work_notes_model"):
-            assert _row_page(dialog, row_id) == "简报与笔记", row_id
-        assert dialog.work_notes_enabled_check.isChecked() and dialog.work_notes_enabled_check.isEnabled()
-        assert dialog.work_notes_repo_edit.text() == r"D:\notes\AI-Base-Memory"
-        assert dialog.work_notes_model_select.currentData() == "haiku"
-        assert dialog.work_notes_model_edit.isHidden()
+        assert all(_row(dialog, row_id) is None for row_id in OLD_ROWS), "控件留在这里就是两个编辑入口"
+        assert not hasattr(dialog, "work_notes_enabled_check") and not hasattr(dialog, "work_notes_prompt_editor")
+        assert _page_of(dialog, "work_notes_moved") == "简报与笔记"
+        moved = _row(dialog, "work_notes_moved")
+        assert "工作笔记" in moved.hint_label.text() and "配置全景" in moved.hint_label.text()
+        assert dialog.work_notes_open_panorama.text() == "到配置全景里改"
     finally:
         _close(dialog)
 
 
-def test_the_flow_lives_in_a_collapsed_section_with_formatted_text(tmp_path, monkeypatch):
-    """用户 2026-10-15：进设置页要带解释，免得日久忘了细节；悬停的 tooltip 没有排版，改成「这个功能怎么运作」折叠节。"""
+def test_the_flow_still_lives_in_a_collapsed_section_with_formatted_text(tmp_path, monkeypatch):
     from PySide6.QtCore import Qt
 
     _config, dialog = _dialog(tmp_path, monkeypatch)
@@ -78,44 +87,33 @@ def test_the_flow_lives_in_a_collapsed_section_with_formatted_text(tmp_path, mon
         assert section.card.isVisibleTo(section), "点一下展开"
         label = dialog.work_notes_flow_label
         assert label.textFormat() == Qt.TextFormat.RichText and label.wordWrap()
-        text = label.text()
         for step in ("<b>", "1.", "2.", "3.", "4.", "5.", "只读", "Obsidian", "AI-Base-Memory", "token"):
-            assert step in text, step
-        assert _row_page(dialog, "work_notes_flow") == "简报与笔记"
+            assert step in label.text(), step
+        assert _page_of(dialog, "work_notes_flow") == "简报与笔记"
     finally:
         _close(dialog)
 
 
-def test_changes_are_saved_back_through_normalize(tmp_path, monkeypatch):
+def test_the_button_asks_the_fish_to_open_the_panorama_at_this_group(tmp_path, monkeypatch):
     config, dialog = _dialog(tmp_path, monkeypatch)
     try:
-        assert dialog.work_notes_enabled_check.isChecked(), "默认开"
-        dialog.work_notes_enabled_check.setChecked(False)
-        dialog.work_notes_repo_edit.setText("  E:\\mem  ")
-        dialog.work_notes_model_select.setCurrentIndex(dialog.work_notes_model_select.findData(swn.CUSTOM))
-        assert not dialog.work_notes_model_edit.isHidden(), "选了自定义：输入框出现"
-        dialog.work_notes_model_edit.setText("claude-sonnet-5-5")
-        swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY) == {"enabled": False, "repo_dir": "E:\\mem", "model": "claude-sonnet-5-5",
-                                             "effort": "high", "prompt_zh": "", "prompt_en": ""}
-        dialog.work_notes_model_edit.setText("bad model!")
-        swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY)["model"] == "sonnet", "怪名字退回默认"
-        dialog.work_notes_repo_edit.setText("")
-        swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY)["repo_dir"] == wn.default_repo_dir(), "空目录退回默认"
+        dialog.work_notes_open_panorama.click()
+        command = cmd.consume_command(config.dir)
+        assert command["command"] == cmd.CMD_OPEN_PANORAMA and command["focus"] == "work_notes"
     finally:
         _close(dialog)
 
 
-def test_without_wsl_the_switch_is_greyed_out_with_a_reason(tmp_path, monkeypatch):
-    _config, dialog = _dialog(tmp_path, monkeypatch, wsl=False, enabled=True)
+def test_saving_the_window_leaves_what_the_page_wrote_alone(tmp_path, monkeypatch):
+    _config, dialog = _dialog(tmp_path, monkeypatch, enabled=True, model="sonnet")
     try:
-        assert not dialog.work_notes_enabled_check.isEnabled() and not dialog.work_notes_enabled_check.isChecked()
-        from pet.settings_widgets import SettingRow
-
-        row = dialog.findChild(SettingRow, "settingRow_work_notes_enabled")
-        assert "WSL" in row.hint_label.text()
+        page = Config(tmp_path)                                               # 窗口开着的时候，页面经主进程改了这一组
+        page.set(wn.CONFIG_KEY, wn.normalize({"enabled": False, "repo_dir": r"E:\mem", "model": "opus", "prompt_en": "from the page"}))
+        assert page.save()
+        assert dialog._write_config()
+        saved = wn.normalize(Config(tmp_path).get(wn.CONFIG_KEY))
+        assert saved["enabled"] is False and saved["repo_dir"] == r"E:\mem" and saved["model"] == "opus"
+        assert saved["prompt_en"] == "from the page"
     finally:
         _close(dialog)
 
@@ -123,38 +121,10 @@ def test_without_wsl_the_switch_is_greyed_out_with_a_reason(tmp_path, monkeypatc
 def test_the_section_speaks_english(tmp_path, monkeypatch):
     _config, dialog = _dialog(tmp_path, monkeypatch, language="en")
     try:
-        from pet.settings_widgets import SettingRow
-
-        assert dialog.findChild(SettingRow, "settingRow_work_notes_enabled").label.text() == "Enable work notes"
-        assert dialog.findChild(SettingRow, "settingRow_work_notes_flow").label.text().startswith("Expand to see")
+        assert dialog.work_notes_open_panorama.text() == "Change them in Config panorama"
+        assert "Work notes" in _row(dialog, "work_notes_moved").hint_label.text()
+        assert _row(dialog, "work_notes_flow").label.text().startswith("Expand to see")
         assert "read-only" in dialog.work_notes_flow_label.text()
         assert dialog.work_notes_flow_section.toggle.text() == "How it works"
-        assert dialog.work_notes_model_select.itemText(dialog.work_notes_model_select.findData(swn.CUSTOM)) == "Custom…"
     finally:
         _close(dialog)
-
-
-# ---------------------------------------------------------------- effort / 提示词（2026-10-24）
-
-def test_effort_and_prompt_rows_show_the_builtin_and_save_only_changes(tmp_path, monkeypatch):
-    config, dialog = _dialog(tmp_path, monkeypatch, effort="medium")
-    try:
-        assert _row_page(dialog, "work_notes_effort") == "简报与笔记"
-        assert _row_page(dialog, "work_notes_prompt") == "简报与笔记"
-        assert dialog.work_notes_effort_select.currentData() == "medium"
-        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
-        assert not dialog.work_notes_prompt_restore.isEnabled()
-        swn.save_work_notes_settings(dialog)
-        assert config.get(wn.CONFIG_KEY)["prompt_zh"] == "" and config.get(wn.CONFIG_KEY)["effort"] == "medium"
-
-        dialog.work_notes_prompt_edit.setPlainText("我的笔记模板 {original}")
-        dialog.work_notes_effort_select.setCurrentIndex(dialog.work_notes_effort_select.findData("low"))
-        swn.save_work_notes_settings(dialog)
-        saved = config.get(wn.CONFIG_KEY)
-        assert saved["prompt_zh"] == "我的笔记模板 {original}" and saved["prompt_en"] == "" and saved["effort"] == "low"
-        dialog.work_notes_prompt_restore.click()
-        assert dialog.work_notes_prompt_edit.toPlainText() == wn.default_prompt_template("zh")
-    finally:
-        dialog.close()
-        dialog.deleteLater()
-        app.processEvents()

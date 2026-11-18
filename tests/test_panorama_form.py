@@ -348,6 +348,20 @@ def test_the_real_description_of_slack_watch_draws_every_setting(engine, monkeyp
     assert html.count('data-builtin="') == 1 and "settings." not in html.replace("data-", "")
 
 
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_the_real_description_of_work_notes_draws_every_setting(engine, monkeypatch, language):
+    monkeypatch.setattr(st.claude_hooks, "wsl_exe", lambda: "wsl.exe")
+    i18n.set_language(language)
+    desc = api.describe(st.group("work_notes"), {"repo_dir": r"D:\notes", "model": "claude-haiku-5-5"})
+    out = _run(engine, desc, [], "fire('click', {advanced: ''});", language=language)
+    html = out["html"]
+    for row in desc["settings"]:
+        assert f'data-row="{row["id"]}"' in html, row["id"]
+    assert html.count('role="switch"') == 1 and 'value="D:\\notes"' in html and 'data-custom="model"' in html
+    assert html.count('data-builtin="') == 2                              # 两种语言的提示词
+    assert "settings." not in html.replace("data-", "") and "notes.settings" not in html
+
+
 def test_every_form_string_exists_in_both_languages():
     keys = [key for key in render.PAGE_KEYS if key.startswith("form_")]
     assert len(keys) >= 15
