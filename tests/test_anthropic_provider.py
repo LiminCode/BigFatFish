@@ -258,33 +258,6 @@ def test_errors_caused_by_cancelling_are_not_failures(fake):
 
 # ---------------------------------------------------------------- 识屏
 
-def test_describe_image_sends_the_screenshot_before_the_prompt(fake):
-    fake.client = _FakeClient(_FakeStream(["在写代码呢"]))
-
-    text = ap.describe_image(b"\xff\xd8jpeg", "这是截图", "你是肥鱼", _claude(timeout=5),
-                             model="claude-opus-5", base_url="https://api.anthropic.com", api_key="k")
-
-    assert text == "在写代码呢"
-    kwargs = fake.client.calls[0][1]
-    image, prompt = kwargs["messages"][0]["content"]
-    assert image == {"type": "image", "source": {
-        "type": "base64", "media_type": "image/jpeg",
-        "data": base64.standard_b64encode(b"\xff\xd8jpeg").decode()}}
-    assert prompt == {"type": "text", "text": "这是截图"} and kwargs["system"] == "你是肥鱼"
-    args = fake.client_args[0]
-    assert args["max_retries"] == 0, "识屏按真实请求次数扣每日额度，不许 SDK 悄悄重试"
-    assert args["timeout"] >= 60 and args["api_key"] == "k"
-
-
-def test_describe_image_rejects_empty_answers_and_refusals(fake):
-    fake.client = _FakeClient(_FakeStream([]))
-    with pytest.raises(ProviderError, match="空回复"):
-        ap.describe_image(b"x", "t", "s", _claude(), model="m", base_url="", api_key="k")
-    fake.client = _FakeClient(_FakeStream([], stop_reason="refusal"))
-    with pytest.raises(ProviderError, match="拒绝"):
-        ap.describe_image(b"x", "t", "s", _claude(), model="m", base_url="", api_key="k")
-
-
 # ---------------------------------------------------------------- 路由与连接测试
 
 class _Recorder:
@@ -374,22 +347,6 @@ def test_missing_sdk_is_reported_as_a_provider_error(monkeypatch):
         ap._sdk()
 
 
-# ---------------------------------------------------------------- 识屏接线（pet/vision.py）
-
-def _vision_call(monkeypatch, config, **kwargs):
-    from pet import vision
-
-    seen: dict = {}
-
-    def _describe(jpeg, user_text, system_prompt, cfg, *, model, base_url, api_key):
-        seen.update(jpeg=jpeg, user_text=user_text, system=system_prompt, model=model,
-                    base_url=base_url, api_key=api_key)
-        return "看到了"
-
-    monkeypatch.setattr(ap, "describe_image", _describe)
-    return vision._post_vision_request(b"jpeg", "notepad.exe | 记事本", "你是肥鱼", config, **kwargs), seen
-
-
 # ---------------------------------------------------------------- 实机事故回归（2026-10-10）
 # 设置页点「测试连接」后按钮永远停在「测试中…」：Key 为空时 SDK 抛的是 TypeError
 # （不是它自己的 AnthropicError），一路逃出 test_connection，测试线程直接死掉，
@@ -424,8 +381,6 @@ def test_unexpected_sdk_exceptions_never_escape(fake, error):
     fake.client = _FakeClient(_FakeStream([], error=error))
     with pytest.raises(ProviderError, match="Claude 请求失败"):
         _run([{"role": "user", "content": "嗨"}], _claude())
-    with pytest.raises(ProviderError, match="Claude 请求失败"):
-        ap.describe_image(b"x", "t", "s", _claude(), model="m", base_url="", api_key="k")
     fake.client.count_error = error
     assert ap.test_connection(_claude())[0] is False
 
@@ -467,14 +422,12 @@ def test_effort_defaults_to_medium_and_is_normalised():
     assert ChatSettings.from_dict(settings.to_dict()).providers["c"].effort == "low"
 
 
-def test_effort_is_sent_with_chat_and_screen_reading(fake):
+def test_effort_is_sent_with_chat(fake):
     _run([{"role": "user", "content": "嗨"}], _claude(model="claude-sonnet-5"))
     _run([{"role": "user", "content": "嗨"}], _claude(model="claude-sonnet-5", effort="high"))
-    ap.describe_image(b"x", "t", "s", _claude(model="claude-sonnet-5", effort="low"),
-                      model="claude-sonnet-5", base_url="", api_key="k")
 
     efforts = [kwargs["output_config"] for _surface, kwargs in fake.client.calls]
-    assert efforts == [{"effort": "medium"}, {"effort": "high"}, {"effort": "low"}]
+    assert efforts == [{"effort": "medium"}, {"effort": "high"}]
 
 
 @pytest.mark.parametrize("model, effort, sent", [

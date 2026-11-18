@@ -167,15 +167,6 @@ def test_connectors_combine_with_the_refusal_fallback(monkeypatch):
     assert kwargs["betas"] == ["server-side-fallback-2026-07-01", "mcp-client-2025-11-20"]
 
 
-def test_screen_reading_never_carries_connectors(monkeypatch):
-    client = _use(monkeypatch, _Stream(["在写代码"]))
-
-    ap.describe_image(b"jpeg", "截图", "你是肥鱼", _claude(mcp_servers=[GITHUB]),
-                      model="claude-sonnet-5", base_url="", api_key="k")
-
-    assert "mcp_servers" not in client.calls[0][1], "识屏是后台定时请求，不该多花工具定义的钱"
-
-
 def test_a_paused_turn_is_resumed_until_it_finishes(monkeypatch):
     """服务端工具跑得久时 API 以 pause_turn 收尾：把这段原样接回去再发，直到真的说完。"""
     paused = _Stream(["先查一下，"], stop_reason="pause_turn")

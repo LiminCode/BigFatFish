@@ -32,22 +32,19 @@ def test_default_config_still_uses_plain_file(tmp_path):
 
 
 def test_save_redacts_api_keys_from_disk(tmp_path):
-    """keyring 不可用时 key 只保留内存；写盘副本必须剔除明文 api_key/vision_api_key。"""
+    """keyring 不可用时 key 只保留内存；写盘副本必须剔除明文 api_key。"""
     config = Config(base=tmp_path)
     settings = config.chat_settings()
     provider = settings.active_config
     provider.api_key = "sk-plaintext"
-    provider.vision_api_key = "vk-plaintext"
     config.set_chat_settings(settings)
     assert config.save() is True
 
     raw = json.loads(config.path.read_text(encoding="utf-8"))
     disk_provider = raw["chat"]["providers"]["openai-main"]
     assert "api_key" not in disk_provider
-    assert "vision_api_key" not in disk_provider
     # 内存中保留，本次运行仍可用
     assert config.chat_settings().active_config.api_key == "sk-plaintext"
-    assert config.chat_settings().active_config.vision_api_key == "vk-plaintext"
 
 
 def test_balance_tier_and_music_settings_persist_through_reload(tmp_path):
@@ -79,7 +76,7 @@ def test_reload_preserves_memory_api_key_when_keyring_unavailable(tmp_path, monk
     """keyring 不可用时 key 只存内存：磁盘重载（config.reload()）不得冲掉内存 key。
 
     回归背景：设置对话框保存前会调用 config.reload() 从磁盘重读以吸收外部改动，
-    而 _redacted_data() 写盘时剔除了明文 api_key/vision_api_key —— 磁盘文件里没有
+    而 _redacted_data() 写盘时剔除了明文 api_key —— 磁盘文件里没有
     key，reload() 于是把内存中的 key 覆盖成空，用户没重启就丢了 key。
     """
     # 模拟 keyring 不可用：set 恒失败、get 恒空；否则加载时明文迁移会把内存 key
@@ -101,7 +98,6 @@ def test_reload_preserves_memory_api_key_when_keyring_unavailable(tmp_path, monk
     settings = config.chat_settings()
     provider = settings.active_config
     provider.api_key = "sk-plaintext"
-    provider.vision_api_key = "vk-plaintext"
     config.set_chat_settings(settings)
     assert config.save() is True
 
@@ -109,19 +105,16 @@ def test_reload_preserves_memory_api_key_when_keyring_unavailable(tmp_path, monk
     raw = json.loads(config.path.read_text(encoding="utf-8"))
     disk_provider = raw["chat"]["providers"]["openai-main"]
     assert "api_key" not in disk_provider
-    assert "vision_api_key" not in disk_provider
 
     # 模拟设置对话框保存前从磁盘重读：内存 key 必须仍在
     config.reload()
     reloaded = config.chat_settings().active_config
     assert reloaded.api_key == "sk-plaintext"
-    assert reloaded.vision_api_key == "vk-plaintext"
 
     # 磁盘依然没有明文（防回归：reload 不得把内存 key 写回磁盘）
     raw_after = json.loads(config.path.read_text(encoding="utf-8"))
     disk_after = raw_after["chat"]["providers"]["openai-main"]
     assert "api_key" not in disk_after
-    assert "vision_api_key" not in disk_after
 
 
 # ------------------------------------------ 写盘瞬时共享冲突（Windows 实机 S1）

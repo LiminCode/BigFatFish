@@ -1390,15 +1390,6 @@ class ModernSettingsDialog(QDialog):
                     (t("settings.ai.persona_section"), claim("system_prompt", "about_user")),
                     (t("settings.ai.persona_help"), claim("persona_help"), True),
                     (t("settings.dlg.system_notifications"), claim("system_notifications_enabled")),
-                    (
-                        t("settings.dlg.vision"),
-                        claim(
-                            "vision_same",
-                            "vision_model",
-                            "vision_url",
-                            "vision_key",
-                        ),
-                    ),
                     (t("settings.dlg.connectors"), claim("github_connector", "github_token")),
                     (t("settings.dlg.knowledge_base"), claim_prefix("knowledge_base_")),
                     (
