@@ -93,7 +93,6 @@ from .click_sound import (
     choose_sound, play_sound, resolve_click_sound_candidates, resolve_click_sound_pair,
     play_press_sound, play_release_sound,
 )
-from .proactive import effective_proactive_config
 from .window_optional_services import WindowFeatureGateMixin
 
 from . import platform_win
@@ -337,7 +336,6 @@ def _content_frame_rect(pet) -> QRect:
 class PetWindow(QWidget, WindowFeatureGateMixin):
     """肥鱼窗口本体。"""
 
-    look_done = Signal(str, str, bool)
     fullscreen_changed = Signal(bool)  # 全屏 watcher 线程 → 主线程（隐藏/恢复肥鱼）
     cursor_visibility_changed = Signal(str)
     # 首帧就绪（一次性）：v4.2.1 起 GUI 线程不再同步解码首帧（da8f291），窗口刚
@@ -355,11 +353,11 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
     _draw_delta = QPoint(0, 0)
 
     def __init__(self, lib: MovieLibrary, config: Config,
-                 broker_facade=None, *, clock=None, agent_link_manager=None, proactive_watcher=None) -> None:
+                 broker_facade=None, *, clock=None, agent_link_manager=None) -> None:
         super().__init__()
         self.lib = lib
         self.cfg = config
-        # 4.4b：进程级共享子系统（agent_link / proactive / 全屏 watcher）常建，
+        # 4.4b：进程级共享子系统（agent_link / 全屏 watcher）常建，
         # 全屏监视由共享 watcher 接管——建窗时由 app 置位（测试自建宿主缺席时
         # 保留窗口自建 watcher 的旧路径）。
         self.shared_fullscreen_watcher_active = False
@@ -387,8 +385,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self.on_open_modern_chat = None
         self.on_open_chat_settings = None
         self.on_show_balance = None
-        self.on_look_synced = None
-        self.on_look_screen = None
         self.on_open_legacy_settings = None
         self.on_open_modern_settings = None
         self.on_restore_fun_windows = None
@@ -453,9 +449,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             style_id=str(config.get('self_talk_bubble_style', DEFAULT_SELF_TALK_BUBBLE_STYLE))
         )
         self._speech_bubble.clicked.connect(self._on_speech_bubble_clicked)
-        self._look_busy = False
-        self._last_look_ts = 0.0
-        self.look_done.connect(self._on_look_done)
         self._self_talk_enabled = bool(config.get('self_talk_enabled', False))
         self._self_talk_texts = self._read_self_talk_texts(config.get('self_talk_texts'))
         self._self_talk_duration_seconds = max(
@@ -509,12 +502,11 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self._link_anim_current: str | None = None
         self._link_next_provider = None  # AgentLinkManager 注入：()->str|None
 
-        # 主动识屏/Agent 联动（Phase 1 门控，PR73）：默认 None，首次启用由
+        # Agent 联动（Phase 1 门控，PR73）：默认 None，首次启用由
         # WindowFeatureGateMixin._ensure_* 懒创建（模块与 Qt 对象只在功能
         # 打开后进入运行期）。
         # 批5.2a：单进程多窗 flag 开时，AppShell 在构造期注入进程级共享实例
         # ——共享语义必须构造期注入，不能等懒创建（懒创建会各窗自建、断共享）。
-        self.proactive_watcher = proactive_watcher
         self.agent_link_manager = agent_link_manager
 
         # ---- 全屏应用自动隐藏（Windows）----
@@ -1205,8 +1197,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         # 只有手动隐藏（托盘/右键，_auto_hidden 为 False）才停它。
         if not self._auto_hidden:
             self._stop_fs_watch()
-        if hasattr(self, 'proactive_watcher') and self.proactive_watcher is not None:
-            self.proactive_watcher.pause()
         if hasattr(self, 'agent_link_manager') and self.agent_link_manager is not None:
             self.pause_agent_link_for_hide()
         if hasattr(self, 'lib') and self.lib is not None and hasattr(self.lib, 'pause_warm'):
@@ -1238,8 +1228,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         self._schedule_self_talk()
         if self._music_sing_enabled:
             self._start_music_sing_polling()
-        if hasattr(self, 'proactive_watcher') and self.proactive_watcher is not None:
-            self.proactive_watcher.resume()
         if hasattr(self, 'agent_link_manager') and self.agent_link_manager is not None:
             self.agent_link_manager.resume()
         if hasattr(self, 'lib') and self.lib is not None and hasattr(self.lib, 'resume_warm'):
@@ -1391,7 +1379,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
         """Compatibility delegation (window_screen.stop_fs_watch)."""
         return window_screen.stop_fs_watch(self, *args, **kwargs)
 
-
     def _fs_watch_loop(self, *args, **kwargs):
         """Compatibility delegation (window_screen.fs_watch_loop); injects the
         patchable pet.window.time.monotonic clock seam."""
@@ -1434,7 +1421,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
     def set_quick_chat_capture_widget(self, widget) -> None:
         """Compatibility delegation (window_screen.set_quick_chat_capture_widget)."""
         return window_screen.set_quick_chat_capture_widget(self, widget)
-
 
     def _arm_dock_reactivate_restore(self) -> None:
         """macOS：隐藏后点击 Dock 图标激活应用时自动恢复肥鱼（一次性监听）。
@@ -3412,69 +3398,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             if path is not None:
                 play_sound(path, volume=volume)
 
-    # ================================================================ 看看屏幕
-    def _on_look_screen(self) -> None:
-        """Capture and analyse the screen outside the GUI thread."""
-        if self._look_busy:
-            self.show_bubble("上一张还没看完呢…")
-            return
-        now = time.monotonic()
-        if now - self._last_look_ts < 4.0:
-            self.show_bubble("喘口气嘛，刚看过啦…")
-            return
-        self._last_look_ts = now
-        self._look_busy = True
-        self.show_bubble("让我看看…", 6000)
-
-        # 在主线程解析好快照，避免后台 worker 线程改写共享配置对象
-        import copy
-        settings = self.cfg.chat_settings()
-        provider = copy.copy(settings.active_config)
-        provider.api_key = self.cfg.resolve_api_key(provider)
-        system_prompt = settings.default_system_prompt
-        # 自我识别提示用的角色显示名（截图里的肥鱼就是它自己）；别名优先
-        pet_name = self.cfg.character_display_name(
-            str(self.cfg.get('character', catalog.DEFAULT_CHARACTER))
-        )
-
-        threading.Thread(
-            target=self._look_worker,
-            args=(provider, system_prompt, pet_name),
-            daemon=True,
-            name="pet-look-screen",
-        ).start()
-
-    def look_at_screen(self) -> None:
-        """公开转发：触发一次"看看屏幕"识别（等价 _on_look_screen）。"""
-        self._on_look_screen()
-
-    def _look_worker(self, provider: Any, system_prompt: str, pet_name: str = "") -> None:
-        # 延迟导入：无 Chat / 不使用「看看屏幕」的实例启动时不加载 PIL
-        from . import vision as vision_mod
-        try:
-            shot = vision_mod.capture_screen_bytes()
-            app_info = vision_mod.foreground_app_info()
-            reply = vision_mod.ask_about_screen(
-                shot, app_info, system_prompt, provider, pet_name=pet_name
-            )
-            if shiboken6.isValid(self) is False:
-                return  # 窗口已销毁（退出/切角色），不再触碰信号
-            user_text = f"[看看屏幕] 前台窗口：{app_info}" if app_info else "[看看屏幕]"
-            self.look_done.emit(reply, user_text, False)
-        except Exception as exc:
-            logging.exception("看看屏幕失败")
-            if shiboken6.isValid(self) is False:
-                return
-            self.look_done.emit(str(exc), "", True)
-
-    def _on_look_done(self, text: str, user_text: str, is_error: bool) -> None:
-        self._look_busy = False
-        if is_error:
-            self.show_bubble(f"看不清啊…{text[:60]}", 5000)
-            return
-        self.show_bubble(text, max(4000, min(12000, len(text) * 150)))
-        if callable(self.on_look_synced):
-            self.on_look_synced(user_text, text)
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         if self._context_menu_suppressed:
@@ -3886,47 +3809,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
             pet_scale=self.scale,
         )
 
-
-    def _toggle_proactive_enabled(self, on: bool) -> None:
-        """右键菜单切换主动识屏总开关。"""
-        pro_data = dict(self.cfg.get('proactive_screen', {}))
-        pro_data['enabled'] = bool(on)
-        self.cfg.set('proactive_screen', pro_data)
-        self.cfg.save()
-        # Phase 1：开启时懒创建观察器；关闭时仅同步已存在实例。
-        if on:
-            self._ensure_proactive_watcher().apply_config()
-        elif self.proactive_watcher is not None:
-            self.proactive_watcher.apply_config()
-        if on:
-            eff = effective_proactive_config(self.cfg.get('proactive_screen', {}))
-            if eff['whitelist']:
-                self.show_bubble("主动识屏已开启～我会偶尔看看你正在用的软件", duration_ms=4000)
-            else:
-                self.show_bubble(
-                    "主动识屏已开启～但白名单还是空的，在 右键→主动识屏→打开设置 里添加要观察的应用后我才会开始工作",
-                    duration_ms=6000,
-                )
-
-    def toggle_proactive_enabled(self, on: bool) -> None:
-        """公开转发：切换主动识屏总开关（等价 _toggle_proactive_enabled）。"""
-        self._toggle_proactive_enabled(on)
-
-    def _set_proactive_option(self, key: str, value: Any) -> None:
-        """右键菜单修改主动识屏子项选项。"""
-        pro_data = dict(self.cfg.get('proactive_screen', {}))
-        pro_data[key] = value
-        self.cfg.set('proactive_screen', pro_data)
-        self.cfg.save()
-        if self._proactive_wanted():
-            self._ensure_proactive_watcher().apply_config()
-        elif self.proactive_watcher is not None:
-            self.proactive_watcher.apply_config()
-
-    def set_proactive_option(self, key: str, value: Any) -> None:
-        """公开转发：修改主动识屏子项选项（等价 _set_proactive_option）。"""
-        self._set_proactive_option(key, value)
-
     def _toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """右键菜单切换 Agent 状态联动子项。
 
@@ -3954,7 +3836,6 @@ class PetWindow(QWidget, WindowFeatureGateMixin):
     def toggle_agent_link(self, agent_key: str, on: bool, action=None) -> None:
         """公开转发：切换 Agent 状态联动子项（等价 _toggle_agent_link）。"""
         self._toggle_agent_link(agent_key, on, action)
-
 
     def _rename_character(self) -> None:
         """自定义当前角色的显示名（空输入 = 恢复默认目录名）。"""

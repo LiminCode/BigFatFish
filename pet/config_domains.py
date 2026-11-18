@@ -20,13 +20,11 @@ from .config import (
     _clean_menu_easter_egg,
     _clean_quick_launch_apps,
     _merge_chat_data,
-    _merge_proactive_screen_data,
 )
 
 __all__ = [
     "ChatConfig",
     "AgentLinkConfig",
-    "ProactiveConfig",
     "CollisionConfig",
     "MenuConfig",
 ]
@@ -72,18 +70,6 @@ class AgentLinkConfig(_DomainFacade):
     @classmethod
     def normalize(cls, raw: Any) -> dict:
         return _clean_agent_link_data(raw)
-
-
-class ProactiveConfig(_DomainFacade):
-    """proactive_screen 域：主动屏保参数。
-
-    normalize 复用 config._merge_proactive_screen_data（默认值 + 浅合并，与
-    Config 加载路径同一函数同一产出）。
-    """
-
-    @classmethod
-    def normalize(cls, raw: Any) -> dict:
-        return _merge_proactive_screen_data(raw)
 
 
 class CollisionConfig(_DomainFacade):

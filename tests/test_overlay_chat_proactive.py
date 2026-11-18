@@ -2,19 +2,18 @@
 """Phase 4.3 后半 offscreen 单测：共享子系统接入 sprite 世界 + 自说自话 + 快速对话。
 
 背景（PHASE4_DESIGN T1/D0 的另一半）：overlay 拓扑下 ``instances[].win`` 恒为
-None，进程级共享子系统（agent_link / proactive / 全屏 watcher）的扇出集合为空
+None，进程级共享子系统（agent_link / 全屏 watcher）的扇出集合为空
 = 联动与自说自话静默缺失。本刀让 ``OverlayShell`` 成为扇出目标，并补齐
 PetWindow 的呈现面。
 
 覆盖：
 1. 扇出目标：``presentation_targets`` overlay = 壳 / legacy = 各窗，逐行不变；
-2. 注入接线：AppShell.start() 把 ``shared.agent_link`` / ``shared.proactive``
+2. 注入接线：AppShell.start() 把 ``shared.agent_link``
    注入壳（见 test_overlay_shell.py 的拓扑分支用例）；
-3. 自说自话：proactive 真实触发链（``_on_frame_ready``）文本落到主 sprite 头顶
-   气泡，且经 proxy 聚合走 ``isVisible`` / ``hold_bubble``；
+3. （主动识屏的触发链用例随看屏幕一起删掉，ADR 0016）；
 4. 气泡面：``show_bubble`` / ``show_alert`` 复用 window_alerts 的队列语义；
 5. 显隐 pause/resume：``set_pet_visible`` 调监视器 pause/resume，且
-   ``isVisible()`` 反映 overlay 可见性（proactive G1 的输入）；
+   ``isVisible()`` 反映 overlay 可见性；
 6. 快速对话：气泡可点 → ``open_quick_chat`` 锚定被点 sprite，回车走既有
    ChatService 链路；
 7. 无聊天变体降级：``pet.quick_chat`` 导入失败 / ``enable_chat=False`` →
@@ -43,7 +42,6 @@ import tests.test_sprite_menu_facade as fac
 from pet.config import Config
 from pet.multi_window_shared import (
     MultiWindowProxy,
-    SharedProactiveWatcher,
     presentation_targets,
 )
 from pet.overlay_shell import OverlayShell
@@ -55,7 +53,7 @@ app = QApplication.instance() or QApplication([])
 
 # ---------------------------------------------------------------- 替身
 class StubMonitor:
-    """proactive/agent_link 监视器替身：只记 pause/resume。"""
+    """agent_link 监视器替身：只记 pause/resume。"""
 
     def __init__(self) -> None:
         self.paused = 0
@@ -85,7 +83,7 @@ class _NoChatInstance(cap.CapInstance):
 
 
 def _make_shell(tmp_path, values=None, *, real_config=False,
-                watcher=None, manager=None, instance=None):
+                manager=None, instance=None):
     config = Config(base=tmp_path) if real_config else cap.CapConfig(tmp_path, values)
     if instance is None:
         instance = cap.CapInstance(config)
@@ -95,21 +93,8 @@ def _make_shell(tmp_path, values=None, *, real_config=False,
     shell = OverlayShell(
         app, instance, screen=screen,
         sprite_factory=lambda lib, pos, scale: cap.CapSprite(lib, pos, scale),
-        agent_link_manager=manager, proactive_watcher=watcher)
+        agent_link_manager=manager)
     return shell, config
-
-
-def _proactive_config(**over):
-    values = {
-        "proactive_screen": {
-            "enabled": True,
-            "whitelist": ["code"],
-            "pre_cue": True,
-            "dry_run": False,
-        },
-    }
-    values.update(over)
-    return values
 
 
 # ---------------------------------------------------------------- 1. 扇出目标
@@ -175,39 +160,6 @@ def test_hidden_link_bubble_redirect_only_in_overlay_topology(tmp_path):
 
 
 # ---------------------------------------------------------------- 2/3. 自说自话
-def test_proactive_trigger_speaks_on_sprite_bubble(tmp_path, monkeypatch):
-    """proactive 真实触发链 → 先兆气泡 + 气泡位占用，全部落在 sprite 壳上。
-
-    以 ``_on_frame_ready``（真实触发入口）驱动：截图/dHash 由 worker 提供，
-    这里直接喂 bytes 与 info；视觉请求线程换成不启动的替身（本用例只验呈现）。
-    """
-    shell, config = _make_shell(tmp_path, _proactive_config())
-    watcher = SharedProactiveWatcher(
-        MultiWindowProxy(_Host(config, overlay_shell=shell)), config)
-    shell.proactive_watcher = watcher
-
-    class _NoThread:
-        def __init__(self, *args, **kwargs):
-            self.kwargs = kwargs
-
-        def start(self):
-            pass
-
-    monkeypatch.setattr(threading, "Thread", _NoThread)
-    monkeypatch.setattr(watcher.limiter, "try_acquire", lambda: (True, "ok"))
-    monkeypatch.setattr(watcher, "_resolve_vision_provider",
-                        lambda eff: (object(), "prompt"))
-    try:
-        shell.overlay.show()
-        watcher._on_frame_ready(b"\xff\xd8jpeg", "code.exe | main.py", 42, 7,
-                                {"process": "code", "title": "main.py"})
-        assert shell._speech_bubble is not None
-        assert shell._speech_bubble._raw_text == "让我看看……"
-        # 气泡位占用（proactive hold_bubble(30) → 联动普通气泡让路）
-        assert shell._bubble_busy_until > time.monotonic()
-    finally:
-        watcher.stop_all()
-        shell._delete_runtime_marker()
 
 
 def test_island_chat_show_pets_brings_the_real_overlay_back(tmp_path):
@@ -237,29 +189,6 @@ def test_island_chat_show_pets_brings_the_real_overlay_back(tmp_path):
         assert shell.overlay.isVisible() is True
         assert marks == [False, True]
     finally:
-        shell._delete_runtime_marker()
-
-
-def test_hidden_overlay_blocks_proactive_probe(tmp_path, monkeypatch):
-    """显隐 → G1 守卫：隐藏后 proactive 内部 tick 不得再取前台窗口信息。"""
-    shell, config = _make_shell(tmp_path, _proactive_config())
-    watcher = SharedProactiveWatcher(
-        MultiWindowProxy(_Host(config, overlay_shell=shell)), config)
-    shell.proactive_watcher = watcher
-    probes: list = []
-    monkeypatch.setattr(vision_mod, "foreground_window_info",
-                        lambda: (probes.append(1), None)[1])
-    try:
-        shell.overlay.show()
-        watcher._on_tick()
-        assert probes, "可见时必须进入 G5 探测（否则共享模式下识屏永不触发）"
-        shell.set_pet_visible(False)
-        assert shell.isVisible() is False
-        probes.clear()
-        watcher._on_tick()
-        assert probes == [], "隐藏后 G1 必须拦下探测（限流状态不丢）"
-    finally:
-        watcher.stop_all()
         shell._delete_runtime_marker()
 
 
@@ -301,39 +230,38 @@ def test_show_bubble_skipped_while_hidden_or_suppressed(tmp_path):
 
 # ---------------------------------------------------------------- 5. 显隐 pause/resume
 def test_set_pet_visible_pauses_and_resumes_subsystems(tmp_path):
-    watcher, manager = StubMonitor(), StubMonitor()
-    shell, _ = _make_shell(tmp_path, watcher=watcher, manager=manager)
+    manager = StubMonitor()
+    shell, _ = _make_shell(tmp_path, manager=manager)
     try:
-        # 注入接线：构造参数落到壳属性（AppShell.start() 传的就是这两份共享实例）
-        assert shell.proactive_watcher is watcher
+        # 注入接线：构造参数落到壳属性（AppShell.start() 传的就是共享实例）
         assert shell.agent_link_manager is manager
 
         shell.set_pet_visible(True)
         assert shell.isVisible() is True
-        assert (watcher.resumed, manager.resumed) == (1, 1)
+        assert manager.resumed == 1
 
         shell.set_pet_visible(False)
         assert shell.isVisible() is False
-        assert (watcher.paused, manager.paused) == (1, 1)
+        assert manager.paused == 1
 
         shell.set_pet_visible(True)
-        assert (watcher.resumed, manager.resumed) == (2, 2)
+        assert manager.resumed == 2
     finally:
         shell._delete_runtime_marker()
 
 
 def test_fullscreen_autohide_pauses_subsystems(tmp_path):
     """全屏自动隐藏与手动隐藏同语义（legacy 走同一个 hide() → _pause_activity）。"""
-    watcher, manager = StubMonitor(), StubMonitor()
-    shell, _ = _make_shell(tmp_path, watcher=watcher, manager=manager)
+    manager = StubMonitor()
+    shell, _ = _make_shell(tmp_path, manager=manager)
     try:
         shell.overlay.show()
         shell._on_fullscreen_changed(True)
         assert shell.isVisible() is False
-        assert (watcher.paused, manager.paused) == (1, 1)
+        assert manager.paused == 1
         shell._on_fullscreen_changed(False)
         assert shell.isVisible() is True
-        assert (watcher.resumed, manager.resumed) == (1, 1)
+        assert manager.resumed == 1
     finally:
         shell._delete_runtime_marker()
 
@@ -444,7 +372,6 @@ def test_chat_disabled_degrades_quietly(tmp_path):
         shell.show_bubble("纯肥鱼版")
         assert shell._speech_bubble.testAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        assert shell.on_look_synced is None
     finally:
         shell._delete_runtime_marker()
 
@@ -537,19 +464,3 @@ def test_shell_installs_shared_link_provider(tmp_path):
         shell._delete_runtime_marker()
 
 
-def test_on_look_synced_injected_when_chat_available(tmp_path):
-    """主动识屏答复同步面：有聊天时指向 PetInstance.sync_look_to_chat。"""
-
-    class _ChatInstance(cap.CapInstance):
-        def sync_look_to_chat(self, user_text, reply):
-            self.synced = (user_text, reply)
-
-    instance = _ChatInstance(cap.CapConfig(tmp_path))
-    shell, _ = _make_shell(tmp_path, instance=instance)
-    try:
-        callback = shell.on_look_synced
-        assert callable(callback)
-        callback("看到的画面", "答复")
-        assert instance.synced == ("看到的画面", "答复")
-    finally:
-        shell._delete_runtime_marker()

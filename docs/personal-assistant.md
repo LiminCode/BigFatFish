@@ -94,7 +94,7 @@ sequenceDiagram
 - **挂载条件**（`mcp_servers_for`，三者同时满足）：开关 `chat.github_connector` 开着、Provider **直连** `api.anthropic.com`
   （经第三方网关访问 Claude 时不挂，Token 不交给网关）、钥匙串里有 Token。否则返回空列表，请求与没有连接器时逐字段相同。
 - **只在三个交互式对话入口生效**（`chat/widgets.py`、`chat/legacy_widgets.py`、`quick_chat.py`，发送前就地给 `ProviderConfig`
-  填运行期字段）。识屏、主动识屏、Agent 联动这些后台请求不挂。
+  填运行期字段）。Agent 联动这类后台请求不挂。
 - **Token 不落盘**：只在系统钥匙串（`connector/github`）；`ProviderConfig.mcp_servers` / `client_tools` 是运行期字段，
   `to_dict()` 里剔除。
 - **缓存断点为什么单独打在 toolset 上**：GitHub 默认只读工具集的定义约 1.23 万 token，每次采样都带。只开顶层的自动缓存时，

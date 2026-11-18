@@ -28,7 +28,7 @@
 
 | 哪一套 | 存在哪 | 怎么起作用 | 经过模型 |
 |---|---|---|---|
-| 对话人设 | `config.json` 的 `chat.default_system_prompt`、`chat.about_user`；全局一份，**不随服务商切换** | 人设三选一（调用方给的 > 角色包自带的 > 设置页的），「关于我」总是追加在后面。影响对话窗、快速对话、灵动岛对话；「看看屏幕」与主动识屏只带人设 | 是 |
+| 对话人设 | `config.json` 的 `chat.default_system_prompt`、`chat.about_user`；全局一份，**不随服务商切换** | 人设三选一（调用方给的 > 角色包自带的 > 设置页的），「关于我」总是追加在后面。影响对话窗、快速对话、灵动岛对话 | 是 |
 | 气泡台词模板 | `dialogue_mode`（`legacy` / `whale_maid` / `custom`）、`dialogue_phrases`；内置两套在 `pet/persona_presets/` | 固定文字 + 占位符。只管 Agent 联动气泡（开始 / 思考 / 活动 / 审批 / 提问 / 完成 / 出错 / 模型访问失败 / 桥接）与余额结果 | 否 |
 | 其他固定文字 | `self_talk_texts`（自言自语）、角色绑定的点击台词、语音报时 / 节日台词 | 各自直接读，**不看表达风格** | 否 |
 | 不走人设的 AI 任务 | 各自固定提示词：[公司侧](work-assistant.md)的工作简报 / Slack 关注 / 工作笔记，[个人侧](personal-assistant.md)的个人简报 | 与人设无关 | 是 |

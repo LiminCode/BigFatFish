@@ -88,7 +88,7 @@ def test_a_feature_whose_settings_moved_to_the_page_opens_them_there_instead_of_
     assert _node(graph, "f_assistant")["settings"] == "personal"
     assert _node(graph, "f_distill_personal")["settings"] == "distill_personal"
     assert _node(graph, "f_distill_work")["settings"] == "distill_work"           # 同一个配置键下的另一组
-    assert _node(graph, "f_screen")["page"]                                    # 还没搬的照旧
+    assert _node(graph, "f_chat")["page"]                                      # 还没搬的照旧
     assert all(settings_table.group(f.settings_group) for f in features.FEATURES if f.settings_group)
 
 

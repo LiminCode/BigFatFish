@@ -343,21 +343,6 @@ def test_balance_bubble_uses_clicked_sprite_host(tmp_path, monkeypatch):
         toggle._teardown(shell)
 
 
-def test_look_bubble_lands_on_initiator(tmp_path):
-    """识屏气泡落**发起者**（B2 记下的 ``_look_sprite``）。"""
-    shell, _cfg = toggle._make_slot_shell(tmp_path)
-    try:
-        shell.spawn_pet()
-        child = shell._spawned[0]
-        follower = shell._bubble_followers[child]
-        shell._look_sprite = child
-        shell._look_bubble("让我看看…")
-        assert follower.bubble._raw_text == "让我看看…"
-        assert getattr(shell._speech_bubble, "_raw_text", "") != "让我看看…"
-    finally:
-        toggle._teardown(shell)
-
-
 # ---------------------------------------------------------------- 4. 逐只自言自语
 def test_child_self_talk_uses_own_timer_and_config(tmp_path):
     """子宠自言自语：自己的单发定时器 + 自己的间隔/文本池，到点落自己气泡。"""

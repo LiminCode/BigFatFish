@@ -34,7 +34,7 @@ T5 切换策略：PET_RENDER_TOPOLOGY=overlay 环境变量是开发期一次性�
 本壳经 config 目录 watcher + 轮询消费，纯逻辑在 ``overlay_settings_command``）、
 D13 逐 sprite 设置路由（菜单按被点 sprite 的 config 身份传 ``--instance``）。
 
-4.3 后半（本刀）：把本壳做成进程级共享子系统（agent_link / proactive /
+4.3 后半（本刀）：把本壳做成进程级共享子系统（agent_link /
 全屏 watcher）的**呈现扇出目标**——overlay 拓扑下 ``instances[].win`` 恒为
 None，扇出集合为空等于联动/自说自话静默缺失（D0 的另一半，见
 ``multi_window_shared.presentation_targets``）。本类因此补齐 PetWindow 的
@@ -48,13 +48,12 @@ None，扇出集合为空等于联动/自说自话静默缺失（D0 的另一半
   ``_on_sprite_flight_changed``）；
 - 聚合状态：``isVisible`` / ``_dragging`` / ``_physics_mode`` /
   ``_click_effect_phase`` / ``mouse_through`` / ``_bubble_busy_until`` /
-  ``_bubble_suppressed``（proactive G1 守卫与联动节流门读的就是这些；
+  ``_bubble_suppressed``（联动节流门读的就是这些；
   ``_bubble_suppressed`` **不含**飞行态——它同时是联动节流位）；
 - 联动动作：``request_link_anim`` / ``request_link_idle`` / ``switch_clip`` /
   ``cats`` / ``idles`` 映射到 ``BehaviorController``；
-- 显隐：``set_pet_visible`` 同步 pause/resume proactive 与 agent_link
-  （``window.py:1214-1250`` 语义；共享实例的 pause/resume 是 no-op，见
-  multi_window_shared 的说明——G1 逐 tick 读可见性）；
+- 显隐：``set_pet_visible`` 同步 pause/resume agent_link
+  （``window.py:1214-1250`` 语义）；
 - 快速对话：气泡可点 → ``open_quick_chat``，``QuickChatBubble`` 锚定被点
   sprite（``_SpriteChatAnchor`` 提供 pet 形的 ``visible_content_rect`` /
   ``on_open_chat``），回车发送走既有 ChatService/SessionStore 链路；
@@ -64,7 +63,6 @@ None，扇出集合为空等于联动/自说自话静默缺失（D0 的另一半
 
 from __future__ import annotations
 
-import copy
 import logging
 import math
 import queue
@@ -74,8 +72,7 @@ import weakref
 from collections import deque
 from pathlib import Path
 
-import shiboken6
-from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QTimer, Qt
 from PySide6.QtGui import QIcon, QImage, QPixmap, QRegion
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
@@ -957,22 +954,18 @@ class OverlayShell(QObject):
     身份源）。屏事件/会话事件/退出收口全部在本类内自接，AppShell 只在
     拓扑分支处构造并 start()。
 
-    4.3 后半：本类同时是进程级共享子系统（agent_link / proactive）的呈现
-    扇出目标——``agent_link_manager`` / ``proactive_watcher`` 由 AppShell 在
+    4.3 后半：本类同时是进程级共享子系统（agent_link）的呈现
+    扇出目标——``agent_link_manager`` 由 AppShell 在
     拓扑分支处注入（等价 PetWindow 的构造参数）。注入失败=None 时全部呈现面
     静默空转，绝不阻断启动。
 
-    4.3 收口（菜单 parity 配套）：本壳同时承担 PetWindow 的两处**服务宿主**——
-    音乐（歌词）控制器（``install_music_lyric`` 四件套）与「看看屏幕」worker
-    （``look_at_screen`` + ``look_done`` 信号），以及 sprite 版「黄金回旋」。
-    overlay 拓扑下 PetWindow 不再存在，这三项功能没有别的落点。
+    4.3 收口（菜单 parity 配套）：本壳同时承担 PetWindow 的**服务宿主**——
+    音乐（歌词）控制器（``install_music_lyric`` 四件套），以及 sprite 版「黄金回旋」。
+    overlay 拓扑下 PetWindow 不再存在，这两项功能没有别的落点。
     """
 
-    # 「看看屏幕」worker → GUI 线程（wire 口径同 PetWindow.look_done）
-    look_done = Signal(str, str, bool)
-
     def __init__(self, app, instance, *, screen=None, sprite_factory=None,
-                 agent_link_manager=None, proactive_watcher=None) -> None:
+                 agent_link_manager=None) -> None:
         super().__init__()
         _LIVE_OVERLAY_SHELLS.add(self)  # 测试收口登记（构造即登记，幂等弱引用）
         self.app = app
@@ -1021,13 +1014,6 @@ class OverlayShell(QObject):
         self._slot_signature_cache = None
         # 音乐（歌词）宿主：懒建（window_optional_services 同款生命周期）
         self._music_lyric = None
-        # 「看看屏幕」限流/忙碌状态（window.py 同名口径）
-        self._look_busy = False
-        self._last_look_ts = 0.0
-        # 识屏发起者（右键命中的那一只）：构造期给确定值，`_look_bubble` 按它
-        # 分发；`look_at_screen` 每次调用都会重记。
-        self._look_sprite = None
-        self.look_done.connect(self._on_look_done)
         # 黄金回旋：直接复用 golden_spin.GoldenSpinController（纯状态机：圈数
         # 累计/逐圈加速/缓动），宿主适配器把角度写进 sprite 的整帧旋转通道。
         # 懒建（默认关时不建对象、不 import golden_spin）。
@@ -1036,7 +1022,6 @@ class OverlayShell(QObject):
         self._golden_spin_target = None
         # 4.3 后半：共享子系统注入（等价 PetWindow 的构造参数；None = 惰性空转）
         self.agent_link_manager = agent_link_manager
-        self.proactive_watcher = proactive_watcher
         from .session_fish_decisions import DECISIONS_FILE, SessionFishDecisions
         decisions_dir = self._spawn_config_dir()
         self.session_pets = SessionPetController(
@@ -1070,7 +1055,7 @@ class OverlayShell(QObject):
         # 最近 X 天开过、进程已不在的对话 → 冻结的小鱼（用户 2026-11-02：小鱼要一直在，除非主动关闭）
         self.session_pets.attach_history(self.session_history)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
-        # host 形函数与 agent_link/proactive 的聚合读取都直接读这些属性）
+        # host 形函数与 agent_link 的聚合读取都直接读这些属性）
         self._alert_queue: deque = deque()
         self._alert_current: dict | None = None
         self._sticky_bubble_active = False
@@ -1085,7 +1070,7 @@ class OverlayShell(QObject):
         self.message_sink = None
         # 飞行中的 sprite 集合（B1）：被撞飞的那只禁气泡，其余宠不受影响。
         # 由行为控制器的飞行边沿回调维护（见 _on_sprite_flight_changed），
-        # **不**复用 _bubble_suppressed——那个位同时是 proactive/联动节流信号
+        # **不**复用 _bubble_suppressed——那个位同时是联动节流信号
         # （multi_window_shared / agent_link / todo_reminder 读它），飞行期置真
         # 会把联动与主动搭话一起掐掉。
         self._flying_sprites: set = set()
@@ -1660,7 +1645,7 @@ class OverlayShell(QObject):
     # ---------------------------------------------------------------- 4.3 后半：共享子系统呈现面
     #
     # 本段是 PetWindow 呈现面的 sprite 等价物，消费方是进程级共享子系统：
-    #   - ``MultiWindowProxy``（agent_link / proactive 的 win）：读聚合状态属性
+    #   - ``MultiWindowProxy``（agent_link 的 win）：读聚合状态属性
     #     （isVisible/_dragging/_physics_mode/_click_effect_phase/mouse_through/
     #     _bubble_busy_until/_bubble_suppressed/_sticky_bubble_active/
     #     _alert_current/_alert_queue/agent_link_manager）并调用呈现方法；
@@ -1701,7 +1686,7 @@ class OverlayShell(QObject):
 
     @property
     def _dragging(self) -> bool:
-        """拖拽中（proactive G1 守卫的 interacting 判定之一）。"""
+        """拖拽中（联动聚合状态的 interacting 判定之一）。"""
         return getattr(self.overlay, "_mouse_grab", None) is not None
 
     @property
@@ -1740,17 +1725,6 @@ class OverlayShell(QObject):
     @property
     def idles(self) -> list:
         return list(self.cats.get("idles", []) or [])
-
-    @property
-    def on_look_synced(self):
-        """主动识屏答复同步进 AI 会话（``PetInstance.sync_look_to_chat`` 注入面）。
-
-        无聊天变体 / 未启用聊天 → None（proactive 侧 callable 判定后静默跳过）；
-        这正是 app.py ``_wire_window`` 里 ``win.on_look_synced`` 的等价注入。
-        """
-        if not self._chat_enabled():
-            return None
-        return getattr(self._instance, "sync_look_to_chat", None)
 
     @property
     def hidden_bubble_redirect(self):
@@ -2299,90 +2273,6 @@ class OverlayShell(QObject):
         if controller is not None:
             controller.shutdown()
 
-    # ---- 看看屏幕（window.py look_at_screen 的 sprite 等价物）----
-    def look_at_screen(self, sprite=None) -> None:
-        """截屏 → 视觉问答 → 气泡答复（限流口径逐点对齐 window.py）。
-
-        ``sprite`` = 本次识屏的发起者（右键命中的那一只；``None`` = 主 sprite）。
-        旧版一窗一宠，答复气泡天经地义落在被点那只头顶；overlay 下先记住发起者
-        （``_look_sprite``），气泡由 ``_look_bubble`` 分发到**发起者自己的**跟随器
-        （B7b 接上逐 sprite 气泡后，子宠发起的识屏不再让主宠代答）。
-        """
-        self._look_sprite = self.sprite if sprite is None else sprite
-        if self._look_busy:
-            self._look_bubble(t("overlay.ui.still_looking_at_last_one"))
-            return
-        now = time.monotonic()
-        if now - self._last_look_ts < 4.0:
-            self._look_bubble(t("overlay.ui.let_me_catch_my_breath"))
-            return
-        self._last_look_ts = now
-        self._look_busy = True
-        self._look_bubble(t("overlay.ui.let_me_see"), 6000)
-        # 主线程解析快照，后台 worker 只做网络/识图（同 window.py 的线程纪律）
-        settings = self._config.chat_settings()
-        provider = copy.copy(settings.active_config)
-        provider.api_key = self._config.resolve_api_key(provider)
-        system_prompt = settings.default_system_prompt
-        # 角色展示名按**发起者**的身份取（子宠可以有自己的角色）
-        pet_name = self._config.character_display_name(str(
-            self._sprite_config(self._look_sprite).get(
-                "character", catalog.DEFAULT_CHARACTER)))
-        # 看的是**发起者所在的那块屏**（把鱼拖到哪块屏，它就看哪块屏）。整个虚拟
-        # 桌面缩到一张小图里，多屏下每块屏都糊得看不清。屏幕矩形在主线程取。
-        from .overlay_screens import native_rect
-        try:
-            screen_rect = native_rect(self._screens.screen_of(self._look_sprite))
-        except Exception:
-            logging.debug("overlay: 取识屏屏幕矩形失败，退回整个桌面", exc_info=True)
-            screen_rect = None
-        threading.Thread(
-            target=self._look_worker,
-            args=(provider, system_prompt, pet_name, screen_rect),
-            daemon=True,
-            name="overlay-look-screen",
-        ).start()
-
-    def _look_worker(self, provider, system_prompt, pet_name: str = "",
-                     screen_rect=None) -> None:
-        from . import vision as vision_mod
-
-        try:
-            shot = vision_mod.capture_screen_bytes(screen_rect)
-            app_info = vision_mod.foreground_app_info()
-            reply = vision_mod.ask_about_screen(
-                shot, app_info, system_prompt, provider, pet_name=pet_name)
-            if shiboken6.isValid(self) is False:
-                return  # 壳已销毁：不再触碰信号
-            user_text = t("overlay.ui.look_at_screen_foreground_window", app_info=app_info) if app_info else t("overlay.ui.look_at_screen")
-            self.look_done.emit(reply, user_text, False)
-        except Exception as exc:
-            logging.exception("看看屏幕失败")
-            if shiboken6.isValid(self) is False:
-                return
-            self.look_done.emit(str(exc), "", True)
-
-    def _look_bubble(self, text: str, duration_ms: int = 3200) -> None:
-        """识屏气泡：落**发起者**（``_look_sprite``，右键命中的那一只）头顶。
-
-        旧版一窗一宠，答复气泡天经地义落在被点那只头顶；B7b 接上逐 sprite 气泡
-        后，这里按发起者分发（``_show_bubble_text_for``：主 = 壳，子 = 它自己那只）。
-        飞行期丢弃：这条直写跟随器（不经 ``show_bubble``），不读门禁就会在
-        起飞中照样冒泡——鱼飞行过程中不弹气泡是全局要求。
-        """
-        if self._bubble_blocked(self._look_sprite):
-            return
-        self._show_bubble_text_for(self._look_sprite, text, duration_ms)
-
-    def _on_look_done(self, text: str, user_text: str, is_error: bool) -> None:
-        self._look_busy = False
-        if is_error:
-            self._look_bubble(t("overlay.ui.i_can_t_quite_make", v=text[:60]), 5000)
-            return
-        self._look_bubble(text, max(4000, min(12000, len(text) * 150)))
-        sync = self.on_look_synced
-        if callable(sync):
-            sync(user_text, text)
 
     # ---- 黄金回旋（复用 golden_spin.GoldenSpinController + sprite 宿主）----
     def _golden_spin_capable(self, sprite) -> bool:
@@ -2657,18 +2547,7 @@ class OverlayShell(QObject):
 
     # ---- 显隐：共享子系统 pause/resume（window.py:1214-1250 语义）----
     def _pause_shared_subsystems(self) -> None:
-        """隐藏 → proactive.pause + agent_link.pause（岛反馈面可用时不停联动）。
-
-        共享实例（overlay 拓扑恒为 SharedSubsystems）的 ``pause`` 是刻意的
-        no-op——单窗显隐不该停进程级监视器，G1 守卫逐 tick 读 ``isVisible()``
-        拦下截图（限流器状态因此不丢）。本方法保留调用面与 legacy 逐条对齐。
-        """
-        proactive = getattr(self, "proactive_watcher", None)
-        if proactive is not None:
-            try:
-                proactive.pause()
-            except Exception:
-                logging.debug("overlay: 暂停主动识屏失败", exc_info=True)
+        """隐藏 → agent_link.pause（岛反馈面可用时不停联动）。"""
         manager = getattr(self, "agent_link_manager", None)
         if manager is None:
             return
@@ -2680,13 +2559,7 @@ class OverlayShell(QObject):
             logging.debug("overlay: 暂停联动监视器失败", exc_info=True)
 
     def _resume_shared_subsystems(self) -> None:
-        """恢复显示 → proactive.resume + agent_link.resume（按最新配置重评估）。"""
-        proactive = getattr(self, "proactive_watcher", None)
-        if proactive is not None:
-            try:
-                proactive.resume()
-            except Exception:
-                logging.debug("overlay: 恢复主动识屏失败", exc_info=True)
+        """恢复显示 → agent_link.resume（按最新配置重评估）。"""
         manager = getattr(self, "agent_link_manager", None)
         if manager is not None:
             try:
@@ -3555,7 +3428,7 @@ class OverlayShell(QObject):
     def _on_fullscreen_changed(self, hit: bool) -> None:
         """全屏出现 → 隐藏；退出 → 恢复（window_screen.on_fullscreen_changed 等价）。
 
-        自动隐藏与手动隐藏同语义（4.3 后半）：隐藏期间 proactive/agent_link
+        自动隐藏与手动隐藏同语义（4.3 后半）：隐藏期间 agent_link
         一并 pause，恢复时 resume——legacy 的 ``host.hide()`` 走自定义 hide →
         ``_pause_activity`` 正是这条链。
         """

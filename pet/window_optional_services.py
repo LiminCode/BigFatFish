@@ -22,7 +22,6 @@ class WindowFeatureGateMixin:
     """供 PetWindow 混入的可选服务/效果懒装配能力。"""
 
     cfg: Any
-    proactive_watcher: Any = None
     agent_link_manager: Any = None
     _file_eater: Any = None
     # 肥鱼隐藏时的气泡改道面（AppShell 注入 → 灵动岛反馈气泡），见
@@ -55,9 +54,6 @@ class WindowFeatureGateMixin:
     _music_lyric: Any = None
 
     # ------------------------------------------------------------ 判定
-    def _proactive_wanted(self) -> bool:
-        raw = self.cfg.get("proactive_screen", {})
-        return bool((raw or {}).get("enabled", False))
 
     def _agent_link_wanted(self) -> bool:
         raw = self.cfg.get("agent_link", {})
@@ -69,12 +65,6 @@ class WindowFeatureGateMixin:
         return bool(raw.get("custom_agents"))
 
     # ------------------------------------------------------------ 懒创建
-    def _ensure_proactive_watcher(self):
-        """首次启用主动识屏时懒创建观察器；已存在则原样返回。"""
-        if self.proactive_watcher is None:
-            from .proactive import ProactiveScreenWatcher
-            self.proactive_watcher = ProactiveScreenWatcher(self, self.cfg)
-        return self.proactive_watcher
 
     def _ensure_agent_link_manager(self):
         """首次启用 Agent 联动时懒创建管理器；已存在则原样返回。"""
@@ -337,11 +327,7 @@ class WindowFeatureGateMixin:
 
     # ------------------------------------------------------------ 同步
     def sync_optional_services(self) -> None:
-        """设置刷新公共入口：按配置懒装配/同步主动识屏、Agent 联动与效果控制器。"""
-        if self._proactive_wanted():
-            self._ensure_proactive_watcher().apply_config()
-        elif self.proactive_watcher is not None:
-            self.proactive_watcher.apply_config()
+        """设置刷新公共入口：按配置懒装配/同步 Agent 联动与效果控制器。"""
         if self._agent_link_wanted():
             self._ensure_agent_link_manager().apply_config()
         elif self.agent_link_manager is not None:

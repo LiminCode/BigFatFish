@@ -24,7 +24,7 @@ from pet import catalog
 from pet.agent_link import AgentLinkManager
 from pet.app import AppShell, PetInstance
 from pet.config import Config
-from pet.multi_window_shared import MultiWindowProxy, SharedProactiveWatcher
+from pet.multi_window_shared import MultiWindowProxy
 
 
 @pytest.fixture
@@ -79,9 +79,6 @@ class _RecordWin:
 
     def hold_bubble(self, seconds):
         self._bubble_busy_until = seconds
-
-    def on_look_synced(self, user_text, reply):
-        pass
 
     def isVisible(self):
         return self.is_shown
@@ -297,30 +294,6 @@ def test_shared_island_toggle_all_windows(tmp_path, app, monkeypatch):
             shell._shared.stop_all()
 
 
-def test_shared_shared_proactive_broadcasts_bubble(tmp_path, app, monkeypatch):
-    """§③.2：共享 proactive watcher 单一实例（限流器全局）；
-    气泡只发首个可见窗（多窗不重复弹，与 proxy.show_alert 同策）。"""
-    shell, config, primary_handle = _make_shared_shell(tmp_path)
-    try:
-        primary_win = _make_primary_record_win(shell, config)
-        second = _make_second_record_win(shell, tmp_path, monkeypatch)
-        second_win = second.win
-
-        # 共享 proactive watcher：单一实例，限流器绑定主窗 config 目录（全局语义，R8）
-        assert isinstance(shell._shared.proactive, SharedProactiveWatcher)
-        assert shell._shared.proactive.limiter.state_path == \
-            (config.dir / "proactive_screen_state.json")
-
-        # 「我看」先兆气泡只发首个可见窗
-        shell._shared.proactive._bridge._forward_bubble("hello", 1000)
-        assert "hello" in primary_win.bubbles
-        assert "hello" not in second_win.bubbles
-    finally:
-        _stop_sessions(*getattr(shell, "instances", []))
-        if getattr(shell, "_shared", None) is not None:
-            shell._shared.stop_all()
-
-
 def test_shared_hidden_notify_text_non_primary(tmp_path, app, monkeypatch):
     """§③.4：隐藏提示文案对非主窗改为指引托盘子菜单（P2-5 消除误导）。"""
     shell, config, primary_handle = _make_shared_shell(tmp_path)
@@ -485,9 +458,6 @@ class _AlertRecordWin:
     def hold_bubble(self, seconds):
         self._bubble_busy_until = seconds
 
-    def on_look_synced(self, user_text, reply):
-        pass
-
     def hide(self, notify=True):
         self.is_shown = False
 
@@ -562,12 +532,10 @@ def test_proxy_bubble_suppressed_aggregates_any(tmp_path, app):
 # ============================================================================
 # 哨兵语义：_physics_mode 的哨兵是 None（非 False）
 #
-# 单窗 PetWindow._physics_mode 的取值域是 None / 'drag' / 'throw'，消费方
-# （proactive G1 守卫）按 `is not None` 读哨兵。代理早期实现返回 `any(...)`
-# 的 bool，把「无人处于物理模式」表达成 False——`False is not None` 恒真，
-# 于是共享模式下 interacting 恒为 True、每次 tick 都在 G1 被静默拦截，
-# 「主动识屏从不触发」且用户侧开关无效（拿到的是同一个共享实例）。
-# 红→绿：修复前 proxy._physics_mode is False。
+# 单窗 PetWindow._physics_mode 的取值域是 None / 'drag' / 'throw'，读法是
+# `is not None`。代理早期实现返回 `any(...)` 的 bool，把「无人处于物理模式」
+# 表达成 False——`False is not None` 恒真，等于谎报「有人在拖」。
+# （当年的消费方主动识屏已删，ADR 0016；聚合契约本身留着。）
 # ============================================================================
 
 
@@ -598,79 +566,3 @@ def test_proxy_physics_mode_reports_active_mode(tmp_path, app):
     assert proxy._physics_mode is None
 
 
-def test_shared_watcher_tick_survives_idle_windows(tmp_path, app, monkeypatch):
-    """红→绿：端到端——共享 watcher 在无人交互时，tick 必须越过 G1 守卫。
-
-    修复前 proxy._physics_mode 恒为 False → `is not None` 恒真 → G1 恒定拦截，
-    `_on_tick` 在守卫处 return，连前台窗口探测都不发生（用户的实测现象：
-    零日志、零状态文件）。这里用「前台窗口查询被调用」作为越过守卫的证据。
-    """
-    w1, w2 = _RecordWin(visible=True), _RecordWin(visible=True)
-    config = Config(base=tmp_path)
-    config.set("proactive_screen", {"enabled": True, "whitelist": ["*"]})
-    proxy = MultiWindowProxy(_ProxyShell(config, [w1, w2]))
-    watcher = SharedProactiveWatcher(proxy, config)
-    try:
-        from pet import vision
-
-        probed: list[int] = []
-        # 返回 None：守卫之后的第一步（前台窗口信息），且不会触发截图/网络，
-        # 该分支只清状态、不产生副作用。
-        monkeypatch.setattr(
-            vision, "foreground_window_info",
-            lambda: (probed.append(1), None)[1])
-
-        watcher._on_tick()
-        assert probed, (
-            "无人交互时 G1 守卫不得拦截——否则共享模式（experimental_"
-            "single_process_spawn=true）下主动识屏永不触发")
-    finally:
-        watcher.stop_all()
-
-
-def test_shared_production_watcher_reads_proxy_sentinel(tmp_path, app, monkeypatch):
-    """端到端（真实装配）：flag 开时 AppShell 注入的共享 watcher，其 ``win``
-    就是 ``MultiWindowProxy``——G1 读的正是这个对象，这里直接对生产装配面取值。
-
-    前两条用例手工构造 proxy；本条钉的是**生产接线**：``app.py`` 把
-    ``shared.proactive`` 注入各窗（``PetWindow.proactive_watcher``），而它的
-    ``win`` 是 ``shared.proxy``。修复前这条路径读到的 ``_physics_mode`` 是
-    ``False``，G1 恒真拦截——用户看到的「右键开关无效」也源于此（同一实例）。
-    """
-    shell, config, primary_handle = _make_shared_shell(tmp_path)
-    try:
-        assert shell._shared is not None, "flag 开必须实例化共享子系统"
-        proxy = shell._shared.proxy
-        watcher = shell._shared.proactive
-        assert watcher.win is proxy, (
-            "共享 watcher 的 win 必须是代理——G1 守卫就是通过它读聚合态")
-
-        # 生产形态：真实装配出的 proxy，所有替身窗都不在物理模式
-        _make_primary_record_win(shell, config)
-        _make_second_record_win(shell, tmp_path, monkeypatch)
-        assert len(proxy._windows()) == 2
-        assert proxy._physics_mode is None, (
-            "真实装配下无人拖拽/抛掷时，G1 读到的必须是哨兵 None；"
-            "返回 False 会让 `is not None` 恒真、识屏永不触发")
-
-        # 任一窗进入物理模式仍要拦住（聚合语义不能被修复改坏）
-        shell.instance.win._physics_mode = "throw"
-        assert proxy._physics_mode == "throw"
-        shell.instance.win._physics_mode = None
-        assert proxy._physics_mode is None
-
-        # 并且真实 tick 能越过 G1（前台窗口查询被调用即证明）
-        from pet import vision
-
-        # _on_tick 只读 effective config（与平台守卫无关），无需 apply_config 起表
-        config.set("proactive_screen", {"enabled": True, "whitelist": ["*"]})
-        probed: list[int] = []
-        monkeypatch.setattr(
-            vision, "foreground_window_info",
-            lambda: (probed.append(1), None)[1])
-        watcher._on_tick()
-        assert probed, "生产装配下 tick 也必须越过 G1 守卫"
-    finally:
-        _stop_sessions(*getattr(shell, "instances", []))
-        if getattr(shell, "_shared", None) is not None:
-            shell._shared.stop_all()

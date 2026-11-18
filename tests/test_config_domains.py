@@ -19,7 +19,6 @@ from pet.config_domains import (
     ChatConfig,
     CollisionConfig,
     MenuConfig,
-    ProactiveConfig,
 )
 
 
@@ -73,12 +72,6 @@ AGENT_LINK_DIRTY = {
     "thinking_texts": {"dsh": "大脑飞速运转"},
     "future_ext": {"keep": 1},           # 未知扩展键保留
 }
-PROACTIVE_DIRTY = {
-    "enabled": "not_bool",               # _merge_proactive_screen_data 不清类型（与 Config 同）
-    "dwell_seconds": -5,
-    "whitelist": "bad",
-    "future_ext": {"a": 1},              # 未知扩展键保留
-}
 COLLISION_DIRTY = {
     "collision_enabled": "not_bool",
     "collision_restitution": 99.0,       # max 1.0
@@ -117,11 +110,6 @@ ROUNDTRIP_CASES = [
         {"sound_volume": 5.0},
         None,
     ]),
-    (ProactiveConfig, [
-        {"enabled": True, "dwell_seconds": 12},
-        {"whitelist": "bad"},
-        None,
-    ]),
     (CollisionConfig, [
         {"collision_enabled": False, "collision_restitution": 0.5},
         {"collision_friction": -1.0, "future_key": 1},
@@ -140,7 +128,6 @@ ROUNDTRIP_CASES = [
 LOAD_PATH_CASES = [
     (ChatConfig, CHAT_DIRTY, {"chat": CHAT_DIRTY}, lambda cfg: cfg.data["chat"]),
     (AgentLinkConfig, AGENT_LINK_DIRTY, {"agent_link": AGENT_LINK_DIRTY}, lambda cfg: cfg.data["agent_link"]),
-    (ProactiveConfig, PROACTIVE_DIRTY, {"proactive_screen": PROACTIVE_DIRTY}, lambda cfg: cfg.data["proactive_screen"]),
     (CollisionConfig, COLLISION_DIRTY, dict(COLLISION_DIRTY), lambda cfg: {k: cfg.data[k] for k in COLLISION_KEYS}),
     (MenuConfig, MENU_DIRTY, dict(MENU_DIRTY), lambda cfg: {k: cfg.data[k] for k in MENU_KEYS}),
 ]
@@ -162,7 +149,7 @@ def _write_config(tmp_path, payload: dict) -> Config:
 @pytest.mark.parametrize(
     "facade,inputs",
     ROUNDTRIP_CASES,
-    ids=["chat", "agent_link", "proactive", "collision", "menu"],
+    ids=["chat", "agent_link", "collision", "menu"],
 )
 def test_from_dict_to_dict_roundtrip_is_stable(facade, inputs):
     for raw in inputs:
@@ -175,7 +162,7 @@ def test_from_dict_to_dict_roundtrip_is_stable(facade, inputs):
 @pytest.mark.parametrize(
     "facade,inputs",
     ROUNDTRIP_CASES,
-    ids=["chat", "agent_link", "proactive", "collision", "menu"],
+    ids=["chat", "agent_link", "collision", "menu"],
 )
 def test_normalize_equals_from_dict_data(facade, inputs):
     for raw in inputs:
@@ -189,7 +176,7 @@ def test_normalize_equals_from_dict_data(facade, inputs):
 @pytest.mark.parametrize(
     "facade,raw,payload,extract",
     LOAD_PATH_CASES,
-    ids=["chat", "agent_link", "proactive", "collision", "menu"],
+    ids=["chat", "agent_link", "collision", "menu"],
 )
 def test_normalize_matches_config_load_path(tmp_path, facade, raw, payload, extract):
     cfg = _write_config(tmp_path, payload)
@@ -201,11 +188,10 @@ def test_normalize_matches_config_load_path(tmp_path, facade, raw, payload, extr
     [
         (ChatConfig, lambda cfg: cfg.data["chat"]),
         (AgentLinkConfig, lambda cfg: cfg.data["agent_link"]),
-        (ProactiveConfig, lambda cfg: cfg.data["proactive_screen"]),
         (CollisionConfig, lambda cfg: {k: cfg.data[k] for k in COLLISION_KEYS}),
         (MenuConfig, lambda cfg: {k: cfg.data[k] for k in MENU_KEYS}),
     ],
-    ids=["chat", "agent_link", "proactive", "collision", "menu"],
+    ids=["chat", "agent_link", "collision", "menu"],
 )
 def test_invalid_type_inputs_fall_back_to_domain_defaults(tmp_path, facade, extract):
     """非 dict 输入 → 域默认值，与全新 Config（无配置文件）的现状一致。"""
@@ -278,12 +264,6 @@ def test_chat_extension_keys_preserved():
     assert normalized["providers"]["openai-main"]["extra_provider_field"] == "x"
 
 
-def test_proactive_extension_keys_preserved():
-    normalized = ProactiveConfig.normalize({"future_key": {"a": 1}, "enabled": True})
-    assert normalized["future_key"] == {"a": 1}
-    assert normalized["enabled"] is True
-
-
 def test_collision_unknown_keys_dropped_like_whitelist():
     normalized = CollisionConfig.normalize({"future_key": 1, "collision_enabled": False})
     assert "future_key" not in normalized
@@ -307,7 +287,6 @@ def test_accessors_return_facade_instances(tmp_path):
     cfg = Config(base=tmp_path)
     assert isinstance(cfg.chat_config(), ChatConfig)
     assert isinstance(cfg.agent_link_config(), AgentLinkConfig)
-    assert isinstance(cfg.proactive_config(), ProactiveConfig)
     assert isinstance(cfg.collision_config(), CollisionConfig)
     assert isinstance(cfg.menu_config(), MenuConfig)
 
@@ -316,7 +295,6 @@ def test_accessors_expose_current_domain_data(tmp_path):
     cfg = Config(base=tmp_path)
     assert cfg.chat_config().to_dict() == cfg.data["chat"]
     assert cfg.agent_link_config().to_dict() == cfg.data["agent_link"]
-    assert cfg.proactive_config().to_dict() == cfg.data["proactive_screen"]
     assert cfg.collision_config().to_dict() == {k: cfg.data[k] for k in COLLISION_KEYS}
     assert cfg.menu_config().to_dict() == {k: cfg.data[k] for k in MENU_KEYS}
 

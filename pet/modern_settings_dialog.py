@@ -176,7 +176,6 @@ from .i18n import t
 from .settings_dialogue_text import DIALOGUE_LABELS, DIALOGUE_PARAMS, dialogue_label, dialogue_param
 
 
-
 # 与 persona_template.PARAMETERS 保持同一真相源：调用点注入什么，这里就宣称什么。
 DIALOGUE_KEY_PARAMS = dict(PARAMETERS)
 
@@ -733,10 +732,8 @@ class ModernSettingsDialog(QDialog):
         self.menu_template_select.addItem(t("settings.dlg.legacy_menu"), "legacy")
         self.menu_template_select.setCurrentData(str(self.config.get("context_menu_template", "modern") or "modern"))
         menu_available_actions = set(MENU_ACTIONS.ids)
-        if sys.platform != "win32":
-            menu_available_actions.discard("proactive_screen")
         if not self.include_ai:
-            menu_available_actions.difference_update({"chat", "look_screen", "balance", "proactive_screen"})
+            menu_available_actions.difference_update({"chat", "balance"})
         self.menu_available_actions = frozenset(menu_available_actions)
         menu_enabled_actions = set(menu_available_actions)
         if not self.config.get("quick_launch_apps", DEFAULT_QUICK_LAUNCH_APPS):
@@ -788,9 +785,6 @@ class ModernSettingsDialog(QDialog):
         launcher_layout.addStretch(1)
         self._add_page(t("settings.dlg.quick_launch"), "application", self._page_shell(t("settings.dlg.quick_launch"), launcher_content))
 
-        if sys.platform == "win32" and self.include_ai:
-            self._add_page(t("settings.dlg.screen_awareness"), "screen", self._page_shell(t("settings.dlg.screen_awareness"), self._proactive_page_content()))
-
         # AI rows are composed directly into the final capability domain by
         # _rebuild_domain_navigation. Do not temporarily hand the controller
         # widget to a QScrollArea: that creates a second Qt ownership path when
@@ -828,9 +822,6 @@ class ModernSettingsDialog(QDialog):
         self.quick_launch_editor.changed.connect(self._sync_menu_action_states)
         self.collision_enabled_check.toggled.connect(self._update_collision_controls)
         self.collision_sound_check.toggled.connect(self._update_collision_sound_controls)
-        if hasattr(self, "pro_enabled_check"):
-            self.pro_enabled_check.toggled.connect(self._update_proactive_controls)
-            self.pro_idle_check.toggled.connect(self._update_proactive_idle_controls)
         self.spawn_inherit_size_check.toggled.connect(self._update_spawn_size_controls)
         self.golden_spin_click_check.toggled.connect(self._update_golden_spin_controls)
         self.click_self_talk_check.toggled.connect(self._update_click_self_talk_controls)
@@ -841,8 +832,6 @@ class ModernSettingsDialog(QDialog):
         self._update_egg_controls(self.egg_enabled_check.isChecked())
         self._sync_menu_action_states()
         self._update_collision_controls(self.collision_enabled_check.isChecked())
-        if hasattr(self, "pro_enabled_check"):
-            self._update_proactive_controls(self.pro_enabled_check.isChecked())
         self._update_spawn_size_controls(self.spawn_inherit_size_check.isChecked())
         # 初始同步须在全部 SettingRow 构建完成后执行，否则 findChild 找不到行
         self._update_click_sound_controls(self.click_sound_check.isChecked())
@@ -875,253 +864,6 @@ class ModernSettingsDialog(QDialog):
     def _build_pet_controls(self) -> None:
         """Compatibility delegation (settings_pet_controls.build_pet_controls)."""
         settings_pet_controls.build_pet_controls(self)
-
-    def _build_proactive_controls(self) -> None:
-        """主动识屏页控件（仅 Windows + 有聊天能力时挂载）。"""
-        from .proactive import effective_proactive_config
-
-        pro = effective_proactive_config(self.config.get("proactive_screen", {}))
-
-        self.pro_enabled_check = ToggleSwitch(self)
-        self.pro_enabled_check.setChecked(bool(pro["enabled"]))
-        self.pro_dryrun_check = ToggleSwitch(self)
-        self.pro_dryrun_check.setChecked(bool(pro["dry_run"]))
-
-        self.pro_preset_select = ModernSelect(self, width=160)
-        for key, label in (
-            ("balanced", t("settings.dlg.balanced_recommended")),
-            ("quiet", t("settings.dlg.quiet")),
-            ("active", t("settings.dlg.lively")),
-            ("custom", t("settings.dlg.custom_values")),
-        ):
-            self.pro_preset_select.addItem(label, key)
-        idx = {"quiet": 1, "balanced": 0, "active": 2, "custom": 3}.get(pro["preset"], 0)
-        self.pro_preset_select.setCurrentIndex(idx)
-        self.pro_preset_select.currentIndexChanged.connect(self._on_pro_preset_changed)
-
-        self.pro_dwell_spin = BrowserSpinBox(self)
-        self.pro_dwell_spin.setRange(15, 600)
-        self.pro_dwell_spin.setValue(int(pro["dwell_seconds"]))
-
-        self.pro_cooldown_spin = BrowserDoubleSpinBox(self)
-        self.pro_cooldown_spin.setRange(0.5, 7200)
-        self.pro_cooldown_spin.setDecimals(2)
-        self.pro_cooldown_unit = ModernSelect(self, width=80)
-        self.pro_cooldown_unit.addItem(t("settings.dlg.min"), "min")
-        self.pro_cooldown_unit.addItem(t("settings.dlg.s"), "sec")
-        self._pro_set_cooldown_display(float(pro["cooldown_minutes"]))
-        self.pro_cooldown_unit.currentIndexChanged.connect(self._on_pro_cooldown_unit_changed)
-
-        self.pro_min_interval_spin = BrowserSpinBox(self)
-        self.pro_min_interval_spin.setRange(30, 3600)
-        self.pro_min_interval_spin.setValue(int(pro["min_request_interval_seconds"]))
-
-        self.pro_cap_spin = BrowserSpinBox(self)
-        self.pro_cap_spin.setRange(1, 9999)
-        self.pro_cap_spin.setValue(int(pro["daily_cap"]))
-
-        self.pro_idle_check = ToggleSwitch(self)
-        self.pro_idle_check.setChecked(bool(pro["require_idle"]))
-        self.pro_idle_spin = BrowserSpinBox(self)
-        self.pro_idle_spin.setRange(5, 3600)
-        raw_idle = (self.config.get("proactive_screen", {}) or {}).get("min_idle_seconds", 30)
-        self.pro_idle_spin.setValue(int(raw_idle or 30))
-
-        self.pro_through_check = ToggleSwitch(self)
-        self.pro_through_check.setChecked(bool(pro["allow_when_mouse_through"]))
-        self.pro_precue_check = ToggleSwitch(self)
-        self.pro_precue_check.setChecked(bool(pro["pre_cue"]))
-        self.pro_free_check = ToggleSwitch(self)
-        self.pro_free_check.setChecked(bool(pro["prefer_free_provider"]))
-
-        self.pro_whitelist_edit = QPlainTextEdit(self)
-        self.pro_whitelist_edit.setPlaceholderText(t("settings.dlg.msedge_exe_title_meeting"))
-        self.pro_whitelist_edit.setPlainText("\n".join(str(x) for x in pro["whitelist"]))
-        self.pro_whitelist_edit.setMinimumHeight(72)
-
-        self.pro_add_btn = TiltButton(t("settings.dlg.add_from_foreground_window"), self)
-        self.pro_add_btn.setProperty("variant", "ghost")
-        self.pro_add_btn.clicked.connect(self._on_pro_add_foreground)
-        self._pro_add_timer = QTimer(self)
-        self._pro_add_timer.setSingleShot(True)
-        self._pro_add_timer.timeout.connect(self._do_pro_add_foreground)
-
-        self.pro_clear_mem_btn = TiltButton(t("settings.dlg.clear_companion_memory"), self)
-        self.pro_clear_mem_btn.setProperty("variant", "ghost")
-        self.pro_clear_mem_btn.clicked.connect(self._on_pro_clear_memory)
-
-    def _pro_set_cooldown_display(self, minutes: float) -> None:
-        unit = "sec" if minutes < 1 else "min"
-        self._pro_apply_cooldown_unit(unit, minutes)
-
-    def _pro_apply_cooldown_unit(self, unit: str, minutes: float) -> None:
-        self.pro_cooldown_unit.blockSignals(True)
-        self.pro_cooldown_unit.setCurrentIndex(1 if unit == "sec" else 0)
-        if unit == "sec":
-            self.pro_cooldown_spin.setRange(30, 7200)
-            self.pro_cooldown_spin.setDecimals(0)
-            self.pro_cooldown_spin.setValue(min(7200, max(30, round(minutes * 60))))
-        else:
-            self.pro_cooldown_spin.setRange(0.5, 120)
-            self.pro_cooldown_spin.setDecimals(2)
-            self.pro_cooldown_spin.setValue(min(120.0, max(0.5, minutes)))
-        self._pro_cooldown_last_unit = unit
-        self.pro_cooldown_unit.blockSignals(False)
-
-    def _on_pro_cooldown_unit_changed(self) -> None:
-        old = getattr(self, "_pro_cooldown_last_unit", "min")
-        v = float(self.pro_cooldown_spin.value())
-        minutes = v / 60.0 if old == "sec" else v
-        self._pro_apply_cooldown_unit(self.pro_cooldown_unit.currentData(), minutes)
-
-    def _pro_cooldown_minutes(self) -> float:
-        v = float(self.pro_cooldown_spin.value())
-        return v / 60.0 if self.pro_cooldown_unit.currentData() == "sec" else v
-
-    def _on_pro_preset_changed(self, _index: int) -> None:
-        from .proactive import PRESET_DEFAULTS
-
-        vals = PRESET_DEFAULTS.get(self.pro_preset_select.currentData())
-        if vals:
-            self.pro_dwell_spin.setValue(vals["dwell_seconds"])
-            self._pro_set_cooldown_display(float(vals["cooldown_minutes"]))
-            self.pro_cap_spin.setValue(vals["daily_cap"])
-
-    def _on_pro_add_foreground(self) -> None:
-        self.pro_add_btn.setEnabled(False)
-        self.pro_add_btn.setText(t("settings.dlg.switch_target_window_within_3"))
-        self._pro_add_timer.start(3000)
-
-    def _do_pro_add_foreground(self) -> None:
-        self.pro_add_btn.setEnabled(True)
-        self.pro_add_btn.setText(t("settings.dlg.add_from_foreground_window"))
-        from . import vision
-
-        info = vision.foreground_window_info()
-        if not info:
-            QMessageBox.information(self, t("settings.dlg.add_foreground_window"), t("settings.dlg.no_usable_foreground_window_was"))
-            return
-        proc = str(info.get("process", "")).strip()
-        title = str(info.get("title", "")).strip()
-        box = QMessageBox(self)
-        box.setWindowTitle(t("settings.dlg.add_allow_list"))
-        box.setIcon(QMessageBox.Icon.Question)
-        box.setText(t("settings.dlg.foreground_window_found_process_v", v=proc or t("settings.dlg.unknown"), v2=title or t("settings.dlg.empty")))
-        btn_proc = box.addButton(t("settings.dlg.by_app_recommended"), QMessageBox.ButtonRole.AcceptRole)
-        btn_title = box.addButton(t("settings.dlg.by_title_keyword"), QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Cancel)
-        box.exec()
-        lines = [x.strip() for x in self.pro_whitelist_edit.toPlainText().splitlines() if x.strip()]
-        if box.clickedButton() is btn_proc and proc and proc not in lines:
-            lines.append(proc)
-        elif box.clickedButton() is btn_title and title:
-            rule = f"title:*{title}*"
-            if rule not in lines:
-                lines.append(rule)
-        else:
-            return
-        self.pro_whitelist_edit.setPlainText("\n".join(lines))
-
-    def _on_pro_clear_memory(self) -> None:
-        from .proactive import ProactiveMemory
-
-        # clear() 返回本次是否真的清空：设置页是独立进程，主进程可能正在写同一
-        # 份记忆文件（拿不到跨进程锁 = 这次没清）。失败必须如实提示，不能无条件
-        # 报"已清空"——那正是用户看到的"清了还在"。
-        cleared = ProactiveMemory(self.config.dir / "proactive_screen_memory.json").clear()
-        if cleared is False:
-            QMessageBox.warning(
-                self,
-                t("settings.dlg.couldn_t_clear_companion_memory"),
-                t("settings.dlg.companion_memory_couldn_t_cleared"),
-            )
-            return
-        QMessageBox.information(self, t("settings.dlg.companion_memory"), t("settings.dlg.screen_awareness_short_term_companion"))
-
-    def _proactive_page_content(self) -> QWidget:
-        content = QWidget(self)
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(18)
-        layout.addWidget(
-            SettingsSection(
-                t("settings.dlg.switch_pace"),
-                [
-                    SettingRow(
-                        "proactive_enabled",
-                        t("settings.dlg.turn_screen_awareness"),
-                        t("settings.dlg.she_glances_at_app_you"),
-                        self.pro_enabled_check,
-                    ),
-                    SettingRow("proactive_dry_run", t("settings.dlg.dry_run_mode"), t("settings.dlg.when_trigger_only_writes_log"), self.pro_dryrun_check),
-                    SettingRow(
-                        "proactive_preset",
-                        t("settings.dlg.companion_pace_preset"),
-                        t("settings.dlg.balanced_45s_5min_15_quiet"),
-                        self.pro_preset_select,
-                    ),
-                ],
-                content,
-            )
-        )
-        layout.addWidget(
-            SettingsSection(
-                t("settings.dlg.frequency_used_by_custom_preset"),
-                [
-                    SettingRow("proactive_dwell", t("settings.dlg.window_dwell_threshold"), t("settings.dlg.same_foreground_window_has_stay"), self.pro_dwell_spin),
-                    SettingRow("proactive_cooldown", t("settings.dlg.care_cooldown"), t("settings.dlg.shortest_gap_between_two_check"), self._pro_cooldown_row()),
-                    SettingRow("proactive_min_interval", t("settings.dlg.minimum_request_gap"), t("settings.dlg.hard_protection_free_models_don"), self.pro_min_interval_spin),
-                    SettingRow("proactive_daily_cap", t("settings.dlg.daily_request_cap"), t("settings.dlg.most_screen_requests_per_day"), self.pro_cap_spin),
-                ],
-                content,
-            )
-        )
-        layout.addWidget(
-            SettingsSection(
-                t("settings.dlg.triggers"),
-                [
-                    SettingRow("proactive_require_idle", t("settings.dlg.only_when_i_m_idle"), t("settings.dlg.when_checked_won_t_interrupt"), self.pro_idle_check),
-                    SettingRow("proactive_idle_seconds", t("settings.dlg.idle_seconds"), t("settings.dlg.option_above_trigger_only_after"), self.pro_idle_spin),
-                    SettingRow("proactive_through", t("settings.dlg.keep_looking_while_click_through"), t("settings.dlg.whether_keeps_working_while_fish"), self.pro_through_check),
-                    SettingRow("proactive_pre_cue", t("settings.dlg.heads_up_before_look"), t("settings.dlg.say_let_me_take_look"), self.pro_precue_check),
-                    SettingRow(
-                        "proactive_free",
-                        t("settings.dlg.prefer_separate_vision_config"),
-                        t("settings.dlg.if_provider_has_separate_vision"),
-                        self.pro_free_check,
-                    ),
-                ],
-                content,
-            )
-        )
-        layout.addWidget(
-            SettingsSection(
-                t("settings.dlg.allow_list"),
-                [
-                    SettingRow(
-                        "proactive_whitelist",
-                        t("settings.dlg.allow_list_one_per_line"),
-                        t("settings.dlg.process_name_such_as_msedge"),
-                        self.pro_whitelist_edit,
-                        stacked=True,
-                    ),
-                    SettingRow("proactive_whitelist_add", t("settings.dlg.quick_add"), t("settings.dlg.switch_target_window_within_3_2"), self.pro_add_btn),
-                    SettingRow("proactive_memory_clear", t("settings.dlg.companion_memory"), t("settings.dlg.only_process_names_activity_categories"), self.pro_clear_mem_btn),
-                ],
-                content,
-            )
-        )
-        layout.addStretch(1)
-        return content
-
-    def _pro_cooldown_row(self) -> QWidget:
-        row = QWidget(self)
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(8)
-        h.addWidget(self.pro_cooldown_spin)
-        h.addWidget(self.pro_cooldown_unit)
-        return row
 
     def _update_self_talk_controls(self, enabled: bool) -> None:
         """周期气泡（``self_talk``）的细项显隐。
@@ -1191,36 +933,6 @@ class ModernSettingsDialog(QDialog):
             ("collision_sound_volume",),
             enabled,
             dependency="collision_sound_enabled",
-        )
-
-    def _update_proactive_controls(self, enabled: bool) -> None:
-        self._set_setting_rows_visible(
-            (
-                "proactive_dry_run",
-                "proactive_preset",
-                "proactive_dwell",
-                "proactive_cooldown",
-                "proactive_min_interval",
-                "proactive_daily_cap",
-                "proactive_require_idle",
-                "proactive_idle_seconds",
-                "proactive_through",
-                "proactive_pre_cue",
-                "proactive_free",
-                "proactive_whitelist",
-                "proactive_whitelist_add",
-                "proactive_memory_clear",
-            ),
-            enabled,
-            dependency="proactive_enabled",
-        )
-        self._update_proactive_idle_controls(self.pro_idle_check.isChecked())
-
-    def _update_proactive_idle_controls(self, enabled: bool) -> None:
-        self._set_setting_rows_visible(
-            ("proactive_idle_seconds",),
-            enabled,
-            dependency="proactive_require_idle",
         )
 
     def _set_setting_rows_visible(
@@ -1709,8 +1421,6 @@ class ModernSettingsDialog(QDialog):
             self.ai_page.setParent(self)
             self.ai_page.hide()
 
-        proactive_rows = list(old_pages.get(t("settings.dlg.screen_awareness"), QWidget()).findChildren(SettingRow))
-        claimed.update(proactive_rows)
         voice_chime_rows = list(self.voice_chime_page.findChildren(SettingRow))
         claimed.update(voice_chime_rows)
         festival_rows = list(self.festival_page.findChildren(SettingRow))
@@ -1719,7 +1429,6 @@ class ModernSettingsDialog(QDialog):
         automation = page_content(
             [
                 (t("settings.dlg.do_reminders"), claim("todo_reminder_enabled", "todo_reminder_lead_minutes")),
-                (t("settings.dlg.proactive_awareness"), proactive_rows),
             ]
         )
         # 「自定义台词」＝一个可折叠框（默认折叠）：逐事件文案行全部收进去，
@@ -2161,38 +1870,6 @@ class ModernSettingsDialog(QDialog):
         settings_notifications.save_notification_settings(self)
         # 工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏不在这里存了：设置搬到了配置全景（那几节只剩跳转），
         # 这扇窗保存时不碰那几个键
-        if sys.platform == "win32" and self.include_ai and hasattr(self, "pro_enabled_check"):
-            from .proactive import PRESET_DEFAULTS
-
-            pro_data = dict(self.config.get("proactive_screen", {}) or {})
-            preset = self.pro_preset_select.currentData()
-            # 非 custom 预设下改了数值 → 自动落为 custom，否则运行时会被预设覆盖（gemini 审查发现）
-            if preset in PRESET_DEFAULTS:
-                pv = PRESET_DEFAULTS[preset]
-                if (
-                    self.pro_dwell_spin.value() != pv["dwell_seconds"]
-                    or abs(self._pro_cooldown_minutes() - pv["cooldown_minutes"]) > 1e-6
-                    or self.pro_cap_spin.value() != pv["daily_cap"]
-                ):
-                    preset = "custom"
-            pro_data.update(
-                {
-                    "enabled": self.pro_enabled_check.isChecked(),
-                    "dry_run": self.pro_dryrun_check.isChecked(),
-                    "preset": preset,
-                    "dwell_seconds": self.pro_dwell_spin.value(),
-                    "cooldown_minutes": self._pro_cooldown_minutes(),
-                    "min_request_interval_seconds": self.pro_min_interval_spin.value(),
-                    "daily_cap": self.pro_cap_spin.value(),
-                    "require_idle": self.pro_idle_check.isChecked(),
-                    "min_idle_seconds": self.pro_idle_spin.value(),
-                    "allow_when_mouse_through": self.pro_through_check.isChecked(),
-                    "pre_cue": self.pro_precue_check.isChecked(),
-                    "prefer_free_provider": self.pro_free_check.isChecked(),
-                    "whitelist": [x.strip() for x in self.pro_whitelist_edit.toPlainText().splitlines() if x.strip()],
-                }
-            )
-            self.config.set("proactive_screen", pro_data)
         self.config.set("autostart_wanted", self.autostart_check.isChecked())
         # 批 C：落种占位语义——仅当用户在该子肥鱼自己的设置界面保存过才置真；
         # 位置自动保存等一切后台写盘不得置位。主配置（slot 0/主肥鱼）保存不置位。

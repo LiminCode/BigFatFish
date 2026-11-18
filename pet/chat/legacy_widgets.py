@@ -887,25 +887,6 @@ class ChatWindow(QDialog):
         self._refresh_sessions()
         self._reset()
 
-    def append_look_sync(self, user_text: str, reply: str) -> None:
-        """「看看屏幕」的问答同步进当前会话，之后可在聊天历史里回看。
-        正在生成回答时不插入，避免与在飞请求的流式输出交错。"""
-        if self.service.busy:
-            return
-        synced, absorbed = self.store.append_messages(
-            self.session, [ChatMessage("user", user_text), ChatMessage("assistant", reply)]
-        )
-        if synced is None:
-            self.session.messages.append(ChatMessage("user", user_text))
-            self.session.messages.append(ChatMessage("assistant", reply))
-            self.store.save(self.session)
-        else:
-            self.session = synced
-        if self.isVisible():
-            self._load()
-            self._refresh_sessions()
-            self._bottom()
-
     def refresh_settings(self) -> None:
         self.settings = self.config.chat_settings()
         self.provider_label.setText(self.settings.active_config.name)

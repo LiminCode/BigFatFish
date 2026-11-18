@@ -16,7 +16,6 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "rally_pets",
         "lineup_pets",
         "chat",
-        "look_screen",
         "default.separator-interaction",
         "animations_hub",
         "character",
@@ -32,7 +31,6 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "default.separator-pet",
         "tools_help",
         "agent_link",
-        "proactive_screen",
         "todo_panel",
         "config_panorama",
         "voice_chime_now",
@@ -197,7 +195,6 @@ def test_runtime_feature_state_does_not_filter_menu_layout_actions():
     class Pet:
         cfg = Config()
         on_open_chat = lambda self: None
-        on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
         on_open_modern_settings = lambda self: None
         on_spawn_pet = lambda self: None
@@ -307,7 +304,6 @@ def test_missing_user_layout_resolves_versioned_default():
     registered = {
         "ojingjing",
         "chat",
-        "look_screen",
         "animations_hub",
         "character",
         "playback_speed",
@@ -332,7 +328,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "quick_launch",
         "github_project",
         "agent_link",
-        "proactive_screen",
         "todo_panel",
         "config_panorama",
         "voice_chime_now",
@@ -356,7 +351,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "rally_pets",
         "lineup_pets",
         "chat",
-        "look_screen",
         "animations_hub",
         "character",
         "playback_speed",
@@ -369,7 +363,6 @@ def test_missing_user_layout_resolves_versioned_default():
         "quick_launch",
         "tools_help",
         "agent_link",
-        "proactive_screen",
         "todo_panel",
         "config_panorama",
         "modern_settings",
@@ -493,7 +486,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     class FakePet:
         cfg = FakeConfig()
         on_open_chat = lambda self: None
-        on_look_screen = lambda self: None
         on_show_balance = lambda self, parent=None: None
         on_open_modern_settings = lambda self: None
         on_spawn_pet = lambda self: None
@@ -523,7 +515,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "护驾",
         "列队",
         "AI 对话",
-        "看看屏幕",
         "播放动画",
         "切换角色",
         "播放速率",
@@ -539,27 +530,21 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "肥鱼设置",
         "退出",
     ]
-    if sys.platform == "win32":
-        expected_root.insert(-2, "主动识屏")
-        expected_root.insert(-2, "待办提醒")
-    else:
-        expected_root.insert(-2, "待办提醒")
+    expected_root.insert(-2, "待办提醒")
     expected_root.insert(-2, "配置全景")
     # 报时/节日四项默认不在菜单上（模板 visible: false，2026-09-19 起）
     assert root == expected_root
     rendered = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
     expected_rendered = [
         "厉害了我的鲸", "|",
-        "护驾", "列队", "AI 对话", "看看屏幕", "|",
+        "护驾", "列队", "AI 对话", "|",
         "播放动画", "切换角色", "播放速率", "大小", "VS Code 工作区", "YouTube Music",
         "Claude Desktop", "Claude Code（WSL）", "|",
         "肥鱼控制", "快捷启动", "|",
         "工具与帮助", "Agent 联动", "|",
         "肥鱼设置", "退出",
     ]
-    if sys.platform == "win32":
-        expected_rendered.insert(-3, "主动识屏")
-    # tools 段顺序：… Agent 联动 [主动识屏] 待办提醒 配置全景 | 肥鱼设置 退出
+    # tools 段顺序：… Agent 联动 待办提醒 配置全景 | 肥鱼设置 退出
     # （报时/节日四项默认 visible: false，不渲染）
     expected_rendered.insert(-3, "待办提醒")
     expected_rendered.insert(-3, "配置全景")
@@ -651,7 +636,7 @@ def test_menu_editor_reorders_and_promotes_actions_with_button_controls():
     editor.move_down_action.trigger()
     reordered_ids = [node["id"] for node in editor.value()["nodes"]]
     chat_index = root_ids.index("chat")
-    assert reordered_ids[chat_index : chat_index + 2] == ["look_screen", "chat"]
+    assert reordered_ids[chat_index : chat_index + 2] == ["default.separator-interaction", "chat"]
 
     promoted = editor.item_for_action("drag_physics")
     editor.tree.setCurrentItem(promoted)
@@ -1970,34 +1955,6 @@ def test_compact_settings_menu_action_bar_fits_scroll_viewport(tmp_path, monkeyp
     app.processEvents()
 
 
-def test_menu_editor_retains_but_marks_platform_unavailable_action(tmp_path, monkeypatch):
-    import sys
-
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
-
-    from pet import modern_settings_dialog as settings_mod
-    from pet.config import Config
-    from pet.modern_settings_dialog import ModernSettingsDialog
-
-    if sys.platform == "win32":
-        return
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
-    item = dialog.menu_layout_editor.item_for_action("proactive_screen")
-
-    assert item is not None
-    assert item.text(1) == "此平台不可用"
-    assert not item.flags() & Qt.ItemFlag.ItemIsEnabled
-    assert "主动识屏" not in [
-        dialog.menu_layout_editor.preview.topLevelItem(i).text(0)
-        for i in range(dialog.menu_layout_editor.preview.topLevelItemCount())
-    ]
-    dialog.reject()
-    app.processEvents()
-
-
 def test_menu_editor_keeps_recovery_actions_visible_but_movable(tmp_path, monkeypatch):
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -2166,7 +2123,7 @@ def test_menu_editor_exposes_future_default_action_for_customization(monkeypatch
             "layout_id": "modern-default-v1",
             "nodes": [
                 {"type": "action", "id": "chat", "visible": True},
-                {"type": "action", "id": "look_screen", "visible": True},
+                {"type": "action", "id": "todo_panel", "visible": True},
                 {"type": "action", "id": "modern_settings", "visible": True},
                 {"type": "action", "id": "quit", "visible": True},
             ],
@@ -2183,13 +2140,13 @@ def test_menu_editor_exposes_future_default_action_for_customization(monkeypatch
                 {"type": "action", "id": "quit", "visible": True},
             ],
         },
-        available_actions={"chat", "look_screen", "modern_settings", "quit"},
+        available_actions={"chat", "todo_panel", "modern_settings", "quit"},
     )
 
-    assert editor.item_for_action("look_screen") is not None
+    assert editor.item_for_action("todo_panel") is not None
     assert [node["id"] for node in editor.value()["nodes"]] == [
         "chat",
-        "look_screen",
+        "todo_panel",
         "modern_settings",
         "quit",
     ]

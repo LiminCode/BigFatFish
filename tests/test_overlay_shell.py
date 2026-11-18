@@ -555,7 +555,7 @@ def test_app_start_overlay_topology_takes_overlay_shell(tmp_path, monkeypatch):
     # 4.3 后半：D0 常建的共享子系统注入 sprite 世界的壳（扇出目标）
     assert shell._shared is not None
     assert created[0].kwargs["agent_link_manager"] is shell._shared.agent_link
-    assert created[0].kwargs["proactive_watcher"] is shell._shared.proactive
+    assert "proactive_watcher" not in created[0].kwargs                # 主动识屏已删（ADR 0016）
     # 点击自言自语的朗读走同一条音频通道（AppShell 持有，进程内唯一）：
     # overlay 拓扑没有 PetWindow 可注入，落点必须是 sprite 壳
     assert created[0].on_self_talk_speak == shell.speak_self_talk

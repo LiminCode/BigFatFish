@@ -2685,7 +2685,7 @@ class AgentLinkManager(QObject):
       桥目录的唯一读方：信号分派 + dsh_state 收敛器两个消费者共享同一份解析）；
     - 监视器生命周期：pause / resume / shutdown / apply_config；
     - set_enabled 安装/卸载编排（授权弹窗、后台安装、hooks 注入/移除）；
-    - 对既有调用面（PetWindow / AppShell / ProactiveScreenWatcher / 测试）的薄转发。
+    - 对既有调用面（PetWindow / AppShell / 测试）的薄转发。
     去抖/节流/完成确认与气泡/音效/动画调度都在本类内实现。
     挂载于 PetWindow，持有 4 个 Agent 的监视器，并根据状态驱动肥鱼动作与气泡。
     """
