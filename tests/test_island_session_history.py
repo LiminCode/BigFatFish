@@ -399,25 +399,25 @@ def test_visible_row_setting_is_normalised(tmp_path, raw, expected):
     assert Config(base=tmp_path).get("agent_link")["session_history_rows"] == expected
 
 
-def test_agent_link_menu_lets_the_user_pick_how_many_rows_show(tmp_path):
-    pet = _MenuPet(Config(base=tmp_path), with_toggle=True)
-    picked: list = []
-    pet.set_session_history_rows = picked.append
-
-    rows_menu = _menu_actions(pet)["最近的对话显示行数"].menu()
-    assert [a.text() for a in rows_menu.actions() if a.isChecked()] == ["10 行"]
-    {a.text(): a for a in rows_menu.actions()}["15 行"].trigger()
-    assert picked == [15]
-
-
-def test_facade_persists_the_row_count_and_refreshes_the_island(overlay_shell):
-    from pet.sprite_menu_facade import SpriteMenuFacade
-
-    seen = []
-    overlay_shell.session_history.changed.connect(lambda: seen.append(1))
-    SpriteMenuFacade(overlay_shell).set_session_history_rows(8)
-    assert overlay_shell._config.get("agent_link")["session_history_rows"] == 8
-    assert seen == [1]
+def test_rows_and_limits_changed_elsewhere_reach_the_island_when_the_shell_refreshes(overlay_shell):
+    """行数 / 保留天数 / 条数 2026-11-19 起在配置全景「最近的对话」那组里改：壳的 ``refresh_settings`` 让岛重取，
+    保留天数 / 条数真变了才重扫一遍 transcript。"""
+    service = overlay_shell.session_history
+    seen, scans = [], []
+    service.changed.connect(lambda: seen.append(1))
+    service.rescan = lambda force=False: scans.append(force)
+    data = dict(overlay_shell._config.get("agent_link"))
+    data["session_history_rows"] = 8
+    overlay_shell._config.set("agent_link", data)
+    overlay_shell.refresh_settings()
+    assert seen == [1] and scans == [], "只改行数：不用重扫"
+    data["session_history_days"] = 3
+    overlay_shell._config.set("agent_link", data)
+    overlay_shell.refresh_settings()
+    assert seen == [1, 1] and scans == [True]
+    overlay_shell.refresh_settings()
+    assert scans == [True], "限额没再变：不重扫"
+    assert "最近的对话显示行数" not in _menu_actions(_MenuPet(Config(base=overlay_shell._config.dir), with_toggle=True))
 
 
 def test_rows_from_the_app_say_where_each_conversation_lives():

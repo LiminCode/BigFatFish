@@ -1277,7 +1277,7 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     """会话小鱼的右键菜单：只有和这个会话有关的动作。"""
     from .context_menus.menu_styles import apply_modern_menu_style, install_modern_check_indicators
     from .context_menus.menu_styles.common import install_responsive_menu_style
-    from .context_menus.shared import add_action, add_submenu
+    from .context_menus.shared import add_action
     from .sprite_menu_facade import SpriteMenuFacade
 
     facade = SpriteMenuFacade(shell, sprite)
@@ -1311,41 +1311,8 @@ def build_session_pet_menu(shell, sprite, actions: SessionPetActions) -> QMenu:
     add_action(menu, t("menu.session.close_this" if frozen else "menu.session.send_one_off"), None,
                lambda: actions.dismiss(sprite), close_on_trigger=True)
 
-    settings = add_submenu(menu, t("menu.session.session_fish_settings"))
-    enabled = settings.addAction(t("menu.session.one_fish_per_session"))
-    enabled.setCheckable(True)
-    enabled.setChecked(bool((facade.cfg.get("agent_link") or {}).get("session_pets", True)))
-    enabled.toggled.connect(lambda on: facade.toggle_session_pets(on))
-    limit_menu = add_submenu(settings, t("menu.session.session_fish_limit"))
-    current = shell._session_pet_limit()
-    for limit in sorted({3, 6, 9, 12, 16, 24, current} - {0}):    # 当前值不在预设里也列出来（自定义填的）
-        item = limit_menu.addAction(t("menu.session.limit_fish", limit=limit))
-        item.setCheckable(True)
-        item.setChecked(limit == current)
-        item.triggered.connect(lambda _checked=False, n=limit: facade.set_session_pets_max(n))
-    limit_menu.addSeparator()
-    add_action(limit_menu, t("menu.session.custom_limit"), None, facade.ask_session_pets_max, close_on_trigger=True)
-    days_menu = add_submenu(settings, t("menu.session.session_fish_keep_days"))
-    current_days = int((facade.cfg.get("agent_link") or {}).get("session_fish_keep_days", 3) or 3)
-    for days in sorted({1, 3, 7, 14, 30, current_days}):
-        item = days_menu.addAction(t("menu.session.keep_day") if days == 1 else t("menu.session.keep_days", days=days))
-        item.setCheckable(True)
-        item.setChecked(days == current_days)
-        item.triggered.connect(lambda _checked=False, n=days: facade.set_session_fish_keep_days(n))
-    theme_menu = add_submenu(settings, t("menu.session.detail_card_colors"))
-    current_theme = _configured_theme_id(facade.cfg)
-    for theme_id, label in session_card_themes.theme_choices():
-        item = theme_menu.addAction(label)
-        item.setCheckable(True)
-        item.setChecked(theme_id == current_theme)
-        item.triggered.connect(lambda _checked=False, t=theme_id: facade.set_session_card_theme(t))
-    size_menu = add_submenu(settings, t("menu.session.detail_card_text_size"))
-    current_size = _configured_text_size(facade.cfg)
-    for size, label in session_card_themes.text_size_choices():
-        item = size_menu.addAction(label)
-        item.setCheckable(True)
-        item.setChecked(size == current_size)
-        item.triggered.connect(lambda _checked=False, n=size: facade.set_session_card_text_size(n))
+    # 上限 / 保留天数 / 配色 / 字号在配置全景的「会话小鱼」那组里改（2026-11-19 起，和主肥鱼菜单一致）
+    add_action(menu, t("menu.session.session_fish_settings"), None, facade.open_session_fish_settings, close_on_trigger=True)
     install_modern_check_indicators(menu)
     install_responsive_menu_style(menu)
     return menu

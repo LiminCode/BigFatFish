@@ -348,3 +348,69 @@ def test_a_list_of_lines_is_its_own_control():
     with pytest.raises(ValueError):                                       # 默认值是列表，单行文本装不下
         st.validate((st.Group(**{**{f: getattr(group, f) for f in group.__dataclass_fields__},
                                  "settings": (st.Setting("work_roots", "text"),), "not_editable": {}}),))
+
+
+# ───────────────────────── Claude Code 联动 / 会话小鱼 / 最近的对话（M4 第六项）：一个配置键、四组 ─────────────────────────
+
+_AGENT_LINK_GROUPS = {"link_win": ("claude", "cursor", "opencode"), "link_wsl": ("claude_wsl",),
+                      "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models",
+                                       "session_card_theme", "session_card_text_size"),
+                      "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max")}
+
+
+def test_agent_link_is_four_groups_on_one_config_key():
+    """按配置全景的账号带和磁贴分：本机联动、WSL 联动（公司带、要有 WSL）、会话小鱼、最近的对话。读写都走 config 的清洗函数。"""
+    from pet import claude_hooks
+    from pet.config import _clean_agent_link_data
+
+    groups = {g.id: g for g in st.GROUPS if g.config_key == "agent_link"}
+    assert set(groups) == set(_AGENT_LINK_GROUPS)
+    for group_id, ids in _AGENT_LINK_GROUPS.items():
+        assert [s.id for s in groups[group_id].settings] == list(ids), group_id
+        for raw in ({}, {"claude": False, "session_pets_max": 99, "crown_models": ["Opus"], "extra": 1}):
+            assert groups[group_id].normalize(raw) == _clean_agent_link_data(raw), "读写都走 config 的清洗（惰性导入，模块本身不带 Qt）"
+    assert groups["link_wsl"].zone == "work" and groups["link_wsl"].available is not None and groups["link_wsl"].unavailable_text
+    assert {groups[g].zone for g in ("link_win", "session_fish", "session_history")} == {"personal"}
+    assert groups["link_wsl"].available() == bool(claude_hooks.wsl_exe())
+    # 每个键恰好在一组里能改，另外三组写明去哪改；dsh / 自定义 Agent / 音效在四组里都只说明不给改
+    produced = set(st.flatten(_clean_agent_link_data({})))
+    declared = {s.id for g in groups.values() for s in g.settings}
+    assert declared <= produced and len(declared) == sum(len(g.settings) for g in groups.values())
+    for g in groups.values():
+        assert set(g.not_editable) == produced - {s.id for s in g.settings}, g.id
+    for key in ("dsh", "custom_agents", "sound_enabled", "sound_volume", "sound_start_path"):
+        assert all(key in g.not_editable for g in groups.values()), key
+
+
+def test_session_fish_declares_the_features_own_bounds_choices_and_labels():
+    from pet import session_card_themes as themes
+    from pet.config import SESSION_PETS_MAX_CAP
+
+    fish = {s.id: s for s in st.group("session_fish").settings}
+    assert fish["session_pets_max"].bounds == (1, SESSION_PETS_MAX_CAP) and fish["session_pets_max"].unit
+    assert fish["session_fish_keep_days"].bounds == (1, 30) and fish["session_fish_keep_days"].unit == "settings.unit.days"
+    assert fish["crown_models"].control == "lines"
+    assert fish["session_card_theme"].control == "choice" and fish["session_card_theme"].choices == tuple(themes.CARD_THEMES)
+    assert dict(fish["session_card_theme"].labels) == {theme_id: f"menu.card_theme.{theme_id}" for theme_id in themes.CARD_THEMES}
+    assert fish["session_card_text_size"].control == "choice" and fish["session_card_text_size"].choices == themes.TEXT_SIZES
+    assert [key for key, _text in fish["session_card_text_size"].labels] == list(themes.TEXT_SIZES), "整数下拉也配文字"
+    history = {s.id: s for s in st.group("session_history").settings}
+    assert history["session_history_rows"].bounds == (3, 20) and history["session_history_days"].bounds == (1, 30)
+    assert history["session_history_max"].bounds == (1, 200)
+    assert all(history[k].unit for k in ("session_history_rows", "session_history_days", "session_history_max"))
+
+
+def test_agent_link_writes_go_through_the_config_cleaner_and_leave_the_other_groups_alone():
+    fish, wsl = st.group("session_fish"), st.group("link_wsl")
+    raw = {"claude": True, "claude_wsl": True, "crown_models": ["fable"], "session_card_text_size": 100}
+    new, errors = st.check_changes(fish, raw, {"session_card_text_size": 115, "crown_models": ["opus", " haiku "]})
+    assert errors == [] and new["session_card_text_size"] == 115 and new["crown_models"] == ["opus", "haiku"]
+    assert new["claude"] is True and new["claude_wsl"] is True, "别的组的键原样留着"
+    assert st.check_changes(fish, raw, {"session_card_text_size": "115"})[1] == [{"id": "session_card_text_size", "code": "not_a_choice"}]
+    assert st.check_changes(fish, raw, {"crown_models": ["Fable"]})[1] == [{"id": "crown_models", "code": "rejected"}], "清洗会改成小写：拒"
+    assert st.check_changes(fish, raw, {"session_pets_max": 41})[1] == [{"id": "session_pets_max", "code": "out_of_range"}]
+    assert st.check_changes(st.group("session_history"), raw, {"session_history_max": 500})[1] == \
+        [{"id": "session_history_max", "code": "out_of_range"}]
+    new, errors = st.check_changes(wsl, raw, {"claude_wsl": False})
+    assert errors == [] and new["claude_wsl"] is False and new["claude"] is True
+    assert st.check_changes(wsl, raw, {"claude": False})[1] == [{"id": "claude", "code": "unknown"}], "本机那条在另一组"

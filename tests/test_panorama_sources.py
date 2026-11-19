@@ -200,3 +200,18 @@ def test_vault_tiles_are_named_after_the_clone_folder():
     assert _node(graph, "vault_personal")["title"] == "handbook 克隆"
     assert _node(graph, "vault_work")["title"] == "field-notes 克隆"
     assert _node(graph, "gh_personal")["title"] == "GitHub · acme-home" and _node(graph, "gh_work")["title"] == "GitHub · acme-work"
+
+
+def test_session_fish_and_recent_chats_are_tiles_of_their_own_and_the_link_tiles_open_their_groups():
+    """agent_link 一个配置键分了四组：两块联动磁贴各开自己那组，会话小鱼和最近的对话各自一块磁贴（它们不调模型，走 link 路）。"""
+    cfg = samples.all_on_config()
+    graph = sources.build(samples.facts(cfg=cfg))
+    assert _node(graph, "f_link_win")["settings"] == "link_win" and "page" not in _node(graph, "f_link_win")
+    assert _node(graph, "f_link_wsl")["settings"] == "link_wsl"
+    fish, chats = _node(graph, "f_session_fish"), _node(graph, "f_session_history")
+    assert fish["settings"] == "session_fish" and fish["state"] == "ok" and fish["kind"] == "link"
+    assert chats["settings"] == "session_history" and chats["state"] == "ok"
+    cfg["agent_link"]["session_pets"] = False
+    cfg["agent_link"]["session_history"] = False
+    off = sources.build(samples.facts(cfg=cfg))
+    assert _node(off, "f_session_fish")["state"] == "off" and _node(off, "f_session_history")["state"] == "off"

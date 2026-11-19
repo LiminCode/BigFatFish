@@ -338,7 +338,8 @@ def test_the_card_follows_its_text_size_not_the_bubble_scale(tmp_path):
         large.deleteLater()
 
 
-def test_both_menus_offer_the_text_size_and_reopening_uses_the_new_one(shell):  # noqa: F811
+def test_the_text_size_changed_elsewhere_is_used_when_the_card_reopens(shell):  # noqa: F811
+    """字号 2026-11-19 起在配置全景「会话小鱼」那组里改（整数下拉）：菜单上没有了，开着的卡下次打开用新的。"""
     from tests.test_session_card_themes import _find
 
     fish = _session(shell)
@@ -347,11 +348,11 @@ def test_both_menus_offer_the_text_size_and_reopening_uses_the_new_one(shell):  
     actions.show_card(fish)
     first = actions._card
     assert first.scale == 1.0
-    for menu in (shell._build_menu_for(fish), shell._build_menu_for(shell.sprite)):
-        large = _find(menu, "大")
-        assert large is not None and large.isCheckable() and not large.isChecked()
-    _find(shell._build_menu_for(fish), "大").trigger()
-    assert shell._config.get("agent_link")["session_card_text_size"] == 115
+    assert _find(shell._build_menu_for(fish), "详情卡文字大小") is None and _find(shell._build_menu_for(shell.sprite), "大") is None
+    data = dict(shell._config.get("agent_link"))
+    data["session_card_text_size"] = 115
+    shell._config.set("agent_link", data)
+    shell.refresh_settings()
     actions.show_card(fish)
     assert actions._card is not first and actions._card.scale == 1.15
 

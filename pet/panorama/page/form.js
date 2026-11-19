@@ -69,7 +69,7 @@ function control(r) {
     (r.unit ? `<span class="funit">${esc(r.unit)}</span>` : '');
   if (r.control === 'choice' || r.control === 'choice_or_text') {
     const free = r.control === 'choice_or_text', custom = free && (!!st.custom[r.id] || r.choices.indexOf(value) < 0);
-    const options = r.choices.map((c, i) => `<option value="${esc(c)}"${!custom && c === value ? ' selected' : ''}>${esc(optionText(r, c, i))}</option>`).join('') +
+    const options = r.choices.map((c, i) => `<option value="${esc(c)}"${!custom && String(c) === String(value) ? ' selected' : ''}>${esc(optionText(r, c, i))}</option>`).join('') +
       (free ? `<option value="${CUSTOM}"${custom ? ' selected' : ''}>${esc(S.form_custom)}</option>` : '');
     return `<select data-set="${key}"${off} id="${id}">${options}</select>` + (custom ?
       `<input type="text" class="fcustom" data-custom="${key}" value="${esc(r.choices.indexOf(value) < 0 ? value : '')}"${off} aria-label="${esc(S.form_custom_label)}">` : '');
@@ -148,7 +148,9 @@ host.addEventListener('change', ev => {
   }
   if (r.control === 'choice_or_text' && t.value === CUSTOM) { st.custom[r.id] = true; return draw(); }
   st.custom[r.id] = false;
-  commit({[r.id]: t.value});
+  /* <option> 的值只能是字串；可选值可以是整数（详情卡文字大小）——交回去前换回声明的那个值 */
+  const picked = r.choices.find(c => String(c) === String(t.value));
+  commit({[r.id]: picked === undefined ? t.value : picked});
 }, on);
 host.addEventListener('input', ev => {
   const t = ev.target.closest('[data-draft]');

@@ -39,6 +39,7 @@ from typing import Any, Callable
 
 from . import claude_hooks
 from . import memory_distill as md
+from . import session_card_themes as sct
 from . import personal_vault as pv
 from . import slack_watch as sw
 from . import work_briefing as wb
@@ -318,6 +319,50 @@ def _notes_prompt(language: str) -> Setting:
                    text=f"settings.work_notes.prompt_{language}", hint="notes.settings.prompt_hint")
 
 
+#: ``agent_link`` 一个配置键分四组，按配置全景的账号带和磁贴分：本机联动 / WSL 联动（公司带）/ 会话小鱼 / 最近的对话。
+#: 每组的 ``not_editable`` = 其余三组的键 + 四组都不给改的几个（见 _AGENT_LINK_ELSEWHERE）。
+_AGENT_LINK_GROUPS = {
+    "link_win": ("claude", "cursor", "opencode"),
+    "link_wsl": ("claude_wsl",),
+    "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models", "session_card_theme",
+                     "session_card_text_size"),
+    "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max"),
+}
+_AGENT_LINK_ELSEWHERE = {
+    "dsh": "DSH 联动的菜单项 2026-10-14 下线；从页面打开只会起一个没有桥接插件的监视器，所以不给开（要不要整个删掉另议）",
+    "custom_agents": "自定义联动 Agent 是 {key, name, path} 的列表，现有控件装不下：先直接改 config.json，页面控件下一步做",
+    **{key: "提示音效留在设置窗口「互动 · Agent 联动音效」，M7 搬「互动」时一起走" for key in (
+        "sound_enabled", "sound_start_enabled", "sound_done_enabled", "sound_error_enabled", "sound_start_path",
+        "sound_done_path", "sound_error_path", "sound_volume", "sound_cooldown_seconds")},
+}
+
+
+#: 会话小鱼上限的硬顶，抄自 ``config.SESSION_PETS_MAX_CAP``（不能导入 ``pet.config``：它经 speech_bubble_text 带进 Qt，
+#: 而本模块要在没有 Qt 的进程里能用）。两边对不上时 ``tests/test_settings_table.py`` 会红。
+_SESSION_PETS_MAX_CAP = 40
+
+
+def _agent_link_normalize(raw: Any) -> dict:
+    """``config._clean_agent_link_data``：读、默认值、校验都是它。惰性导入，理由见上。"""
+    from .config import _clean_agent_link_data
+
+    return _clean_agent_link_data(raw)
+
+
+def _agent_link_not_editable(own: str) -> dict:
+    out = dict(_AGENT_LINK_ELSEWHERE)
+    for group_id, keys in _AGENT_LINK_GROUPS.items():
+        if group_id != own:
+            out.update({key: f"「{group_id}」那一组里改" for key in keys})
+    return out
+
+
+def _agent_link_group(group_id: str, zone: str, settings: tuple, title_key: str, **extra) -> Group:
+    assert tuple(s.id for s in settings) == _AGENT_LINK_GROUPS[group_id]
+    return Group(group_id, "automation", "agent_link", zone, _agent_link_normalize, settings, title_key=title_key,
+                 not_editable=_agent_link_not_editable(group_id), **extra)
+
+
 GROUPS: tuple[Group, ...] = (
     # 工作简报：到点让 WSL 里公司账号的 Claude Code 只读地汇总几个来源。模型名和 effort 会拼进 shell 命令、
     # 提示词会交给带工具的 AI：这一组的每一项写入都要过 work_briefing.normalize 的白名单。
@@ -406,4 +451,40 @@ GROUPS: tuple[Group, ...] = (
     ), title_key="distill.settings.section_work", available=lambda: bool(claude_hooks.wsl_exe()),
         unavailable_text="distill.settings.work_no_wsl",
         not_editable={key: "个人侧那一组（distill_personal）里改；总开关也在那里，它同时管抽取" for key in _DISTILL_PERSONAL}),
+    # Claude Code 联动：开关只是启停监视器，写 ~/.claude/settings.json 的 hooks 另要用户同意（ADR 0006），所以这里没有「装 hooks」
+    # 这一项——它是图上的一个动作，不是设置。cursor / opencode 只读监听别的工具的事件文件，用得少，收在「高级」。
+    _agent_link_group("link_win", "personal", (
+        Setting("claude", "toggle", text="settings.link_win.claude"),
+        Setting("cursor", "toggle", disclosure="advanced", text="settings.link_win.cursor"),
+        Setting("opencode", "toggle", disclosure="advanced", text="settings.link_win.opencode"),
+    ), "panorama.feature.link_win"),
+    _agent_link_group("link_wsl", "work", (
+        Setting("claude_wsl", "toggle", text="settings.link_wsl.claude_wsl"),
+    ), "panorama.feature.link_wsl", available=lambda: bool(claude_hooks.wsl_exe()), unavailable_text="settings.link_wsl.no_wsl"),
+    # 会话小鱼：数字的范围照抄 _clean_agent_link_data 夹值用的那几对；桂冠片段由 session_crown.normalize_tokens 小写去重，
+    # 大写会被判 rejected；配色 / 字号的可选值直接取功能自己的表，字号是整数下拉。
+    _agent_link_group("session_fish", "personal", (
+        Setting("session_pets", "toggle", text="menu.shared.one_fish_per_session", hint="settings.session_fish.session_pets_hint"),
+        Setting("session_pets_max", "number", bounds=(1, _SESSION_PETS_MAX_CAP), unit="settings.unit.fish",
+                text="menu.shared.session_fish_limit", hint="settings.session_fish.session_pets_max_hint"),
+        Setting("session_fish_keep_days", "number", bounds=(1, 30), unit="settings.unit.days",
+                text="menu.shared.session_fish_keep_days", hint="settings.session_fish.session_fish_keep_days_hint"),
+        Setting("crown_models", "lines", text="menu.shared.laurel_which_model", hint="settings.session_fish.crown_models_hint"),
+        Setting("session_card_theme", "choice", choices=tuple(sct.CARD_THEMES),
+                labels=tuple((theme_id, f"menu.card_theme.{theme_id}") for theme_id in sct.CARD_THEMES),
+                text="menu.shared.detail_card_colors", hint="settings.session_fish.session_card_theme_hint"),
+        Setting("session_card_text_size", "choice", choices=sct.TEXT_SIZES,
+                labels=tuple((size, f"menu.card_text_size.{sct.text_size_name(size)}") for size in sct.TEXT_SIZES),
+                text="menu.shared.detail_card_text_size", hint="settings.session_fish.session_card_text_size_hint"),
+    ), "panorama.feature.session_fish"),
+    # 灵动岛「最近的对话」：保留几天、最多几条这两项以前只能手改 config.json，这次一起露出来。
+    _agent_link_group("session_history", "personal", (
+        Setting("session_history", "toggle", text="menu.shared.remember_recent_chats", hint="settings.session_history.session_history_hint"),
+        Setting("session_history_rows", "number", bounds=(3, 20), unit="settings.unit.rows",
+                text="menu.shared.recent_chats_rows", hint="settings.session_history.session_history_rows_hint"),
+        Setting("session_history_days", "number", bounds=(1, 30), unit="settings.unit.days",
+                text="settings.session_history.session_history_days"),
+        Setting("session_history_max", "number", bounds=(1, 200), unit="settings.unit.items",
+                text="settings.session_history.session_history_max"),
+    ), "panorama.feature.session_history"),
 )

@@ -210,6 +210,8 @@ sequenceDiagram
 
 - 七种控件：开关（`role="switch"` 的复选框）、下拉、可自填的下拉（值不在可选值里就自动打开自填框）、数字、单行文本、长文本、
   一行一个的列表（`lines`：值是字符串列表，框里一行一项；存的时候每行去掉首尾空白、空行不要，打回原样不算改过）。
+  下拉的可选值可以是整数（详情卡文字大小 85 / 100 / 115 / 130）：`<option>` 的值只能是字串，提交时按 `choices` 换回声明的那个值，
+  服务那边按类型校验（字串 `"115"` 是 `not_a_choice`）。
   收在「高级」里的折起来，标出有几项。每个控件都有 `<label for>` 指着它；状态行是 `role="status"`。
 - 数字可以带上下限和单位（设置表里的 `Setting.bounds` / `unit`，描述里的 `min` / `max` / `unit`）：输入框带 `min` / `max`，整数范围再带 `step="1"`，
   后面跟着单位。超出范围或该是整数却带小数的，页面自己就不交，那一行写明能填多少到多少；服务那边同样按 `bounds` 拒（`out_of_range`）。
@@ -230,8 +232,16 @@ sequenceDiagram
 
 ### 改设置：页面上的入口
 
-现在只有**工作简报**这一组搬过来了（2026-11-17）。设置窗口里那一组的控件和保存代码同时删掉，原处留一行说明和一个按钮
-（ADR 0014：任何时刻一项设置只有一个编辑入口）。
+已搬过来的组（2026-11-19）：工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏（两组），以及 `agent_link` 一个配置键分成的四组——
+本机联动 `link_win`、WSL 联动 `link_wsl`（公司带）、会话小鱼 `session_fish`、最近的对话 `session_history`。
+搬一组，设置窗口里那一组的控件和保存代码同时删掉，原处留一行说明和一个按钮（ADR 0014：任何时刻一项设置只有一个编辑入口）。
+
+`agent_link` 那四组在设置窗口里本来就没有控件（只有提示音效，仍留在「互动」里，M7 再搬），删的是**右键菜单里的选值子菜单**：
+开关留在菜单（通道、每个会话一只小鱼、记录最近的对话），上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数换成一条「会话小鱼设置…」
+（`SpriteMenuFacade.open_session_fish_settings` → `open_config_panorama(focus="session_fish")`，会话小鱼自己的菜单同一条）。
+页面改完的生效链：`_apply_external_config_change` → 各窗 `refresh_pet_settings` → `AgentLinkManager.apply_config` 启停监视器
+（**从不写 hooks**，ADR 0006；装 hooks 的「修复」动作是下一步）；`OverlayShell.refresh_settings` → `_sync_session_settings`：
+关掉开关在场的会话小鱼离场、核对一次名册（保留天数）、换桂冠、岛上列表重取，「最近的对话」的保留天数 / 条数真变了才重扫一遍 transcript。
 
 ```mermaid
 flowchart LR

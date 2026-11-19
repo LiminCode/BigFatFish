@@ -143,22 +143,6 @@ def _theme_of(shell) -> str:  # noqa: F811
     return shell._config.get("agent_link")["session_card_theme"]
 
 
-@pytest.mark.parametrize("which", ["session fish", "main fish"])
-def test_both_menus_offer_the_themes_by_name(shell, which):  # noqa: F811
-    fish = _session(shell)
-    menu = shell._build_menu_for(fish if which == "session fish" else shell.sprite)
-
-    entry = _find(menu, "详情卡配色")
-    assert entry is not None and entry.menu() is not None
-    choices = entry.menu().actions()
-    assert [a.text() for a in choices] == [label for _id, label in themes.theme_choices()]
-    assert [a.text() for a in choices if a.isChecked()] == [themes.CARD_THEMES[_theme_of(shell)]["label"]]
-
-    night = next(a for a in choices if a.text() == themes.CARD_THEMES["night"]["label"])
-    night.trigger()
-    assert _theme_of(shell) == "night"
-
-
 def test_a_new_choice_shows_on_the_card_the_next_time_it_opens(shell):  # noqa: F811
     fish = _session(shell)
     shell.session_actions.loader = lambda detail: detail
@@ -166,7 +150,10 @@ def test_a_new_choice_shows_on_the_card_the_next_time_it_opens(shell):  # noqa: 
     card = shell.session_actions._card
     assert _painted(card)[0].name() == themes.CARD_THEMES[themes.DEFAULT_CARD_THEME]["background"]
 
-    _find(shell._build_menu_for(fish), themes.CARD_THEMES["sakura"]["label"]).trigger()
+    data = dict(shell._config.get("agent_link"))                 # 配色在配置全景「会话小鱼」那组里改（2026-11-19 起）
+    data["session_card_theme"] = "sakura"
+    shell._config.set("agent_link", data)
+    shell.refresh_settings()
     shell._on_sprite_click(fish, "")
 
     card = shell.session_actions._card

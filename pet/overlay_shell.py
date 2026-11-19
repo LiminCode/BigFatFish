@@ -1052,6 +1052,8 @@ class OverlayShell(QObject):
         if agent_link_manager is not None:
             self.session_history.attach(agent_link_manager)
         self.session_history.start()
+        self._session_history_limits_seen = (self._agent_link_value("session_history_days", 7),
+                                             self._agent_link_value("session_history_max", 30))
         # 最近 X 天开过、进程已不在的对话 → 冻结的小鱼（用户 2026-11-02：小鱼要一直在，除非主动关闭）
         self.session_pets.attach_history(self.session_history)
         # 呈现/提醒状态（PetWindow 同名私有面的 sprite 等价物；window_alerts 的
@@ -3155,6 +3157,7 @@ class OverlayShell(QObject):
         """外部配置变更应用点（AppShell._apply_external_config_change 扇出）。"""
         self._apply_window_capabilities()
         self._apply_tray_icon_setting()
+        self._sync_session_settings()
         # self_talk 族热改：重读字段并按新口径重排程（schedule_self_talk
         # 先停表再按 enabled 早退，开/关/改间隔都收敛到这一条路径）。
         self._load_self_talk_settings()
@@ -3675,6 +3678,26 @@ class OverlayShell(QObject):
     def _flush_session_history(self) -> None:
         """退出步骤：「最近的对话」有没写的立刻落盘。"""
         self.session_history.flush()
+
+    def _sync_session_settings(self) -> None:
+        """``agent_link`` 里会话小鱼 / 最近的对话那几项在别处改了（配置全景、设置进程）：和以前在菜单上改一样当场生效。
+
+        上限和冻结保留天数是读时取值，这里只补菜单那条路顺手做的事：关掉开关 → 在场的会话小鱼离场；保留天数 → 核对一次名册；
+        桂冠 → 在场的小鱼换记号；「最近的对话」→ 岛上列表重取，保留天数 / 条数真变了才重扫一遍 transcript（扫一遍要读文件，不白跑）。"""
+        controller = getattr(self, "session_pets", None)
+        if controller is not None:
+            if not self._session_pets_enabled():
+                controller.clear()
+            else:
+                controller.reconcile()
+                controller.refresh_badges()
+        service = getattr(self, "session_history", None)
+        if service is not None:
+            service.refresh()
+            limits = (self._agent_link_value("session_history_days", 7), self._agent_link_value("session_history_max", 30))
+            if limits != getattr(self, "_session_history_limits_seen", limits):
+                service.rescan(force=True)
+            self._session_history_limits_seen = limits
 
     def _session_pets_enabled(self) -> bool:
         agent_cfg = self._config.get("agent_link") or {}

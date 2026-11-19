@@ -435,3 +435,14 @@ def test_every_form_string_exists_in_both_languages():
     for language in ("zh", "en"):
         table = i18n.table(language)
         assert [key for key in keys if not str(table.get(f"panorama.ui.{key}") or "").strip()] == []
+
+
+def test_an_integer_choice_is_sent_back_as_a_number(engine):
+    """下拉的值可以是整数（详情卡文字大小 85 / 100 / 115 / 130）：<option> 的值是字串，交回去得换回原来的类型。"""
+    desc = _desc()
+    desc["settings"].append({"id": "size", "control": "choice", "title": "T:size", "hint": "", "value": 100, "default": 100,
+                             "choices": [85, 100, 115, 130], "labels": ["small", "", "large", ""], "commit": "immediate",
+                             "disclosure": "primary", "depends_on": "", "builtin": None})
+    out = _run(engine, desc, [_ok(desc, size=115)], "fire('change', {set: 'size'}, '115');")
+    assert out["sent"][0]["changes"] == {"size": 115}
+    assert 'value="115" selected' in out["html"] and ">small · 85<" in out["html"] and ">100<" in out["html"]

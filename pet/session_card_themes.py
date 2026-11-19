@@ -99,6 +99,11 @@ def normalize_text_size(value) -> int:
     return size if size in TEXT_SIZES else DEFAULT_TEXT_SIZE
 
 
+def text_size_name(size: int) -> str:
+    """档位的英文名（``small`` / ``standard`` / ``large`` / ``larger``），文案键 ``menu.card_text_size.<名>`` 的后半。"""
+    return _TEXT_SIZE_NAMES[normalize_text_size(size)]
+
+
 def text_size_choices() -> list[tuple[int, str]]:
     """``[(百分比, 名字), …]``，给菜单用。"""
     return [(size, t(f"menu.card_text_size.{_TEXT_SIZE_NAMES[size]}")) for size in TEXT_SIZES]
