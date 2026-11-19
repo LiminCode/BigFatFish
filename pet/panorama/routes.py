@@ -13,6 +13,9 @@
   文件，要令牌。能读哪些由 ``files.py`` 把关；这里只把它的拒绝翻成状态码（``not_viewable`` / ``not_found`` → 404，
   ``bad_path`` → 400，``unavailable`` → 503：要去 WSL 里读而那边没回话）。没给读取器（``files=None``）时这两个网址不存在。
 
+- ``POST /api/actions/<动作>``：页面上的一个动作（现在只有 ``repair_hooks``：给联动通道装 hooks），要令牌。处理器在
+  ``actions.py``，由应用登记进服务；这里只把 ``ActionError`` 翻成状态码。没给设置入口时这个网址也不存在。
+
 - ``GET /api/settings/<组>``、``PATCH /api/settings/<组>``、``GET /api/audit``：读、改一组设置，翻审计记录，都要令牌。
   这是本机服务第一批**会改东西**的接口。守门检查（来源、令牌、JSON、大小）在 ``server.py``；改之前的每一道校验在
   ``settings_api.py``；这里只把结果和拒绝翻成响应。拒绝时除了代码还带着页面用得上的东西（哪几项不对、现在的值）。
@@ -25,6 +28,7 @@ from __future__ import annotations
 from urllib.parse import parse_qs
 
 from . import render
+from .actions import ActionError
 from .feed import Feed
 from .files import FileError
 from .settings_api import Busy, SettingsError
@@ -77,6 +81,19 @@ def _add_settings_routes(router: Router, port) -> None:
     router.add("GET", "/api/audit", audit)
 
 
+def _add_action_routes(router: Router, port) -> None:
+    """``port.run_action(名字, 请求体)``：它自己转到界面线程上去办。"""
+    def run(request: Request) -> Response:
+        try:
+            return Response.json(port.run_action(request.params["name"], request.json()))
+        except ActionError as exc:
+            return Response.error(exc.status, exc.code)
+        except Busy:
+            return Response.error(503, "busy")
+
+    router.add("POST", "/api/actions/{name}", run)
+
+
 def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float = LONG_POLL_SECONDS) -> Router:
     router = Router()
     router.static("/", lambda: render.shell().encode("utf-8"), "text/html; charset=utf-8")
@@ -106,4 +123,5 @@ def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float =
         _add_file_routes(router, files)
     if settings is not None:
         _add_settings_routes(router, settings)
+        _add_action_routes(router, settings)
     return router

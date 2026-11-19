@@ -621,3 +621,57 @@ def test_pending_snapshot_rereads_its_own_file_a_bounded_number_of_times(engine)
     first = _boot(engine, setup, "tick();")
     assert first["reloads"] == 1 and first["hash"] == "1"                 # 重读次数记在 # 后面
     assert _boot(engine, setup + "location.hash = '#40';")["timers"] == 0  # 到头了就不再排下一次
+
+
+# ───────────────────────── 待处理里的「修复」 ─────────────────────────
+
+def _no_hooks_graph():
+    return sources.build(samples.facts(win=samples.home(hooks={"Stop": {"total": 1, "fish": 0}})))
+
+
+def test_a_quest_with_an_action_gets_a_repair_button_only_where_there_is_a_service(engine):
+    i18n.set_language("zh")
+    graph = _no_hooks_graph()
+    data = json.dumps(render.page_data(graph), ensure_ascii=False)
+    served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
+    assert served["quests"].count('data-action="repair_hooks"') == 1 and 'data-agent="claude"' in served["quests"]
+    assert "disabled" not in served["quests"] and ">修复<" in served["quests"]
+    snapshot = _run(engine, graph)
+    assert 'data-action="repair_hooks"' in snapshot["quests"] and "disabled" in snapshot["quests"], "离线快照：按钮灰着"
+
+
+REPAIR_HARNESS = """
+var confirms = [], answer = true, posted = [], reply = {status: 200, body: {state: 'installed'}};
+var confirm = function (text) { confirms.push(text); return answer; };
+function done(value, failed) {
+  return {then: function (ok, err) { var h = failed ? err : ok; if (!h) return done(value, failed);
+    try { return done(h(value), false); } catch (e) { return done(e, true); } }};
+}
+var api = function () {}; api.post = function (path, body) { posted.push({path: path, body: body}); return reply === 'gone' ? done(new Error('gone'), true) : done(reply, false); };
+var el = {dataset: {action: 'repair_hooks', agent: 'claude_wsl', side: 'wsl'}, disabled: false, textContent: '修复'};
+var S = {repair: '修复', repair_confirm_win: 'WIN?', repair_confirm_wsl: 'WSL?', repair_working: '正在配置…', repair_installed: '已装好',
+         repair_pending: '正在配置 WSL…', repair_failed: '没装成', repair_lost: '连接断了'};
+"""
+
+
+def _repair(engine, steps: str) -> dict:
+    return _evaluate(engine, FAKE_DOM + REPAIR_HARNESS + render.bundle(("util.js", "repair.js")) + steps +
+                     "\nreturn JSON.stringify({confirms: confirms, posted: posted, text: el.textContent, disabled: el.disabled, out: out});")
+
+
+def test_repair_asks_first_posts_the_agent_and_writes_the_outcome_on_the_button(engine):
+    out = _repair(engine, "var out = null; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["confirms"] == ["WSL?"] and out["posted"] == [{"path": "/api/actions/repair_hooks", "body": {"agent": "claude_wsl"}}]
+    assert out["out"] == "installed" and out["text"] == "已装好" and out["disabled"] is True
+
+
+def test_declining_the_confirm_posts_nothing(engine):
+    out = _repair(engine, "answer = false; var out = 'untouched'; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["confirms"] == ["WSL?"] and out["posted"] == [] and out["out"] is None and out["text"] == "修复"
+
+
+def test_a_failed_or_lost_repair_lets_the_user_try_again(engine):
+    out = _repair(engine, "reply = {status: 500, body: {error: 'action_failed'}}; var out = null; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["out"] == "failed" and out["text"] == "没装成" and out["disabled"] is False
+    out = _repair(engine, "reply = 'gone'; var out = null; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["out"] == "lost" and out["text"] == "连接断了" and out["disabled"] is False

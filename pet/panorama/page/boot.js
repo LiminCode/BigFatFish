@@ -5,7 +5,7 @@
    - 本机服务（127.0.0.1 上的页面）：令牌从网址的 # 片段里取，马上从地址栏抹掉，之后只放在请求头里；
      向 /api/graph 要数据。同一个标签页刷新时令牌从 sessionStorage 里取回。
      片段里令牌后面可以跟 &settings=<组>（设置窗口里点「到配置全景里改」时肥鱼这样开）：第一张图画完就翻到那一组设置。
-     改设置走 api.patch：JSON、PATCH、带令牌；服务的每一种回答（包括 4xx）都原样交给表单，只有连不上才算失败。
+     改设置走 api.patch、动作走 api.post：JSON、带令牌；服务的每一种回答（包括 4xx）都原样交给调用方，只有连不上才算失败。
      拿到第一份之后带着它的编号去「等更新的」（/api/graph?after=编号）：服务把请求挂住，有新数据的那一刻才回，
      页面原地重画并保留选中状态。标签页藏起来时不等——服务靠这个知道「没人在看」，空闲够久就自停。
 
@@ -49,15 +49,19 @@ import {start} from './app.js';
       return response.json();
     });
   }
-  api.patch = function (path, data) {   /* 结果是 {status, body}；不按状态码抛，只有连不上才 reject */
-    var headers = {'Content-Type': 'application/json'}, status = null;
-    headers[TOKEN_HEADER] = token;
-    return fetch(path, {method: 'PATCH', headers: headers, body: JSON.stringify(data)}).then(function (response) {
-      status = response.status;
-      return response.json();
-    }).then(function (body) { return {status: status, body: body || {}}; },
-            function (error) { if (status === null) throw error; return {status: status, body: {}}; });
-  };
+  function send(method) {     /* 结果是 {status, body}；不按状态码抛，只有连不上才 reject */
+    return function (path, data) {
+      var headers = {'Content-Type': 'application/json'}, status = null;
+      headers[TOKEN_HEADER] = token;
+      return fetch(path, {method: method, headers: headers, body: JSON.stringify(data)}).then(function (response) {
+        status = response.status;
+        return response.json();
+      }).then(function (body) { return {status: status, body: body || {}}; },
+              function (error) { if (status === null) throw error; return {status: status, body: {}}; });
+    };
+  }
+  api.patch = send('PATCH');  /* 改设置 */
+  api.post = send('POST');    /* 动作（待处理里的「修复」） */
 
   var view = null, revision = 0, waiting = false, dead = false;
 

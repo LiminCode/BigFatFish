@@ -3464,11 +3464,16 @@ class AppShell:
         ``focus``：页面画完就直接翻到的那一组设置（设置窗口里「到配置全景里改」经指令通道传来）。"""
         service = getattr(self, "_panorama_service", None)
         if service is None or not shiboken6.isValid(service):
+            from .panorama import actions as panorama_actions
             from .panorama.service import PanoramaService
 
-            # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条
-            service = self._panorama_service = PanoramaService(self.config, health=self._panorama_health,
-                                                               apply=self._apply_external_config_change, parent=self.app)
+            # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
+            # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧。
+            service = self._panorama_service = PanoramaService(
+                self.config, health=self._panorama_health, apply=self._apply_external_config_change, parent=self.app,
+                actions={"repair_hooks": panorama_actions.repair_hooks(
+                    lambda: getattr(getattr(self, "_shared", None), "agent_link", None),
+                    lambda side: self._panorama_service.refresh(side))})
         service.open(focus=focus)
 
     def _panorama_health(self) -> tuple[str, str]:

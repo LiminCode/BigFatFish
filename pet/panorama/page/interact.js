@@ -6,6 +6,7 @@ import {esc} from './util.js';
 import {viewer} from './viewer.js';
 import {memory} from './memory.js';
 import {settingsPanel} from './settings.js';
+import {actionButton, runAction} from './repair.js';
 
 export function interact(M, E, map, kept, api) {
 const {G, R, N, W, H} = M;
@@ -44,6 +45,7 @@ function detail(id) { const box = document.getElementById('detail');
   /* 要处理的（坏了、待授权、警告）在前，这台机器上没有的垫底；探测不到的和正常的不分先后，保持数据给的顺序 */
   const rank = r => r.state === 'off' ? 2 : r.state === 'ok' || r.state === 'unknown' || r.state === 'live' ? 1 : 0;
   const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
+  const todo = G.quests.find(q => q.node === id && q.action);     /* 这块磁贴有能点的动作（装 hooks）：详情里也给一个按钮 */
   const nb = (list, key) => list.map(e => `<button data-go="${e[key]}"><i class="dot ${e.state === 'broken' ? 'bad' : e.state}"></i>${esc(N[e[key]].title)}${e.label ? ' · ' + esc(e.label) : ''}<span style="color:var(--muted)">${ESTATE[e.state]}</span></button>`).join('');
   box.innerHTML = `<h2>${esc(k.name || n.kind)} · ${esc(R[n.region].title)}</h2><h3>${esc(n.title)}</h3>
     <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-top:4px"><i class="dot ${n.state}"></i>${STATE[n.state] || ''}</div>
@@ -51,7 +53,7 @@ function detail(id) { const box = document.getElementById('detail');
     ${rows.length ? `<div class="list">${rows.map(r => `<div><i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small>${r.view ? viewBtn(r.view, r.name, 'peek') : ''}</div>` +
       (r.more ? `<dl class="more">${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : '')).join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
-    <div class="btns">${n.settings ? `<button class="btn" data-settings="${esc(n.settings)}" data-title="${esc(n.title)}"${api ? '' : ` disabled title="${esc(S.settings_needs_service)}"`}>${esc(S.settings_open)}</button>` : ''}${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
+    <div class="btns">${actionButton(S, todo, api).replace(' mini', '')}${n.settings ? `<button class="btn" data-settings="${esc(n.settings)}" data-title="${esc(n.title)}"${api ? '' : ` disabled title="${esc(S.settings_needs_service)}"`}>${esc(S.settings_open)}</button>` : ''}${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }
@@ -62,13 +64,16 @@ function search(text) { const q = text.trim().toLowerCase(); if (!q) return pain
   paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), ...(n.items || []).reduce((all, p) => all.concat((p.more || []).map(m => m[1])), []), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
 map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
 document.getElementById('detail').addEventListener('click', ev => {
+  const act = ev.target.closest('[data-action]'); if (act) return act.disabled || runAction(api, S, act);
   const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);
   const see = ev.target.closest('[data-view]'); if (see) return files.open(see.dataset.view, see.dataset.title);
   const set = ev.target.closest('[data-settings]'); if (set) return panel.open(set.dataset.settings, set.dataset.title);
   if (ev.target.closest('[data-memory]')) return memo.open();
   const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } }, on);
-document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span></div>`).join('');
-document.getElementById('quests').addEventListener('click', ev => { const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); }, on);
+document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span>${actionButton(S, q, api)}</div>`).join('');
+document.getElementById('quests').addEventListener('click', ev => {
+  const act = ev.target.closest('[data-action]'); if (act) return act.disabled || runAction(api, S, act);
+  const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); }, on);
 document.getElementById('lines').innerHTML = Object.entries(G.lines).map(([k, l]) => `<button class="chip" data-line="${k}" title="${esc(l.tip)}"><i style="background:${l.color}"></i>${esc(l.name)}</button>`).join('');
 document.getElementById('lines').addEventListener('click', ev => { const c = ev.target.closest('[data-line]'); if (!c) return;
   pickLine(c.dataset.line === lineOn ? null : c.dataset.line); }, on);

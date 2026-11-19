@@ -231,8 +231,9 @@ def claude_code_windows(g: Graph, f: dict) -> None:
     g.edge("cc_win", "plug_win", "config")
     if items:
         g.quest("unknown", L("quest.personal_connectors", n=len(items)), "conn_p_rest")
-    if link_on and not hooks:
-        g.quest("bad", L("quest.link_no_hooks", side=L("side.win")), "set_win")
+    if link_on and not hooks:        # 页面上能直接「修复」：动作走 POST /api/actions/repair_hooks，先问一次同意（ADR 0006）
+        g.quest("bad", L("quest.link_no_hooks", side=L("side.win")), "set_win",
+                action={"name": "repair_hooks", "agent": "claude", "side": "win"})
     g.quest("info", L("quest.memory_coverage", n=c["memory_count"], total=c["projects"]), "mem_win")
 
 
@@ -374,7 +375,8 @@ def claude_code_wsl(g: Graph, f: dict) -> None:
         if i["state"] == "bad":
             g.quest("bad", L("quest.connector_failed", name=i["name"], detail=i["detail"]), "conn_w_rest")
     if link_on and not hooks:
-        g.quest("bad", L("quest.link_no_hooks", side=L("side.wsl")), "set_wsl")
+        g.quest("bad", L("quest.link_no_hooks", side=L("side.wsl")), "set_wsl",
+                action={"name": "repair_hooks", "agent": "claude_wsl", "side": "wsl"})
 
 
 @source

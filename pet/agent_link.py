@@ -2923,6 +2923,10 @@ class AgentLinkManager(QObject):
             elif not should_run and monitor._running:
                 monitor.stop()
                 self._forget_hooks_state(key)
+                if key in self._HOOKED_AGENTS:
+                    # 通道从别处（配置全景、设置进程）被关掉：和菜单关闭一样卸掉肥鱼自己装的 hooks（同意文案里写着
+                    # 「关闭联动时会自动移除」）。只在「在跑 → 停」这一次转换上做，启动时的 apply_config 不碰文件。
+                    self._uninstall_hooks(key)
         self._refresh_moved_hooks(agent_cfg)
 
     # ---------------------------------------------------------- 联动开着、hooks 在不在
@@ -2938,6 +2942,50 @@ class AgentLinkManager(QObject):
         if agent_key not in self._HOOKED_AGENTS:
             return False
         return self.set_enabled(agent_key, True)
+
+    def install_hooks_consented(self, agent_key: str) -> str:
+        """用户**已经同意**（菜单那条路的 Qt 弹框，或配置全景页面上的确认框）：把肥鱼的 hooks 装进这个通道的 settings.json。
+
+        ADR 0006：这是唯一写 hooks 的地方，调用方必须先拿到同意。本机当场写，返回 ``installed`` / ``failed``；
+        WSL 要起 wsl.exe，后台装，返回 ``pending``，装完经 ``install_finished`` 回来（``_on_install_finished`` 成功时
+        顺带把通道开上并清掉「缺 hooks」的标记）。不靠 hooks 的通道没有可装的：``failed``。"""
+        if agent_key == "claude":
+            if not ClaudeCodeMonitor.install_hooks(self.monitors["claude"].events_file):
+                return "failed"
+            self._note_hooks_installed("claude")
+            return "installed"
+        if agent_key == "claude_wsl":
+            # wsl.exe 每次调用上百毫秒、发行版冷启动要几秒：走后台线程，调用方先回去，
+            # 配置完成后自动开启并气泡告知（同 DSH 安装的编排）
+            self._install_token += 1
+            token = self._install_token
+            self._install_pending["claude_wsl"] = token
+            if hasattr(self.win, "show_bubble"):
+                self.win.show_bubble("正在配置 WSL 里的 Claude Code hooks…", duration_ms=4000)
+            threading.Thread(target=self._install_claude_wsl_worker, args=(token,), daemon=True,
+                             name="claude-wsl-hooks-install").start()
+            return "pending"
+        return "failed"
+
+    def _uninstall_hooks(self, agent_key: str) -> None:
+        """卸掉肥鱼自己装的 hooks（只删带标记的条目，用户自有配置不碰）；别的多开实例还在用就留着（hooks 是全局状态）。
+        WSL 那条要调 wsl.exe：后台做，失败只记日志（hook 命令对缺失的脚本 / 目录是空操作，残留条目不会让 Claude Code 报错）。"""
+        if agent_key == "claude":
+            if self._other_instances_enabled("claude"):
+                log.info("其他实例仍在使用 Claude 联动，保留 hooks")
+            elif not ClaudeCodeMonitor.uninstall_hooks():
+                log.warning("Claude hooks 卸载未完全成功（配置已关闭，hooks 可能残留）")
+                if hasattr(self.win, "show_bubble"):
+                    name = self.AGENT_NAMES.get(agent_key, agent_key)
+                    self.win.show_bubble(self._dialogue("bridge.uninstall.failed", "Claude hooks 卸载未完全成功，可手动检查 ~/.claude/settings.json", name=name), duration_ms=6000)
+        elif agent_key == "claude_wsl":
+            self._install_pending.pop("claude_wsl", None)
+            self._install_token += 1
+            if self._other_instances_enabled("claude_wsl"):
+                log.info("其他实例仍在使用 WSL Claude 联动，保留 hooks")
+            else:
+                threading.Thread(target=ClaudeCodeMonitor.uninstall_wsl_hooks, daemon=True,
+                                 name="claude-wsl-hooks-uninstall").start()
 
     def _schedule_hooks_check(self, agent_key: str) -> None:
         """通道刚起来：稍后在后台查一次它的 hooks 在不在。
@@ -3155,14 +3203,13 @@ class AgentLinkManager(QObject):
                 )
                 if res != QMessageBox.StandardButton.Yes:
                     return False
-                if not ClaudeCodeMonitor.install_hooks(self.monitors["claude"].events_file):
+                if self.install_hooks_consented("claude") != "installed":
                     QMessageBox.warning(
                         self.win if hasattr(self.win, "winId") else None,
                         "开启 Claude Code 联动",
                         "hooks 配置写入失败，联动未开启。\n可查看日志了解详情。",
                     )
                     return False
-                self._note_hooks_installed("claude")
             elif agent_key == "claude_wsl":
                 res = QMessageBox.question(
                     self.win if hasattr(self.win, "winId") else None,
@@ -3174,18 +3221,7 @@ class AgentLinkManager(QObject):
                 )
                 if res != QMessageBox.StandardButton.Yes:
                     return False
-                # wsl.exe 每次调用上百毫秒、发行版冷启动要几秒：走后台线程，
-                # 菜单先回弹，配置完成后自动开启并气泡告知（同 DSH 安装的编排）
-                self._install_token += 1
-                token = self._install_token
-                self._install_pending["claude_wsl"] = token
-                if hasattr(self.win, "show_bubble"):
-                    self.win.show_bubble("正在配置 WSL 里的 Claude Code hooks…", duration_ms=4000)
-                import threading
-                threading.Thread(
-                    target=self._install_claude_wsl_worker, args=(token,), daemon=True,
-                    name="claude-wsl-hooks-install",
-                ).start()
+                self.install_hooks_consented("claude_wsl")      # 后台装；菜单先回弹，装完自动开启并气泡告知
                 return False
             elif agent_key == "dsh":
                 res = QMessageBox.question(
@@ -3216,29 +3252,11 @@ class AgentLinkManager(QObject):
             if agent_key == "dsh":
                 self._install_pending.pop("dsh", None)
                 self._install_token += 1
-            # 关闭联动时移除我们注入的内容（只删自己的，用户自有配置不碰）；
-            # 其他多开实例仍在使用则保留（hooks/插件是全局状态）
-            if agent_key == "claude":
-                if self._other_instances_enabled("claude"):
-                    log.info("其他实例仍在使用 Claude 联动，保留 hooks")
-                elif not ClaudeCodeMonitor.uninstall_hooks():
-                    log.warning("Claude hooks 卸载未完全成功（配置已关闭，hooks 可能残留）")
-                    if hasattr(self.win, "show_bubble"):
-                        name = self.AGENT_NAMES.get(agent_key, agent_key)
-                        self.win.show_bubble(self._dialogue("bridge.uninstall.failed", "Claude hooks 卸载未完全成功，可手动检查 ~/.claude/settings.json", name=name), duration_ms=6000)
-            elif agent_key == "claude_wsl":
-                self._install_pending.pop("claude_wsl", None)
-                self._install_token += 1
-                if self._other_instances_enabled("claude_wsl"):
-                    log.info("其他实例仍在使用 WSL Claude 联动，保留 hooks")
-                else:
-                    # 卸载同样要调 wsl.exe：后台做，失败只记日志（hook 命令对缺失的
-                    # 脚本/目录是空操作，残留条目不会让 Claude Code 报错）
-                    import threading
-                    threading.Thread(
-                        target=ClaudeCodeMonitor.uninstall_wsl_hooks, daemon=True,
-                        name="claude-wsl-hooks-uninstall",
-                    ).start()
+            # 关闭联动时移除我们注入的内容（只删自己的，用户自有配置不碰）；其他多开实例仍在使用则保留。
+            # hooked 通道由下面 apply_config 停监视器时顺带卸（在跑 → 停）；监视器本来就没在跑的，这里补一下。
+            if agent_key in self._HOOKED_AGENTS:
+                if not self.monitors[agent_key]._running:
+                    self._uninstall_hooks(agent_key)
             elif agent_key == "dsh":
                 if self._other_instances_enabled("dsh"):
                     log.info("其他实例仍在使用 DSH 联动，保留桥接插件")

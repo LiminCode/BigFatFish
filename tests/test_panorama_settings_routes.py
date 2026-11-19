@@ -252,3 +252,30 @@ def test_audit_limit_is_bounded(stack):
     assert len(_pump(stack.app, lambda: _send(stack.server, "GET", "/api/audit?limit=2"))[1]["entries"]) == 2
     assert len(_pump(stack.app, lambda: _send(stack.server, "GET", "/api/audit?limit=abc"))[1]["entries"]) == 3
     assert len(_pump(stack.app, lambda: _send(stack.server, "GET", "/api/audit?limit=-5"))[1]["entries"]) == 3
+
+
+# ───────────────────────── 动作 ─────────────────────────
+
+def test_an_action_runs_its_handler_on_the_gui_thread_and_answers_with_its_result(stack):
+    from pet.panorama.actions import ActionError
+
+    seen = []
+
+    def echo(body):
+        seen.append(threading.current_thread() is threading.main_thread())
+        if body.get("boom"):
+            raise ActionError(400, "bad_agent")
+        return {"state": "installed", "got": body}
+
+    stack.service.actions["echo"] = echo
+    status, out = _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/echo", {"agent": "claude"}))
+    assert (status, out) == (200, {"state": "installed", "got": {"agent": "claude"}}) and seen == [True]
+    assert _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/echo", {"boom": 1})) == (400, {"error": "bad_agent"})
+    assert _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/nope", {})) == (404, {"error": "unknown_action"})
+    assert _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/echo", {}, token=False))[0] == 401
+    assert _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/echo", {}, origin=False))[0] == 403
+
+
+def test_a_handler_that_blows_up_is_a_500_not_a_dead_connection(stack):
+    stack.service.actions["bad"] = lambda body: 1 / 0
+    assert _pump(stack.app, lambda: _send(stack.server, "POST", "/api/actions/bad", {})) == (500, {"error": "action_failed"})

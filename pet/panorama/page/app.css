@@ -182,6 +182,7 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .list .more dt{color:var(--muted)}.list .more dd{margin:0;word-break:break-word;color:#c5ced8}
 .quest{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid #252e38;cursor:pointer;font-size:12.5px}
 .quest:first-of-type{border-top:0}.quest:hover{color:#fff}.quest .dot{margin-top:4px}
+.quest span{flex:1}.btn.mini{padding:2px 8px;font-size:11.5px;flex:none;align-self:center}
 .hint{color:var(--muted);font-size:12px}
 .pending{margin:8px 16px 0;padding:6px 12px;background:#2a2410;color:var(--warn);font-size:12.5px;animation:blink 1.6s ease-in-out infinite}
 .pending.lost{background:#2a1414;color:var(--bad);animation:none}

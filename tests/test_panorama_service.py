@@ -364,3 +364,32 @@ def test_a_new_round_wakes_a_page_that_is_waiting(tmp_path):
         assert json.loads(box["body"])["revision"] in (3, 4)             # 等的人拿到的是它醒来时最新的那份
     finally:
         service.stop()
+
+
+# ───────────────────────── 只重探一侧（装完 hooks 之后那条线要变回来）─────────────────────────
+
+def test_refresh_reprobes_one_side_publishes_again_and_opens_no_browser(tmp_path):
+    h = _Harness(tmp_path)
+    assert h.service.open() and h.finished == [(True, str(tmp_path / "panorama" / render.PAGE_NAME))]
+    before = h.published()["revision"]
+    h.log.clear(); h.opened.clear()
+    h.wsl_result = samples.wsl_home(hooks={"Stop": {"total": 1, "fish": 0}})
+    assert h.service.refresh("wsl") is True
+    after = h.published()
+    assert after["revision"] == before + 1 and h.log == ["wsl", "write"] and h.opened == []
+    assert next(n for n in after["nodes"] if n["id"] == "set_wsl")["state"] == "bad"
+    h.log.clear()
+    assert h.service.refresh("win") is True
+    again = h.published()
+    assert again["revision"] == after["revision"] + 1 and "wsl" not in h.log, "重探本机不碰 WSL"
+    assert next(n for n in again["nodes"] if n["id"] == "set_wsl")["state"] == "bad", "上一次 WSL 的结果还在"
+    assert h.service.refresh("mars") is False
+
+
+def test_refresh_does_nothing_before_the_first_round_or_while_one_is_running(tmp_path):
+    h = _Harness(tmp_path, spawn=lambda run: h.pending_runs.append(run))
+    assert h.service.refresh("win") is False, "还没发布过：没有页面在看"
+    h.service.open()
+    assert h.service.refresh("win") is False, "一轮正在路上：它回来时自带新状态"
+    h.pending_runs.pop()()
+    assert h.service.refresh("win") is True
