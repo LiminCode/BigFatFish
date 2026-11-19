@@ -401,68 +401,59 @@ def test_session_pets_max_is_normalised(tmp_path, raw, expected):
     assert Config(base=tmp_path).get("agent_link")["session_pets_max"] == expected
 
 
-def test_menu_lets_the_user_pick_the_session_pet_limit(tmp_path):
-    cfg = Config(base=tmp_path)
-    pet = _MenuPet(cfg, with_toggle=True)
-    picked: list = []
-    pet.set_session_pets_max = picked.append
-
-    limit_menu = _menu_actions(pet)["会话小鱼上限"].menu()
-    choices = {a.text(): a for a in limit_menu.actions()}
-
-    assert [a.text() for a in limit_menu.actions() if a.isChecked()] == ["6 只"]
-    choices["12 只"].trigger()
-    assert picked == [12]
-
-
-def test_facade_persists_the_session_pet_limit(shell):
-    from pet.sprite_menu_facade import SpriteMenuFacade
-
-    SpriteMenuFacade(shell).set_session_pets_max(10)
-    assert shell._config.get("agent_link")["session_pets_max"] == 10
-    assert shell._session_pet_limit() == 10
+def test_menu_sends_the_user_to_the_panorama_for_the_session_fish_settings(tmp_path):
+    """上限 / 保留天数 / 配色 / 字号 / 桂冠 2026-11-19 起在配置全景「会话小鱼」那组里改：菜单只剩开关和一条跳过去的入口。"""
+    pet = _MenuPet(Config(base=tmp_path), with_toggle=True)
+    opened: list = []
+    pet.open_session_fish_settings = lambda: opened.append(True)
+    actions = _menu_actions(pet)
+    assert "会话小鱼上限" not in actions and "冻结小鱼保留天数" not in actions and "详情卡配色" not in actions
+    assert "详情卡文字大小" not in actions and "桂冠给哪个模型" not in actions
+    actions["会话小鱼设置…"].trigger()
+    assert opened == [True]
+    assert "会话小鱼设置…" not in _menu_actions(_MenuPet(Config(base=tmp_path), with_toggle=False)), "旧拓扑没有会话小鱼"
 
 
-def test_custom_limit_asks_for_a_number_and_the_menus_show_it(shell, controller, tmp_path):
-    """用户 2026-11-02：上限要能随便填（要设 20，预设里没有）。「自定义…」弹数字框；填的值两处菜单都列出来并勾上；取消不动。"""
+def test_the_fish_menu_and_the_facade_open_the_panorama_at_the_session_fish_group(shell, controller):
     from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
     from pet.sprite_menu_facade import SpriteMenuFacade
 
-    facade = SpriteMenuFacade(shell)
-    asked: list = []
-    facade.ask_session_pets_max(prompt=lambda cur: (asked.append(cur), (20, True))[1])
-    assert asked == [6] and shell._session_pet_limit() == 20
-    facade.ask_session_pets_max(prompt=lambda cur: (99, False))
-    assert shell._session_pet_limit() == 20, "取消不动"
-    facade.ask_session_pets_max(prompt=lambda cur: (999, True))
-    assert shell._session_pet_limit() == 40, "超过硬顶按硬顶"
-    facade.set_session_pets_max(20)
-
-    # 小鱼自己的菜单：20 只 列出来并勾上，末尾有「自定义…」
+    focused: list = []
+    shell.open_config_panorama = lambda focus="": focused.append(focus)
     controller.on_session_update("claude", _update(project="dsh-pet"))
     sprite = _session_pets(shell)[0]
-    actions = SessionPetActions(shell, controller, anchor_factory=lambda s: None)
-    menu = build_session_pet_menu(shell, sprite, actions)
-    settings = next(a for a in menu.actions() if a.text() == "会话小鱼设置").menu()
-    limit_menu = next(a for a in settings.actions() if a.text() == "会话小鱼上限").menu()
-    labels = [a.text() for a in limit_menu.actions() if not a.isSeparator()]
-    assert labels == ["3 只", "6 只", "9 只", "12 只", "16 只", "20 只", "24 只", "自定义…"]
-    assert [a.text() for a in limit_menu.actions() if a.isChecked()] == ["20 只"]
+    menu = build_session_pet_menu(shell, sprite, SessionPetActions(shell, controller, anchor_factory=lambda s: None))
+    entry = next(a for a in menu.actions() if a.text() == "会话小鱼设置…")
+    assert entry.menu() is None, "不再是子菜单"
+    entry.trigger()
+    assert focused == ["session_fish"]
+    SpriteMenuFacade(shell).open_session_fish_settings()
+    assert focused == ["session_fish", "session_fish"]
     menu.deleteLater()
 
-    # 主肥鱼的共享菜单同样
-    cfg = Config(base=tmp_path / "other")
-    cfg.set("agent_link", {**(cfg.get("agent_link") or {}), "session_pets_max": 20})
-    pet = _MenuPet(cfg, with_toggle=True)
-    pet.set_session_pets_max = lambda n: None
-    custom: list = []
-    pet.ask_session_pets_max = lambda: custom.append(True)
-    shared_limit = _menu_actions(pet)["会话小鱼上限"].menu()
-    shared_labels = [a.text() for a in shared_limit.actions() if not a.isSeparator()]
-    assert shared_labels == ["3 只", "6 只", "9 只", "12 只", "16 只", "20 只", "24 只", "自定义…"]
-    assert [a.text() for a in shared_limit.actions() if a.isChecked()] == ["20 只"]
-    next(a for a in shared_limit.actions() if a.text() == "自定义…").trigger()
-    assert custom == [True]
+
+def test_settings_changed_elsewhere_take_effect_when_the_shell_refreshes(shell, controller):
+    """配置全景改的值经 AppShell 的应用链到 ``refresh_settings``：关开关 → 小鱼离场；上限读时取值；保留天数 → 核对名册。"""
+    shell.session_pets = controller
+    controller.on_session_update("claude", _update("A", project="p"))
+    controller.on_session_update("claude", _update("B", project="p"))
+    assert len(_session_pets(shell)) == 2
+    data = dict(shell._config.get("agent_link"))
+    data["session_pets_max"] = 2
+    shell._config.set("agent_link", data)
+    shell.refresh_settings()
+    assert shell._session_pet_limit() == 2 and len(_session_pets(shell)) == 2
+    reconciled: list = []
+    controller.reconcile = lambda: reconciled.append(True)
+    data["session_fish_keep_days"] = 14
+    shell._config.set("agent_link", data)
+    shell.refresh_settings()
+    assert reconciled == [True]
+    controller.state["on"] = False
+    data["session_pets"] = False
+    shell._config.set("agent_link", data)
+    shell.refresh_settings()
+    assert _session_pets(shell) == [], "关掉开关：在场的会话小鱼离场"
 
 
 # ---------------------------------------------------------------- 生成落点
@@ -847,22 +838,6 @@ def test_session_fish_keep_days_is_normalised(tmp_path, raw, expected):
     cfg = Config(base=tmp_path)
     cfg.set("agent_link", {**(cfg.get("agent_link") or {}), **raw})
     assert cfg.get("agent_link")["session_fish_keep_days"] == expected
-
-
-def test_facade_persists_the_keep_days_and_the_menu_offers_them(shell, tmp_path):
-    from pet.sprite_menu_facade import SpriteMenuFacade
-
-    SpriteMenuFacade(shell).set_session_fish_keep_days(7)
-    assert shell._config.get("agent_link")["session_fish_keep_days"] == 7
-    cfg = Config(base=tmp_path / "other")             # 壳的配置就在 tmp_path 下，另开一份看默认值
-    pet = _MenuPet(cfg, with_toggle=True)
-    picked: list = []
-    pet.set_session_fish_keep_days = picked.append
-    days_menu = _menu_actions(pet)["冻结小鱼保留天数"].menu()
-    choices = {a.text(): a for a in days_menu.actions()}
-    assert [a.text() for a in days_menu.actions() if a.isChecked()] == ["3 天"]
-    choices["14 天"].trigger()
-    assert picked == [14]
 
 
 def test_a_shell_built_over_an_existing_history_does_not_spawn_during_its_own_init(tmp_path, monkeypatch):

@@ -116,11 +116,8 @@ def test_the_session_fish_menu_speaks_english(shell):  # noqa: F811
     fish = _session(shell)
     menu = shell._build_menu_for(fish)
     assert _labels(menu)[1:] == ["Jump to this chat", "Show details", "Open project folder", "Copy resume command",
-                                 "Copy session ID", "Send this one off", "Session fish settings"]
-    settings = menu.actions()[-1].menu()
-    assert _labels(settings)[:4] == ["One fish per session", "Session fish limit", "Keep frozen fish for", "Detail card colors"]
-    colors = settings.actions()[3].menu()
-    assert "Sakura pink" in _labels(colors)
+                                 "Copy session ID", "Send this one off", "Session fish settings…"]
+    assert menu.actions()[-1].menu() is None, "选值的在配置全景里改，这里只是跳过去"
 
 
 def test_the_tray_menu_speaks_english(tmp_path):

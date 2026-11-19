@@ -10,13 +10,8 @@ from __future__ import annotations
 
 import re
 
-from .claude_session_info import model_label
-from .i18n import t
-
 CONFIG_KEY = "crown_models"
 DEFAULT_TOKENS = ["fable"]
-#: 菜单里固定列出的家族（按当前的强弱印象排）
-FAMILIES = (("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku"))
 _TOKEN_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,39}$")
 
 
@@ -35,23 +30,3 @@ def normalize_tokens(value) -> list[str]:
 def is_crowned(model_id: str, tokens) -> bool:
     model = str(model_id or "").lower()
     return bool(model) and any(token and token in model for token in tokens or ())
-
-
-def choices(tokens, seen_models=()) -> list[tuple[str, str, bool]]:
-    """菜单用：``(片段, 文案, 是否勾选)``——四个家族在前，在场会话的具体型号在后（去重）。"""
-    tokens = list(tokens or ())
-    out = [(token, t("menu.crown.family_all", family=label), token in tokens) for token, label in FAMILIES]
-    listed = {token for token, _label, _on in out}
-    for model in seen_models:
-        token = str(model or "").strip().lower()
-        if token and token not in listed and _TOKEN_RE.match(token):
-            listed.add(token)
-            out.append((token, model_label(token), token in tokens))
-    return out
-
-
-def toggled(tokens, token: str, on: bool) -> list[str]:
-    tokens = [t for t in normalize_tokens(list(tokens or ())) if t != token]
-    if on and _TOKEN_RE.match(token):
-        tokens.append(token)
-    return tokens

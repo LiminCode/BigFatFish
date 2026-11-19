@@ -89,14 +89,6 @@ def test_a_model_is_crowned_when_any_token_is_part_of_its_id():
     assert not crown.is_crowned("", ["fable"]) and not crown.is_crowned("claude-fable-5-1", [])
 
 
-def test_the_menu_offers_the_families_plus_models_seen_live():
-    choices = crown.choices(["fable"], seen_models=["claude-opus-5-5", "claude-fable-5-1", "claude-opus-5-5"])
-    assert [(token, label, on) for token, label, on in choices] == [
-        ("fable", "Fable（全部版本）", True), ("opus", "Opus（全部版本）", False),
-        ("sonnet", "Sonnet（全部版本）", False), ("haiku", "Haiku（全部版本）", False),
-        ("claude-opus-5-5", "Opus 5.5", False), ("claude-fable-5-1", "Fable 5.1", False)]
-
-
 # ---------------------------------------------------------------- 小鱼：戴不戴
 
 def _update(shell, sid, model, phase="working"):  # noqa: F811
@@ -134,21 +126,21 @@ def test_the_crown_follows_the_model_read_from_the_transcript(shell):  # noqa: F
     assert shell.session_pets.remodel(("claude", "nobody"), "claude-fable-5-1") is False
 
 
-def test_changing_the_choice_in_the_menu_recrowns_the_fish_at_once(shell):  # noqa: F811
+def test_changing_the_choice_elsewhere_recrowns_the_fish_when_the_shell_refreshes(shell):  # noqa: F811
+    """桂冠给哪个模型 2026-11-19 起在配置全景「会话小鱼」那组里改（一行一个片段）；壳的 ``refresh_settings`` 让在场的小鱼当场换。"""
     _update(shell, "A", "claude-fable-5-1")
     _update(shell, "B", "claude-opus-5-5")
-    menu = shell._build_menu_for(shell.sprite)
-    entry = _find(menu, "桂冠给哪个模型")
-    assert entry is not None and entry.menu() is not None
-    items = {a.text(): a for a in entry.menu().actions() if not a.isSeparator()}
-    assert items["Fable（全部版本）"].isChecked() and not items["Opus（全部版本）"].isChecked()
-    assert "Opus 5.5" in items and "Fable 5.1" in items, "在场会话的具体型号也列出来"
+    assert _find(shell._build_menu_for(shell.sprite), "桂冠给哪个模型") is None
 
-    items["Opus（全部版本）"].trigger()
-    assert shell._config.get("agent_link")["crown_models"] == ["fable", "opus"]
+    def choose(tokens):
+        data = dict(shell._config.get("agent_link"))
+        data["crown_models"] = tokens
+        shell._config.set("agent_link", data)
+        shell.refresh_settings()
+
+    choose(["fable", "opus"])
     assert shell.session_pets.sprite_of(("claude", "B")).caption_badge == "crown"
-    _find(shell._build_menu_for(shell.sprite), "Fable（全部版本）").trigger()
-    assert shell._config.get("agent_link")["crown_models"] == ["opus"]
+    choose(["opus"])
     assert shell.session_pets.sprite_of(("claude", "A")).caption_badge == ""
 
 

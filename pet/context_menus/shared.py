@@ -396,7 +396,8 @@ def add_slack_watch_menu(menu: QMenu, pet) -> None:
 
 
 def add_agent_link_menu(menu: QMenu, pet) -> None:
-    """Agent 联动二级菜单（4 个 Agent 独立开关 + 自定义 Agent 三级子菜单 + 气泡提醒选项，失败/拒绝自动回滚勾选）。"""
+    """Agent 联动二级菜单：开关留在这里（通道、每个会话一只小鱼、记录最近的对话，失败 / 拒绝自动回滚勾选），
+    选值的（上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数）2026-11-19 起在配置全景里改，这里只留一条「会话小鱼设置…」跳过去。"""
     sub = add_submenu(menu, t("menu.shared.agent_link"), None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
     agents = [
@@ -426,73 +427,6 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_pets", True)))
         act.toggled.connect(lambda on: toggle_session_pets(on))
-        set_limit = getattr(pet, "set_session_pets_max", None)
-        if callable(set_limit):
-            limit_menu = add_submenu(sub, t("menu.shared.session_fish_limit"), None)
-            current = int(agent_cfg.get("session_pets_max", 6) or 6)
-            group = QActionGroup(limit_menu)
-            group.setExclusive(True)
-            for limit in sorted({3, 6, 9, 12, 16, 24, current}):
-                choice = limit_menu.addAction(t("menu.shared.limit_fish", limit=limit))
-                choice.setCheckable(True)
-                choice.setChecked(limit == current)
-                group.addAction(choice)
-                connect_action(choice, lambda limit=limit: set_limit(limit))
-            ask_limit = getattr(pet, "ask_session_pets_max", None)
-            if callable(ask_limit):
-                limit_menu.addSeparator()
-                connect_action(limit_menu.addAction(t("menu.shared.custom_limit")), ask_limit)
-        set_keep_days = getattr(pet, "set_session_fish_keep_days", None)
-        if callable(set_keep_days):
-            days_menu = add_submenu(sub, t("menu.shared.session_fish_keep_days"), None)
-            current_days = int(agent_cfg.get("session_fish_keep_days", 3) or 3)
-            days_group = QActionGroup(days_menu)
-            days_group.setExclusive(True)
-            for days in sorted({1, 3, 7, 14, 30, current_days}):
-                choice = days_menu.addAction(t("menu.shared.keep_day") if days == 1 else t("menu.shared.keep_days", days=days))
-                choice.setCheckable(True)
-                choice.setChecked(days == current_days)
-                days_group.addAction(choice)
-                connect_action(choice, lambda days=days: set_keep_days(days))
-        set_card_theme = getattr(pet, "set_session_card_theme", None)
-        if callable(set_card_theme):
-            from ..session_card_themes import CONFIG_KEY, normalize_theme_id, theme_choices
-
-            theme_menu = add_submenu(sub, t("menu.shared.detail_card_colors"), None)
-            current_theme = normalize_theme_id(agent_cfg.get(CONFIG_KEY))
-            theme_group = QActionGroup(theme_menu)
-            theme_group.setExclusive(True)
-            for theme_id, label in theme_choices():
-                choice = theme_menu.addAction(label)
-                choice.setCheckable(True)
-                choice.setChecked(theme_id == current_theme)
-                theme_group.addAction(choice)
-                connect_action(choice, lambda theme_id=theme_id: set_card_theme(theme_id))
-        set_card_size = getattr(pet, "set_session_card_text_size", None)
-        if callable(set_card_size):
-            from ..session_card_themes import TEXT_SIZE_KEY, normalize_text_size, text_size_choices
-
-            size_menu = add_submenu(sub, t("menu.shared.detail_card_text_size"), None)
-            current_size = normalize_text_size(agent_cfg.get(TEXT_SIZE_KEY))
-            size_group = QActionGroup(size_menu)
-            size_group.setExclusive(True)
-            for size, label in text_size_choices():
-                choice = size_menu.addAction(label)
-                choice.setCheckable(True)
-                choice.setChecked(size == current_size)
-                size_group.addAction(choice)
-                connect_action(choice, lambda size=size: set_card_size(size))
-        crown_choices = getattr(pet, "crown_model_choices", None)
-        toggle_crown = getattr(pet, "toggle_crown_model", None)
-        if callable(crown_choices) and callable(toggle_crown):
-            # 测试替身的宿主可能对任何属性都回一个返回 None 的函数：按空清单处理
-            choices = crown_choices() or ()
-            crown_menu = add_submenu(sub, t("menu.shared.laurel_which_model"), None)
-            for token, label, checked in choices:
-                choice = crown_menu.addAction(label)
-                choice.setCheckable(True)
-                choice.setChecked(bool(checked))
-                choice.toggled.connect(lambda on, token=token: toggle_crown(token, on))
     # 灵动岛「最近的对话」：记下每个会话在哪打开的（同样只有 overlay 拓扑有）
     toggle_session_history = getattr(pet, "toggle_session_history", None)
     if callable(toggle_session_history):
@@ -500,18 +434,10 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
         act.setCheckable(True)
         act.setChecked(bool(agent_cfg.get("session_history", True)))
         act.toggled.connect(lambda on: toggle_session_history(on))
-        set_rows = getattr(pet, "set_session_history_rows", None)
-        if callable(set_rows):
-            rows_menu = add_submenu(sub, t("menu.shared.recent_chats_rows"), None)
-            current_rows = int(agent_cfg.get("session_history_rows", 10) or 10)
-            rows_group = QActionGroup(rows_menu)
-            rows_group.setExclusive(True)
-            for rows in sorted({5, 8, 10, 12, 15, 20, current_rows}):
-                choice = rows_menu.addAction(t("menu.shared.rows_rows", rows=rows))
-                choice.setCheckable(True)
-                choice.setChecked(rows == current_rows)
-                rows_group.addAction(choice)
-                connect_action(choice, lambda rows=rows: set_rows(rows))
+    # 会话小鱼 / 最近的对话的选值项（上限、保留天数、配色、字号、桂冠、行数）都在配置全景的「会话小鱼」「最近的对话」两组里
+    open_fish_settings = getattr(pet, "open_session_fish_settings", None)
+    if callable(open_fish_settings) and (callable(toggle_session_pets) or callable(toggle_session_history)):
+        add_action(sub, t("menu.shared.session_fish_settings"), None, open_fish_settings, close_on_trigger=True)
     # 「工作笔记」直接放在这一层（用户 2026-10-15：Agent 联动 → 工作简报 → 工作笔记 太深）
     if getattr(getattr(pet, "_shell", None), "work_notes", None) is not None:
         add_action(sub, t("notes.menu.open"), None, pet.open_work_notes, close_on_trigger=True)

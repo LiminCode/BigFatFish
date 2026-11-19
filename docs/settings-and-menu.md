@@ -143,7 +143,8 @@
 | 下线的入口 | 留下的（有意） |
 |---|---|
 | 右键 / 托盘的「DeepSeek 余额」「DeepSeek Harness」「打开网页版 DeepSeek」；设置页「余额与服务状态」一节、「点击显示余额」、「随肥鱼启动 dsh 服务 / 自启目标」；灵动岛「卡片内容」里的余额选项 | `pet/balance.py`、`pet/harness_launcher.py`、`AppShell._maybe_autostart_harness`（读 `harness_autostart`，默认关）、`click_show_balance` 的点击路径、`balance_*` / `harness_*` 配置键；`dynamic_island.card_source` 的 `balance` 值仍认，`auto` 在没开 Claude Code 联动时仍回落到余额卡片 |
-| 「Agent 联动」里的 DSH 开关 | `DshMonitor` 与 `agent_link.dsh`：已经开着的人监视器照跑，要关只能改配置文件。彻底删 DSH 联动是另一件事 |
+| 「Agent 联动」里的 DSH 开关 | `DshMonitor` 与 `agent_link.dsh`：已经开着的人监视器照跑，要关只能改配置文件；配置全景也有意不给开（`settings_table` 里是 `not_editable`：从页面打开只会起一个没有桥接插件的监视器）。彻底删 DSH 联动是另一件事 |
+| 「Agent 联动」里的会话小鱼 / 最近的对话选值子菜单（上限、保留天数、配色、字号、桂冠、行数；2026-11-19） | 在配置全景「会话小鱼」「最近的对话」两组里改；菜单只剩开关和「会话小鱼设置…」。`SpriteMenuFacade` 里对应的 `set_*` 方法一起删了，别处改了由 `OverlayShell._sync_session_settings` 生效 |
 | 「音乐」子菜单、网易云 / QQ 音乐播放器（找程序的模块、启动扫盘、设置页三行、`music_player_paths`） | 歌词气泡与唱歌联动（读系统媒体会话）；`pet/music_lyric.py` 仍查 QQ 音乐 / lrclib / 网易云三个公开接口（那是查词来源，与播放器无关）；`shared.py` 里的 `add_music_pause / next / prev / quit / lyric_align` 已不在任何菜单里但没删 |
 | 「显示本轮消费」「检查更新」「夸克网盘下载」「鼠标穿透」菜单项，设置页左下角版本号 | `__version__` 还在；鼠标穿透的入口在设置页和托盘 |
 
@@ -183,8 +184,8 @@
 `normalize`；一个 `Setting` 声明它的 `id`（点号表示字典的下一层）、控件（开关 / 下拉 / 可自填的下拉 / 数字 / 文本 / 长文本）、
 可选值、保存时机、披露层级、依赖。读、默认值、校验都不另写：一律走 `normalize`，所以表里的默认值就是 `normalize({})` 的结果。
 
-- 这张表只有声明和纯函数，不碰 Qt。它现在**只登记了工作简报这一组**，这一组只能在配置全景上改
-  （入口和写入链路见[配置全景](config-panorama.md)的「改设置」）。
+- 这张表只有声明和纯函数，不碰 Qt（连 `pet.config` 都不能在导入时拉：它经 `speech_bubble_text` 带进 Qt，所以 `agent_link` 的
+  清洗函数是惰性取的）。登记在表里的组只能在配置全景上改（入口和写入链路见[配置全景](config-panorama.md)的「改设置」）。
 - **搬一组 = 一个 PR 里做三件事**：在 `GROUPS` 里声明；从设置窗口删掉这一组的控件和保存代码（设置窗口保存时就不再碰这个键，
   页面改的值不会被它盖回去）；原处换成 `settings_moved.moved_row(dialog, "<组 id>")`——一行「搬到配置全景了」加一个按钮，
   点了经指令通道（`overlay_settings_command` 的 `open_panorama`）请主进程打开配置全景并翻到这一组。
@@ -195,7 +196,10 @@
   功能把数字夹在一个范围里的，把那一对范围写进 `Setting.bounds`（单位写 `unit`）：页面画出范围，超了明说 `out_of_range`，
   而不是笼统的「不认」。可选值本身看不懂的（空串、英文档位），用 `Setting.labels` 给它配上文字。
   值是字符串列表的用 `lines` 控件（一行一个）。一个配置键下的设置分给两块磁贴的，就声明成两组，各自在 `not_editable` 里说明另一半去哪改。
-  已搬的组：工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏（个人侧、公司侧两组）。
+  已搬的组：工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏（个人侧、公司侧两组），`agent_link` 的四组（本机联动、WSL 联动、
+  会话小鱼、最近的对话；2026-11-19）。`agent_link` 分四组是按配置全景的账号带和磁贴分的，不是按旧菜单：WSL 那条在公司带、要有 WSL 才可用。
+  **一组在设置窗口里本来就没有控件、只在右键菜单里的**（会话小鱼那几项），搬的是菜单：开关留在菜单，选值的子菜单换成一条
+  「会话小鱼设置…」跳到页面。`dsh`、`custom_agents`、九个 `sound_*` 在四组里都是 `not_editable`（音效留在设置窗口「互动」，M7 搬）。
 - `tests/test_settings_table.py` 是守卫：功能的 `normalize` 多给出一个键，却既没在表里声明、也没写进那一组的 `not_editable`
   说明为什么不给改，测试就红；表里的每个可选值存下去再读回来必须还是它；每一项在两张字表里都得有标题。
 - 文字不抄第二份：从设置窗口搬过去的项直接沿用原来的文案键（`Setting.text` / `.hint`），只有新出现的才用

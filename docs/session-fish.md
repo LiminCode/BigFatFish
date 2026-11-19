@@ -22,9 +22,11 @@
 | `pet/overlay_shell.py` | 接线：生 / 退会话小鱼、`set_session_pet_caption`（标签唯一写入口）、`rally_pets` / `lineup_pets`、`_local_run_list` |
 | `pet/claude_session_history.py`、`pet/session_history_service.py` | 「最近的对话」`claude-session-history.json`：冻结层的名册来源 |
 
-设置全部在 `agent_link.*`，入口只在右键菜单（会话小鱼设置 / 主肥鱼的 Agent 联动），不进设置页：
-`session_pets`（开关）、`session_pets_max`（默认 6，1–40）、`session_fish_keep_days`（默认 3，1–30）、
-`crown_models`（默认 `["fable"]`）、`session_card_theme`（默认 `sea`）、`session_card_text_size`（85 / 100 / 115 / 130）。
+设置全部在 `agent_link.*`。开关 `session_pets` 在右键菜单「Agent 联动」里；其余在配置全景「会话小鱼」那组里改
+（`pet/settings_table.py` 的 `session_fish`，2026-11-19 起；菜单里只剩一条「会话小鱼设置…」跳过去，会话小鱼自己的菜单同一条）：
+`session_pets_max`（默认 6，1–40）、`session_fish_keep_days`（默认 3，1–30）、`crown_models`（默认 `["fable"]`，页面上一行一个片段）、
+`session_card_theme`（默认 `sea`）、`session_card_text_size`（85 / 100 / 115 / 130）。
+别处改了（页面、设置进程）由 `OverlayShell._sync_session_settings` 当场生效：关开关小鱼离场、保留天数核对名册、桂冠换记号。
 
 ## 机制与不变量
 

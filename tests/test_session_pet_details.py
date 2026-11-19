@@ -429,7 +429,7 @@ def test_session_fish_gets_its_own_short_menu_and_the_main_fish_keeps_the_full_o
     fish = _session(shell)
     menu = shell._build_menu_for(fish)
     assert _labels(menu) == ["修登录", "跳到这个对话", "查看详情", "打开项目文件夹", "复制恢复命令",
-                             "复制会话 ID", "让这只离场", "会话小鱼设置"]
+                             "复制会话 ID", "让这只离场", "会话小鱼设置…"]
     assert not menu.actions()[0].isEnabled(), "第一行只是告诉你这是哪个会话"
     main = _labels(shell._build_menu_for(shell.sprite))
     assert "跳到这个对话" not in main and len(main) > 8

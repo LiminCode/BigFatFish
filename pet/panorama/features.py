@@ -6,7 +6,7 @@
 ``route`` 决定这项功能的主路画到哪：
 - ``personal``：走 HTTP 模型服务（使用中的那个服务 + 个人 key）；
 - ``work``：过桥到 WSL，由公司账号的 ``claude -p`` 跑；
-- ``link``：不调模型，只管 Claude Code 的 hooks。
+- ``link``：不调模型——Claude Code 的 hooks，和吃联动事件的会话小鱼 / 最近的对话。
 
 ``settings`` 把配置字典读成统一的五项（开关 / 模型 / effort / 时间 / 自定义提示词字数），读法一律走各功能
 自己的 ``normalize``，所以图上显示的就是功能实际生效的值，而不是 config.json 里碰巧写了什么。
@@ -73,7 +73,7 @@ def _notes(cfg):
 
 
 def _link(key, default):
-    """联动开关：缺键按默认（2026-11-14 起两条 Claude Code 联动默认开，WSL 那条只在 Windows 上）。"""
+    """agent_link 里的一个开关：缺键按默认（2026-11-14 起两条 Claude Code 联动默认开，WSL 那条只在 Windows 上）。"""
     def read(cfg):
         value = _section(cfg, "agent_link").get(key, default)
         return _settings(value is not False if default else value is True)
@@ -108,8 +108,13 @@ class Feature:
 
 
 FEATURES: tuple[Feature, ...] = (
-    Feature("link_win", "link", "link", "agent_link.claude", _link("claude", True), page="menu_agent_link",
+    # agent_link 一个配置键分四组（settings_table）：两块联动磁贴各开自己那组，会话小鱼和最近的对话各自一块磁贴
+    Feature("link_win", "link", "link", "agent_link.claude", _link("claude", True), settings_group="link_win",
             writes=(("set_win", "config", _always),), note="link_win"),
+    Feature("session_fish", "link", "fish", "agent_link.session_*", _link("session_pets", True), settings_group="session_fish",
+            note="session_fish"),
+    Feature("session_history", "link", "stack", "agent_link.session_history*", _link("session_history", True),
+            settings_group="session_history", note="session_history"),
     Feature("chat", "personal", "chat", "chat", _chat, page="ai_chat", follows_provider=True,
             writes=(("gh_personal", "github", _chat_uses_github),)),
     # 会话记忆蒸馏的设置也搬到了配置全景；一个配置键分两组，所以两块磁贴各自写明是哪一组
@@ -119,7 +124,7 @@ FEATURES: tuple[Feature, ...] = (
     Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
             writes=(("vault_personal", "memory", _always),)),
     Feature("link_wsl", "link", "link", "agent_link.claude_wsl", _link("claude_wsl", sys.platform == "win32"),
-            page="menu_agent_link", writes=(("set_wsl", "config", _always),), note="link_wsl"),
+            settings_group="link_wsl", writes=(("set_wsl", "config", _always),), note="link_wsl"),
     # 设置已经搬到配置全景（settings_table 里登记了这个键）：磁贴上是「设置」按钮，不再指向设置窗口的哪一页
     Feature("briefing", "work", "news", "work_briefing", _briefing),
     Feature("slack", "work", "hash", "slack_watch", _slack),

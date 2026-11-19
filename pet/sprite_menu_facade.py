@@ -49,7 +49,6 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QInputDialog, QMenu
 
 from . import catalog
-from .config import SESSION_PETS_MAX_CAP
 from .context_menu import load_menu_template, normalize_template_id
 from .context_menus import build_legacy_menu, build_modern_menu
 from .context_menus.menu_styles import (
@@ -548,86 +547,12 @@ class SpriteMenuFacade:
             if on:
                 service.rescan(force=True)
 
-    def set_session_history_rows(self, rows: int) -> None:
-        """「最近的对话」列表展开后露几行：落盘，岛上立刻跟着变。"""
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data["session_history_rows"] = int(rows)
-        self.cfg.set("agent_link", ag_data)
-        self._save()
-        service = getattr(self._shell, "session_history", None)
-        if service is not None:
-            service.refresh()
-
-    def set_session_pets_max(self, limit: int) -> None:
-        """会话小鱼上限：落盘即生效（下一只生成时按新上限判）。"""
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data["session_pets_max"] = int(limit)
-        self.cfg.set("agent_link", ag_data)
-        self._save()
-
-    def ask_session_pets_max(self, prompt=None) -> None:
-        """上限子菜单的「自定义…」：弹数字框填 1–``SESSION_PETS_MAX_CAP``；取消不动。``prompt(current) -> (value, ok)``
-        可注入（测试不弹窗）。"""
-        current = int((self.cfg.get("agent_link", {}) or {}).get("session_pets_max", 6) or 6)
-        if prompt is None:
-            def prompt(cur: int):
-                return QInputDialog.getInt(
-                    getattr(self._shell, "overlay", None), t("menu.facade.session_fish_limit"),
-                    t("menu.facade.session_fish_limit_prompt", cap=SESSION_PETS_MAX_CAP), cur, 1, SESSION_PETS_MAX_CAP)
-        value, ok = prompt(current)
-        if not ok:
-            return
-        value = max(1, min(SESSION_PETS_MAX_CAP, int(value)))
-        self.set_session_pets_max(value)
-        self._bubble(t("menu.facade.session_fish_limit_set", n=value))
-
-    def set_session_fish_keep_days(self, days: int) -> None:
-        """冻结小鱼保留天数：落盘即生效（下一轮名册核对按新天数）。"""
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data["session_fish_keep_days"] = int(days)
-        self.cfg.set("agent_link", ag_data)
-        self._save()
-        controller = getattr(self._shell, "session_pets", None)
-        if controller is not None and hasattr(controller, "reconcile"):
-            controller.reconcile()
-
-    def crown_model_choices(self) -> list[tuple[str, str, bool]]:
-        """「桂冠给哪个模型」：四个家族 + 在场会话的具体型号，带勾选态。"""
-        from .session_crown import CONFIG_KEY, choices, normalize_tokens
-
-        controller = getattr(self._shell, "session_pets", None)
-        seen = controller.seen_models() if controller is not None else []
-        return choices(normalize_tokens((self.cfg.get("agent_link") or {}).get(CONFIG_KEY)), seen)
-
-    def toggle_crown_model(self, token: str, on: bool) -> None:
-        """勾 / 取消一个模型：落盘，在场的小鱼当场换桂冠。"""
-        from .session_crown import CONFIG_KEY, normalize_tokens, toggled
-
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data[CONFIG_KEY] = toggled(normalize_tokens(ag_data.get(CONFIG_KEY)), str(token), bool(on))
-        self.cfg.set("agent_link", ag_data)
-        self._save()
-        controller = getattr(self._shell, "session_pets", None)
-        if controller is not None:
-            controller.refresh_badges()
-
-    def set_session_card_theme(self, theme_id: str) -> None:
-        """会话小鱼详情卡的配色方案：落盘；下次打开详情卡时生效。"""
-        from .session_card_themes import CONFIG_KEY, normalize_theme_id
-
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data[CONFIG_KEY] = normalize_theme_id(theme_id)
-        self.cfg.set("agent_link", ag_data)
-        self._save()
-
-    def set_session_card_text_size(self, size: int) -> None:
-        """会话小鱼详情卡的文字大小：落盘；下次打开详情卡时生效。"""
-        from .session_card_themes import TEXT_SIZE_KEY, normalize_text_size
-
-        ag_data = dict(self.cfg.get("agent_link", {}) or {})
-        ag_data[TEXT_SIZE_KEY] = normalize_text_size(size)
-        self.cfg.set("agent_link", ag_data)
-        self._save()
+    def open_session_fish_settings(self) -> None:
+        """「会话小鱼设置…」：配置全景翻到「会话小鱼」那一组（上限 / 保留天数 / 配色 / 字号 / 桂冠都在那里改，
+        「最近的对话」的行数 / 天数 / 条数在它旁边那组）。改完由 AppShell 的应用链经 ``OverlayShell.refresh_settings`` 当场生效。"""
+        opener = self.on_open_config_panorama
+        if callable(opener):
+            opener(focus="session_fish")
 
     # ---- 工作简报（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
     def _work_briefing(self):
