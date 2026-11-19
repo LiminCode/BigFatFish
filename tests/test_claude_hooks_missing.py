@@ -364,3 +364,57 @@ def test_menu_adds_a_repair_item_under_the_channel_that_lost_its_hooks(tmp_path,
 def test_menu_is_unchanged_when_nothing_is_missing(tmp_path, monkeypatch):
     _menu, actions, _pet = _agent_menu(tmp_path, monkeypatch, _MenuPet)
     assert [label for label in (action.text() for action in actions) if "hooks" in label] == []
+
+
+# ---------------------------------------------------------------- 配置全景的「修复」：同意框在页面上，这里只管「装」
+
+def test_installing_after_consent_given_elsewhere_writes_without_asking_and_clears_the_mark(tmp_path, home, managers, monkeypatch):
+    """页面上的「修复」已经让用户点过确认框：管理器这一半只装、不再弹 Qt 的问题框（conftest 里它默认答「否」）。"""
+    path = _write_settings(home, {"hooks": {"Stop": [_USER_HOOK]}})
+    mgr, _win = _manager(tmp_path, managers)
+    assert _pump_until(lambda: bool(mgr.hooks_missing("claude")))
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: pytest.fail("不该再问")))
+
+    assert mgr.install_hooks_consented("claude") == "installed"
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert claude_hooks.missing_hook_events(data) == [] and data["hooks"]["Stop"][0] == _USER_HOOK
+    assert mgr.hooks_missing("claude") == ()
+    assert mgr.install_hooks_consented("cursor") == "failed", "不靠 hooks 的通道没有可装的"
+
+
+def test_a_local_install_that_fails_is_reported_not_raised(tmp_path, home, managers, monkeypatch):
+    _write_settings(home, {})
+    mgr, _win = _manager(tmp_path, managers)
+    monkeypatch.setattr(ClaudeCodeMonitor, "install_hooks", classmethod(lambda cls, events_file: False))
+    assert mgr.install_hooks_consented("claude") == "failed"
+
+
+def test_switching_a_hooked_channel_off_through_the_config_removes_only_the_fish_hooks(tmp_path, home, managers):
+    """页面关掉通道：配置落盘 → apply_config 停监视器，顺带卸掉肥鱼自己装的 hooks（同意文案写着「关闭联动时会自动移除」）；
+    用户自己的 hook 原样留着。"""
+    path = _write_settings(home, {"hooks": {"Stop": [_USER_HOOK]}})
+    mgr, _win = _manager(tmp_path, managers)
+    assert mgr.install_hooks_consented("claude") == "installed"
+    assert claude_hooks.missing_hook_events(json.loads(path.read_text(encoding="utf-8"))) == []
+
+    mgr.cfg.set("agent_link", {**mgr.cfg.get("agent_link"), "claude": False})
+    mgr.apply_config()
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data == {"hooks": {"Stop": [_USER_HOOK]}}, "只卸自己的"
+    assert mgr.monitors["claude"]._running is False
+    mgr.apply_config()
+    assert json.loads(path.read_text(encoding="utf-8")) == {"hooks": {"Stop": [_USER_HOOK]}}, "再应用一次不再碰文件"
+
+
+def test_another_instance_still_using_the_channel_keeps_the_hooks_when_this_one_stops(tmp_path, home, managers):
+    path = _write_settings(home, {})
+    mgr, _win = _manager(tmp_path, managers)
+    assert mgr.install_hooks_consented("claude") == "installed"
+    (mgr.cfg.dir / "config-pet2.json").write_text(json.dumps({"agent_link": {"claude": True}}), encoding="utf-8")
+
+    mgr.cfg.set("agent_link", {**mgr.cfg.get("agent_link"), "claude": False})
+    mgr.apply_config()
+
+    assert claude_hooks.missing_hook_events(json.loads(path.read_text(encoding="utf-8"))) == [], "别的实例还在用：留着"

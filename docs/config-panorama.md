@@ -240,8 +240,41 @@ sequenceDiagram
 开关留在菜单（通道、每个会话一只小鱼、记录最近的对话），上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数换成一条「会话小鱼设置…」
 （`SpriteMenuFacade.open_session_fish_settings` → `open_config_panorama(focus="session_fish")`，会话小鱼自己的菜单同一条）。
 页面改完的生效链：`_apply_external_config_change` → 各窗 `refresh_pet_settings` → `AgentLinkManager.apply_config` 启停监视器
-（**从不写 hooks**，ADR 0006；装 hooks 的「修复」动作是下一步）；`OverlayShell.refresh_settings` → `_sync_session_settings`：
-关掉开关在场的会话小鱼离场、核对一次名册（保留天数）、换桂冠、岛上列表重取，「最近的对话」的保留天数 / 条数真变了才重扫一遍 transcript。
+（**从不写 hooks**，ADR 0006；hooked 通道「在跑 → 停」时顺带卸掉肥鱼自己装的 hooks，和菜单关闭一样）；
+`OverlayShell.refresh_settings` → `_sync_session_settings`：关掉开关在场的会话小鱼离场、核对一次名册（保留天数）、换桂冠、
+岛上列表重取，「最近的对话」的保留天数 / 条数真变了才重扫一遍 transcript。
+
+### 动作：待处理里的「修复」
+
+页面上第一个**不是改设置、而是请主进程做一件事**的入口（2026-11-19）：联动开着、那一侧的 `settings.json` 里却没有肥鱼的 hooks 时，
+待处理里那一条和 `settings.json` 磁贴的详情各出一个「修复」按钮。
+
+```mermaid
+sequenceDiagram
+    participant P as 页面（repair.js）
+    participant H as 本机服务
+    participant G as 主进程界面线程
+    participant F as ~/.claude/settings.json
+    P->>P: confirm()：同意文案（同右键菜单那条路的 Qt 弹框）；取消什么都不发
+    P->>H: POST /api/actions/repair_hooks {agent: claude | claude_wsl}
+    H->>G: on_gui（和改设置同一条路）
+    G->>F: AgentLinkManager.install_hooks_consented(agent)
+    Note over G: 本机当场写 → installed；WSL 后台起 wsl.exe → pending，装完发 install_finished
+    G-->>P: {state: installed | pending | failed}
+    G->>G: 装好的那一侧重探一次（PanoramaService.refresh(side)），发布，页面原地重画，那条线变回来
+```
+
+- **动作是独立的 POST，不藏在 PATCH 设置里**：打开通道的开关永远只是起监视器，装 hooks 永远是另一次明确的点击（ADR 0006 的决定不变，
+  只是同意框从桌面搬到了用户正看着的页面；ADR 末尾有补记）。服务端拿到请求就视为「用户点了是」，只调管理器的「装」那一半
+  （`install_hooks_consented`），不再弹 Qt 的问题框；菜单那条路仍是 `set_enabled` 先问再调同一个「装」。
+- **登记**：`actions.py` 里一个处理器 `handler(body) -> dict`，应用构造 `PanoramaService` 时传 `actions={"repair_hooks": ...}`；
+  路由 `POST /api/actions/<名字>` 把它转到界面线程。处理器自己校验参数（只认两条 hooked 通道，400 `bad_agent`；没有管理器 503
+  `no_manager`），不认识的名字 404，处理器出错 500 `action_failed`。以后「重新测试连接」走同一个口。
+- **装完重探**：`_republish` 只重读功能、不重探，而 hooks 在不在是探针读文件得来的。`PanoramaService.refresh(side)` 只重探一侧
+  （`win` 重跑 Windows 探针、接上上一次的 WSL 结果；`wsl` 只换那一半），在后台线程里，不开浏览器；一轮完整采集正在路上就不另起。
+  WSL 那条装完由 `install_finished` 信号触发重探（处理器对同一个管理器只接一次）。
+- **页面**：`repair.js` 的 `actionButton` / `runAction`；结果写在按钮上（`installed` / `pending` / `failed` 可再点 / 连不上可再点）。
+  离线快照里按钮是灰的。待处理项在数据里多一个 `action: {name, agent, side}`（`Graph.quest(..., action=)`），别的待处理项没有。
 
 ```mermaid
 flowchart LR

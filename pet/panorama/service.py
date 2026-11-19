@@ -27,6 +27,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
 from . import features, probes, render, settings_api, sources
+from .actions import ActionError
 from .feed import Feed
 from .settings_api import Busy
 
@@ -87,7 +88,7 @@ class PanoramaService(QObject):
                  wsl: Callable[[], dict] | None = None, write: Callable[[dict, Path], Path] | None = None,
                  open_page: Callable[[str], object] | None = None, spawn: Callable | None = None,
                  server=None, apply: Callable[[], object] | None = None, audit=None,
-                 parent: QObject | None = None) -> None:
+                 actions: dict | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._health = health or (lambda: ("unknown", ""))
@@ -105,6 +106,7 @@ class PanoramaService(QObject):
         self._last_wsl_seconds: float | None = None
         self._apply = apply                     # 设置改完之后要跑的应用链（应用传进来：_apply_external_config_change）
         self._audit = audit                     # 审计记录；不给就用数据目录里那一份（第一次用到时才建）
+        self.actions: dict = dict(actions or {})   # 页面上的动作：名字 → 处理器（见 actions.py），应用登记
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
@@ -279,6 +281,66 @@ class PanoramaService(QObject):
     def read_audit(self, limit: int) -> list[dict]:
         """审计记录只读文件，不碰 ``Config``：就在请求线程上读。"""
         return self._audit_log().read(limit)
+
+    def run_action(self, name: str, body) -> dict:
+        """页面上的一个动作（``POST /api/actions/<名字>``）：在界面线程上跑登记好的处理器。不认识的名字 404；
+        处理器自己的拒绝（``ActionError``）原样回去；意料之外的异常记日志、回 500。"""
+        return self.on_gui(lambda: self._run_action(name, body))
+
+    def _run_action(self, name: str, body) -> dict:
+        handler = self.actions.get(str(name))
+        if handler is None:
+            raise ActionError(404, "unknown_action")
+        try:
+            out = handler(body)
+        except ActionError:
+            raise
+        except Exception:  # noqa: BLE001 - 处理器出错不能把连接挂死；页面要一个明确的回答
+            log.exception("配置全景：动作 %s 出错", name)
+            raise ActionError(500, "action_failed") from None
+        log.info("配置全景：动作 %s 完成（%s）", name, out.get("state", "ok") if isinstance(out, dict) else "ok")
+        return out
+
+    def refresh(self, side: str) -> bool:
+        """（界面线程）只重探一侧、不开浏览器，再发布一次。装完 hooks 之后用：那条断线要变回来，而 hooks 在不在是探针
+        读文件得来的，``_republish`` 只重读功能、不重探。返回是否发起了。
+
+        一轮完整采集正在路上就不另起（它回来时自带新状态）；还没发布过也不起（没有页面在看）。``win`` 一侧重探完
+        接上上一次的 WSL 结果和它的耗时；``wsl`` 一侧只换那一半。
+        """
+        if side not in ("win", "wsl") or self._busy or self._last_published is None:
+            return False
+        facts, out_dir = self._last_published
+        try:
+            cfg = copy.deepcopy(self._config.data)
+            cfg_path, health = Path(self._config.path), tuple(self._health())
+        except Exception:  # noqa: BLE001
+            log.exception("配置全景：读取配置失败")
+            return False
+        generation = self._generation
+
+        def run() -> None:
+            try:
+                if side == "win":
+                    fresh = self._windows(cfg, cfg_path=cfg_path, secret_get=self._secret_get, api_health=health)
+                    fresh["wsl"] = facts.get("wsl", {"pending": True})
+                    if "wsl_s" in facts.get("timing", {}):
+                        fresh.setdefault("timing", {})["wsl_s"] = facts["timing"]["wsl_s"]
+                else:
+                    fresh = {**facts, "wsl": self._wsl()}
+                if generation != self._generation:      # 期间开了新的一轮：它的结果更新
+                    return
+                self._publish(fresh, out_dir)
+                log.info("配置全景：重探了 %s 一侧，页面已更新", side)
+            except Exception:  # noqa: BLE001 - 重探失败：页面留着上一份
+                log.exception("配置全景：重探 %s 一侧失败", side)
+
+        try:
+            self._spawn(run)
+        except Exception:  # noqa: BLE001
+            log.exception("配置全景：启动线程失败")
+            return False
+        return True
 
     def _write_settings(self, group_id: str, body) -> dict:
         """（界面线程）改一组设置。真的改了东西之后：跑应用链，再把图上的功能磁贴换成新值发布出去。"""

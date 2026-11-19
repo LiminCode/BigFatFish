@@ -1018,7 +1018,7 @@
   "menu.shared.one_fish_per_session": "每个会话一只小鱼",
   "menu.shared.agent_link": "Agent 联动",
   "menu.shared.repair_agent_hooks": "缺 hooks，点此重新配置…",
-  "agent_link.hooks_missing": "{name} 联动开着，但它的 settings.json 里缺肥鱼的 hooks（{n} 个事件），状态收不全。右键 → Agent 联动 里可以重新配置。",
+  "agent_link.hooks_missing": "{name} 联动开着，但它的 settings.json 里缺肥鱼的 hooks（{n} 个事件），状态收不全。右键 → Agent 联动 里可以重新配置，配置全景的待处理里也有「修复」。",
   "menu.shared.every_value_min": "每 {value} 分钟",
   "menu.shared.check_interval": "检查间隔",
   "menu.shared.check_automatically_while_i_m": "电脑在用时自动检查",
@@ -2412,5 +2412,14 @@
   "panorama.feature.session_history": "最近的对话",
   "panorama.note.session_fish": "吃联动事件：每个在用的 Claude Code 会话一只小鱼，进程不在了就冻结",
   "panorama.note.session_history": "灵动岛上的列表：每个会话在哪打开的，只存路径和标题",
-  "menu.shared.session_fish_settings": "会话小鱼设置…"
+  "menu.shared.session_fish_settings": "会话小鱼设置…",
+  "panorama.ui.repair": "修复",
+  "panorama.ui.repair_confirm_win": "要把肥鱼的事件 hooks 写进本机的 ~/.claude/settings.json 吗？\n\n它们在 Claude Code 干活时把时间、事件名、会话 ID 和工具名写到本机肥鱼目录，肥鱼据此同步会话小鱼的状态。只动肥鱼自己的条目，你已有的 hooks 不碰；关掉联动时会自动移除。",
+  "panorama.ui.repair_confirm_wsl": "要把肥鱼的事件 hooks 写进 WSL 默认发行版的 ~/.claude/settings.json 吗？\n\n经 wsl.exe 写入，事件只写到本机肥鱼目录，内容仅有时间、事件名、会话 ID 和工具名。只动肥鱼自己的条目，你已有的 hooks 不碰；关掉联动时会自动移除。",
+  "panorama.ui.repair_working": "正在配置…",
+  "panorama.ui.repair_installed": "已装好，图上马上更新",
+  "panorama.ui.repair_pending": "WSL 里正在配置，装完图上自己更新",
+  "panorama.ui.repair_failed": "没写进去，看肥鱼日志；再试一次",
+  "panorama.ui.repair_lost": "连不上肥鱼了；再试一次",
+  "panorama.ui.action_needs_service": "从肥鱼里点「配置全景」打开的页面才能修复；这是离线快照"
 }

@@ -74,10 +74,11 @@ class Graph:
             raise ValueError(f"bad edge {source}->{target}: state={state} line={line}")
         self.edges.append({"from": source, "to": target, "line": line, "state": state, "label": label})
 
-    def quest(self, level: str, text: str, node: str) -> None:
+    def quest(self, level: str, text: str, node: str, action: dict | None = None) -> None:
+        """``action``：页面上能点的动作 ``{"name", "agent", "side"}``（见 ``actions.py``）；没有就只是一条说明。"""
         if level not in QUEST_LEVELS:
             raise ValueError(f"bad quest level {level}")
-        self.quests.append({"sev": level, "text": text, "node": node})
+        self.quests.append({"sev": level, "text": text, "node": node, **({"action": action} if action else {})})
 
     def add_fact(self, node_id: str, label: str, value: str) -> None:
         """给别的来源建的磁贴补一行事实；那块磁贴这次没出现就算了。"""

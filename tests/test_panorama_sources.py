@@ -215,3 +215,12 @@ def test_session_fish_and_recent_chats_are_tiles_of_their_own_and_the_link_tiles
     cfg["agent_link"]["session_history"] = False
     off = sources.build(samples.facts(cfg=cfg))
     assert _node(off, "f_session_fish")["state"] == "off" and _node(off, "f_session_history")["state"] == "off"
+
+
+def test_the_missing_hooks_quest_carries_the_repair_action_for_its_side():
+    graph = sources.build(samples.facts(win=samples.home(hooks={"Stop": {"total": 1, "fish": 0}}),
+                                        wsl=samples.wsl_home(hooks={"Stop": {"total": 1, "fish": 0}})))
+    quests = {q["node"]: q for q in graph["quests"] if q["sev"] == "bad" and "hook" in q["text"]}
+    assert quests["set_win"]["action"] == {"name": "repair_hooks", "agent": "claude", "side": "win"}
+    assert quests["set_wsl"]["action"] == {"name": "repair_hooks", "agent": "claude_wsl", "side": "wsl"}
+    assert all("action" not in q for q in graph["quests"] if q["node"] not in ("set_win", "set_wsl")), "别的待处理项没有动作"

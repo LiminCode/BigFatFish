@@ -1026,7 +1026,7 @@
   "menu.shared.one_fish_per_session": "One fish per session",
   "menu.shared.agent_link": "Agent link",
   "menu.shared.repair_agent_hooks": "Hooks missing: set up again…",
-  "agent_link.hooks_missing": "The {name} link is on, but its settings.json lacks the pet's hooks (missing events: {n}), so its status will not arrive. Right-click → Agent link to set them up again.",
+  "agent_link.hooks_missing": "The {name} link is on, but its settings.json lacks the pet's hooks (missing events: {n}), so its status will not arrive. Right-click → Agent link to set them up again, or press Repair in the config panorama's to-do list.",
   "menu.shared.every_value_min": "Every {value} min",
   "menu.shared.check_interval": "Check interval",
   "menu.shared.check_automatically_while_i_m": "Check automatically while I'm at the computer",
@@ -2420,5 +2420,14 @@
   "panorama.feature.session_history": "Recent chats",
   "panorama.note.session_fish": "Fed by link events: one fish per running Claude Code session, frozen once the process is gone",
   "panorama.note.session_history": "The list on the island: where each session was opened, path and title only",
-  "menu.shared.session_fish_settings": "Session fish settings…"
+  "menu.shared.session_fish_settings": "Session fish settings…",
+  "panorama.ui.repair": "Repair",
+  "panorama.ui.repair_confirm_win": "Write the fish's event hooks into this machine's ~/.claude/settings.json?\n\nWhile Claude Code works they append the time, event name, session ID and tool name to the fish's local data folder, which the fish uses to update the session fish. Only the fish's own entries are touched; your existing hooks stay. Turning the link off removes them again.",
+  "panorama.ui.repair_confirm_wsl": "Write the fish's event hooks into the default WSL distro's ~/.claude/settings.json?\n\nWritten through wsl.exe; events go only to the fish's local data folder and carry just the time, event name, session ID and tool name. Only the fish's own entries are touched; your existing hooks stay. Turning the link off removes them again.",
+  "panorama.ui.repair_working": "Configuring…",
+  "panorama.ui.repair_installed": "Installed; the map updates in a moment",
+  "panorama.ui.repair_pending": "Configuring inside WSL; the map updates when it lands",
+  "panorama.ui.repair_failed": "Could not write it; see the fish log, then try again",
+  "panorama.ui.repair_lost": "Lost the fish; try again",
+  "panorama.ui.action_needs_service": "Repair works only on the page opened from the fish; this is the offline snapshot"
 }
