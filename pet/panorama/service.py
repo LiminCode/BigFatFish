@@ -292,12 +292,14 @@ class PanoramaService(QObject):
         if handler is None:
             raise ActionError(404, "unknown_action")
         try:
-            return handler(body)
+            out = handler(body)
         except ActionError:
             raise
         except Exception:  # noqa: BLE001 - 处理器出错不能把连接挂死；页面要一个明确的回答
             log.exception("配置全景：动作 %s 出错", name)
             raise ActionError(500, "action_failed") from None
+        log.info("配置全景：动作 %s 完成（%s）", name, out.get("state", "ok") if isinstance(out, dict) else "ok")
+        return out
 
     def refresh(self, side: str) -> bool:
         """（界面线程）只重探一侧、不开浏览器，再发布一次。装完 hooks 之后用：那条断线要变回来，而 hooks 在不在是探针
@@ -329,6 +331,7 @@ class PanoramaService(QObject):
                 if generation != self._generation:      # 期间开了新的一轮：它的结果更新
                     return
                 self._publish(fresh, out_dir)
+                log.info("配置全景：重探了 %s 一侧，页面已更新", side)
             except Exception:  # noqa: BLE001 - 重探失败：页面留着上一份
                 log.exception("配置全景：重探 %s 一侧失败", side)
 

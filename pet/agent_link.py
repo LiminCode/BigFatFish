@@ -2951,7 +2951,9 @@ class AgentLinkManager(QObject):
         顺带把通道开上并清掉「缺 hooks」的标记）。不靠 hooks 的通道没有可装的：``failed``。"""
         if agent_key == "claude":
             if not ClaudeCodeMonitor.install_hooks(self.monitors["claude"].events_file):
+                log.warning("Claude Code hooks 写入 settings.json 失败")
                 return "failed"
+            log.info("Claude Code hooks 已写入 settings.json（用户已同意）")
             self._note_hooks_installed("claude")
             return "installed"
         if agent_key == "claude_wsl":
