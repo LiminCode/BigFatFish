@@ -215,10 +215,10 @@ def test_a_storage_tile_lists_each_store_with_what_where_who_and_restore_source(
     graph = sources.build(samples.facts())
     out = _redraw(engine, graph, graph, "view.select('st_fish_local');")
     stores = [i for i in next(n for n in graph["nodes"] if n["id"] == "st_fish_local")["items"]]
-    assert out["detail"].count('<dl class="more">') == len(stores)
+    assert out["detail"].count('<dl class="more" hidden>') == len(stores), "默认紧凑：说明折着，点 ▸ 展开"
     assert "memory-distill/entries.json" in out["detail"] and "丢了从哪恢复" in out["detail"]
     plain = _redraw(engine, graph, graph, "view.select('plug_wsl');")        # 没有说明的清单照旧，不多出空壳
-    assert '<dl class="more">' not in plain["detail"]
+    assert 'class="more"' not in plain["detail"] and 'data-toggle' not in plain["detail"]
 
 
 def test_redraw_removes_the_old_listeners_and_attaches_the_same_number_again(engine):
@@ -675,3 +675,49 @@ def test_a_failed_or_lost_repair_lets_the_user_try_again(engine):
     assert out["out"] == "failed" and out["text"] == "没装成" and out["disabled"] is False
     out = _repair(engine, "reply = 'gone'; var out = null; runAction(api, S, el).then(function (s) { out = s; });")
     assert out["out"] == "lost" and out["text"] == "连接断了" and out["disabled"] is False
+
+
+# ---------------------------------------------------------------- 详情栏：紧凑列表、逐条折叠、筛选、相对时间、把手（2026-11-20）
+
+def test_lists_are_compact_by_default_with_a_fold_per_item_a_count_and_a_filter_when_long(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    long = _details(engine, graph, "st_fish_free", "undefined")           # 16 条：筛选框出现
+    assert long.count('<div class="item" data-row=') == 16 and long.count('<dl class="more" hidden>') == 16
+    assert long.count('<button class="fold" data-toggle=') == 16 and 'aria-expanded="false">▸</button>' in long
+    assert '<span class="lcount">16 条</span>' in long and 'class="lfilter" data-filter="st_fish_free"' in long
+    assert '<button class="peek" data-expand-all="1">全部展开</button>' in long
+    short = _details(engine, graph, "st_cc_win_local", "undefined")       # 5 条：有折叠、没有筛选框
+    assert '<span class="lcount">5 条</span>' in short and 'lfilter' not in short and 'data-expand-all' in short
+    flat = _details(engine, graph, "plug_wsl", "undefined")               # 没有说明的条目：占位、无按钮
+    assert '<i class="fold-gap"></i>' in flat and 'data-expand-all' not in flat
+
+
+def test_timestamps_in_facts_get_a_relative_age(engine):
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    detail = _details(engine, graph, "conn_w_ok", "undefined")
+    assert re.search(r'2026-01-02 03:04:11<span class="ago"> · \d+ 天前</span>', detail), "探测时间后面跟「N 天前」"
+
+
+def test_the_age_and_filter_helpers_are_pure(engine):
+    out = _evaluate(engine, render.bundle(("util.js",)) + """
+      var S = {ago_now: '刚刚', ago_minutes: '{n} 分钟前', ago_hours: '{n} 小时前', ago_days: '{n} 天前'};
+      var t0 = new Date(2026, 10, 20, 12, 0, 0).getTime();
+      return JSON.stringify({
+        now: ago('2026-11-20 11:59:30', S, t0), min: ago('2026-11-20 11:15', S, t0), hours: ago('2026-11-20 08:30:00', S, t0),
+        days: ago('2026-11-17 20:00:00', S, t0), future: ago('2026-11-21 00:00:00', S, t0), text: ago('~/.claude.json', S, t0),
+        empty: ago('', S, t0),
+        m1: rowMatches({name: 'claude.ai Atlassian', detail: '远程服务', more: [['地址', 'https://mcp.atlassian.com/v1/mcp']]}, 'ATLAS'),
+        m2: rowMatches({name: 'GitKraken', detail: '本地命令', more: [['地址', '/home/x/gk']]}, 'mcp.atlassian'),
+        m3: rowMatches({name: 'x', detail: ''}, '   '),
+        clamp: [clampAside(100), clampAside(500.4), clampAside(9999), clampAside('abc')]});""")
+    assert out == {"now": "刚刚", "min": "45 分钟前", "hours": "3 小时前", "days": "2 天前", "future": "", "text": "", "empty": "",
+                   "m1": True, "m2": False, "m3": True, "clamp": [300, 500, 720, 380]}
+
+
+def test_the_shell_has_the_resize_handle_between_map_and_panel():
+    shell = render.PAGE_DIR.joinpath("shell.html").read_text(encoding="utf-8")
+    assert shell.index('id="stage"') < shell.index('class="gutter" id="gutter"') < shell.index("<aside>")
+    css = render.PAGE_DIR.joinpath("app.css").read_text(encoding="utf-8")
+    assert "var(--aside-w,380px)" in css and ".gutter{display:none}" in css

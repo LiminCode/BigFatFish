@@ -37,3 +37,23 @@ export function rgb(h, s, v) { const f = k => { const x = (k + h / 60) % 6; retu
   return `rgb(${f(5)},${f(3)},${f(1)})`; }
 export const soften = (hex, ks = .6, kv = .8) => { const [h, s, v] = hsv(hex); return rgb(h, s * ks, v * kv); };
 export const tint = (hex, kv) => { const [h, s] = hsv(hex); return rgb(h, Math.min(s, .55) * .5, kv); };
+
+/* 「3 小时前」：值长得像 YYYY-MM-DD HH:MM(:SS) 才算，别的给空串；now 可注入（测试）。不到 1 分钟是「刚刚」。 */
+export function ago(value, S, now) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(value || '').trim());
+  if (!m) return '';
+  const then = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+  const sec = Math.round(((now === undefined ? Date.now() : now) - then) / 1000);
+  if (!isFinite(sec) || sec < 0) return '';
+  if (sec < 60) return S.ago_now || '';
+  const pick = sec < 3600 ? [Math.floor(sec / 60), 'ago_minutes'] : sec < 86400 ? [Math.floor(sec / 3600), 'ago_hours'] : [Math.floor(sec / 86400), 'ago_days'];
+  return String(S[pick[1]] || '{n}').replace('{n}', pick[0]);
+}
+/* 列表内筛选：名字、右侧那一句、more 里的值，任一包含就留（不分大小写）；空词全留 */
+export function rowMatches(row, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  return [row.name, row.detail, ...(row.more || []).map(m => m[1])].join(' ').toLowerCase().includes(q);
+}
+/* 右栏宽度：300–720 之间，不是数就回到默认 380 */
+export const clampAside = px => Math.max(300, Math.min(720, Math.round(+px || 380)));
