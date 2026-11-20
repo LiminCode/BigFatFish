@@ -120,3 +120,11 @@ def test_generate_skips_gh_when_prs_are_off_and_passes_sources_to_the_command():
     calls.clear()
     wb.generate(MONDAY_10, "sonnet", sources={**ALL, "email": True}, run=run)
     assert len(calls) == 2 and "gh search prs" in calls[0][0] and "search_threads" in calls[1][0]
+
+
+def test_the_atlassian_v2_connector_prefix_is_allowed_and_denied_like_the_others():
+    """2026-11-20：v1 连接器要下线、令牌几小时就掉，改认 v2「claude.ai Atlassian MCP」；三个前缀同一套名单。"""
+    allowed, denied = wb.allowed_tools(), wb.denied_tools()
+    for prefix in ("mcp__plugin_atlassian_atlassian__", "mcp__claude_ai_Atlassian__", "mcp__claude_ai_Atlassian_MCP__"):
+        assert prefix + "searchJiraIssuesUsingJql" in allowed and prefix + "executeRead" in allowed
+        assert prefix + "createJiraIssue" in denied and prefix + "executeWrite" in denied

@@ -64,7 +64,10 @@ _PR_FIELDS = "repository,number,title,updatedAt,isDraft,url"
 #: 来源 → 放行的只读工具（前缀组, 工具名组）。同一个服务既可能是 claude.ai 连接器，也可能是插件带来的，
 #: 工具名前缀不同；两种都放行，不存在的名字写在放行名单里没有任何效果。
 _SLACK_PREFIXES = ("mcp__claude_ai_Slack__", "mcp__plugin_slack_slack__")
-_ATLASSIAN_PREFIXES = ("mcp__plugin_atlassian_atlassian__", "mcp__claude_ai_Atlassian__")
+# Atlassian 有三条路：插件（无界面 -p 不加载）、claude.ai 的 v1 连接器「Atlassian」（2027-03-01 下线，令牌几小时就掉）、
+# claude.ai 的 v2 连接器「Atlassian MCP」（和插件同一个地址 /v2/mcp；交互式会话里被插件顶掉、藏起来，无界面里照常加载）。
+# 三个前缀都放行 / 都拒绝；v2 的工具名先沿用这一套，多出来的名字没放行就是被拒（2026-11-20）。
+_ATLASSIAN_PREFIXES = ("mcp__plugin_atlassian_atlassian__", "mcp__claude_ai_Atlassian__", "mcp__claude_ai_Atlassian_MCP__")
 _CALENDAR_PREFIXES = ("mcp__claude_ai_Google_Calendar__",)
 _GMAIL_PREFIXES = ("mcp__claude_ai_Gmail__", "mcp__plugin_gmail_gmail__")
 _READ_TOOLS_BY_SOURCE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
