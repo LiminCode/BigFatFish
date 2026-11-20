@@ -2628,6 +2628,7 @@ class CustomAgentMonitor(BaseAgentMonitor):
 
     def __init__(self, agent_key: str, config_dir: Path, events_path: str, parent=None) -> None:
         super().__init__(agent_key, config_dir, parent)
+        self.events_path = str(events_path)          # 配置里写的原样（热生效时和新配置比对用）
         self.events_file = Path(events_path).expanduser()
         self.events_dir = self.events_file.parent
         self._tailer = ByteOffsetTailer(self.events_file)
@@ -2807,7 +2808,7 @@ class AgentLinkManager(QObject):
         # 自定义联动 Agent：配置驱动的只读监视器（key/path 已在 config 清洗时
         # 保证合法唯一）；显示名合并进实例级 agent_names，类级 AGENT_NAMES
         # 保持仅内置（modern_settings_dialog 等按内置枚举处不受影响）。
-        # 注意：运行中新增/修改 custom_agents 需重启肥鱼生效。
+        # 运行中改了 custom_agents 由 apply_config → _sync_custom_agents 热生效（2026-11-20 起不用重启）。
         self.agent_names: dict[str, str] = dict(self.AGENT_NAMES)
         for item in (self.cfg.get("agent_link", {}).get("custom_agents") or []):
             key = str(item.get("key") or "")
@@ -2830,18 +2831,7 @@ class AgentLinkManager(QObject):
         self._last_session_id: dict[str, str] = {}
 
         for mon in self.monitors.values():
-            mon.raw_record.connect(self._remember_dialogue_record)
-            mon.normalized_event.connect(self._on_normalized_event)
-            mon.state_event.connect(self._on_agent_state_event)
-            mon.activity_event.connect(self._on_agent_activity_event)
-            mon.approval_requested.connect(self._on_approval_request)
-            mon.approval_resolved.connect(self._on_approval_resolved)
-            mon.session_done.connect(self._on_session_done)
-            mon.question_requested.connect(self._on_question_request)
-            mon.question_resolved.connect(self._on_question_resolved)
-            mon.cordis_requested.connect(self._on_cordis_request)
-            mon.cordis_resolved.connect(self._on_cordis_resolved)
-            mon.execution_failed.connect(self._on_execution_failed)
+            self._connect_monitor(mon)
         self.monitors["dsh"].session_meta.connect(self._on_session_meta)
         self.monitors["dsh"].model_access.connect(self._on_model_access)
         self.monitors["dsh"].llm_error.connect(self._on_llm_error)
@@ -2909,6 +2899,7 @@ class AgentLinkManager(QObject):
         # 在这里同步而非在探测时读配置，是为了让 agent_link 的探测保持
         # "纯函数 + 模块状态"的可测形态（不必到处传 cfg）。
         set_configured_pnpm_bin(self.cfg.get("pnpm_bin", ""))
+        self._sync_custom_agents(agent_cfg)
         if not agent_cfg.get("dsh", False):
             self._clear_model_access_alerts()
         for key, monitor in self.monitors.items():
@@ -2928,6 +2919,58 @@ class AgentLinkManager(QObject):
                     # 「关闭联动时会自动移除」）。只在「在跑 → 停」这一次转换上做，启动时的 apply_config 不碰文件。
                     self._uninstall_hooks(key)
         self._refresh_moved_hooks(agent_cfg)
+
+    #: 每个监视器接进管理器的信号 → 槽；构造时和热加自定义通道时都走它，热删时按同一张表断开
+    _MONITOR_SIGNALS = (
+        ("raw_record", "_remember_dialogue_record"), ("normalized_event", "_on_normalized_event"),
+        ("state_event", "_on_agent_state_event"), ("activity_event", "_on_agent_activity_event"),
+        ("approval_requested", "_on_approval_request"), ("approval_resolved", "_on_approval_resolved"),
+        ("session_done", "_on_session_done"), ("question_requested", "_on_question_request"),
+        ("question_resolved", "_on_question_resolved"), ("cordis_requested", "_on_cordis_request"),
+        ("cordis_resolved", "_on_cordis_resolved"), ("execution_failed", "_on_execution_failed"),
+    )
+
+    def _connect_monitor(self, monitor) -> None:
+        for signal_name, slot_name in self._MONITOR_SIGNALS:
+            getattr(monitor, signal_name).connect(getattr(self, slot_name))
+
+    def _disconnect_monitor(self, monitor) -> None:
+        for signal_name, slot_name in self._MONITOR_SIGNALS:
+            try:
+                getattr(monitor, signal_name).disconnect(getattr(self, slot_name))
+            except (RuntimeError, TypeError):
+                pass  # 没接上过（不该发生）：断开没有可断的
+
+    def _sync_custom_agents(self, agent_cfg: dict) -> None:
+        """配置里的 ``custom_agents`` 和已建的 ``CustomAgentMonitor`` 对齐：新增的建（下面的启停循环按开关决定起不起）、
+        删掉的停并移除、改了路径的停掉重建、只改显示名的就地换名。信号接线和构造时的一样。"""
+        wanted: dict[str, dict] = {}
+        for item in agent_cfg.get("custom_agents") or []:
+            key = str(item.get("key") or "") if isinstance(item, dict) else ""
+            if key and key not in self.AGENT_NAMES and key not in wanted:
+                wanted[key] = item
+        for key, monitor in list(self.monitors.items()):
+            if not isinstance(monitor, CustomAgentMonitor):
+                continue
+            item = wanted.get(key)
+            if item is not None and str(item.get("path") or "") == str(monitor.events_path):
+                self.agent_names[key] = str(item.get("name") or key)
+                continue
+            if monitor._running:
+                monitor.stop()
+            self._disconnect_monitor(monitor)
+            monitor.deleteLater()
+            del self.monitors[key]
+            self.agent_names.pop(key, None)
+            log.info("自定义联动 Agent [%s] 已%s", key, "移除" if item is None else "停掉，按新路径重建")
+        for key, item in wanted.items():
+            if key in self.monitors:
+                continue
+            monitor = CustomAgentMonitor(key, self.config_dir, str(item.get("path") or ""), self)
+            self.monitors[key] = monitor
+            self.agent_names[key] = str(item.get("name") or key)
+            self._connect_monitor(monitor)
+            log.info("自定义联动 Agent [%s] 已登记（%s）", key, monitor.events_file)
 
     # ---------------------------------------------------------- 联动开着、hooks 在不在
     def hooks_missing(self, agent_key: str) -> tuple[str, ...] | None:

@@ -2,7 +2,8 @@
 
    页面里没有任何一项设置的名字：画什么、叫什么、能选什么都在描述里（pet/panorama/settings_api.describe），
    能不能存由服务说了算（pet/settings_table.check_changes）。这里只管三件事：
-   - 画七种控件：开关、下拉、可自填的下拉、数字、单行文本、长文本、一行一个的列表；收在「高级」里的默认折起来；
+   - 画八种控件：开关、下拉、可自填的下拉、数字、单行文本、长文本、一行一个的列表、记录表（records：几列文本，一行一条，
+     可加行 / 删行，整张表一个「保存」）；收在「高级」里的默认折起来；
    - 什么时候交：开关、下拉、数字一动就交；文本和列表等用户点「保存」，没存的标出来，可以撤销；
    - 服务每一种回答的样子：存上了 / 值已经变了（换成现在的值）/ 哪几项不对 / 忙 / 用不了 / 连接断了。
    用户打到一半的文字，除非存上了，否则任何回答都不会把它冲掉。
@@ -18,12 +19,15 @@ export function settingsForm(host, S, send, on) {
 const CUSTOM = '__custom__';
 let st = null;
 const row = id => st.desc.settings.find(r => r.id === id);
-const textual = r => r.control === 'text' || r.control === 'long_text' || r.control === 'lines';
+const textual = r => r.control === 'text' || r.control === 'long_text' || r.control === 'lines' || r.control === 'records';
 const listy = r => r.control === 'lines';
+const recordy = r => r.control === 'records';
 const hasBuiltin = r => r.builtin !== null && r.builtin !== undefined;
 /* 文本框里的字存下去是什么：去掉首尾空白；和内置文字一样就是空。列表：一行一项，去掉首尾空白，空行不要 */
 const stored = (r, text) => {
   if (listy(r)) return String(text).split('\n').map(s => s.trim()).filter(Boolean);
+  if (recordy(r)) return (text || []).map(row => { const o = {}; r.fields.forEach(f => { o[f.id] = String(row[f.id] || '').trim(); }); return o; })
+    .filter(o => r.fields.some(f => o[f.id]));   /* 全空的行不要：和服务那边 _as_stored 一样 */
   const v = String(text).trim(); return hasBuiltin(r) && v === String(r.builtin).trim() ? '' : v;
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -74,6 +78,14 @@ function control(r) {
     return `<select data-set="${key}"${off} id="${id}">${options}</select>` + (custom ?
       `<input type="text" class="fcustom" data-custom="${key}" value="${esc(r.choices.indexOf(value) < 0 ? value : '')}"${off} aria-label="${esc(S.form_custom_label)}">` : '');
   }
+  if (recordy(r)) {
+    const rows = r.id in st.drafts ? st.drafts[r.id] : (r.value || []), k = esc(r.id);
+    const head = '<tr>' + r.fields.map(f => `<th>${esc(f.title)}</th>`).join('') + '<th></th></tr>';
+    const body = rows.map((row, i) => '<tr>' + r.fields.map(f =>
+      `<td><input type="text" data-rec="${k}" data-i="${i}" data-f="${esc(f.id)}" value="${esc(row[f.id] || '')}"${off} aria-label="${esc(f.title)}"></td>`).join('') +
+      `<td><button class="btn ghost-btn frec-del" data-del="${k}" data-i="${i}"${off} title="${esc(S.form_delete_row)}">×</button></td></tr>`).join('');
+    return `<table class="frecords" id="${id}">${head}${body}</table><button class="btn ghost-btn" data-add="${k}"${off}>${esc(S.form_add_row)}</button>` + buttons(r);
+  }
   const text = r.id in st.drafts ? st.drafts[r.id] : listy(r) ? (r.value || []).join('\n') : (r.value === '' && hasBuiltin(r) ? r.builtin : r.value);
   if (r.control === 'text') return `<input type="text" data-draft="${key}" value="${esc(text)}"${off} id="${id}">` + buttons(r);
   return `<textarea data-draft="${key}"${off} id="${id}" rows="${hasBuiltin(r) ? 12 : listy(r) ? 3 : 4}" spellcheck="false">${esc(text)}</textarea>` + buttons(r);
@@ -81,7 +93,7 @@ function control(r) {
 
 function rowHtml(r) {
   const error = st.errors[r.id];
-  return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' || listy(r) ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
+  return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' || listy(r) || recordy(r) ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
     `<div class="flabel"><label for="${idOf(r)}">${esc(r.title)}</label>${r.hint ? `<small>${esc(r.hint)}</small>` : ''}</div>` +
     `<div class="fctl">${control(r)}</div>` +
     (error ? `<p class="ferr" role="alert">${esc(errorText(r, error))}</p>` : '') + '</div>';
@@ -152,7 +164,17 @@ host.addEventListener('change', ev => {
   const picked = r.choices.find(c => String(c) === String(t.value));
   commit({[r.id]: picked === undefined ? t.value : picked});
 }, on);
+/* 记录表的草稿是一组对象：第一次改时从当前值复制一份（每行一个新对象，不碰服务给的那份） */
+const recDraft = r => { if (!(r.id in st.drafts)) st.drafts[r.id] = (r.value || []).map(row => Object.assign({}, row)); return st.drafts[r.id]; };
 host.addEventListener('input', ev => {
+  const cell = ev.target.closest('[data-rec]');
+  if (cell) {
+    const r = row(cell.dataset.rec);
+    if (!r || locked(r)) return;
+    const rows = recDraft(r), i = +cell.dataset.i;
+    if (rows[i]) { rows[i][cell.dataset.f] = cell.value; refresh(r); }
+    return;
+  }
   const t = ev.target.closest('[data-draft]');
   const r = t && row(t.dataset.draft);
   if (!r || locked(r)) return;
@@ -166,7 +188,11 @@ host.addEventListener('click', ev => {
   const back = ev.target.closest('[data-revert]');
   if (back) { delete st.drafts[back.dataset.revert]; return draw(); }
   const builtin = ev.target.closest('[data-builtin]');
-  if (builtin) { const r = row(builtin.dataset.builtin); if (r && !locked(r)) { st.drafts[r.id] = r.builtin; draw(); } }
+  if (builtin) { const r = row(builtin.dataset.builtin); if (r && !locked(r)) { st.drafts[r.id] = r.builtin; draw(); } return; }
+  const add = ev.target.closest('[data-add]');
+  if (add) { const r = row(add.dataset.add); if (r && !locked(r)) { const o = {}; r.fields.forEach(f => { o[f.id] = ''; }); recDraft(r).push(o); draw(); } return; }
+  const del = ev.target.closest('[data-del]');
+  if (del) { const r = row(del.dataset.del); if (r && !locked(r)) { recDraft(r).splice(+del.dataset.i, 1); draw(); } }
 }, on);
 
 return {

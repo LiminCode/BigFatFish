@@ -1518,9 +1518,17 @@ class AppShell:
         self._sync_todo_service()
         self._sync_chime_service()
         self._sync_festival_service()
-        # 外部配置变更也可能改了 agent_link.dsh（右键菜单开关落盘后同样收敛到
-        # 这里）→ 各窗 refresh_pet_settings 链里的 manager.apply_config 会按
-        # 同一功能门启停 DshMonitor（桥目录唯一读方）。
+        # 外部配置变更也可能改了 agent_link（页面上的联动开关、自定义联动 Agent、右键菜单开关落盘后同样收敛到
+        # 这里）。legacy 拓扑里各窗 refresh_pet_settings 链会调 manager.apply_config；overlay 拓扑没有 PetWindow
+        #（instance.win 是 None），那条链走不到——2026-11-20 起在这里直接应用共享的联动管理器一次
+        #（apply_config 幂等，legacy 拓扑里多调一次无妨）。它按同一功能门启停各监视器（含 DshMonitor，桥目录唯一读方）。
+        shared = getattr(self, "_shared", None)
+        manager = getattr(shared, "agent_link", None) if shared is not None else None
+        if manager is not None:
+            try:
+                manager.apply_config()
+            except Exception:  # noqa: BLE001 - 联动应用失败不能把别的设置同步也拦下
+                logging.exception("外部配置变更：联动管理器应用失败")
         # 联动被关掉 → 肥鱼自拉起的 dsh web 立即收口：它唯一的消费者就是这条
         # 联动管线，关掉后留着只是常驻内存。顺序放在跟踪器停表之后（先停探测再
         # 停服务，免得跟踪器在服务消失的那一刻又报一轮 offline）；只动自拉起
