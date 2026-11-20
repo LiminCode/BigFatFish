@@ -1,6 +1,6 @@
 # 排障手册
 
-> 先按症状找到归属的文档；跨功能的三类问题（联网、测试套件原生崩溃、WSL 共享）直接写在本文。
+> 先按症状找到归属的文档；跨功能的几类问题（联网、测试套件原生崩溃、WSL 共享、无界面 Claude Code 的连接器）直接写在本文。
 > 日志在 `%APPDATA%\big-fat-fish\pet-<pid>.log`。
 
 ## 按症状找
@@ -18,6 +18,7 @@
 | 新加的设置项不见了、刚配的值没了 | [设置与右键菜单](settings-and-menu.md)：先问是不是有旧的设置窗口还开着 |
 | 界面文字没跟着语言切换 | [界面语言](i18n.md) |
 | 工作简报某一节读不到、笔记推不上去、Slack 关注重复提醒 | [公司侧助理](work-assistant.md) |
+| 简报的 Jira 一节说「连接器被拒、需要重新登录」，重新认证了 Atlassian 插件还是不行 | 本文「无界面 `claude -p` 里的连接器」 |
 | 个人简报失败、开了连接器后对话全部 400 | [个人侧助理](personal-assistant.md) |
 | 蒸馏的提案接受不了、候选数不对 | [会话记忆蒸馏](memory-distill.md) |
 | 关机 / 注销时弹 `0xc0000142` | [架构与红线](architecture.md) 的「会话结束冻结」 |
@@ -91,6 +92,46 @@ localhost 绕过。已知没做：只有代理能出网的用户，歌词会取�
 - 从 Git Bash 起的 Python 访问不到 `\\wsl.localhost`（报 `WinError 3`）。要读共享的探针从 PowerShell 起。
 - 在 Windows 侧用 `code --remote wsl+<发行版> <路径>` 打开 WSL 目录不可靠（返回 0 却不开窗口）；
   改成在 WSL 里执行 `code .`。
+
+## 无界面 `claude -p` 里的连接器：要登录的是 claude.ai 连接器，不是插件
+
+症状：工作简报的 Jira 一节写「claude.ai Atlassian 连接器重连时被拒，需要重新登录；这次会话也没有加载 Atlassian 插件
+MCP」；在 WSL 的交互式 Claude Code 里用 `/mcp` 重新认证了 Atlassian **插件**，再生成还是读不到。
+
+机制（2026-11-19 在 WSL、Claude Code 2.1.329 上实测）：
+
+- 同一个服务有两条路：claude.ai 连接器（工具名 `mcp__claude_ai_Atlassian__…`，OAuth 挂在 claude.ai 账号上）和插件
+  （`mcp__plugin_atlassian_atlassian__…`，OAuth 存在本机 `~/.claude/.credentials.json`）。
+- 简报走的是无界面 `claude -p`。它**只加载 claude.ai 连接器和 stdio 型服务器**：插件带的 HTTP OAuth 服务器
+  （Atlassian、Slack 插件）一个都不出现——`--output-format stream-json --verbose` 的 `system/init` 事件里
+  `mcp_servers` 没有它们，也没有任何报错（上游 anthropics/claude-code#36309，被 bot 关闭、未修）。交互式
+  `claude mcp list` 里它们却是「✔ Connected」。所以重新认证插件对简报没有用。
+- 连接器那一侧的「Needs authentication」是 claude.ai 账号层面的状态，不是本机令牌；无界面模式没有 `/mcp`，
+  不会自己发起登录，模型只能在那一节写一句原因。
+
+排查与修复：
+
+1. 看连接器状态（`claude.ai Atlassian` 那一行）：
+
+   ```
+   wsl.exe -e bash -lc "claude mcp list"
+   ```
+
+2. 「! Needs authentication」就在 WSL 里登录这个**连接器**（浏览器里走一次 OAuth；没有浏览器的 SSH 会话加
+   `--no-browser`，它会打印授权地址）：
+
+   ```
+   wsl.exe -e bash -lc 'claude mcp login "claude.ai Atlassian"'
+   ```
+
+3. 再 `claude mcp list` 确认变成「✔ Connected」，然后在简报页点「重新生成」。
+
+要知道某次无界面运行到底挂上了哪些服务器、暴露了哪些工具，用 `--output-format stream-json --verbose` 跑一个最小提示，
+读 `system/init` 事件的 `mcp_servers` 和 `tools`；不要靠让模型复述工具名。
+
+顺带一条：Claude Code 2.1.3xx 把 `~/.claude.json` 搬到了 `~/.claude/.config.json`，两份同时存在时每次运行的 stderr
+都会打一段「Two Claude Code config files exist」。按它说的把不用的那份挪开即可；配置全景的 WSL 探针读的还是
+`~/.claude.json`，两份并存时它看到的是旧的那份。
 
 ## 实机验证时的注意
 
