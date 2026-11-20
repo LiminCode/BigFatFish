@@ -18,6 +18,17 @@ from typing import Callable
 HOOKED_SIDES = {"claude": "win", "claude_wsl": "wsl"}
 
 
+def generate_report(generators: dict) -> Callable[[object], dict]:
+    """报告页上的「重新生成」。``generators``：报告名 → 返回 ``started`` / ``busy`` / ``failed`` / ``unavailable`` 的函数
+    （工作简报的在 ``reports.generate_work_briefing``）。不认识的报告名 400 ``bad_report``。"""
+    def run(body) -> dict:
+        report = body.get("report") if isinstance(body, dict) else None
+        if not isinstance(report, str) or report not in generators:
+            raise ActionError(400, "bad_report")
+        return {"report": report, "state": str(generators[report]())}
+    return run
+
+
 class ActionError(Exception):
     """动作没办成。``status`` 和 ``code`` 给页面。"""
 

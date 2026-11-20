@@ -3040,7 +3040,12 @@ class AppShell:
             from .work_briefing_ui import WorkBriefingController
 
             service = WorkBriefingService(self.config, parent=self.app)
-            self._work_briefing = WorkBriefingController(self._overlay_shell, service)
+            # 看简报在浏览器里（配置全景的报告页）；生成开始 / 结束时让那一页重画——没人开着页面时 publish 什么都不做
+            self._work_briefing = WorkBriefingController(
+                self._overlay_shell, service, open_report=lambda: self._open_report("work_briefing"),
+                report_watched=lambda: self._report_watched("work_briefing"))
+            service.started.connect(lambda *_: self._publish_report("work_briefing"))
+            service.finished.connect(lambda *_: self._publish_report("work_briefing"))
             self._overlay_shell.work_briefing = self._work_briefing
             self._work_briefing.state_changed.connect(self._push_island_briefing_state)
             service.start()
@@ -3462,19 +3467,44 @@ class AppShell:
         """打开「配置全景」：后台采一轮本机的 AI 配置，写成本地页面，用默认浏览器打开。
 
         ``focus``：页面画完就直接翻到的那一组设置（设置窗口里「到配置全景里改」经指令通道传来）。"""
+        self._panorama().open(focus=focus)
+
+    def _panorama(self):
+        """配置全景的服务对象（第一次要用时才建）。页面、报告页、本机服务都挂在它上面。"""
         service = getattr(self, "_panorama_service", None)
         if service is None or not shiboken6.isValid(service):
             from .panorama import actions as panorama_actions
+            from .panorama import reports as panorama_reports
             from .panorama.service import PanoramaService
 
+            briefing_service = lambda: getattr(getattr(self, "_work_briefing", None), "service", None)  # noqa: E731
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
-            # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧。
+            # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
+            #          「重新生成」让简报服务现在生成一份。
+            # reports：浏览器里读的报告页，现在只有工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）。
             service = self._panorama_service = PanoramaService(
                 self.config, health=self._panorama_health, apply=self._apply_external_config_change, parent=self.app,
                 actions={"repair_hooks": panorama_actions.repair_hooks(
-                    lambda: getattr(getattr(self, "_shared", None), "agent_link", None),
-                    lambda side: self._panorama_service.refresh(side))})
-        service.open(focus=focus)
+                             lambda: getattr(getattr(self, "_shared", None), "agent_link", None),
+                             lambda side: self._panorama_service.refresh(side)),
+                         panorama_reports.GENERATE_ACTION: panorama_actions.generate_report(
+                             {panorama_reports.WORK_BRIEFING: panorama_reports.generate_work_briefing(briefing_service)})},
+                reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config)})
+        return service
+
+    def _open_report(self, name: str) -> bool:
+        """在浏览器里打开一份报告（工作简报的「查看」走这里）。"""
+        return bool(self._panorama().open_report(name))
+
+    def _report_watched(self, name: str) -> bool:
+        service = getattr(self, "_panorama_service", None)
+        return service is not None and shiboken6.isValid(service) and bool(service.report_watched(name))
+
+    def _publish_report(self, name: str) -> None:
+        """报告的内容变了（简报开始 / 结束生成）：有页面看过就重画它；服务还没建过（从没开过页面）就什么都不做。"""
+        service = getattr(self, "_panorama_service", None)
+        if service is not None and shiboken6.isValid(service):
+            service.publish_report(name)
 
     def _panorama_health(self) -> tuple[str, str]:
         """岛上那个体检器对「使用中的模型服务」的最近结论；没有体检器（没开岛）就是不知道。"""

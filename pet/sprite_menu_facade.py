@@ -577,8 +577,11 @@ class SpriteMenuFacade:
         """「工作日自动生成」：落盘；后台服务每分钟读一次配置，最迟一分钟生效。"""
         self._set_work_briefing(enabled=bool(on))
 
-    def set_work_briefing_time(self, value: str) -> None:
-        self._set_work_briefing(time=str(value))
+    def open_work_briefing_settings(self) -> None:
+        """「简报设置…」：配置全景翻到「工作简报」那一组（时间 / 模型 / effort / 来源 / 提示词都在那里改）。"""
+        opener = self.on_open_config_panorama
+        if callable(opener):
+            opener(focus="work_briefing")
 
     def open_work_briefing(self) -> None:
         controller = self._work_briefing()

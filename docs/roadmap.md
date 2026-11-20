@@ -105,6 +105,14 @@ flowchart LR
 - [x] Claude Code 联动与 hooks 修复动作
 - [ ] 模型服务列表与密钥、连接测试
 
+### M4b 内容页搬到浏览器（[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）
+
+- [x] 工作简报的阅读页（`/report/work_briefing`：岛按钮、提醒「查看」、菜单都开浏览器；Qt 壳不再带「简报」页）
+- [ ] 个人简报（同一张报告页，多登记一项）
+- [ ] 工作笔记页（列表 + 详情 + 新增 / 完成 / 重新总结）
+- [ ] Slack 关注页
+- [ ] 下线 `WorkBriefingWindow`
+
 ### M5 能编辑：记忆与知识
 
 - [ ] 文件编辑器：记忆文件、全局规矩文件的非受管部分

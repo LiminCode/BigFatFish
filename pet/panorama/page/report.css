@@ -1,0 +1,37 @@
+/* 报告页（工作简报）的样式。控件颜色用和 Qt 共用的令牌（tokens.css 的 --m-*，深色默认、data-theme="light" 换浅色）；
+   下面这组是简报自己多出来的几个：链接色、工单状态小标签、bug 行底色、三级优先级的星色——
+   和 Qt 窗口 work_briefing_ui._EXTRA_TOKENS 一字不差，改一处就两处一起改。Metro：没有圆角。 */
+:root{color-scheme:dark;--link:#6cb4ff;--chip:#38383f;--chip-text:#e6e6ea;--bug:#4a2328;--p1:#ff6b61;--p2:#ffa94d;--p3:#8c8c94}
+:root[data-theme="light"]{color-scheme:light;--link:#0a6fd6;--chip:#e6e6e8;--chip-text:#1f1f1f;--bug:#fbe3e4;--p1:#d93025;--p2:#e8710a;--p3:#8a8a90}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.55 "Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;padding:26px 28px 6px;max-width:860px;margin:0 auto}
+header h1{margin:0;font-size:28px;font-weight:300;letter-spacing:.02em;color:var(--m-title)}
+.meta{color:var(--m-muted);font-size:12.5px}
+main{max-width:860px;margin:0 auto;padding:0 28px 40px}
+.summary{font-size:17px;font-weight:600;margin:10px 0 8px;color:var(--m-title)}
+.summary[hidden]{display:none}
+.usage{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.usage .u{background:var(--m-tile);color:var(--m-muted);padding:2px 8px;font-size:12px}
+article{background:var(--m-tile);padding:18px 22px;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+article h2,article h3,article h4,article h5,article h6{margin:18px 0 8px;font-weight:600;color:var(--m-title)}
+article h2{font-size:20px}article h3{font-size:16px;letter-spacing:.06em;text-transform:uppercase;color:var(--m-muted)}
+article h3:first-child{margin-top:0}
+article p{margin:8px 0}
+article ul,article ol{margin:6px 0 10px;padding-left:22px}
+article li{margin:4px 0}
+article li.bug{background:var(--bug);margin-left:-22px;padding:4px 8px 4px 22px;list-style-position:inside}
+article li.bug ul{margin-bottom:0}
+article a{color:var(--link);text-decoration:none}article a:hover{text-decoration:underline}
+article code.chip{background:var(--chip);color:var(--chip-text);padding:1px 6px;font:inherit;font-size:12.5px}
+article .star{font-size:13px;letter-spacing:.05em}
+article .star.s3{color:var(--p1);font-weight:700}article .star.s2{color:var(--p2)}article .star.s1{color:var(--p3)}
+article .note{color:var(--m-muted)}
+.foot{display:flex;align-items:center;gap:14px;margin-top:14px}
+.status{flex:1;color:var(--m-muted);font-size:13px;min-height:1.5em}.status.bad{color:var(--p1)}
+.btn{background:var(--m-accent);color:var(--m-selected-text);border:0;padding:8px 18px;font:inherit;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.22)}
+.btn:hover{filter:brightness(1.08)}.btn:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
+.btn:disabled{background:var(--m-tile);color:var(--m-disabled);cursor:default;box-shadow:none}
+.btn[hidden]{display:none}
+.lost{max-width:860px;margin:10px auto 0;padding:10px 28px;color:var(--p2);font-size:13px}
+.lost[hidden]{display:none}

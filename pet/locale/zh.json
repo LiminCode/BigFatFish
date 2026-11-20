@@ -1025,7 +1025,6 @@
   "menu.shared.check_now": "现在检查",
   "menu.shared.view_latest_check": "查看最近一次",
   "menu.shared.slack_watch": "Slack 关注",
-  "menu.shared.generation_time": "生成时间",
   "menu.shared.generate_weekdays": "工作日自动生成",
   "menu.shared.generate_now": "现在生成",
   "menu.shared.view_latest": "查看最近一份",
@@ -2421,5 +2420,15 @@
   "panorama.ui.repair_pending": "WSL 里正在配置，装完图上自己更新",
   "panorama.ui.repair_failed": "没写进去，看肥鱼日志；再试一次",
   "panorama.ui.repair_lost": "连不上肥鱼了；再试一次",
-  "panorama.ui.action_needs_service": "从肥鱼里点「配置全景」打开的页面才能修复；这是离线快照"
+  "panorama.ui.action_needs_service": "从肥鱼里点「配置全景」打开的页面才能修复；这是离线快照",
+  "menu.shared.briefing_settings": "简报设置…",
+  "briefing.bubble.page_failed": "简报页打不开：本机服务起不来，看日志里「配置全景」那几行",
+  "panorama.ui.report_shell_title": "大肥鱼",
+  "panorama.ui.report_window_title": "{title} · 大肥鱼",
+  "panorama.ui.report_lost": "和肥鱼的连接断了：肥鱼退出了，或者这个页面放得太久。下面是断开之前的那一份；要更新就从肥鱼里再打开一次。",
+  "panorama.ui.report_unavailable": "这台机器上没有这项功能（工作简报要装了 WSL 才有）。",
+  "panorama.ui.report_action_started": "已出发，大约一分钟…",
+  "panorama.ui.report_action_busy": "正在生成，等它完成。",
+  "panorama.ui.report_action_failed": "没能发起，看肥鱼的日志。",
+  "panorama.ui.report_action_lost": "连不上肥鱼。"
 }

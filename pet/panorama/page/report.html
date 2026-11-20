@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/report.css">
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="meta" id="generated"></span>
+</header>
+<div class="lost" id="lost" hidden>__LOST__</div>
+<main>
+  <p class="summary" id="summary" hidden></p>
+  <div class="usage" id="usage"></div>
+  <article id="body"></article>
+  <div class="foot">
+    <span class="status" id="status"></span>
+    <button class="btn" id="action" hidden></button>
+  </div>
+</main>
+<script type="module" src="/report.js"></script>
+</body>
+</html>

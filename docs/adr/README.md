@@ -65,3 +65,4 @@ PR 满足下面**任意一条**才新增一份 ADR：
 | [0015](0015-private-repos-are-home.md) | 私有仓库是数据的家，本机磁盘只是缓存；每种落盘数据都要登记从哪恢复 |
 | [0016](0016-drop-screen-watching-and-file-interpret.md) | 看屏幕和拖文件解读整个删掉，不按 0012 只摘入口 |
 | [0017](0017-drop-quick-launch-and-tools-help.md) | 右键菜单的「快捷启动」和「工具与帮助」整个删掉 |
+| [0018](0018-content-pages-move-to-the-browser.md) | 生成出来的内容也在浏览器里读，从工作简报开始；Qt 的简报窗口等别的页搬完再删 |

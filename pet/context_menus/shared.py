@@ -339,13 +339,12 @@ def build_character_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
 def add_work_briefing_menu(menu: QMenu, pet) -> None:
     """「工作简报」子菜单：WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程。
 
-    只有装了 WSL、且宿主接了简报服务（overlay 壳）时才出现。"查看 / 现在生成"是命令，
-    "工作日自动生成 / 生成时间"是偏好，和会话小鱼的几个选项一样就地放在菜单里。"""
+    只有装了 WSL、且宿主接了简报服务（overlay 壳）时才出现。「查看 / 现在生成」是命令，「工作日自动生成」是开关；
+    生成时间、模型、来源这些选值在配置全景上改（「简报设置…」翻到那一组），菜单里不再有第二个入口（ADR 0014）。"""
     state_of = getattr(pet, "work_briefing_settings", None)
     settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
     if settings is None:
         return
-    from ..work_briefing import TIME_CHOICES
 
     sub = add_submenu(menu, t("menu.shared.daily_briefing"), None)
     add_action(sub, t("menu.shared.view_latest"), None, pet.open_work_briefing, close_on_trigger=True)
@@ -355,15 +354,9 @@ def add_work_briefing_menu(menu: QMenu, pet) -> None:
     act.setCheckable(True)
     act.setChecked(bool(settings["enabled"]))
     act.toggled.connect(lambda on: pet.toggle_work_briefing(on))
-    time_menu = add_submenu(sub, t("menu.shared.generation_time"), None)
-    group = QActionGroup(time_menu)
-    group.setExclusive(True)
-    for value in sorted({*TIME_CHOICES, settings["time"]}):
-        choice = time_menu.addAction(value)
-        choice.setCheckable(True)
-        choice.setChecked(value == settings["time"])
-        group.addAction(choice)
-        connect_action(choice, lambda value=value: pet.set_work_briefing_time(value))
+    open_settings = getattr(pet, "open_work_briefing_settings", None)
+    if callable(open_settings):
+        add_action(sub, t("menu.shared.briefing_settings"), None, open_settings, close_on_trigger=True)
 
 
 def add_slack_watch_menu(menu: QMenu, pet) -> None:
