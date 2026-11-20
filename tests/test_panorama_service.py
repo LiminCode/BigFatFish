@@ -50,8 +50,8 @@ class _FakeServer:
         self.running = True
         return self.URL.split("/#")[0]
 
-    def page_url(self):
-        return self.URL
+    def page_url(self, path="/"):
+        return self.URL if path == "/" else self.URL.replace("/#", path + "#")
 
     def stop(self):
         if self.running:

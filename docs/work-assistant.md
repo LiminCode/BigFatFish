@@ -11,7 +11,8 @@
 |---|---|
 | `pet/work_briefing.py` | 零 Qt。配置 `normalize`、`is_due`、放行 / 拒绝名单、`claude_command`、`pr_command` / `format_pull_requests`、提示词模板与 `render_template`、`parse_output`、`linkify`、状态文件 |
 | `pet/work_briefing_service.py` | `WorkBriefingService`：每分钟 `check()`，到点在 daemon 线程里 `generate`，信号排队回 GUI 线程落盘 |
-| `pet/work_briefing_ui.py` | `WorkBriefingController`（提醒气泡、岛按钮状态、`tab_providers`）、`WorkBriefingWindow`（Metro 窗口壳，三处复用） |
+| `pet/work_briefing_ui.py` | `WorkBriefingController`（提醒气泡、岛按钮状态、`tab_providers`；「查看」开浏览器里的简报页）、`WorkBriefingWindow`（Metro 窗口壳：笔记 / Slack 关注 / 个人助理还在用；工作简报的那一页 2026-11-19 起不再加进去） |
+| `pet/panorama/reports.py` / `markdown.py` | 浏览器里的简报页：把 `WorkBriefingService` 的最近一份翻成页面数据，Markdown → HTML。见[配置全景](config-panorama.md)「报告页」 |
 | `pet/slack_watch.py` / `slack_watch_service.py` / `slack_watch_ui.py` | Slack 关注：`session_active`、`is_due`、`since_for`、JSON 约定、去重 `fresh_items`、总提醒与存档 |
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
@@ -151,8 +152,16 @@ flowchart LR
 
 ### 窗口
 
-- `WorkBriefingWindow` 是三处共用的壳：工作简报（「简报 / 笔记 / Slack 关注」三页，后两页经 `tab_providers` 在建窗口时
-  挂上）、右键菜单的 Slack 关注独立窗口（最近一次结果）、个人助理。
+- **工作简报的阅读页在浏览器里**（2026-11-19，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：岛按钮、提醒的
+  「查看」、右键「查看最近一份」都调 `AppShell._open_report("work_briefing")` → 配置全景服务的 `/report/work_briefing`。
+  打开即算读过（岛按钮回到普通样子）；页面开着看时新一份不再冒提醒（`report_watched`：有请求挂在那份报告的发布台上）。
+  生成开始 / 结束时 `publish_report`，页面原地重画；没人打开过页面时什么都不做。页面上的「重新生成」= `POST /api/actions/generate_report`
+  → `WorkBriefingService.generate_now()`。本机服务起不来时冒一句气泡（没有离线退路：原来的窗口也要肥鱼开着）。
+  内容只经带令牌的接口给本机浏览器，不进全景图、不落快照；服务日志只有请求行。
+- `WorkBriefingWindow` 现在是别的页的壳：笔记 / Slack 关注（经 `tab_providers` 挂上，`open_window(tab=…)` 开它，建窗口时
+  `briefing_page=False`，没有「简报」页）、右键菜单的 Slack 关注独立窗口（最近一次结果）、个人助理（还带自己的简报页）。
+  都搬到浏览器之后这扇窗删掉（顺序见路线图 M4b）。
+- 菜单「工作简报」只剩「查看最近一份 / 现在生成 / 工作日自动生成 / 简报设置…」；生成时间等选值在配置全景上改。
 - **Metro 令牌复用**：颜色直接取 `settings_theme_qss.METRO_TOKENS`，只多链接色、小标签色等几组（`briefing_tokens`）；样式表
   里不许有非零圆角（有测试守着）；pivot 页头哪怕只有一页也显示。
 - **一张样式表管整扇窗**：挂上来的页不带自己的样式表，靠 objectName 被窗口的样式表选中，换主题只要窗口 `setStyleSheet`

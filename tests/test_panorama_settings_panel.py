@@ -172,7 +172,7 @@ BOOT_REPORT = ("\nreturn JSON.stringify({calls: calls, requests: requests, repla
 
 
 def _boot(engine, setup: str, steps: str = "") -> dict:
-    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + "var results = [];" + setup + render.bundle(("boot.js",)) + steps + BOOT_REPORT)
+    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + "var results = [];" + setup + render.bundle(("client.js", "boot.js")) + steps + BOOT_REPORT)
 
 
 def test_an_address_naming_a_group_opens_it_once_the_map_is_drawn(engine):

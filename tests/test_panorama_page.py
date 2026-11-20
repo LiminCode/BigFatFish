@@ -104,7 +104,7 @@ def _run(engine, graph: dict) -> dict:
 
 def _boot(engine, setup: str, steps: str = "") -> dict:
     """跑 boot.js。``setup`` 在它之前布置环境，``steps`` 在它之后推进定时器。"""
-    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + setup + render.bundle(("boot.js",)) + steps +
+    return _evaluate(engine, FAKE_DOM + FAKE_BROWSER + setup + render.bundle(("client.js", "boot.js")) + steps +
                      "\nreturn JSON.stringify({calls: calls, timers: timers.length, intervals: intervals.length, reloads: reloads, "
                      "replaced: replaced, started: started, disposed: disposed, store: store, hash: location.hash, "
                      "watching: Object.keys(_docListeners), "

@@ -88,7 +88,7 @@ class PanoramaService(QObject):
                  wsl: Callable[[], dict] | None = None, write: Callable[[dict, Path], Path] | None = None,
                  open_page: Callable[[str], object] | None = None, spawn: Callable | None = None,
                  server=None, apply: Callable[[], object] | None = None, audit=None,
-                 actions: dict | None = None, parent: QObject | None = None) -> None:
+                 actions: dict | None = None, reports: dict | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._health = health or (lambda: ("unknown", ""))
@@ -107,6 +107,8 @@ class PanoramaService(QObject):
         self._apply = apply                     # 设置改完之后要跑的应用链（应用传进来：_apply_external_config_change）
         self._audit = audit                     # 审计记录；不给就用数据目录里那一份（第一次用到时才建）
         self.actions: dict = dict(actions or {})   # 页面上的动作：名字 → 处理器（见 actions.py），应用登记
+        self._reports: dict = dict(reports or {})  # 报告页：名字 → provider（见 reports.py），应用登记
+        self._report_feeds = {name: Feed() for name in self._reports}   # 每份报告自己的发布台（页面挂在上面等更新）
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
@@ -135,6 +137,8 @@ class PanoramaService(QObject):
         self._generation += 1
         self._busy = False
         self._feed.close()
+        for feed in self._report_feeds.values():
+            feed.close()
         if self._server is not None:
             try:
                 self._server.stop()
@@ -368,8 +372,55 @@ class PanoramaService(QObject):
         except Exception:  # noqa: BLE001 - 重画失败不影响已经存好的设置
             log.exception("配置全景：设置改动后重新发布失败")
 
-    def _page_target(self, snapshot: str) -> str:
-        """（GUI 线程）浏览器该打开什么：本机服务的网址；服务起不来就退回快照文件。"""
+    # ------------------------------------------------------------ 报告页（见 reports.py）
+
+    def has_report(self, name: str) -> bool:
+        return name in self._reports
+
+    def report(self, name: str, after: int | None, wait_seconds: float) -> bytes | None:
+        """（请求线程）一份报告的数据。``after`` 是 None：要现成的，还没有就先到界面线程上做一份；
+        否则等比 ``after`` 更新的那份，最多 ``wait_seconds`` 秒，没有就 None。不认识的名字抛 ``ActionError(404)``。"""
+        feed = self._report_feeds.get(name)
+        if feed is None:
+            raise ActionError(404, "unknown_report")
+        if after is None:
+            if feed.latest() is None:
+                self.on_gui(lambda: self.publish_report(name, force=True))
+            return feed.latest()
+        return feed.wait_newer(after, wait_seconds)
+
+    def publish_report(self, name: str, *, force: bool = False) -> bool:
+        """（界面线程）重做一份报告的数据并发布，页面挂着的「等更新的」请求立刻拿到。
+
+        ``force`` 为假时只在这份报告发布过（有人打开过页面）时才做：生成结束的信号每次都来，没有页面在看就不白做。"""
+        feed, provider = self._report_feeds.get(name), self._reports.get(name)
+        if feed is None or provider is None or (not force and feed.latest() is None):
+            return False
+        data = provider()
+        feed.publish(lambda revision: render.report_payload(data, revision=revision))
+        return True
+
+    def report_watched(self, name: str) -> bool:
+        """有没有页面正挂在这份报告上等更新（= 用户正开着那一页看）。"""
+        feed = self._report_feeds.get(name)
+        return feed is not None and feed.waiting > 0
+
+    def open_report(self, name: str) -> bool:
+        """（界面线程）在浏览器里打开一份报告：起本机服务（**不**采集全景那一轮），开 ``/report/<名字>``。
+        没登记这个名字、或服务起不来返回 False（报告没有离线快照可退）。"""
+        if name not in self._reports:
+            return False
+        self.publish_report(name, force=True)
+        url = self._server_url(f"/report/{name}")
+        if not url:
+            return False
+        self._open_page(url)
+        return True
+
+    # ------------------------------------------------------------ 本机服务
+
+    def _server_url(self, path: str) -> str:
+        """（GUI 线程）起本机服务（第一次要用时才建），返回带令牌的网址；起不来返回空串（已记日志）。"""
         try:
             if self._server is None:
                 from .files import Reader
@@ -381,12 +432,20 @@ class PanoramaService(QObject):
                 reader = Reader(config_dir=self._config.dir, home=Path.home(), run_wsl=run_wsl)
                 self._server = PanoramaServer(build_router(self._feed, files=reader, settings=self))
             self._server.start()
-            # 组名跟在令牌后面，也在 # 片段里：不发给服务器、不进日志；页面取走令牌后整段从地址栏抹掉
-            focus, self._focus = self._focus, ""
-            return self._server.page_url() + (f"&settings={focus}" if focus else "")
-        except Exception:  # noqa: BLE001 - 端口绑不上之类：还有快照可看
-            log.exception("配置全景：本机服务起不来，改开离线快照")
+            return self._server.page_url() if path == "/" else self._server.page_url(path)
+        except Exception:  # noqa: BLE001 - 端口绑不上之类
+            log.exception("配置全景：本机服务起不来")
+            return ""
+
+    def _page_target(self, snapshot: str) -> str:
+        """（GUI 线程）浏览器该打开什么：本机服务的网址；服务起不来就退回快照文件。"""
+        url = self._server_url("/")
+        if not url:
+            log.warning("配置全景：改开离线快照")
             return snapshot
+        # 组名跟在令牌后面，也在 # 片段里：不发给服务器、不进日志；页面取走令牌后整段从地址栏抹掉
+        focus, self._focus = self._focus, ""
+        return url + (f"&settings={focus}" if focus else "")
 
     def _on_stage(self, generation: int, stage: str, text: str) -> None:
         if generation != self._generation:

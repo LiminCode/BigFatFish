@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from typing import Callable
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCharFormat, QTextCursor
@@ -117,7 +118,10 @@ class WorkBriefingWindow(QWidget):
     theme_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None, *, title: str = "", regenerate_label: str = "",
-                 empty_text: str = "", busy_text: str = "", page_label: str = "", theme: str = "system") -> None:
+                 empty_text: str = "", busy_text: str = "", page_label: str = "", theme: str = "system",
+                 briefing_page: bool = True) -> None:
+        """``briefing_page=False``：不带「简报」那一页，只当别的页（笔记 / Slack 关注）的壳——工作简报的阅读页
+        在浏览器里（2026-11-19，配置全景的 ``/report/work_briefing``），Qt 里不再有第二个看它的地方。"""
         super().__init__(parent, Qt.Window)
         self.setObjectName("workBriefing")
         title = title or t("briefing.app")
@@ -176,7 +180,10 @@ class WorkBriefingWindow(QWidget):
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("briefingTabs")
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self.briefing_page, page_label or t("briefing.tab.briefing"))
+        if briefing_page:
+            self.tabs.addTab(self.briefing_page, page_label or t("briefing.tab.briefing"))
+        else:
+            self.briefing_page.hide()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 16, 24, 16)
         layout.setSpacing(6)
@@ -361,10 +368,16 @@ class WorkBriefingController(QObject):
 
     state_changed = Signal(str)
 
-    def __init__(self, host, service, parent: QObject | None = None) -> None:
+    def __init__(self, host, service, parent: QObject | None = None, *, open_report: Callable[[], bool] | None = None,
+                 report_watched: Callable[[], bool] | None = None) -> None:
+        """``open_report``：在浏览器里打开简报页（配置全景的 ``PanoramaService.open_report``），返回是否打开了；给了它，
+        「查看」就不再开 Qt 窗口，Qt 窗口只剩给笔记 / Slack 关注当壳。``report_watched``：有没有页面正开着看——
+        有就不再为新一份冒提醒（和原来「窗口开着不冒气泡」一样）。两个都不给就是原来的 Qt 窗口（测试、旧路径）。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
+        self._open_report = open_report
+        self._report_watched = report_watched
         self.window: WorkBriefingWindow | None = None
         self._unread = False
         #: 建窗口时挂上的别的页：每个回调返回 [(标签, 部件)]（工作笔记用）
@@ -380,10 +393,17 @@ class WorkBriefingController(QObject):
             self._host.show_bubble(t("briefing.bubble.started"), 4000)
 
     def _make_window(self) -> WorkBriefingWindow:
-        return WorkBriefingWindow(theme=theme_preference(self.service._config))
+        return WorkBriefingWindow(theme=theme_preference(self.service._config), briefing_page=self._open_report is None)
 
     def open_window(self, tab: str = "") -> None:
-        """开窗口；``tab`` 是要切到的标签（空 = 保持原样）。"""
+        """看简报：接了浏览器那条路就开浏览器里的简报页（打开即算读过）；否则开 Qt 窗口。
+        ``tab`` 是要切到的标签（笔记 / Slack 关注）：那几页还在 Qt 窗口里，给了 tab 一律开窗口。"""
+        if not tab and self._open_report is not None:
+            if self._open_report():
+                self._set_unread(False)
+            else:
+                self._host.show_bubble(t("briefing.bubble.page_failed"), 7000)
+            return
         if self.window is None:
             self.window = self._make_window()
             self.window.regenerate_requested.connect(self.service.generate_now)
@@ -431,7 +451,9 @@ class WorkBriefingController(QObject):
         if not briefing.ok:
             self._host.show_bubble(t("briefing.bubble.failed", error=briefing.error), 8000)
             return
-        if self.window is not None and self.window.isVisible():
+        if self._report_watched is not None and self._report_watched():
+            return  # 用户正开着浏览器里的简报页：页面已经原地换成新的了，不用再冒提醒
+        if self._open_report is None and self.window is not None and self.window.isVisible():
             return  # 用户正开着窗口看：内容已经换成新的了，不用再冒气泡
         self._set_unread(True)   # 点「知道了」只是收起气泡；打开看过才算读了
         self._host.show_alert(

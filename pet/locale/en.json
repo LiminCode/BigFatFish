@@ -1033,7 +1033,6 @@
   "menu.shared.check_now": "Check now",
   "menu.shared.view_latest_check": "View the latest check",
   "menu.shared.slack_watch": "Slack watch",
-  "menu.shared.generation_time": "Generation time",
   "menu.shared.generate_weekdays": "Generate on weekdays",
   "menu.shared.generate_now": "Generate now",
   "menu.shared.view_latest": "View the latest",
@@ -2429,5 +2428,15 @@
   "panorama.ui.repair_pending": "Configuring inside WSL; the map updates when it lands",
   "panorama.ui.repair_failed": "Could not write it; see the fish log, then try again",
   "panorama.ui.repair_lost": "Lost the fish; try again",
-  "panorama.ui.action_needs_service": "Repair works only on the page opened from the fish; this is the offline snapshot"
+  "panorama.ui.action_needs_service": "Repair works only on the page opened from the fish; this is the offline snapshot",
+  "menu.shared.briefing_settings": "Briefing settings…",
+  "briefing.bubble.page_failed": "Couldn't open the briefing page: the local service failed to start, see the panorama lines in the log",
+  "panorama.ui.report_shell_title": "Big Fat Fish",
+  "panorama.ui.report_window_title": "{title} · Big Fat Fish",
+  "panorama.ui.report_lost": "Lost the connection to the fish: it quit, or this page sat too long. Below is the copy from before; open it from the fish again to refresh.",
+  "panorama.ui.report_unavailable": "This feature is not available on this machine (the daily briefing needs WSL).",
+  "panorama.ui.report_action_started": "Started, about a minute…",
+  "panorama.ui.report_action_busy": "Already generating, wait for it.",
+  "panorama.ui.report_action_failed": "Couldn't start it, see the fish's log.",
+  "panorama.ui.report_action_lost": "Can't reach the fish."
 }

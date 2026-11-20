@@ -22,12 +22,15 @@
 | `pet/panorama/places.py` | 存储画在图上哪里：`PLACES`（一个地方 = 几个根 + 分区 + 列 + 谁往这里写）、`OWN_TILE`、`ALSO_ON` |
 | `pet/panorama/model.py` | 图模型 `Graph`：账号带 `ZONES`、层 `TIERS`、分区、列、节点、连线、待处理；状态取值校验。没有坐标 |
 | `pet/panorama/sources.py` | 来源：若干 `@source` 纯函数，把事实翻译成节点 / 连线 / 待处理；`build(facts)` |
-| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单）、`settings.js`（设置面板：开、关、跨重画存活）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`boot.js`（入口：数据从哪来、等新数据、连接断了） |
+| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单）、`settings.js`（设置面板：开、关、跨重画存活）、`repair.js`（待处理里的「修复」）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`client.js`（取令牌、带令牌的 fetch，两张页共用）、`boot.js`（入口：数据从哪来、等新数据、连接断了）；报告页自己的 `report.html` / `report.css` / `report.js` |
 | `pet/panorama/render.py` | 把图变成页面要的那份数据（`page_data` / `payload`）；`shell()` / `asset()` 给本机服务；`render()` / `write()` 出离线快照 |
 | `pet/panorama/service.py` | `PanoramaService`：应用里的后台两段采集与发布；持有本机服务 |
 | `pet/panorama/server.py` | 本机回环服务 `PanoramaServer` + 路由表 `Router`：生命周期、守门检查、分发。**只用标准库、不碰 Qt** |
 | `pet/panorama/feed.py` | 发布台 `Feed`：存最近一次发布的数据和它的编号，让「等新数据」的请求等到有为止。**只用标准库** |
-| `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`） |
+| `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
+| `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
+| `pet/panorama/reports.py` | 报告页的数据：`work_briefing(service_of, config)` 把简报服务的最近一份翻成页面要摆的字典；`generate_work_briefing` |
+| `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |
 | `pet/panorama/files.py` | 文件查看的那道门：`VIEWABLE` 名单、`Reader.listing` / `Reader.read`。**只用标准库、不碰 Qt** |
 | `pet/panorama/__main__.py` | 命令行入口 `[--no-wsl] [--no-mcp] [--no-open]` |
@@ -303,6 +306,32 @@ flowchart LR
   不发给服务器、不进日志，页面取走后整段从地址栏抹掉。服务起不来、退回离线快照时不带组名。
 - **升级时开着的旧设置窗口**：它跑的是旧代码，里面还有搬走的那一组，一保存就把页面改的值盖回去。主进程启动 2.5 秒后发现设置窗口
   已经开着，就弹一条通知请用户关掉重开（`AppShell._warn_settings_window_from_before`，跟着「系统通知」总开关）。不替用户关：里面可能有没存的改动。
+
+### 报告页：在浏览器里读生成出来的内容（现在只有工作简报）
+
+本机服务的第二类页面（2026-11-19，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/<名字>` 是公开的外壳
+（无数据），`/api/report/<名字>` 要令牌，和 `/api/graph` 一样认 `?after=<编号>` 等更新的。
+
+- **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": provider}`（`reports.py`）。provider 在**界面线程**上被调
+  （它读 Qt 对象），返回固定字段的字典：`title / theme / summary / generated / usage[] / html / busy / busy_text / empty_text /
+  error / action{name, report, label, hint} / available`。页面（`report.js`）只按字段摆，不认识功能。
+- **数据怎么到页面**：每份报告自己一个 `Feed`。第一次 `GET /api/report/<名字>` 时还没发布过，请求线程经 `on_gui` 让界面线程做一份
+  （`publish_report(force=True)`）；之后页面带编号等更新。简报服务 `started` / `finished` 时应用调 `publish_report(name)`——
+  **没人打开过页面就什么都不做**（provider 不白跑）。`report_watched(name)` = 有请求挂在那份报告上 = 用户正开着看，
+  控制器据此不再为新一份冒提醒。
+- **打开**：`open_report(name)` 起本机服务（不采集全景那一轮）、`publish_report(force=True)`、开 `base_url/report/<名字>#令牌`。
+  报告没有离线快照：服务起不来就返回 False，调用方冒气泡。
+- **Markdown → HTML 在 Python 里**（`markdown.py`）：标题、列表（可嵌套）、段落、粗体、行内代码 → `<code class="chip">`、
+  `[文字](http(s)://…)` 和裸地址 → 新标签页的链接（别的协议只是几个字）；列表项开头的 ★ → `<span class="star s1|s2|s3">`，
+  bug 记号开头的项 → `<li class="bug">`（它的子列表随它上底色）。这几条就是原来 Qt 窗口 `_decorate` 的上色规则。
+  其余一律转义：`<script>` 只是几个字。
+- **样式**：`report.css` 用 `tokens.css` 的 `--m-*`（跟「外观」里的主题：provider 给 `theme`，页面设 `data-theme`），顶部那组
+  链接色 / 小标签 / bug 底色 / 星色和 Qt 壳的 `_EXTRA_TOKENS` 一字不差。没有圆角。页面上不放明暗切换（偏好只在一处改）。
+- **「重新生成」**：`POST /api/actions/generate_report {report}` → `generate_work_briefing` → `started / busy / failed / unavailable`。
+  回 `started` 页面不动按钮，等 `started` 信号带来的重画把它变灰、`finished` 再放开。
+- **隐私**：内容不进全景图、不落快照、不进日志（服务只记请求行）；只经带令牌的接口给 `127.0.0.1` 上的浏览器。
+- 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
+  （不能拼进全景的离线快照）。
 
 ### 文件查看（只读）
 

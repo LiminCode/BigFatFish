@@ -446,7 +446,7 @@ def test_the_menu_offers_the_briefing_under_agent_link(briefing_shell):
     entry = _find(menu, "工作简报")
     assert entry is not None and entry.menu() is not None
     assert [a.text() for a in entry.menu().actions() if not a.isSeparator()] == [
-        "查看最近一份", "现在生成", "工作日自动生成", "生成时间"]
+        "查看最近一份", "现在生成", "工作日自动生成", "简报设置…"]      # 生成时间等选值在配置全景上改（2026-11-19）
 
     toggle = _find(entry.menu(), "工作日自动生成")
     assert toggle.isCheckable() and not toggle.isChecked()
@@ -455,11 +455,7 @@ def test_the_menu_offers_the_briefing_under_agent_link(briefing_shell):
     toggle.trigger()
     assert briefing_shell._config.get(wb.CONFIG_KEY)["enabled"] is True
     assert island_states == ["idle"], "灵动岛上的按钮跟着出现"
-
-    times = _find(entry.menu(), "生成时间").menu().actions()
-    assert [a.text() for a in times if a.isChecked()] == ["09:00"]
-    next(a for a in times if a.text() == "08:30").trigger()
-    assert briefing_shell._config.get(wb.CONFIG_KEY)["time"] == "08:30"
+    assert _find(entry.menu(), "生成时间") is None, "选值没有第二个入口"
 
 
 def test_the_menu_has_no_briefing_without_wsl(shell, monkeypatch):  # noqa: F811

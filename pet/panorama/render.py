@@ -27,14 +27,20 @@ STYLE_LINK = '<link rel="stylesheet" href="/tokens.css">\n<link rel="stylesheet"
 GENERATED = {"tokens.css": tokens_css}
 STYLES = ("tokens.css", "app.css")              # 顺序即层叠顺序：令牌在前，页面样式在后
 SCRIPT_TAGS = '<script type="module" src="/boot.js"></script>'
+#: 报告页（``/report/<名字>``，见 ``reports.py``）：自己的外壳、样式和入口模块；``util.js`` / ``client.js`` 和配置全景共用。
+#: 报告页没有离线快照，所以这几个模块不进 ``MODULES``（``report.js`` 是会自己跑起来的入口，不能拼进全景的脚本里）。
+REPORT_SHELL = "report.html"
+REPORT_STYLES = ("tokens.css", "report.css")
+REPORT_MODULES = ("util.js", "client.js", "report.js")
+REPORT_SCRIPT_TAG = '<script type="module" src="/report.js"></script>'
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
 #: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
 MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "viewer.js", "memory.js", "form.js", "settings.js", "repair.js",
-           "interact.js", "app.js", "boot.js")
+           "interact.js", "app.js", "client.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
-ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES},
-          **{name: "text/javascript; charset=utf-8" for name in MODULES}}
+ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES + REPORT_STYLES},
+          **{name: "text/javascript; charset=utf-8" for name in MODULES + REPORT_MODULES}}
 # 模块里只许这两种写法，bundle() 才拼得起来：整行的具名 import，和顶层声明前的 export。
 _IMPORT_LINE = re.compile(r"^import \{\w+(?:, \w+)*\} from '\./[a-z]+\.js';\n", re.M)
 _EXPORT_PREFIX = re.compile(r"^export (?=(?:function|const) )", re.M)
@@ -51,6 +57,9 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",
                  "using_builtin", "dirty", "custom", "custom_label", "advanced", "err_unknown", "err_type", "err_not_a_choice",
                  "err_rejected", "err_out_of_range")))
+#: 报告页自己的几句界面文字（随数据一起给：外壳是公开的静态文件，只带标题和「连接断了」）
+REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "report_action_busy", "report_action_failed",
+               "report_action_lost")
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 
@@ -109,6 +118,23 @@ def bundle(names: tuple[str, ...] = MODULES) -> str:
             raise RuntimeError(f"panorama module {name} uses an import/export form the bundler does not handle")
         parts.append(text)
     return "\n".join(parts)
+
+
+def report_payload(report: dict, *, revision: int = 0) -> bytes:
+    """报告页向 ``/api/report/<名字>`` 要到的那份：provider 给的字典 + 编号 + 页面信息 + 几句界面文字。"""
+    data = {"revision": revision,
+            "page": {"lang": _language(), "title": L("ui.report_window_title", title=str(report.get("title") or ""))},
+            "report": report, "strings": {key: L(f"ui.{key}") for key in REPORT_KEYS}}
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def report_shell() -> str:
+    """报告页的外壳：公开的静态文件，没有数据，只有结构、语言、临时标题（页面拿到数据后再换）和「连接断了」那句话。"""
+    page = (PAGE_DIR / REPORT_SHELL).read_text(encoding="utf-8")
+    if REPORT_SCRIPT_TAG not in page:
+        raise RuntimeError("report shell lost its script tag")
+    return page.replace("__LANG__", _language()).replace("__TITLE__", _html(L("ui.report_shell_title"))).replace(
+        "__LOST__", _html(L("ui.report_lost")))
 
 
 def shell() -> str:

@@ -23,8 +23,9 @@ class _FakeService:
     """替掉真服务：记下被打开了几次、体检结论读到什么，不起线程、不开浏览器。"""
     made: list = []
 
-    def __init__(self, config, *, health=None, apply=None, actions=None, parent=None):
+    def __init__(self, config, *, health=None, apply=None, actions=None, reports=None, parent=None):
         self.config, self.health, self.apply, self.actions, self.opened = config, health, apply, dict(actions or {}), 0
+        self.reports = dict(reports or {})
         _FakeService.made.append(self)
 
     def open(self, focus=""):
@@ -150,7 +151,8 @@ def test_shell_opens_the_panorama_from_the_island_panel_and_reuses_one_service(t
         assert len(fake_service.made) == 1 and fake_service.made[0].opened == 1
         assert fake_service.made[0].config is shell.config
         assert fake_service.made[0].apply == shell._apply_external_config_change      # 页面改了设置后跑的应用链，和设置进程存盘后的是同一条
-        assert set(fake_service.made[0].actions) == {"repair_hooks"}                  # 页面上的「修复」动作登记进了服务
+        assert set(fake_service.made[0].actions) == {"repair_hooks", "generate_report"}   # 页面上的动作：「修复」、「重新生成」
+        assert set(fake_service.made[0].reports) == {"work_briefing"}                   # 报告页：工作简报登记进了服务
         shell._api_key_monitor.status_changed.emit("bad", "DeepSeek · 认证失败")
         state, _detail = fake_service.made[0].health()
         assert state == shell._api_key_monitor.state                        # 体检结论取自岛上的体检器
