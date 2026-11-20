@@ -61,7 +61,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
 REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "report_action_busy", "report_action_failed",
                "report_action_lost", "report_sections", "report_filters", "report_filter_all", "report_filter_p3",
                "report_filter_p2", "report_filter_p1", "report_filter_bug", "report_filter_upd", "report_hide_done",
-               "report_items", "report_untitled", "report_fold", "report_trace", "report_done")
+               "report_items", "report_untitled", "report_fold", "report_trace", "report_done", "report_action_opened")
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 

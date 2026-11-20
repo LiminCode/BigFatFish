@@ -1,7 +1,7 @@
 # 个人侧助理：个人助理窗口、GitHub 连接器、本地知识库、「关于我」
 
 > 全部走肥鱼自己的 Claude（设置页里的个人 API key），不经 WSL、不碰公司账号。用户看到的是：灵动岛上的人形图标 →
-> 「个人助理」窗口（个人简报 + 灵感记录 + 在 Obsidian 打开知识库）；聊天里能只读查 GitHub、查个人知识库的本机副本；
+> 个人简报在浏览器里读（配置全景的报告页）、「个人助理」窗口只剩灵感记录 + 在 Obsidian 打开知识库；聊天里能只读查 GitHub、查个人知识库的本机副本；
 > 设置页「AI 与对话」里一段「关于我」。都默认关。公司侧见 [公司侧助理](work-assistant.md)。
 
 ## 模块
@@ -11,7 +11,8 @@
 | `pet/personal_vault.py` | 零 Qt、不导入 `pet.chat`。配置键 `personal`、Windows 的 git（`run_git` / `token_env` / `sync_path`）、`append_inspiration`、`obsidian_vault_uri` |
 | `pet/personal_briefing.py` | 提示词、`GuardedKnowledgeBase`（拒绝名单）/ `RecordingToolset`（记读过的文件）、`generate`、状态文件 `personal-briefing.json` |
 | `pet/personal_service.py` | `PersonalService`：每分钟 `check()`，线程里先 `pull` 再 `generate`；灵感落盘后后台推送（一把 git 锁） |
-| `pet/personal_ui.py` / `pet/settings_personal.py` | `PersonalController`（自己建一扇 `WorkBriefingWindow`、岛状态、提醒）、`InspirationPanel`、`meta_line`；设置节 |
+| `pet/personal_ui.py` / `pet/settings_personal.py` | `PersonalController`（「查看」开浏览器里的简报页；Qt 壳 `WorkBriefingWindow(briefing_page=False)` 只给灵感页；岛状态、提醒）、`InspirationPanel`、`meta_line`；设置节 |
+| `pet/panorama/reports.py` | `personal_briefing` provider、`personal_details`（怎么连的、读了哪些文件、pull 结果）、`open_inspiration` 动作。见[配置全景](config-panorama.md)「报告页」 |
 | `pet/chat/connectors.py` | 这次对话挂不挂 GitHub MCP 服务器的唯一判断点：`mcp_servers_for` |
 | `pet/chat/knowledge_base.py` | `sync`（下载 zip → 原子替换）、`KnowledgeBase`（路径沙箱内的 list / read / search）、`KnowledgeToolset`、`toolset_for` |
 | `pet/chat/knowledge_sync.py` | `KnowledgeBaseSync`：主进程里的每日同步定时器 |
@@ -142,8 +143,13 @@ sequenceDiagram
 
 ### 窗口与岛
 
-- `PersonalController` 自己建一扇 `WorkBriefingWindow`（两页：简报 / 灵感；`show_briefing(meta=, busy_text=)` 覆盖元信息行，
-  `add_action_button` 加「在 Obsidian 打开」），样式与主题规则同公司侧那扇窗。
+- **简报在浏览器里读**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)，路线图 M4b 第二项）：岛上的人形、
+  提醒的「查看」都走 `open_report("personal_briefing")`（同工作简报那张报告页：概要、用量、分区卡片、筛选、勾掉；
+  「这次是怎么生成的」只有一段——怎么连的、工具几轮、读了哪些文件、pull 没成功的原因）；打开即读过；页面开着时不为新一份冒提醒。
+  个人简报没有花费这一项（自己的 key），用量条上不摆。页面上的「记灵感…」是一个动作（`open_inspiration` → 界面线程上
+  `controller.open_inspiration()` → 回 `opened`），在肥鱼里开那扇 Qt 窗口的灵感页。
+- `PersonalController` 的 Qt 窗口是 `WorkBriefingWindow(briefing_page=False)`：只有「灵感」页和「在 Obsidian 打开」；
+  不给 `open_report` 时还是原来的两页窗口（`show_briefing(meta=, busy_text=)` 覆盖元信息行），样式与主题规则同公司侧那扇窗。
 - [灵动岛](island.md)上的人形图标排在工作简报按钮右边，`hidden / idle / unread` 三态；没开自动生成也从没生成过时不显示。
   个人助理不受「有没有 WSL」门控；没装聊天模块时不接。
 

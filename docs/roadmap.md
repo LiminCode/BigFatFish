@@ -108,7 +108,7 @@ flowchart LR
 ### M4b 内容页搬到浏览器（[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）
 
 - [x] 工作简报的阅读页（`/report/work_briefing`：岛按钮、提醒「查看」、菜单都开浏览器；Qt 壳不再带「简报」页）
-- [ ] 个人简报（同一张报告页，多登记一项）
+- [x] 个人简报（`/report/personal_briefing`：岛上的人形、提醒都开浏览器；Qt 壳只剩灵感页，页上「记灵感…」开它）
 - [ ] 工作笔记页（列表 + 详情 + 新增 / 完成 / 重新总结）
 - [ ] Slack 关注页
 - [ ] 下线 `WorkBriefingWindow`

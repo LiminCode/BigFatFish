@@ -29,7 +29,7 @@
 | `pet/panorama/feed.py` | 发布台 `Feed`：存最近一次发布的数据和它的编号，让「等新数据」的请求等到有为止。**只用标准库** |
 | `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
 | `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
-| `pet/panorama/reports.py` | 报告页的数据：`work_briefing(service_of, config)` 把简报服务的最近一份翻成页面要摆的字典；`generate_work_briefing` |
+| `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`open_inspiration` |
 | `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |
 | `pet/panorama/files.py` | 文件查看的那道门：`VIEWABLE` 名单、`Reader.listing` / `Reader.read`。**只用标准库、不碰 Qt** |
@@ -307,14 +307,15 @@ flowchart LR
 - **升级时开着的旧设置窗口**：它跑的是旧代码，里面还有搬走的那一组，一保存就把页面改的值盖回去。主进程启动 2.5 秒后发现设置窗口
   已经开着，就弹一条通知请用户关掉重开（`AppShell._warn_settings_window_from_before`，跟着「系统通知」总开关）。不替用户关：里面可能有没存的改动。
 
-### 报告页：在浏览器里读生成出来的内容（现在只有工作简报）
+### 报告页：在浏览器里读生成出来的内容（工作简报、个人简报）
 
 本机服务的第二类页面（2026-11-19，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/<名字>` 是公开的外壳
 （无数据），`/api/report/<名字>` 要令牌，和 `/api/graph` 一样认 `?after=<编号>` 等更新的。
 
-- **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": provider}`（`reports.py`）。provider 在**界面线程**上被调
+- **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": …, "personal_briefing": …}`（`reports.py`）。provider 在**界面线程**上被调
   （它读 Qt 对象），返回固定字段的字典：`title / theme / summary / generated / usage[] / html / busy / busy_text / empty_text /
-  error / action{name, report, label, hint} / available / details[] / settings_focus`。页面（`report.js`）只按字段摆，不认识功能。
+  error / action{name, report, label, hint} / actions[] / available / details[] / settings_focus`。页面（`report.js`）只按字段摆，不认识功能。
+  `actions[]` 是主按钮旁边的副按钮（同一种字典，走同一个动作通道；个人简报的「记灵感…」回 `opened`，页面在状态栏说一声）。
   `details` 是「这次是怎么生成的」那几段 `{title, html}`（服务端渲染、全部转义，见[公司侧助理](work-assistant.md)的
   「运行记录」），页面折叠着摆在全文下面、第一段默认展开；里面的 `__SETTINGS_URL__` 占位由页面换成
   `/#<令牌>&settings=<settings_focus>`（同一个服务、同一个令牌）。
@@ -339,7 +340,8 @@ flowchart LR
   其余一律转义：`<script>` 只是几个字。
 - **样式**：`report.css` 用 `tokens.css` 的 `--m-*`（跟「外观」里的主题：provider 给 `theme`，页面设 `data-theme`），顶部那组
   链接色 / 小标签 / bug 底色 / 星色和 Qt 壳的 `_EXTRA_TOKENS` 一字不差。没有圆角。页面上不放明暗切换（偏好只在一处改）。
-- **「重新生成」**：`POST /api/actions/generate_report {report}` → `generate_work_briefing` → `started / busy / failed / unavailable`。
+- **「重新生成」**：`POST /api/actions/generate_report {report}` → `generate_briefing`（按报告名分发）→ `started / busy / failed / unavailable`。
+  个人简报页的「记灵感…」：`POST /api/actions/open_inspiration {report}` → `open_inspiration` → 界面线程上开 Qt 窗口的灵感页 → `opened`。
   回 `started` 页面不动按钮，等 `started` 信号带来的重画把它变灰、`finished` 再放开。
 - **隐私**：内容不进全景图、不落快照、不进日志（服务只记请求行）；只经带令牌的接口给 `127.0.0.1` 上的浏览器。
 - 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`items.js` 是报告页的纯函数；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**

@@ -70,6 +70,10 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
       btn.dataset.name = r.action.name;
       btn.dataset.report = r.action.report;
     } else btn.hidden = true;
+    /* 旁边的几个按钮（个人简报的「记灵感…」）：同一个动作通道，回 opened 就在状态栏说一声 */
+    el('actions').innerHTML = r.available === false ? '' : (r.actions || []).map(function (a) {
+      return '<button class="btn" data-name="' + esc(a.name) + '" data-report="' + esc(a.report) + '" title="' + esc(a.hint || '') + '">' + esc(a.label) + '</button>';
+    }).join('');
     /* 详情几段也是服务端渲染好的 HTML（reports.trace_sections），第一段默认展开；里面「到设置里改」的占位换成
        配置全景带令牌的地址（同一个服务、同一个令牌） */
     var settingsUrl = location.origin + '/#' + token + (r.settings_focus ? '&settings=' + encodeURIComponent(r.settings_focus) : '');
@@ -147,17 +151,21 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
     }).then(null, lost);
   }
 
-  el('action').addEventListener('click', function () {
-    var btn = el('action');
+  function act(btn) {
     if (btn.disabled || dead) return;
     btn.disabled = true;
     el('status').textContent = S.report_action_started || '';
     api.post('/api/actions/' + btn.dataset.name, {report: btn.dataset.report}).then(function (r) {
       var state = (r.body || {}).state;
       if (r.status === 200 && state === 'started') return;
-      el('status').textContent = S[state === 'busy' ? 'report_action_busy' : 'report_action_failed'] || '';
+      el('status').textContent = S[state === 'busy' ? 'report_action_busy' : state === 'opened' ? 'report_action_opened' : 'report_action_failed'] || '';
       btn.disabled = state === 'busy';
     }).then(null, function () { el('status').textContent = S.report_action_lost || ''; btn.disabled = false; });
+  }
+  el('action').addEventListener('click', function () { act(el('action')); });
+  el('actions').addEventListener('click', function (event) {
+    var btn = event.target.closest ? event.target.closest('[data-name]') : null;
+    if (btn) act(btn);
   });
 
   api('/api/report/' + name).then(function (data) {

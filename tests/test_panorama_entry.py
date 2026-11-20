@@ -151,8 +151,8 @@ def test_shell_opens_the_panorama_from_the_island_panel_and_reuses_one_service(t
         assert len(fake_service.made) == 1 and fake_service.made[0].opened == 1
         assert fake_service.made[0].config is shell.config
         assert fake_service.made[0].apply == shell._apply_external_config_change      # 页面改了设置后跑的应用链，和设置进程存盘后的是同一条
-        assert set(fake_service.made[0].actions) == {"repair_hooks", "generate_report"}   # 页面上的动作：「修复」、「重新生成」
-        assert set(fake_service.made[0].reports) == {"work_briefing"}                   # 报告页：工作简报登记进了服务
+        assert set(fake_service.made[0].actions) == {"repair_hooks", "generate_report", "open_inspiration"}   # 「修复」、「重新生成」、「记灵感…」
+        assert set(fake_service.made[0].reports) == {"work_briefing", "personal_briefing"}   # 报告页：工作简报、个人简报都登记进了服务
         shell._api_key_monitor.status_changed.emit("bad", "DeepSeek · 认证失败")
         state, _detail = fake_service.made[0].health()
         assert state == shell._api_key_monitor.state                        # 体检结论取自岛上的体检器

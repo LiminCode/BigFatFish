@@ -3196,7 +3196,12 @@ class AppShell:
             from .personal_ui import PersonalController
 
             service = PersonalService(self.config, parent=self.app)
-            self._personal = PersonalController(self._overlay_shell, service)
+            # 个人简报在浏览器里读（配置全景的报告页）；开始 / 结束生成时让开着的页面重画
+            self._personal = PersonalController(
+                self._overlay_shell, service, open_report=lambda: self._open_report("personal_briefing"),
+                report_watched=lambda: self._report_watched("personal_briefing"))
+            service.started.connect(lambda *_: self._publish_report("personal_briefing"))
+            service.finished.connect(lambda *_: self._publish_report("personal_briefing"))
             self._overlay_shell.personal = self._personal
             self._personal.state_changed.connect(self._push_island_personal_state)
             service.start()
@@ -3478,18 +3483,25 @@ class AppShell:
             from .panorama.service import PanoramaService
 
             briefing_service = lambda: getattr(getattr(self, "_work_briefing", None), "service", None)  # noqa: E731
+            personal = lambda: getattr(self, "_personal", None)  # noqa: E731
+            personal_service = lambda: getattr(personal(), "service", None)  # noqa: E731
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份。
-            # reports：浏览器里读的报告页，现在只有工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）。
+            # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
+            #          （没装聊天模块时同样只显示一句）；个人简报页的「记灵感…」在肥鱼里开 Qt 窗口的灵感页。
             service = self._panorama_service = PanoramaService(
                 self.config, health=self._panorama_health, apply=self._apply_external_config_change, parent=self.app,
                 actions={"repair_hooks": panorama_actions.repair_hooks(
                              lambda: getattr(getattr(self, "_shared", None), "agent_link", None),
                              lambda side: self._panorama_service.refresh(side)),
                          panorama_reports.GENERATE_ACTION: panorama_actions.generate_report(
-                             {panorama_reports.WORK_BRIEFING: panorama_reports.generate_work_briefing(briefing_service)})},
-                reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config)})
+                             {panorama_reports.WORK_BRIEFING: panorama_reports.generate_briefing(briefing_service),
+                              panorama_reports.PERSONAL_BRIEFING: panorama_reports.generate_briefing(personal_service)}),
+                         panorama_reports.OPEN_INSPIRATION_ACTION: panorama_actions.generate_report(
+                             {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_inspiration(personal)})},
+                reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
+                         panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config)})
         return service
 
     def _open_report(self, name: str) -> bool:
