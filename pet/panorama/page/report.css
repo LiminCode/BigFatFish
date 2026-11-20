@@ -1,19 +1,95 @@
 /* 报告页（工作简报）的样式。控件颜色用和 Qt 共用的令牌（tokens.css 的 --m-*，深色默认、data-theme="light" 换浅色）；
    下面这组是简报自己多出来的几个：链接色、工单状态小标签、bug 行底色、三级优先级的星色——
-   和 Qt 窗口 work_briefing_ui._EXTRA_TOKENS 一字不差，改一处就两处一起改。Metro：没有圆角。 */
-:root{color-scheme:dark;--link:#6cb4ff;--chip:#38383f;--chip-text:#e6e6ea;--bug:#4a2328;--p1:#ff6b61;--p2:#ffa94d;--p3:#8c8c94}
-:root[data-theme="light"]{color-scheme:light;--link:#0a6fd6;--chip:#e6e6e8;--chip-text:#1f1f1f;--bug:#fbe3e4;--p1:#d93025;--p2:#e8710a;--p3:#8a8a90}
+   和 Qt 窗口 work_briefing_ui._EXTRA_TOKENS 一字不差，改一处就两处一起改。
+   分区的来源色（Jira 蓝 / PR 紫 / Slack 玫红 / 日程青 / 邮件琥珀 / 建议绿 / 其他灰）是 Metro 实色磁贴那一套的淡色版。
+   Metro：方角、磁贴无边框、白字不描边、悬停提亮；需要层次时用玻璃阴影。 */
+:root{color-scheme:dark;--link:#6cb4ff;--chip:#38383f;--chip-text:#e6e6ea;--bug:#4a2328;--p1:#ff6b61;--p2:#ffa94d;--p3:#8c8c94;
+  --src-jira:#3b7dc4;--src-pr:#7a62b8;--src-slack:#b85c7a;--src-calendar:#2f8f86;--src-email:#b8832e;--src-suggestions:#5a8a3c;--src-other:#5f6470;
+  --glass:0 10px 30px rgba(0,0,0,.28);--done:#8a8a94}
+:root[data-theme="light"]{color-scheme:light;--link:#0a6fd6;--chip:#e6e6e8;--chip-text:#1f1f1f;--bug:#fbe3e4;--p1:#d93025;--p2:#e8710a;--p3:#8a8a90;
+  --src-jira:#4a8ed6;--src-pr:#8a74c8;--src-slack:#c8708c;--src-calendar:#3aa398;--src-email:#cf9a3a;--src-suggestions:#6b9c4a;--src-other:#7a8090;
+  --glass:0 10px 28px rgba(0,0,0,.12);--done:#9a9aa3}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.55 "Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}
-header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;padding:26px 28px 6px;max-width:860px;margin:0 auto}
-header h1{margin:0;font-size:28px;font-weight:300;letter-spacing:.02em;color:var(--m-title)}
+.wrap{max-width:1360px;margin:0 auto;padding:0 28px}
+
+/* 顶栏：标题 · 生成时间 · 用量；右边状态 + 按钮。贴顶。 */
+.top{position:sticky;top:0;z-index:5;background:var(--m-page);box-shadow:0 1px 0 var(--m-divider)}
+.bar{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px;padding-top:18px;padding-bottom:10px}
+.tl{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.tl h1{margin:0;font-size:28px;font-weight:300;letter-spacing:.02em;color:var(--m-title)}
 .meta{color:var(--m-muted);font-size:12.5px}
-main{max-width:860px;margin:0 auto;padding:0 28px 40px}
-.summary{font-size:17px;font-weight:600;margin:10px 0 8px;color:var(--m-title)}
+.usage{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%}
+.usage .u{background:var(--m-tile);color:var(--m-muted);padding:1px 8px;font-size:12px}
+.tr{display:flex;align-items:center;gap:14px;padding-bottom:2px}
+.status{color:var(--m-muted);font-size:13px;max-width:420px}.status.bad{color:var(--p1)}
+.btn{background:var(--m-accent);color:var(--m-selected-text);border:0;padding:8px 18px;font:inherit;font-size:14px;cursor:pointer;box-shadow:var(--glass)}
+.btn:hover{filter:brightness(1.08)}.btn:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
+.btn:disabled{background:var(--m-tile);color:var(--m-disabled);cursor:default;box-shadow:none}
+.btn[hidden]{display:none}
+.lost{max-width:1360px;margin:10px auto 0;padding:10px 28px;color:var(--p2);font-size:13px}
+.lost[hidden]{display:none}
+
+main{padding-top:18px;padding-bottom:48px}
+.summary{font-size:19px;font-weight:600;margin:0 0 18px;color:var(--m-title);line-height:1.45}
 .summary[hidden]{display:none}
-.usage{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
-.usage .u{background:var(--m-tile);color:var(--m-muted);padding:2px 8px;font-size:12px}
-article{background:var(--m-tile);padding:18px 22px;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+
+/* 两栏：左栏 240 贴着滚，右栏卡片。窄屏单栏，左栏变成顶部一行可横滚的磁贴。 */
+.grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:0 26px;align-items:start}
+.side{position:sticky;top:96px}
+.side[hidden]{display:none}
+.side-title{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--m-muted);margin:4px 0 6px}
+.nav{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
+.tile{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;color:#fff;text-decoration:none;background:var(--src-other);
+  transition:filter .12s,transform .12s}
+.tile:hover{filter:brightness(1.1);transform:translateX(2px)}.tile:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
+.tile .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .n{font-size:12px;opacity:.9;white-space:nowrap}
+.src-jira{--src:var(--src-jira)}.src-pr{--src:var(--src-pr)}.src-slack{--src:var(--src-slack)}.src-calendar{--src:var(--src-calendar)}
+.src-email{--src:var(--src-email)}.src-suggestions{--src:var(--src-suggestions)}.src-other{--src:var(--src-other)}
+.tile[class*="src-"]{background:var(--src)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
+.chip{background:var(--m-tile);color:var(--m-text);border:0;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer}
+.chip:hover{background:var(--m-tile-hover)}.chip.on{background:var(--m-accent);color:var(--m-selected-text)}
+.chip:focus-visible{outline:2px solid var(--m-outline);outline-offset:1px}
+.hide{flex-basis:100%;font-size:13px;color:var(--m-muted);display:flex;align-items:center;gap:6px;cursor:pointer}
+.anchor{display:block;font-size:13px;color:var(--link);text-decoration:none}.anchor:hover{text-decoration:underline}
+
+/* 每区一张卡：实色磁贴头 + 卡体 */
+.cards{display:flex;flex-direction:column;gap:18px}
+.card{background:var(--m-tile);box-shadow:var(--glass)}
+.card .head{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--src);color:#fff}
+.card .head h3{margin:0;font-size:16px;font-weight:600;letter-spacing:.02em;flex:0 1 auto}
+.card .head .count{font-size:12.5px;opacity:.9}
+.badge{font-size:12px;padding:1px 8px;background:rgba(255,255,255,.22)}
+.badge.p3{background:rgba(255,255,255,.3);font-weight:700}
+.card .fold{margin-left:auto;background:transparent;border:0;color:#fff;font:inherit;font-size:16px;cursor:pointer;padding:0 4px;line-height:1}
+.card .fold:hover{background:rgba(255,255,255,.18)}.card .fold:focus-visible{outline:2px solid #fff;outline-offset:1px}
+.card[data-collapsed="1"] .list{display:none}
+.list{padding:8px 16px 12px}
+.list p{margin:8px 0}
+.list ul,.list ol{margin:0;padding-left:0;list-style:none}
+.list ul ul,.list ol ul,.list ul ol{padding-left:28px;margin:4px 0 2px;list-style:disc}
+.list ul ul li{display:list-item;padding:2px 0;border:0;color:var(--m-muted);font-size:14px}
+.list > ul > li,.list > ol > li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--m-divider)}
+.list > ul > li:last-child,.list > ol > li:last-child{border-bottom:0}
+.list > ul > li > .body{flex:1;min-width:0}
+.list li.bug{background:var(--bug);margin:0 -16px;padding-left:12px;padding-right:16px;border-left:4px solid var(--p1)}
+.list li[hidden]{display:none}
+.list li.is-done > .body{color:var(--done);text-decoration:line-through}
+.done{display:flex;align-items:center;padding-top:3px}
+.done input{width:16px;height:16px;margin:0;accent-color:var(--m-accent);cursor:pointer}
+.list .star{display:inline-block;font-size:12px;letter-spacing:.04em;padding:0 6px;margin-right:4px;color:#fff;background:var(--p3);vertical-align:1px}
+.list .star.s3{background:var(--p1);font-weight:700}.list .star.s2{background:var(--p2)}.list .star.s1{background:var(--p3)}
+.list li strong{background:var(--m-accent);color:var(--m-selected-text);font-weight:600;font-size:12px;padding:0 6px}   /* 条目里的「有更新」变徽章 */
+.list p strong{font-weight:600;color:var(--m-title)}   /* 段落里的粗体（小节说明）只是粗体 */
+.list a{color:var(--link);text-decoration:none}.list a:hover{text-decoration:underline}
+.list code.chip{background:var(--chip);color:var(--chip-text);padding:1px 6px;font:inherit;font-size:12.5px}
+.list .note{color:var(--m-muted)}
+
+/* 没有分区时（老内容 / 没有 <h3>）退回整段文章 */
+article{background:var(--m-tile);padding:18px 22px;box-shadow:var(--glass)}
+article:empty{display:none}
 article h2,article h3,article h4,article h5,article h6{margin:18px 0 8px;font-weight:600;color:var(--m-title)}
 article h2{font-size:20px}article h3{font-size:16px;letter-spacing:.06em;text-transform:uppercase;color:var(--m-muted)}
 article h3:first-child{margin-top:0}
@@ -27,9 +103,10 @@ article code.chip{background:var(--chip);color:var(--chip-text);padding:1px 6px;
 article .star{font-size:13px;letter-spacing:.05em}
 article .star.s3{color:var(--p1);font-weight:700}article .star.s2{color:var(--p2)}article .star.s1{color:var(--p3)}
 article .note{color:var(--m-muted)}
+
 /* 「这次是怎么生成的」：几段折叠块，内容由 reports.trace_sections 渲染 */
-.details{margin-top:14px}
-.details details{background:var(--m-tile);margin:0 0 8px;padding:8px 16px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.details{margin-top:22px}
+.details details{background:var(--m-tile);margin:0 0 8px;padding:8px 16px;box-shadow:var(--glass)}
 .details summary{cursor:pointer;font-weight:600;color:var(--m-title);font-size:14px}
 .details .d{font-size:13.5px;padding:6px 0 4px}
 .details .d p{margin:6px 0}.details .d .note{color:var(--m-muted)}.details .d .bad{color:var(--p1)}.details .d .ok{color:#3cb371}
@@ -41,11 +118,11 @@ article .note{color:var(--m-muted)}
 .details .d .srv{color:var(--m-muted);font-size:12px}
 .details .d pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);color:var(--chip-text);padding:8px 10px;font-size:12.5px;max-height:380px;overflow:auto;margin:4px 0}
 .details .d a{color:var(--link);text-decoration:none}.details .d a:hover{text-decoration:underline}
-.foot{display:flex;align-items:center;gap:14px;margin-top:14px}
-.status{flex:1;color:var(--m-muted);font-size:13px;min-height:1.5em}.status.bad{color:var(--p1)}
-.btn{background:var(--m-accent);color:var(--m-selected-text);border:0;padding:8px 18px;font:inherit;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.22)}
-.btn:hover{filter:brightness(1.08)}.btn:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
-.btn:disabled{background:var(--m-tile);color:var(--m-disabled);cursor:default;box-shadow:none}
-.btn[hidden]{display:none}
-.lost{max-width:860px;margin:10px auto 0;padding:10px 28px;color:var(--p2);font-size:13px}
-.lost[hidden]{display:none}
+
+@media (max-width: 979px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;margin-bottom:16px}
+  .nav{flex-direction:row;overflow-x:auto;padding-bottom:4px}
+  .tile{flex:0 0 auto;min-width:140px}
+  .side-title{display:none}
+}

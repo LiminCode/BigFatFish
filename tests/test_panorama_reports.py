@@ -93,11 +93,33 @@ def test_a_failed_run_is_marked_and_a_service_without_a_record_gives_no_sections
     assert plain["details"] == [], "老版本生成的简报：没有记录就不摆"
 
 
+RENDERED = ("<p>开场白</p>\n<h3>Jira</h3>\n<ul>\n"
+            '<li class="bug"><span class="star s3">★★★</span> 🐞 <a href="https://j.example/1">X-1</a> 崩溃 · <strong>有更新</strong>\n'
+            "<ul>\n<li>QA 报的场景：…</li>\n</ul>\n</li>\n"
+            '<li><span class="star s2">★★</span> X-2 普通</li>\n'
+            '<li><span class="star s1">★</span> X-3 小事 · <strong>有更新</strong></li>\n</ul>\n'
+            "<h3>日程</h3>\n<p>今天没有会。</p>\n<h3>建议先做</h3>\n<ol>\n<li>先修 X-1</li>\n</ol>")
+
+
+def test_the_rendered_text_is_split_into_sections_with_top_level_counts():
+    sections = reports.split_sections(RENDERED)
+    assert [(s["id"], s["source"], s["title"], s["count"]) for s in sections] == [
+        ("s1", "other", "", 0), ("s2", "jira", "Jira", 3), ("s3", "calendar", "日程", 0), ("s4", "suggestions", "建议先做", 1)]
+    jira = sections[1]
+    assert (jira["p3"], jira["p2"], jira["p1"], jira["bugs"], jira["updated"]) == (1, 1, 1, 1, 2), "嵌套的那一条不算"
+    assert jira["html"].startswith("<ul>") and jira["html"].endswith("</ul>") and sections[0]["html"] == "<p>开场白</p>"
+    assert sections[2]["html"] == "<p>今天没有会。</p>" and sections[3]["p3"] == 0
+    assert reports.split_sections("<p>没有标题的内容</p>") == [] and reports.split_sections("") == []
+    assert reports.source_of("Pull requests") == "pr" and reports.source_of("Slack 消息") == "slack" and reports.source_of("邮件") == "email"
+    assert reports.source_of("随便") == "other"
+
+
 def test_the_latest_briefing_is_rendered_with_its_usage_and_a_regenerate_button():
     data = reports.work_briefing(lambda: _Service(BRIEFING), _config())()
     assert data["id"] == "work_briefing" and data["title"] == "工作简报" and data["available"] is True and data["theme"] == "dark"
     assert data["summary"] == "先评审两个 PR" and data["generated"].startswith("生成于 11-19 09:00")
     assert data["html"].startswith("<h3>PR</h3>") and 'class="star s3"' in data["html"] and '<code class="chip">进行中</code>' in data["html"]
+    assert [(s["source"], s["title"], s["count"], s["p3"]) for s in data["sections"]] == [("pr", "PR", 1, 1)]
     assert [u["key"] for u in data["usage"]] == ["model", "effort", "time", "tokens_in", "tokens_out", "cost"]
     assert data["usage"][0]["text"] == "claude-opus-5-5" and data["usage"][2]["text"] == "118 秒"
     assert data["usage"][3]["tip"] == "输入 406,791 tokens" and "1.25" in data["usage"][5]["text"]

@@ -8,19 +8,35 @@
 <link rel="stylesheet" href="/report.css">
 </head>
 <body>
-<header>
-  <h1 id="title"></h1>
-  <span class="meta" id="generated"></span>
+<header class="top">
+  <div class="wrap bar">
+    <div class="tl">
+      <h1 id="title"></h1>
+      <span class="meta" id="generated"></span>
+      <div class="usage" id="usage"></div>
+    </div>
+    <div class="tr">
+      <span class="status" id="status"></span>
+      <button class="btn" id="action" hidden></button>
+    </div>
+  </div>
 </header>
 <div class="lost" id="lost" hidden>__LOST__</div>
-<main>
+<main class="wrap">
   <p class="summary" id="summary" hidden></p>
-  <div class="usage" id="usage"></div>
-  <article id="body"></article>
-  <section class="details" id="details"></section>
-  <div class="foot">
-    <span class="status" id="status"></span>
-    <button class="btn" id="action" hidden></button>
+  <div class="grid">
+    <aside class="side" id="side" hidden>
+      <div class="side-title" id="nav-title"></div>
+      <nav class="nav" id="nav"></nav>
+      <div class="side-title" id="filter-title"></div>
+      <div class="filters" id="filters"></div>
+      <a class="anchor" id="trace-link" href="#details"></a>
+    </aside>
+    <div class="content">
+      <div class="cards" id="cards"></div>
+      <article id="body"></article>
+      <section class="details" id="details"></section>
+    </div>
   </div>
 </main>
 <script type="module" src="/report.js"></script>

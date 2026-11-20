@@ -10,6 +10,9 @@ provider 在**界面线程**上被调（它读 Qt 对象），返回页面要摆
 - ``busy`` / ``busy_text`` / ``empty_text`` / ``error``（上一次失败的原因，已翻成整句）；
 - ``action``：底部那个按钮——``{name, report, label, hint}``，页面 ``POST /api/actions/<name>`` 时把 ``report`` 带回来；
 - ``available``：这台机器上有没有这项功能（工作简报要 WSL；没有就只显示一句说明）；
+- ``sections``：全文按 ``<h3>`` 切成的几区 ``{id, source, title, html, count, p3, p2, p1, bugs, updated}``（``split_sections``）：
+  页面用它画左栏的分区磁贴和右栏的每区一张卡；``source`` 只是按标题猜的来源（配色、图标用），猜不到是 ``other``。
+  没有 ``<h3>`` 的内容是空列表，页面退回整段 ``html``；
 - ``details``：「这次是怎么生成的」——几段 ``{title, html}``（服务端渲染、全部转义），页面折叠着摆在全文下面；
   ``settings_focus``：详情里「到设置里改」的链接要翻到配置全景的哪一组（页面自己拼带令牌的地址，替换 ``SETTINGS_URL`` 占位）。
 
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import re
 from typing import Callable
 
 from .. import work_briefing as wb
@@ -29,6 +33,12 @@ WORK_BRIEFING = "work_briefing"
 GENERATE_ACTION = "generate_report"                 # 页面上「重新生成」走的动作名（actions.generate_report）
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
 SETTINGS_URL = "__SETTINGS_URL__"                   # 详情 HTML 里的占位：页面换成 /#<令牌>&settings=<组>
+#: 分区标题里的关键词 → 来源 id（只用来配色和图标；提示词模板是用户可改的，所以按词猜，猜不到就是 other）
+SOURCE_WORDS = (("jira", ("jira", "工单")), ("pr", ("pull request", "pr")), ("slack", ("slack",)),
+                ("calendar", ("日程", "日历", "calendar", "schedule", "meeting")), ("email", ("邮件", "email", "mail")),
+                ("suggestions", ("建议", "suggest", "first")))
+_H3 = re.compile(r"<h3>(.*?)</h3>\n?", re.S)
+_TAG = re.compile(r"<[^>]+>")
 _STATUSES = ("connected", "needs-auth", "failed")
 
 
@@ -42,7 +52,7 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
             "busy": False, "busy_text": t("briefing.busy"), "empty_text": t("briefing.empty"), "error": "",
             "action": {"name": GENERATE_ACTION, "report": WORK_BRIEFING,
                        "label": t("briefing.button.regenerate"), "hint": t("briefing.button.regenerate_hint")},
-            "details": [], "settings_focus": WORK_BRIEFING,
+            "details": [], "settings_focus": WORK_BRIEFING, "sections": [],
         }
         if service is None:
             return data
@@ -51,8 +61,9 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
         data["error"] = t("briefing.status.failed", error=error) if error else ""
         briefing = service.latest()
         if briefing is not None:
+            rendered = markdown.render(briefing.markdown, bug_mark=wb.BUG_MARK)
             data.update(summary=briefing.summary, generated=generated_line(briefing.generated_at), usage=usage(briefing),
-                        html=markdown.render(briefing.markdown, bug_mark=wb.BUG_MARK))
+                        html=rendered, sections=split_sections(rendered))
         data["details"] = trace_sections(getattr(service, "last_trace", dict)() or {})
         return data
     return build
@@ -86,6 +97,50 @@ def usage(briefing: wb.Briefing) -> list[dict]:
                           briefing.seconds)
     return [{"key": key, "text": text, "tip": tip} for key in USAGE_ORDER
             for text, tip in [values.get(key, ("", ""))] if text]
+
+
+def source_of(title: str) -> str:
+    """分区标题 → 来源 id（``SOURCE_WORDS`` 的第一个命中；都不中是 ``other``）。"""
+    low = title.lower()
+    return next((source for source, words in SOURCE_WORDS if any(word in low for word in words)), "other")
+
+
+def split_sections(rendered: str) -> list[dict]:
+    """渲染好的全文按 ``<h3>``（Markdown 的 ``##``）切区，每区数一数顶层的条目：总数、三档优先级、bug、有更新。
+
+    计数只看 ``markdown.render`` 产出的那几种标记：每行一个元素，``<ul>`` / ``<ol>`` 进一层、``</ul>`` / ``</ol>`` 出一层，
+    第一层的 ``<li`` 是一条；那一行里的 ``class="star sN"`` 是优先级、``class="bug"`` 是 bug、``<strong>`` 是「有更新」。
+    第一个 ``<h3>`` 之前的文字（如果有）算一区，标题空、来源 other。没有 ``<h3>`` 就是空列表。
+    """
+    if "<h3>" not in rendered:
+        return []
+    sections: list[dict] = []
+    pieces = re.split(r"(?=<h3>)", rendered)
+    for piece in pieces:
+        if not piece.strip():
+            continue
+        heading = _H3.match(piece)
+        title = _TAG.sub("", heading.group(1)).strip() if heading else ""
+        body = piece[heading.end():] if heading else piece
+        counts = {"count": 0, "p3": 0, "p2": 0, "p1": 0, "bugs": 0, "updated": 0}
+        depth = 0
+        for line in body.split("\n"):
+            if line.startswith(("<ul>", "<ol>")):
+                depth += 1
+            elif line.startswith(("</ul>", "</ol>")):
+                depth -= 1
+            elif line.startswith("<li") and depth == 1:
+                counts["count"] += 1
+                star = re.search(r'class="star s([123])"', line)
+                if star:
+                    counts[f"p{star.group(1)}"] += 1
+                if line.startswith('<li class="bug"'):
+                    counts["bugs"] += 1
+                if "<strong>" in line:
+                    counts["updated"] += 1
+        sections.append({"id": f"s{len(sections) + 1}", "source": source_of(title) if title else "other", "title": title,
+                         "html": body.strip("\n"), **counts})
+    return sections
 
 
 def _when(iso: str) -> str:

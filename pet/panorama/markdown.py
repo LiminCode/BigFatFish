@@ -21,7 +21,8 @@ import re
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _ITEM = re.compile(r"^(\s*)(?:([-*])|(\d{1,3})[.)])\s+(.*)$")
 _CODE = re.compile(r"`([^`\n]+)`")
-_LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
+# 链接文字里允许一层方括号（日历事件的标题常是「[Daily] …」）：``[[Daily] 标题](https://…)``
+_LINK = re.compile(r"\[((?:[^\[\]\n]|\[[^\[\]\n]*\])+)\]\((https?://[^\s)]+)\)")
 _BARE_URL = re.compile(r"(?<![\w\"'=/(])https?://[^\s<>()\"']+")
 _BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 _STARS = re.compile(r"^(★{1,3})\s*")
