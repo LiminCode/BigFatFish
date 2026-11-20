@@ -31,7 +31,7 @@ SCRIPT_TAGS = '<script type="module" src="/boot.js"></script>'
 #: 报告页没有离线快照，所以这几个模块不进 ``MODULES``（``report.js`` 是会自己跑起来的入口，不能拼进全景的脚本里）。
 REPORT_SHELL = "report.html"
 REPORT_STYLES = ("tokens.css", "report.css")
-REPORT_MODULES = ("util.js", "client.js", "report.js")
+REPORT_MODULES = ("util.js", "client.js", "items.js", "report.js")
 REPORT_SCRIPT_TAG = '<script type="module" src="/report.js"></script>'
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
@@ -59,7 +59,9 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
                  "err_rejected", "err_out_of_range")))
 #: 报告页自己的几句界面文字（随数据一起给：外壳是公开的静态文件，只带标题和「连接断了」）
 REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "report_action_busy", "report_action_failed",
-               "report_action_lost")
+               "report_action_lost", "report_sections", "report_filters", "report_filter_all", "report_filter_p3",
+               "report_filter_p2", "report_filter_p1", "report_filter_bug", "report_filter_upd", "report_hide_done",
+               "report_items", "report_untitled", "report_fold", "report_trace", "report_done")
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 

@@ -38,6 +38,12 @@ def test_inline_code_becomes_a_chip_and_bold_is_bold():
     assert '<code class="chip">进行中</code>' in out and "<strong>今天</strong>" in out
 
 
+def test_link_text_may_carry_one_level_of_square_brackets():
+    html = md.render("- 16:00 [[Daily] churn check](https://cal.example/e?id=1&x=2)（提醒）")
+    assert '<a href="https://cal.example/e?id=1&amp;x=2" target="_blank" rel="noopener noreferrer">[Daily] churn check</a>（提醒）' in html
+    assert md.render("[[a]](https://x.example/)").count("<a ") == 1
+
+
 def test_links_open_in_a_new_tab_and_only_http_counts():
     out = md.render("看 [工单](https://x.example/browse/A-1?x=1&y=2) 和 [坏的](javascript:alert(1)) 和 https://bare.example/p. 完")
     assert '<a href="https://x.example/browse/A-1?x=1&amp;y=2" target="_blank" rel="noopener noreferrer">工单</a>' in out

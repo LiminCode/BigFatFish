@@ -318,6 +318,15 @@ flowchart LR
   `details` 是「这次是怎么生成的」那几段 `{title, html}`（服务端渲染、全部转义，见[公司侧助理](work-assistant.md)的
   「运行记录」），页面折叠着摆在全文下面、第一段默认展开；里面的 `__SETTINGS_URL__` 占位由页面换成
   `/#<令牌>&settings=<settings_focus>`（同一个服务、同一个令牌）。
+- **分区、筛选、勾掉**（2026-11-20 改版）：provider 把渲染好的全文按 `<h3>` 切成 `sections[]`（`reports.split_sections`：每区
+  `id / source / title / html` 和顶层条目的计数 `count / p3 / p2 / p1 / bugs / updated`；`source` 只是按标题关键词猜的来源，
+  配色用）。页面：顶栏 sticky（标题 · 生成时间 · 用量 · 状态 · 「重新生成」），概要大字；≥ 980px 两栏——左栏 240px 贴着滚：
+  每区一块实色磁贴（点了滚过去）、筛选片（`全部 / ★★★ / ★★ / ★ / 🐞 bug / 有更新`，多选取并集）、「隐藏已勾掉」、
+  「这次是怎么生成的」锚；右栏每区一张卡（实色磁贴头 + 计数徽章 + 折叠）。窄屏单栏，磁贴变成顶部一行横滚。
+  进页面后 `report.js` 给每张卡里**顶层**的每一条打 `data-p / data-bug / data-upd`（`items.classify`：开头的 ★ 类名、
+  `li.bug`、行里的 `<strong>`）并插一个勾选框；勾掉只存这个浏览器的 `localStorage`（键 = 报告名 + 生成时间 + 区 + 序号，
+  重新生成就是新的一套），不进肥鱼、不进配置。分类与筛选是纯函数（`items.js`），QJSEngine 里直接测；DOM 接线只在真浏览器核对。
+  没有 `<h3>` 的内容（老简报、空内容）退回整段 `article`。
 - **数据怎么到页面**：每份报告自己一个 `Feed`。第一次 `GET /api/report/<名字>` 时还没发布过，请求线程经 `on_gui` 让界面线程做一份
   （`publish_report(force=True)`）；之后页面带编号等更新。简报服务 `started` / `finished` 时应用调 `publish_report(name)`——
   **没人打开过页面就什么都不做**（provider 不白跑）。`report_watched(name)` = 有请求挂在那份报告上 = 用户正开着看，
@@ -333,7 +342,7 @@ flowchart LR
 - **「重新生成」**：`POST /api/actions/generate_report {report}` → `generate_work_briefing` → `started / busy / failed / unavailable`。
   回 `started` 页面不动按钮，等 `started` 信号带来的重画把它变灰、`finished` 再放开。
 - **隐私**：内容不进全景图、不落快照、不进日志（服务只记请求行）；只经带令牌的接口给 `127.0.0.1` 上的浏览器。
-- 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
+- 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`items.js` 是报告页的纯函数；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
   （不能拼进全景的离线快照）。
 
 ### 文件查看（只读）

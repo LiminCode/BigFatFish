@@ -244,7 +244,8 @@ var dom = function () { var el = document.getElementById; return {title: el('tit
   summary: el('summary').textContent, summaryHidden: el('summary').hidden, usage: el('usage').innerHTML, body: el('body').innerHTML,
   status: el('status').textContent, statusClass: el('status').className, button: el('action').textContent, buttonHidden: el('action').hidden,
   buttonDisabled: el('action').disabled, lost: el('lost').hidden, theme: document.documentElement.dataset.theme, title_tag: document.title,
-  details: el('details').innerHTML}; };
+  details: el('details').innerHTML, nav: el('nav').innerHTML, filters: el('filters').innerHTML, cards: el('cards').innerHTML,
+  sideHidden: el('side').hidden, navTitle: el('nav-title').textContent}; };
 var clicks = {};
 document.getElementById('action').addEventListener = function (type, fn) { clicks[type] = fn; };
 """
@@ -284,6 +285,44 @@ def test_the_run_record_is_laid_out_as_collapsible_sections_with_the_settings_li
                                      '<a class="settings" href="http://127.0.0.1:1/#tok-1&settings=work_briefing">改</a></div></details>'
                                      '<details><summary>命令</summary><div class="d"><pre>c</pre></div></details>')
     assert _page(engine, [_ok(_payload()), '{"hang": true}'])["dom"]["details"] == "", "没有记录就什么都不摆"
+
+
+SECTIONS = [{"id": "s1", "source": "jira", "title": "Jira <x>", "html": "<ul>\n<li>a</li>\n</ul>", "count": 2, "p3": 1, "p2": 0, "p1": 1, "bugs": 1, "updated": 0},
+            {"id": "s2", "source": "other", "title": "", "html": "<p>x</p>", "count": 0, "p3": 0, "p2": 0, "p1": 0, "bugs": 0, "updated": 3}]
+
+
+def test_sections_become_nav_tiles_filter_chips_and_cards_and_the_article_stays_empty(engine):
+    out = _page(engine, [_ok(_payload(sections=SECTIONS)), '{"hang": true}'])
+    dom = out["dom"]
+    assert dom["sideHidden"] is False and dom["navTitle"] == "分区" and dom["body"] == ""
+    assert dom["nav"] == ('<a class="tile src-jira" href="#s1" data-go="s1"><span class="t">Jira &lt;x&gt;</span><span class="n">2 条</span></a>'
+                          '<a class="tile src-other" href="#s2" data-go="s2"><span class="t">（无标题）</span><span class="n">0 条</span></a>')
+    assert dom["filters"].startswith('<button class="chip on" data-f="" aria-pressed="true">全部</button><button class="chip" data-f="p3" aria-pressed="false">★★★</button>')
+    assert '<button class="chip" data-f="bug" aria-pressed="false">🐞 bug</button>' in dom["filters"] and 'id="hide-done"' in dom["filters"]
+    assert dom["cards"] == ('<section class="card src-jira" id="s1"><header class="head"><h3>Jira &lt;x&gt;</h3><span class="count">2 条</span>'
+                            '<span class="badge p3">★★★ 1</span><span class="badge bug">🐞 1</span>'
+                            '<button class="fold" data-fold="s1" aria-expanded="true" title="收起 / 展开这一区">▾</button></header>'
+                            '<div class="list"><ul>\n<li>a</li>\n</ul></div></section>'
+                            '<section class="card src-other" id="s2"><header class="head"><h3>（无标题）</h3><span class="count">0 条</span>'
+                            '<span class="badge upd">有更新 3</span>'
+                            '<button class="fold" data-fold="s2" aria-expanded="true" title="收起 / 展开这一区">▾</button></header>'
+                            '<div class="list"><p>x</p></div></section>')
+    plain = _page(engine, [_ok(_payload()), '{"hang": true}'])["dom"]
+    assert plain["sideHidden"] is True and plain["cards"] == "" and plain["body"] == "<h3>A</h3>", "没有分区：退回整段文章"
+
+
+def test_item_classification_and_filtering_are_pure(engine):
+    out = _evaluate(engine, FAKE_DOM + FAKE_BROWSER + REPORT_DOM + render.bundle(("util.js", "items.js")) +
+                    "\nreturn JSON.stringify({bug: classify('<span class=\"star s3\">★★★</span> 🐞 x · <strong>有更新</strong>', 'bug'),"
+                    " plain: classify('no stars here', ''), two: classify(' <span class=\"star s2\">★★</span> y', 'other'),"
+                    " all: passes({p: 1, bug: false, upd: false, done: false}, [], false),"
+                    " p3only: passes({p: 1, bug: false, upd: false, done: false}, ['p3'], false),"
+                    " union: passes({p: 1, bug: true, upd: false, done: false}, ['p3', 'bug'], false),"
+                    " upd: passes({p: 0, bug: false, upd: true, done: true}, ['upd'], false),"
+                    " hidden: passes({p: 3, bug: true, upd: true, done: true}, [], true)});")
+    assert out["bug"] == {"p": 3, "bug": True, "upd": True} and out["plain"] == {"p": 0, "bug": False, "upd": False}
+    assert out["two"] == {"p": 2, "bug": False, "upd": False}
+    assert out["all"] is True and out["p3only"] is False and out["union"] is True and out["upd"] is True and out["hidden"] is False
 
 
 def test_busy_empty_unavailable_and_error_states(engine):
