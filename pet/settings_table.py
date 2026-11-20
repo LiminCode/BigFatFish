@@ -46,7 +46,7 @@ from . import work_briefing as wb
 from . import work_notes as wn
 
 ZONES = ("personal", "work")                # 这一组设置管的是哪个账号那一侧的功能
-CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text", "lines")
+CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text", "lines", "records")
 COMMITS = ("immediate", "on_finish", "confirm")
 DISCLOSURES = ("primary", "advanced")
 _TEXT_CONTROLS = ("text", "long_text")
@@ -66,10 +66,11 @@ class Setting:
     bounds: tuple = ()                      # 数字的 (下限, 上限)；空 = 不限
     unit: str = ""                          # 数字的单位（文案键）
     labels: tuple = ()                      # 下拉选项上显示的文字：((值, 文案键), ...)
+    fields: tuple = ()                      # records 的列：((字段 id, 文案键), ...)；值是这些字段组成的字典的列表
 
     @property
     def commit_policy(self) -> str:
-        return self.commit or ("on_finish" if self.control in (*_TEXT_CONTROLS, "lines") else "immediate")
+        return self.commit or ("on_finish" if self.control in (*_TEXT_CONTROLS, "lines", "records") else "immediate")
 
 
 @dataclass(frozen=True)
@@ -176,6 +177,10 @@ def _type_error(setting: Setting, value: Any) -> str:
         return "" if value in setting.choices else "not_a_choice"
     if setting.control == "lines":
         return "" if isinstance(value, list) and all(isinstance(item, str) for item in value) else "type"
+    if setting.control == "records":
+        names = [name for name, _key in setting.fields]
+        return "" if isinstance(value, list) and all(
+            isinstance(item, dict) and all(isinstance(item.get(name, ""), str) for name in names) for item in value) else "type"
     return "" if isinstance(value, str) else "type"
 
 
@@ -218,6 +223,10 @@ def _as_stored(setting: Setting, value: Any) -> Any:
         return value.strip()
     if setting.control == "lines":
         return [item.strip() for item in value if item.strip()]
+    if setting.control == "records":
+        # 每个字段去掉首尾空白；全空的行不要。别的差别（大小写、缺字段补默认）都是功能自己的事，被它改了就是 rejected
+        rows = [{name: str(item.get(name, "")).strip() for name, _key in setting.fields} for item in value]
+        return [row for row in rows if any(row.values())]
     return value
 
 
@@ -243,7 +252,7 @@ def _fits(control: str, default: Any) -> bool:
         return isinstance(default, (int, float)) and not isinstance(default, bool)
     if control in ("text", "long_text", "choice_or_text"):
         return isinstance(default, str)
-    if control == "lines":
+    if control in ("lines", "records"):
         return isinstance(default, list)
     return True
 
@@ -271,6 +280,8 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
                 raise bad(f"{setting.id}: unknown control, disclosure or commit policy")
             if setting.control in ("choice", "choice_or_text") and not setting.choices:
                 raise bad(f"{setting.id}: a choice needs choices")
+            if (setting.control == "records") != bool(setting.fields):
+                raise bad(f"{setting.id}: records need fields and only records have them")
             if setting.id not in produced:
                 raise bad(f"{setting.id}: the feature's normalize() does not produce this key")
             if not _fits(setting.control, produced[setting.id]):
@@ -322,7 +333,7 @@ def _notes_prompt(language: str) -> Setting:
 #: ``agent_link`` 一个配置键分四组，按配置全景的账号带和磁贴分：本机联动 / WSL 联动（公司带）/ 会话小鱼 / 最近的对话。
 #: 每组的 ``not_editable`` = 其余三组的键 + 四组都不给改的几个（见 _AGENT_LINK_ELSEWHERE）。
 _AGENT_LINK_GROUPS = {
-    "link_win": ("claude", "cursor", "opencode"),
+    "link_win": ("claude", "cursor", "opencode", "custom_agents"),
     "link_wsl": ("claude_wsl",),
     "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models", "session_card_theme",
                      "session_card_text_size"),
@@ -330,7 +341,6 @@ _AGENT_LINK_GROUPS = {
 }
 _AGENT_LINK_ELSEWHERE = {
     "dsh": "DSH 联动的菜单项 2026-10-14 下线；从页面打开只会起一个没有桥接插件的监视器，所以不给开（要不要整个删掉另议）",
-    "custom_agents": "自定义联动 Agent 是 {key, name, path} 的列表，现有控件装不下：先直接改 config.json，页面控件下一步做",
     **{key: "提示音效留在设置窗口「互动 · Agent 联动音效」，M7 搬「互动」时一起走" for key in (
         "sound_enabled", "sound_start_enabled", "sound_done_enabled", "sound_error_enabled", "sound_start_path",
         "sound_done_path", "sound_error_path", "sound_volume", "sound_cooldown_seconds")},
@@ -460,6 +470,11 @@ GROUPS: tuple[Group, ...] = (
         Setting("claude", "toggle", text="settings.link_win.claude"),
         Setting("cursor", "toggle", disclosure="advanced", text="settings.link_win.cursor"),
         Setting("opencode", "toggle", disclosure="advanced", text="settings.link_win.opencode"),
+        # 自定义联动 Agent：{key, name, path} 的列表（records 控件）。写入过 config._clean_custom_agents：key 小写、不和内置键重复、
+        # path 非空，不合规的条目会被它丢掉 → check_changes 判 rejected，页面那一行标红。改了就热生效（AgentLinkManager.apply_config）。
+        Setting("custom_agents", "records", disclosure="advanced", text="settings.link_win.custom_agents",
+                fields=(("key", "settings.link_win.custom_agents.key"), ("name", "settings.link_win.custom_agents.name"),
+                        ("path", "settings.link_win.custom_agents.path"))),
     ), "panorama.feature.link_win"),
     _agent_link_group("link_wsl", "work", (
         Setting("claude_wsl", "toggle", text="settings.link_wsl.claude_wsl"),

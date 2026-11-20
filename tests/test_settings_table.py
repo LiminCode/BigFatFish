@@ -133,7 +133,7 @@ def test_a_long_text_knows_what_is_used_when_it_is_left_empty():
 def test_toggles_and_choices_commit_at_once_and_text_and_lists_wait_for_the_user():
     for group in st.GROUPS:
         for setting in group.settings:
-            expected = "on_finish" if setting.control in ("text", "long_text", "lines") else "immediate"
+            expected = "on_finish" if setting.control in ("text", "long_text", "lines", "records") else "immediate"
             if not setting.commit:
                 assert setting.commit_policy == expected, f"{group.id}.{setting.id}"
 
@@ -352,7 +352,7 @@ def test_a_list_of_lines_is_its_own_control():
 
 # ───────────────────────── Claude Code 联动 / 会话小鱼 / 最近的对话（M4 第六项）：一个配置键、四组 ─────────────────────────
 
-_AGENT_LINK_GROUPS = {"link_win": ("claude", "cursor", "opencode"), "link_wsl": ("claude_wsl",),
+_AGENT_LINK_GROUPS = {"link_win": ("claude", "cursor", "opencode", "custom_agents"), "link_wsl": ("claude_wsl",),
                       "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models",
                                        "session_card_theme", "session_card_text_size"),
                       "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max")}
@@ -372,14 +372,28 @@ def test_agent_link_is_four_groups_on_one_config_key():
     assert groups["link_wsl"].zone == "work" and groups["link_wsl"].available is not None and groups["link_wsl"].unavailable_text
     assert {groups[g].zone for g in ("link_win", "session_fish", "session_history")} == {"personal"}
     assert groups["link_wsl"].available() == bool(claude_hooks.wsl_exe())
-    # 每个键恰好在一组里能改，另外三组写明去哪改；dsh / 自定义 Agent / 音效在四组里都只说明不给改
+    # 每个键恰好在一组里能改，另外三组写明去哪改；dsh / 音效在四组里都只说明不给改（自定义 Agent 2026-11-20 起在 link_win 里改）
     produced = set(st.flatten(_clean_agent_link_data({})))
     declared = {s.id for g in groups.values() for s in g.settings}
     assert declared <= produced and len(declared) == sum(len(g.settings) for g in groups.values())
     for g in groups.values():
         assert set(g.not_editable) == produced - {s.id for s in g.settings}, g.id
-    for key in ("dsh", "custom_agents", "sound_enabled", "sound_volume", "sound_start_path"):
+    for key in ("dsh", "sound_enabled", "sound_volume", "sound_start_path"):
         assert all(key in g.not_editable for g in groups.values()), key
+    custom = next(s for s in groups["link_win"].settings if s.id == "custom_agents")
+    assert custom.control == "records" and [name for name, _key in custom.fields] == ["key", "name", "path"]
+    assert custom.commit_policy == "on_finish" and custom.disclosure == "advanced"
+
+
+def test_records_is_its_own_control_and_needs_its_fields():
+    """第八种控件：几列文本、一行一条。声明必须带 fields，别的控件不能带。"""
+    assert "records" in st.CONTROLS
+    rows = st.Setting("custom_agents", "records", fields=(("key", "k"), ("path", "p")))
+    assert rows.commit_policy == "on_finish" and st._fits("records", []) and not st._fits("records", "x")
+    with pytest.raises(ValueError, match="records need fields"):
+        st.validate((_group(settings=(st.Setting("work_roots", "records"),)),))
+    with pytest.raises(ValueError, match="only records have them"):
+        st.validate((_group(settings=(st.Setting("work_roots", "lines", fields=(("a", "k"),)),)),))
 
 
 def test_session_fish_declares_the_features_own_bounds_choices_and_labels():

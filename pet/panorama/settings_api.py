@@ -71,6 +71,7 @@ def describe(group: st.Group, raw) -> dict:
             "min": setting.bounds[0] if setting.bounds else None, "max": setting.bounds[1] if setting.bounds else None,
             "unit": _text(setting.unit),
             "labels": _labels(setting),
+            "fields": [{"id": name, "title": _text(key)} for name, key in setting.fields],
         } for setting in group.settings],
     }
 

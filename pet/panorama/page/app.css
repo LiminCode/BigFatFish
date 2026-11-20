@@ -145,6 +145,11 @@ aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .sform select{min-width:140px}.sform input[type=number]{width:90px}.sform input.fcustom{width:180px}
 .sform .funit{color:var(--m-muted);font-size:12px}
 .sform textarea{width:100%;box-sizing:border-box;resize:vertical;font:12px/1.5 ui-monospace,Consolas,"Cascadia Mono",monospace}
+.sform table.frecords{width:100%;border-collapse:collapse;margin-bottom:6px}
+.sform .frecords th{text-align:left;font-weight:500;font-size:11.5px;color:var(--m-muted);padding:0 4px 2px}
+.sform .frecords td{padding:2px 4px 2px 0;vertical-align:top}.sform .frecords td:last-child{width:28px;padding-right:0}
+.sform .frecords input[type=text]{width:100%;box-sizing:border-box}
+.sform .frec-del{padding:2px 7px;line-height:1.2}
 .sform select:focus,.sform input:focus,.sform textarea:focus{outline:2px solid var(--m-accent);outline-offset:-1px}
 .sform :disabled{opacity:.55;cursor:not-allowed}
 .sform input[type=checkbox][role=switch]{appearance:none;width:38px;height:20px;margin:0;border-radius:10px;background:var(--m-field);

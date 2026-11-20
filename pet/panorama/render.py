@@ -56,7 +56,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
              *("form_" + key for key in (
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",
                  "using_builtin", "dirty", "custom", "custom_label", "advanced", "err_unknown", "err_type", "err_not_a_choice",
-                 "err_rejected", "err_out_of_range")))
+                 "err_rejected", "err_out_of_range", "add_row", "delete_row")))
 #: 报告页自己的几句界面文字（随数据一起给：外壳是公开的静态文件，只带标题和「连接断了」）
 REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "report_action_busy", "report_action_failed",
                "report_action_lost", "report_sections", "report_filters", "report_filter_all", "report_filter_p3",
