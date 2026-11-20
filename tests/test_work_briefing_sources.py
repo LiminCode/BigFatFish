@@ -149,7 +149,9 @@ def test_the_current_sprint_is_the_first_section_and_lists_every_ticket_by_jira_
     assert wb.SOURCES[0] == "sprint" and wb.DEFAULT_SOURCES["sprint"] is True
     prompt = wb.build_prompt(MONDAY_10, "")
     assert prompt.index("1. 当前 Sprint") < prompt.index("2. Jira")
-    assert "sprint in openSprints()" in prompt and "ORDER BY priority DESC" in prompt
+    # 先用我的工单找出 sprint，再按 sprint id 查全部（直接 openSprints() 会查遍全站）
+    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> ORDER BY priority DESC" in prompt
+    assert "最多 80 条" in prompt and "不要用不带 sprint 或项目限制" in prompt
     assert "不限经办人" in prompt and "不标星级" in prompt and "已完成" in prompt
     assert "`## 当前 Sprint`、`## Jira`" in prompt
     i18n.set_language("en")

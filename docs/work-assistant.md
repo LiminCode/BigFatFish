@@ -117,9 +117,11 @@ flowchart LR
   提示词里列哪些来源、输出哪几节、放行哪些只读工具、要不要先跑 `gh`。只改其中一件就会出现「让它读邮件但工具没放行」。
   邮件开着才放行 Gmail 的三个读取工具，关着时整个 Gmail 连接器都在拒绝名单里。来源和工具组不是一一对应：`_TOOLS_OF_SOURCE`
   把「当前 Sprint」映射到 Jira 那组 Atlassian 工具，两个开关任一开着工具就在。
-- **「当前 Sprint」是第一节**（2026-11-20 用户要求）：我所在看板正在进行的 sprint 里的**全部**工单，不限经办人，JQL
-  `sprint in openSprints() ORDER BY priority DESC, status ASC, updated DESC`，最多 60 条；按 Jira 的优先级字段原序排，不让模型
-  重排、不标星级（它是唯一不标星的工单列表），第一行 `共 N 条，已完成 M 条`，已完成的排最后，经办人是我时加粗。
+- **「当前 Sprint」是第一节**（2026-11-20 用户要求）：我所在团队正在进行的 sprint 里的**全部**工单，不限经办人。两步查：先用
+  `assignee = currentUser() AND sprint in openSprints()` 找出我的工单所在的 sprint（id），再 `sprint = <id> ORDER BY priority DESC,
+  status ASC, updated DESC` 查全部，最多 80 条。**不许**不带限制地 `sprint in openSprints()`——第一次真机就是这么查的，拿回来的 60 条
+  全是别的团队的 Critical，我的一条都没进来。按 Jira 的优先级字段原序排，不让模型重排、不标星级（它是唯一不标星的工单列表），
+  每个 sprint 一段，段首 `**<sprint 名>** · 共 N 条，已完成 M 条`，已完成的排段尾，经办人是我时加粗。
   「Jira」那一节仍是分配给我的未完成工单（bug 优先、带 QA 场景），两节会重叠，各管各的用途：一节看团队全貌，一节看我手上的。
 - **提示词按界面语言整套切换**（`_PROMPTS["zh" / "en"]`），不是在中文提示词里加一句「用英文写」——周围全是中文时模型遵从
   不稳。`parse_output` 同时认 `概要：` 与 `Summary:`（含加粗、反引号写法，`SUMMARY_PREFIXES`），第一行拆出来给气泡，没有
