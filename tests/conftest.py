@@ -136,7 +136,7 @@ def _no_real_usage_measurement(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _no_real_session_history_scan(monkeypatch):
+def _no_real_session_history_scan(monkeypatch, tmp_path):
     """「最近的对话」的回填在测试里绝不真的去读 ``~/.claude`` 或起 wsl.exe。
 
     建 overlay 壳就会排一次回填；默认扫描读的是开发者 / CI 机器上真实的 Claude Code
@@ -177,6 +177,11 @@ def _no_real_session_history_scan(monkeypatch):
     # 同理：管理器不许去读这台机器真实的 ~/.claude/settings.json 查 hooks 在不在
     # （要测这项检查的用例自己打开，见 test_claude_hooks_missing.py）
     monkeypatch.setattr(agent_link.AgentLinkManager, "CHECK_HOOKS_PRESENT", False)
+    # 也不许写它：关联动时 2026-11-19 起会卸掉肥鱼装的 hooks（#84），真壳 / 真管理器的用例把 claude 关掉就会改写
+    # 开发机上真实的 ~/.claude/settings.json（2026-11-20 凌晨跑 test_background_service_gates / test_harness_ownership
+    # 就这样把本机 hooks 清掉了）。settings.json 的路径一律指到临时目录；要测装卸本身的用例自己再指到自己的文件。
+    monkeypatch.setattr(agent_link.ClaudeCodeMonitor, "get_settings_path",
+                        staticmethod(lambda: tmp_path / "claude-home" / "settings.json"))
 
 
 @pytest.fixture(autouse=True)
