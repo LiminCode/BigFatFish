@@ -75,6 +75,13 @@ def test_text_is_trimmed_but_otherwise_kept_exactly():
     assert _check({"prompt_zh": ""})[0]["prompt_zh"] == ""                              # 空 = 用内置
 
 
+def test_extra_tools_are_kept_as_lines_and_a_line_the_feature_drops_is_rejected():
+    new, errors = _check({"extra_allowed_tools": [" mcp__claude_ai_Atlassian_MCP__* ", "", "mcp__x__y"]})
+    assert errors == [] and new["extra_allowed_tools"] == ["mcp__claude_ai_Atlassian_MCP__*", "mcp__x__y"]
+    assert [(e["id"], e["code"]) for e in _check({"extra_allowed_tools": ["Bash"]})[1]] == [("extra_allowed_tools", "rejected")]
+    assert [(e["id"], e["code"]) for e in _check({"extra_allowed_tools": "mcp__x__y"})[1]] == [("extra_allowed_tools", "type")]
+
+
 def test_custom_values_the_feature_accepts_are_fine_even_if_not_in_the_dropdown():
     new, errors = _check({"time": "07:05", "model": "claude-sonnet-5-5"})
     assert errors == [] and (new["time"], new["model"]) == ("07:05", "claude-sonnet-5-5")

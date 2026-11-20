@@ -29,8 +29,12 @@ def _config(theme="dark"):
 
 
 class _Service:
-    def __init__(self, briefing=None, *, busy=False, error="", started=True):
+    def __init__(self, briefing=None, *, busy=False, error="", started=True, trace=None):
         self._briefing, self.busy, self._error, self._started, self.asked = briefing, busy, error, started, 0
+        self._trace = trace or {}
+
+    def last_trace(self):
+        return self._trace
 
     def latest(self):
         return self._briefing
@@ -46,6 +50,47 @@ class _Service:
 BRIEFING = wb.Briefing(ok=True, summary="先评审两个 PR", markdown="## PR\n- ★★★ [acme/w#1](https://x.example/1) `进行中`\n",
                        generated_at="2026-11-19T09:00:08", seconds=117.8, turns=12, model="claude-opus-5-5", effort="high",
                        tokens_in=406791, tokens_out=12012, cost_usd=1.25)
+
+
+TRACE = {"version": "2.1.329", "model": "claude-opus-5-5", "permission_mode": "auto", "turns": 12, "ok": True, "at": "2026-11-19T22:10:00",
+         "servers": [{"name": "claude.ai Atlassian", "status": "needs-auth", "source": "claude.ai", "calls": 0, "allowed": True},
+                     {"name": "claude.ai Slack", "status": "connected", "source": "claude.ai", "calls": 3, "allowed": True},
+                     {"name": "plugin:atlassian:atlassian", "status": "weird", "source": "plugin", "calls": 0, "allowed": True}],
+         "others": 23, "tools": ["mcp__claude_ai_Slack__slack_read_channel"], "allowed": ["a", "b", "c"],
+         "calls": [{"n": 1, "tool": "mcp__claude_ai_Slack__slack_search_public_and_private", "args": "query=<to:me>", "ok": True},
+                   {"n": 2, "tool": "mcp__claude_ai_Atlassian__getJiraIssue", "args": "key=X-1", "ok": False},
+                   {"n": 3, "tool": "odd", "args": "", "ok": None}],
+         "denied": ["mcp__claude_ai_Slack__slack_send_message"], "hooks": ["gitkraken-hooks:SessionStart"],
+         "gh_command": "gh pr list", "command": "claude -p --tools ''", "prompt": "你是我的<助手>"}
+
+
+def test_the_run_record_becomes_collapsible_sections_with_everything_escaped():
+    data = reports.work_briefing(lambda: _Service(BRIEFING, trace=TRACE), _config())()
+    titles = [section["title"] for section in data["details"]]
+    assert titles == ["这次是怎么生成的（11-19 22:10）", "工具调用（3 次）", "那个账号自己的 hooks", "命令（肥鱼在 WSL 登录 shell 里跑的）",
+                      "提示词（发出去的原文）"]
+    first = data["details"][0]["html"]
+    assert "Claude Code 2.1.329（claude-opus-5-5 · 权限模式 auto · 12 轮）" in first
+    assert '<td>claude.ai Atlassian</td><td class="st needs-auth">没登录</td><td>要登录：在 WSL 里跑 claude mcp login &quot;claude.ai Atlassian&quot;，再重新生成</td>' in first
+    assert '<td class="st connected">已连接</td><td>这次调了 3 次</td>' in first and '<td class="st other">weird</td><td>放行了，这次没用到</td>' in first
+    assert "另有 23 个 MCP 服务器与简报无关" in first and "放行名单 3 条；这次实际存在的工具 1 个" in first
+    calls = data["details"][1]["html"]
+    assert '<li><code>slack_search_public_and_private</code> <span class="srv">claude_ai_Slack</span> query=&lt;to:me&gt; <span class="ok">✓</span></li>' in calls
+    assert '<code>getJiraIssue</code> <span class="srv">claude_ai_Atlassian</span> key=X-1 <span class="bad">✗</span>' in calls
+    assert '<li><code>odd</code> <span class="srv"></span>  </li>' in calls and "被拒的：mcp__claude_ai_Slack__slack_send_message" in calls
+    assert data["details"][2]["html"] == "<p>gitkraken-hooks:SessionStart</p>"
+    assert data["details"][3]["html"] == "<pre>gh pr list\nclaude -p --tools &#x27;&#x27;</pre>"
+    assert data["details"][4]["html"] == '<p><a class="settings" href="__SETTINGS_URL__">到设置里改模板</a></p><pre>你是我的&lt;助手&gt;</pre>'
+    assert data["settings_focus"] == "work_briefing"
+
+
+def test_a_failed_run_is_marked_and_a_service_without_a_record_gives_no_sections():
+    failed = reports.trace_sections({**TRACE, "ok": False, "servers": [], "calls": [], "hooks": [], "others": 0, "denied": []})
+    assert failed[0]["title"] == "这次是怎么生成的（11-19 22:10 · 失败）" and "这次运行没有报告任何 MCP 服务器" in failed[0]["html"]
+    assert failed[1]["html"] == '<p class="note">没有调用任何工具</p>' and failed[2]["html"] == '<p class="note">没有 hooks 运行</p>'
+    assert reports.trace_sections({}) == []
+    plain = reports.work_briefing(lambda: _Service(BRIEFING), _config())()
+    assert plain["details"] == [], "老版本生成的简报：没有记录就不摆"
 
 
 def test_the_latest_briefing_is_rendered_with_its_usage_and_a_regenerate_button():

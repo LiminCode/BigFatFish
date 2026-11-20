@@ -239,10 +239,12 @@ def engine():
 REPORT_DOM = """
 document.documentElement.dataset = {};
 location.pathname = '/report/demo';
+location.origin = 'http://127.0.0.1:1';
 var dom = function () { var el = document.getElementById; return {title: el('title').textContent, generated: el('generated').textContent,
   summary: el('summary').textContent, summaryHidden: el('summary').hidden, usage: el('usage').innerHTML, body: el('body').innerHTML,
   status: el('status').textContent, statusClass: el('status').className, button: el('action').textContent, buttonHidden: el('action').hidden,
-  buttonDisabled: el('action').disabled, lost: el('lost').hidden, theme: document.documentElement.dataset.theme, title_tag: document.title}; };
+  buttonDisabled: el('action').disabled, lost: el('lost').hidden, theme: document.documentElement.dataset.theme, title_tag: document.title,
+  details: el('details').innerHTML}; };
 var clicks = {};
 document.getElementById('action').addEventListener = function (type, fn) { clicks[type] = fn; };
 """
@@ -273,6 +275,15 @@ def test_the_page_takes_the_token_asks_for_its_report_and_lays_it_out(engine):
     assert dom["summary"] == "第 1 份" and dom["summaryHidden"] is False and dom["body"] == "<h3>A</h3>"
     assert dom["usage"] == '<span class="u" title="t">3 秒</span>'
     assert dom["button"] == "重做" and dom["buttonHidden"] is False and dom["buttonDisabled"] is False and dom["lost"] is True
+
+
+def test_the_run_record_is_laid_out_as_collapsible_sections_with_the_settings_link_filled_in(engine):
+    details = [{"title": "怎么生成的 <b>", "html": '<p>x</p><a class="settings" href="__SETTINGS_URL__">改</a>'}, {"title": "命令", "html": "<pre>c</pre>"}]
+    out = _page(engine, [_ok(_payload(details=details, settings_focus="work_briefing")), '{"hang": true}'])
+    assert out["dom"]["details"] == ('<details open><summary>怎么生成的 &lt;b&gt;</summary><div class="d"><p>x</p>'
+                                     '<a class="settings" href="http://127.0.0.1:1/#tok-1&settings=work_briefing">改</a></div></details>'
+                                     '<details><summary>命令</summary><div class="d"><pre>c</pre></div></details>')
+    assert _page(engine, [_ok(_payload()), '{"hang": true}'])["dom"]["details"] == "", "没有记录就什么都不摆"
 
 
 def test_busy_empty_unavailable_and_error_states(engine):

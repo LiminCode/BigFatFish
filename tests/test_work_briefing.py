@@ -55,7 +55,7 @@ def _prs(*titles) -> str:
 def test_it_is_off_until_someone_turns_it_on(tmp_path):
     assert Config(tmp_path).get(wb.CONFIG_KEY) == {
         "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "effort": "high",
-        "sources": dict(wb.DEFAULT_SOURCES), "prompt_zh": "", "prompt_en": "", "priority_rules": ""}
+        "sources": dict(wb.DEFAULT_SOURCES), "prompt_zh": "", "prompt_en": "", "priority_rules": "", "extra_allowed_tools": []}
     assert wb.DEFAULT_SOURCES["email"] is False, "邮件默认关"
 
 
@@ -135,7 +135,7 @@ def test_writing_tools_are_refused_by_name_even_if_the_account_pre_approved_them
 
 def test_the_command_runs_headless_with_builtin_tools_switched_off():
     command = wb.claude_command("sonnet")
-    assert " claude -p " in command and "--output-format json" in command
+    assert " claude -p " in command and "--output-format stream-json --verbose" in command, "事件流：运行记录从这里来"
     assert "--tools ''" in command, "Bash / 读写文件这些内置工具一个不给"
     assert "--no-session-persistence" in command, "不在工作账号的会话列表里留一条"
     assert f"{ch.HEADLESS_ENV}=1 " in command, "让肥鱼自己的 hook 认出这次运行"

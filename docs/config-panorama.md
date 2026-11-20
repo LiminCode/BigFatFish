@@ -314,7 +314,10 @@ flowchart LR
 
 - **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": provider}`（`reports.py`）。provider 在**界面线程**上被调
   （它读 Qt 对象），返回固定字段的字典：`title / theme / summary / generated / usage[] / html / busy / busy_text / empty_text /
-  error / action{name, report, label, hint} / available`。页面（`report.js`）只按字段摆，不认识功能。
+  error / action{name, report, label, hint} / available / details[] / settings_focus`。页面（`report.js`）只按字段摆，不认识功能。
+  `details` 是「这次是怎么生成的」那几段 `{title, html}`（服务端渲染、全部转义，见[公司侧助理](work-assistant.md)的
+  「运行记录」），页面折叠着摆在全文下面、第一段默认展开；里面的 `__SETTINGS_URL__` 占位由页面换成
+  `/#<令牌>&settings=<settings_focus>`（同一个服务、同一个令牌）。
 - **数据怎么到页面**：每份报告自己一个 `Feed`。第一次 `GET /api/report/<名字>` 时还没发布过，请求线程经 `on_gui` 让界面线程做一份
   （`publish_report(force=True)`）；之后页面带编号等更新。简报服务 `started` / `finished` 时应用调 `publish_report(name)`——
   **没人打开过页面就什么都不做**（provider 不白跑）。`report_watched(name)` = 有请求挂在那份报告上 = 用户正开着看，

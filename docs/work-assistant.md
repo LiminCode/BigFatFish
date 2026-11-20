@@ -9,7 +9,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `pet/work_briefing.py` | 零 Qt。配置 `normalize`、`is_due`、放行 / 拒绝名单、`claude_command`、`pr_command` / `format_pull_requests`、提示词模板与 `render_template`、`parse_output`、`linkify`、状态文件 |
+| `pet/work_briefing.py` | 零 Qt。配置 `normalize`、`is_due`、放行 / 拒绝名单（含设置里的 `extra_allowed_tools`）、`claude_command`、`pr_command` / `format_pull_requests`、提示词模板与 `render_template`、`parse_output`、`parse_trace`（运行记录）、`linkify`、状态文件 |
 | `pet/work_briefing_service.py` | `WorkBriefingService`：每分钟 `check()`，到点在 daemon 线程里 `generate`，信号排队回 GUI 线程落盘 |
 | `pet/work_briefing_ui.py` | `WorkBriefingController`（提醒气泡、岛按钮状态、`tab_providers`；「查看」开浏览器里的简报页）、`WorkBriefingWindow`（Metro 窗口壳：笔记 / Slack 关注 / 个人助理还在用；工作简报的那一页 2026-11-19 起不再加进去） |
 | `pet/panorama/reports.py` / `markdown.py` | 浏览器里的简报页：把 `WorkBriefingService` 的最近一份翻成页面数据，Markdown → HTML。见[配置全景](config-panorama.md)「报告页」 |
@@ -60,8 +60,10 @@ flowchart LR
 
 ### 那一行命令（三个功能共用，红线）
 
-`cd ~ && BIG_FAT_FISH_HEADLESS=1 claude -p --model … --effort … --output-format json --no-session-persistence
+`cd ~ && BIG_FAT_FISH_HEADLESS=1 claude -p --model … --effort … --output-format stream-json --verbose --no-session-persistence
 --max-turns N --tools '' --allowedTools … --disallowedTools …`，经 `wsl.exe -e bash -lc` 跑，提示词从标准输入进去。
+`stream-json`（2026-11-19 起）：一行一个事件——`init` 里有每个 MCP 服务器的名字 / 状态和工具清单，之后每次工具调用一行，
+最后一行才是结果；`_result_record` 只认带 `result` 键的那一行，所以共用这行命令的工作笔记不用改解析。
 
 - **权限三层，缺一层都不算只读**：① 无界面模式下没放行的工具一律被拒；② `--tools ''` 让内置工具（Bash、读写文件）整个
   不存在，那个账号自己设置里放行过的 Bash 规则也就无从生效；③ 写入类连接器工具**点名拒绝**（`_WRITE_TOOLS`，外加整个网盘
@@ -73,10 +75,31 @@ flowchart LR
   stdio 型服务器，插件的 HTTP OAuth 服务器不出现（2026-11-19 在 2.1.329 上实测，上游 anthropics/claude-code#36309）：
   实际在用的是连接器那一套，插件前缀留着只为将来它修好；连接器要重新登录时按[排障手册](troubleshooting.md)的
   「无界面 `claude -p` 里的连接器」一节做，重新认证插件没有用。
+- **额外放行的工具**（设置 `extra_allowed_tools`，一行一个全名或 `mcp__服务器__*` 前缀）接在内置名单后面，拒绝名单仍压过它。
+  用途：连接器换了名字 / 多了一条（例如 `claude.ai Atlassian MCP` → `mcp__claude_ai_Atlassian_MCP__…`）时用户自己补一行。
+  也会拼进 shell 命令，所以 `normalize_tools` 只认 `mcp__` 开头、字母数字和 `. _ -`、`*` 只能在末尾，坏行丢掉。
 - **模型名和 effort 会拼进 shell 命令**：`normalize_model` 只认字母数字和 `. _ -`，`normalize_effort` 只认四档，其余退回默认。
   effort 显式传，是因为结果 JSON 不报它。
 - 用登录 shell（`-l`）：`claude` 通常在 `~/.local/bin`，由 `~/.profile` 加进 `PATH`。不用交互 shell（`-i`）。
 - `--no-session-persistence`：这次运行不在那个账号的会话列表里留一条。
+
+### 运行记录：这次是怎么生成的
+
+简报本来是个黑盒（只剩一段正文）；2026-11-19 起每次尝试都留一份运行记录（`work_briefing.parse_trace` + `generate` 填的几项），
+存在 `work-briefing.json` 的 `trace` 键下（每次尝试都换，**失败的也留**——失败时最想看的就是它；简报本体里不带，免得存两遍），
+简报页在全文下面折叠着摆出来（`reports.trace_sections`）：
+
+- **链路**：肥鱼 → WSL → Claude Code 版本（`init.claude_code_version`）· 实际模型 · 权限模式 · 轮数 → MCP 服务器。
+- **服务器表**：只列和简报有关的——放行名单覆盖到的（按 Claude Code 的命名规则 `mcp__<服务器名>__…`，名字里非字母数字的字符
+  换成 `_`，`server_slug`）或这次真调过的；每行：名字 · 状态（已连接 / 没登录 / 连不上）· 这次调了几次 / 放行了没用到 /
+  没放行但用到了。没登录的那行直接给修法（`claude mcp login "<名字>"`）。其余只数个数。另有一句「放行名单 N 条，这次实际存在
+  的工具 M 个」：放行了不存在的名字没有任何效果，这里看得出来。
+- **工具调用**：每次 `tool_use` 一行——短名、服务器、参数摘要（每个值 80 字、整行 200 字）、✓ / ✗（由对应 `tool_result` 的
+  `is_error` 定）；结果里的 `permission_denials` 另列。
+- **那个账号的 hooks**（`hook_started` 事件的名字去重）、**命令**（gh 那两条 + claude 那一行）、**提示词原文**（带
+  「到设置里改模板」的链接：页面把 `__SETTINGS_URL__` 占位换成配置全景带令牌的地址）。
+- 隐私同简报正文：提示词里有 PR 列表，整份记录只在本地状态文件里、只经带令牌的接口给本机浏览器，不进日志、不进快照。
+- 老版本生成的简报没有这份记录：页面上什么都不摆。
 - `BIG_FAT_FISH_HEADLESS`（`claude_hooks.HEADLESS_ENV`）：sh 版 hook 脚本读到它非空就直接返回，什么都不上报，所以这次运行
   不冒[会话小鱼](session-fish.md)；会话存活探测也经 `/proc/<pid>/environ` 认它。普通的 Claude Code 会话照常上报。
   [会话记忆蒸馏](memory-distill.md)的公司侧走的也是这条通道。

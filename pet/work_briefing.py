@@ -27,7 +27,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from . import claude_hooks
 from .i18n import t
@@ -54,6 +54,8 @@ BUG_MARK = "🐞"
 
 _MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}")
 _TIME_RE = re.compile(r"\s*(\d{1,2})(?::(\d{2}))?\s*")
+#: 额外放行的工具：工具全名，或以 ``*`` 结尾的前缀。会拼进 shell 命令，所以只认 ``mcp__`` 开头、字母数字和 ``. _ -``。
+_TOOL_RE = re.compile(r"mcp__[A-Za-z0-9_.-]+\*?")
 _WEEKDAYS = "一二三四五六日"
 _PR_FIELDS = "repository,number,title,updatedAt,isDraft,url"
 
@@ -225,6 +227,18 @@ def normalize_sources(value) -> dict:
     return {key: (raw.get(key, default) is True) for key, default in DEFAULT_SOURCES.items()}
 
 
+def normalize_tools(value) -> list[str]:
+    """额外放行的工具（``extra_allowed_tools``）：一行一个工具全名（``mcp__服务器__工具``）或 ``mcp__服务器__*`` 这样的前缀。
+    不合法的行丢掉、重复的只留一个；手写成一个字符串也认（按行拆）。"""
+    items = value.splitlines() if isinstance(value, str) else (value if isinstance(value, list) else [])
+    out: list[str] = []
+    for item in items:
+        name = item.strip() if isinstance(item, str) else ""
+        if _TOOL_RE.fullmatch(name) and name not in out:
+            out.append(name)
+    return out
+
+
 def normalize(value) -> dict:
     raw = value if isinstance(value, dict) else {}
     return {
@@ -238,6 +252,8 @@ def normalize(value) -> dict:
         "prompt_zh": normalize_text(raw.get("prompt_zh")),
         "prompt_en": normalize_text(raw.get("prompt_en")),
         "priority_rules": normalize_text(raw.get("priority_rules")),
+        # 额外放行的工具（空 = 只有内置名单）：连接器换了名字 / 多了一条时用户自己补，不用等改代码
+        "extra_allowed_tools": normalize_tools(raw.get("extra_allowed_tools")),
     }
 
 
@@ -274,11 +290,13 @@ def _sources(sources: dict | None) -> dict:
     return normalize_sources(sources) if sources is not None else dict(DEFAULT_SOURCES)
 
 
-def allowed_tools(sources: dict | None = None) -> tuple[str, ...]:
-    """放行的只读工具：只给开着的来源（邮件默认关，所以默认不含邮件工具）。"""
+def allowed_tools(sources: dict | None = None, extra: Iterable[str] = ()) -> tuple[str, ...]:
+    """放行的只读工具：只给开着的来源（邮件默认关，所以默认不含邮件工具），再接上设置里额外放行的（``extra_allowed_tools``）。"""
     enabled = _sources(sources)
-    return tuple(prefix + name for source, (prefixes, names) in _READ_TOOLS_BY_SOURCE.items() if enabled.get(source)
-                 for prefix in prefixes for name in names)
+    names = [prefix + name for source, (prefixes, names) in _READ_TOOLS_BY_SOURCE.items() if enabled.get(source)
+             for prefix in prefixes for name in names]
+    names += [name for name in normalize_tools(list(extra)) if name not in names]
+    return tuple(names)
 
 
 def denied_tools(sources: dict | None = None) -> tuple[str, ...]:
@@ -293,12 +311,17 @@ def _sq(value: str) -> str:
     return "'" + str(value).replace("'", "'\\''") + "'"
 
 
-def claude_command(model: str, sources: dict | None = None, effort: str = EFFORT) -> str:
-    """在发行版的登录 shell 里跑的那一行；提示词从标准输入进去。"""
-    allowed = " ".join(_sq(name) for name in allowed_tools(sources))
+def claude_command(model: str, sources: dict | None = None, effort: str = EFFORT, extra: Iterable[str] = ()) -> str:
+    """在发行版的登录 shell 里跑的那一行；提示词从标准输入进去。
+
+    ``stream-json``：整条事件流一行一个 JSON——``init`` 里有每个 MCP 服务器的名字 / 状态和工具清单，之后每次工具调用一行，
+    最后一行才是结果；运行记录（``parse_trace``）从这里来，结果行的解析（``_result_record``）不受影响。
+    ``--verbose`` 是 ``-p`` 下用 stream-json 的硬要求。
+    """
+    allowed = " ".join(_sq(name) for name in allowed_tools(sources, extra))
     denied = " ".join(_sq(name) for name in denied_tools(sources))
     return (f"cd ~ && {claude_hooks.HEADLESS_ENV}=1 claude -p --model {_sq(normalize_model(model))} --effort {normalize_effort(effort)}"
-            f" --output-format json --no-session-persistence --max-turns {MAX_TURNS}"
+            f" --output-format stream-json --verbose --no-session-persistence --max-turns {MAX_TURNS}"
             f" --tools '' --allowedTools {allowed} --disallowedTools {denied}")
 
 
@@ -477,6 +500,7 @@ class Briefing:
     tokens_in: int = 0           # 输入 + 缓存读 + 缓存写
     tokens_out: int = 0
     cost_usd: float = 0.0        # total_cost_usd（Claude Code 报的）
+    trace: dict = field(default_factory=dict)   # 运行记录（parse_trace + 命令 / 提示词 / 名单）；落盘时单独存，见 record
 
 
 def _result_record(stdout: str) -> dict | None:
@@ -492,6 +516,106 @@ def _result_record(stdout: str) -> dict | None:
         if isinstance(record, dict) and "result" in record:
             return record
     return None
+
+
+def _events(stdout: str):
+    """stream-json 的每一行（登录 shell 可能夹着别的字，不是 JSON 对象的行跳过）。"""
+    for line in str(stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            yield event
+
+
+def _blocks(event: dict) -> list[dict]:
+    message = event.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
+
+
+def _args_summary(value, *, each: int = 80, total: int = 200) -> str:
+    """工具参数的一行摘要：``键=值, 键=值``，每个值最多 ``each`` 个字符，整行最多 ``total``。"""
+    if isinstance(value, dict):
+        text = ", ".join(f"{key}={' '.join(str(item).split())[:each]}" for key, item in value.items())
+    else:
+        text = " ".join(str(value if value is not None else "").split())
+    return text if len(text) <= total else text[:total - 1] + "…"
+
+
+def server_slug(name: str) -> str:
+    """Claude Code 给 MCP 工具起名的规则：``mcp__<服务器>__<工具>``，服务器名里不是字母数字 ``_ -`` 的字符换成 ``_``
+    （``claude.ai Atlassian`` → ``claude_ai_Atlassian``，``plugin:atlassian:atlassian`` → ``plugin_atlassian_atlassian``）。"""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", str(name or ""))
+
+
+def _rule_covers(rule: str, tool: str) -> bool:
+    """放行名单里的一条认不认这个工具名：全名相等；``mcp__服务器`` 整个服务器；以 ``*`` 结尾的按前缀。"""
+    if rule.endswith("*"):
+        return tool.startswith(rule[:-1])
+    return tool == rule or tool.startswith(rule + "__")
+
+
+def parse_trace(stdout: str, *, allowed: Iterable[str] = (), denied: Iterable[str] = ()) -> dict:
+    """从 stream-json 的事件流里整理出「这次是怎么生成的」：
+
+    - ``version`` / ``model`` / ``permission_mode``：``init`` 事件里那个账号的 Claude Code 版本、实际模型、权限模式；
+    - ``servers``：和简报有关的 MCP 服务器（放行名单覆盖到的，或这次真调过的），每个 ``{name, status, source, calls, allowed}``；
+      其余只数个数（``others``）；``tools``：放行名单里这次**真的存在**的工具名——放行了不存在的名字没有任何效果，这里看得出来；
+    - ``calls``：每次工具调用 ``{n, tool, args, ok}``（``ok`` 由对应的 ``tool_result`` 定，没看到结果是 None）；
+    - ``hooks``：那个账号自己跑了哪些 hooks（名字去重）；``denied``：结果里的 ``permission_denials``。
+
+    老格式（只有一行结果 JSON）也能喂：各项为空。命令 / 提示词 / 名单由 ``generate`` 另外填进去。
+    """
+    allowed = tuple(allowed)
+    trace: dict = {"version": "", "model": "", "permission_mode": "", "servers": [], "others": 0, "tools": [],
+                   "calls": [], "hooks": [], "denied": [], "denied_rules": list(denied)}
+    raw_servers: list[dict] = []
+    calls: list[dict] = []
+    results: dict[str, bool] = {}
+    for event in _events(stdout):
+        kind, sub = event.get("type"), event.get("subtype")
+        if kind == "system" and sub == "init":
+            trace.update(version=str(event.get("claude_code_version") or ""), model=str(event.get("model") or ""),
+                         permission_mode=str(event.get("permissionMode") or ""))
+            raw_servers = [item for item in event.get("mcp_servers") or [] if isinstance(item, dict)]
+            trace["tools"] = [name for name in event.get("tools") or [] if isinstance(name, str) and name.startswith("mcp__")
+                              and any(_rule_covers(rule, name) for rule in allowed)]
+        elif kind == "system" and sub == "hook_started":
+            name = str(event.get("hook_name") or event.get("hook_event") or "")
+            if name and name not in trace["hooks"]:
+                trace["hooks"].append(name)
+        elif kind == "assistant":
+            for block in _blocks(event):
+                if block.get("type") == "tool_use":
+                    calls.append({"id": str(block.get("id") or ""), "tool": str(block.get("name") or ""),
+                                  "args": _args_summary(block.get("input"))})
+        elif kind == "user":
+            for block in _blocks(event):
+                if block.get("type") == "tool_result":
+                    results[str(block.get("tool_use_id") or "")] = not block.get("is_error")
+        elif kind == "result":
+            trace["denied"] = [str(item.get("tool_name") or "") for item in event.get("permission_denials") or []
+                               if isinstance(item, dict)]
+    for number, call in enumerate(calls, 1):
+        call["ok"] = results.get(call.pop("id"))
+        call["n"] = number
+    trace["calls"] = calls
+    for item in raw_servers:
+        name = str(item.get("name") or "")
+        prefix = f"mcp__{server_slug(name)}__"
+        used = sum(1 for call in calls if call["tool"].startswith(prefix))
+        covered = any(rule == prefix[:-2] or rule.startswith(prefix) for rule in allowed)
+        if used or covered:
+            trace["servers"].append({"name": name, "status": str(item.get("status") or ""), "source": str(item.get("source") or ""),
+                                     "calls": used, "allowed": covered})
+        else:
+            trace["others"] += 1
+    return trace
 
 
 def parse_output(stdout: str) -> Briefing:
@@ -522,7 +646,7 @@ def parse_output(stdout: str) -> Briefing:
 
 def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: WslRunner | None = None,
              clock: Callable[[], float] | None = None, effort: str = EFFORT, template: str | None = None,
-             priority_rules: str = "") -> Briefing:
+             priority_rules: str = "", extra_tools: Iterable[str] = ()) -> Briefing:
     """生成一份简报（阻塞：PR 来源开着先 gh，再 claude）。任何失败都折成 ``ok=False`` 加原因。"""
     import time
 
@@ -538,10 +662,16 @@ def generate(now: dt.datetime, model: str, *, sources: dict | None = None, run: 
             return Briefing(error=t("briefing.error.no_wsl"))
     prompt = build_prompt(now, format_pull_requests(pr_out) if enabled.get("pr") else "", sources=enabled,
                           template=template, priority_rules=priority_rules)
-    code, out = run(["-e", "bash", "-lc", claude_command(model, enabled, effort)], input_text=prompt, timeout=CLAUDE_TIMEOUT_S)
+    command = claude_command(model, enabled, effort, extra_tools)
+    code, out = run(["-e", "bash", "-lc", command], input_text=prompt, timeout=CLAUDE_TIMEOUT_S)
     if code == 127 and not out:
         return Briefing(error=t("briefing.error.no_wsl"))
     briefing = parse_output(out)
+    # 运行记录：事件流里整理出来的 + 肥鱼这一侧本来就知道的（命令、提示词原文、当时生效的放行 / 拒绝名单）
+    allowed = allowed_tools(enabled, extra_tools)
+    briefing.trace = parse_trace(out, allowed=allowed, denied=denied_tools(enabled))
+    briefing.trace.update(command=command, gh_command=pr_command() if enabled.get("pr") else "", prompt=prompt,
+                          allowed=list(allowed))
     if enabled.get("pr"):
         briefing.markdown = linkify(briefing.markdown, pull_request_links(pr_out))
     briefing.generated_at = now.isoformat(timespec="seconds")
@@ -575,10 +705,21 @@ def record(config_dir: Path | str, briefing: Briefing, now: dt.datetime) -> dict
     attempts = int(state.get("attempts") or 0) + 1 if state.get("attempt_date") == today else 1
     state.update(attempt_date=today, attempts=attempts, last_attempt=now.timestamp(),
                  error="" if briefing.ok else briefing.error)
+    # 运行记录单独存一份，每次尝试都换（失败的也留：失败时最想看的就是它）；简报本体里不再带，免得存两遍
+    body = {key: value for key, value in asdict(briefing).items() if key != "trace"}
+    if briefing.trace:
+        state["trace"] = {**briefing.trace, "at": now.isoformat(timespec="seconds"), "ok": briefing.ok,
+                          "turns": briefing.turns, "seconds": briefing.seconds}
     if briefing.ok:
-        state.update(done_date=today, briefing=asdict(briefing))
+        state.update(done_date=today, briefing=body)
     _save_state(config_dir, state)
     return state
+
+
+def last_trace(config_dir: Path | str) -> dict:
+    """最近一次尝试（成功或失败）的运行记录；还没生成过、或最近一份是老版本生成的，就是空字典。"""
+    raw = load_state(config_dir).get("trace")
+    return raw if isinstance(raw, dict) else {}
 
 
 def latest(config_dir: Path | str) -> Briefing | None:
