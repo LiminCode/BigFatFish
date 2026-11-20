@@ -160,3 +160,27 @@ def test_custom_agents_are_added_removed_and_rebuilt_without_a_restart(tmp_path)
     assert "gemini" not in mgr.monitors and "codex" not in mgr.monitors and not second._running
     assert "gemini" not in mgr.agent_names and set(mgr.AGENT_NAMES) <= set(mgr.monitors)
     mgr.stop_all() if hasattr(mgr, "stop_all") else None
+
+
+# ---------------------------------------------------------------- 页面改了联动设置 → 共享的联动管理器
+
+def test_an_external_config_change_applies_the_shared_agent_link_manager_even_without_a_pet_window():
+    """overlay 拓扑没有 PetWindow（instance.win 是 None），「各窗 refresh_pet_settings → apply_config」那条链走不到：
+    _apply_external_config_change 要自己应用共享的联动管理器，否则页面上改的联动开关 / 自定义 Agent 都要等重启。"""
+    from types import SimpleNamespace
+
+    from pet.app import AppShell
+
+    applied = []
+    shell = AppShell.__new__(AppShell)
+    shell.config = Config.__new__(Config)
+    shell.config.data = {}
+    shell._instances = [SimpleNamespace(win=None)]
+    shell._overlay_shell = None
+    shell._shared = SimpleNamespace(agent_link=SimpleNamespace(apply_config=lambda: applied.append(1)))
+    for name in ("_sync_dynamic_island", "_repush_island_texts", "_apply_balance_timer", "_sync_todo_service",
+                 "_sync_chime_service", "_sync_festival_service"):
+        setattr(shell, name, lambda: None)
+    shell._dsh_tracker_wanted = lambda: True
+    shell._apply_external_config_change()
+    assert applied == [1]
