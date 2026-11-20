@@ -126,6 +126,14 @@ MCP」；在 WSL 的交互式 Claude Code 里用 `/mcp` 重新认证了 Atlassia
 
 3. 再 `claude mcp list` 确认变成「✔ Connected」，然后在简报页点「重新生成」。
 
+**2026-11-20 起改用 v2 连接器「claude.ai Atlassian MCP」**（v1 的「claude.ai Atlassian」2027-03-01 下线，而且登录后几小时令牌就掉）。
+它和插件同一个地址，所以装着插件时交互式 `/mcp` 和 `claude mcp list` 都把它藏起来（「hidden — same URL as your server
+plugin:atlassian:atlassian」），`claude mcp login "claude.ai Atlassian MCP"` 会说没有这个服务器；无界面里它照常加载。登录它有两条路：
+在 claude.ai 网页的连接器设置里连「Atlassian MCP」；或者先 `claude plugin disable atlassian@claude-plugins-official`，再
+`claude mcp login "claude.ai Atlassian MCP"`，之后要不要再把插件开回来随意（交互式会话会重新优先用插件）。验证不靠 `claude mcp list`，
+用 `--output-format stream-json --verbose` 跑一个最小提示，看 init 事件里 `claude.ai Atlassian MCP` 是 `connected`、
+`tools` 里有 `mcp__claude_ai_Atlassian_MCP__…`。简报的放行 / 拒绝名单三个前缀都覆盖（`work_briefing._ATLASSIAN_PREFIXES`）。
+
 要知道某次无界面运行到底挂上了哪些服务器、暴露了哪些工具，用 `--output-format stream-json --verbose` 跑一个最小提示，
 读 `system/init` 事件的 `mcp_servers` 和 `tools`；不要靠让模型复述工具名。
 

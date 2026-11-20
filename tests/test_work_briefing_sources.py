@@ -120,3 +120,23 @@ def test_generate_skips_gh_when_prs_are_off_and_passes_sources_to_the_command():
     calls.clear()
     wb.generate(MONDAY_10, "sonnet", sources={**ALL, "email": True}, run=run)
     assert len(calls) == 2 and "gh search prs" in calls[0][0] and "search_threads" in calls[1][0]
+
+
+def test_the_atlassian_v2_connector_prefix_is_allowed_and_denied_like_the_others():
+    """2026-11-20：v1 连接器要下线、令牌几小时就掉，改认 v2「claude.ai Atlassian MCP」；三个前缀同一套名单。"""
+    allowed, denied = wb.allowed_tools(), wb.denied_tools()
+    for prefix in ("mcp__plugin_atlassian_atlassian__", "mcp__claude_ai_Atlassian__", "mcp__claude_ai_Atlassian_MCP__"):
+        assert prefix + "searchJiraIssuesUsingJql" in allowed and prefix + "executeRead" in allowed
+        assert prefix + "createJiraIssue" in denied and prefix + "executeWrite" in denied
+    # v2 实测的 28 个工具名：放行的 12 个、拒绝的 9 个都真的存在；其余 7 个既不放行也不拒绝（无界面下默认被拒）
+    v2 = {"addGraphContext", "addOrEditJiraIssueComment", "atlassianHome", "atlassianUserInfo", "createConfluenceContent",
+          "createJiraIssue", "discover", "editJiraIssue", "executeDestructive", "executeRead", "executeWrite",
+          "getAccessibleAtlassianResources", "getCollaborators", "getConfluenceContent", "getGraphContext",
+          "getGraphObject", "getJiraIssue", "getLoomObjectsContent", "getPeopleInfo", "getWorkActivity",
+          "getWorkPortfolio", "listJiraIssueComments", "search", "searchConfluence", "searchJiraIssuesUsingJql",
+          "showConfluenceEditor", "transitionJiraIssue", "updateConfluenceContent"}
+    prefix = "mcp__claude_ai_Atlassian_MCP__"
+    named = {t[len(prefix):] for t in (*allowed, *denied) if t.startswith(prefix)}
+    assert named <= v2, named - v2
+    assert prefix + "listJiraIssueComments" in allowed and prefix + "getWorkActivity" in allowed
+    assert prefix + "showConfluenceEditor" not in allowed
