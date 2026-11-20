@@ -97,8 +97,8 @@ def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], 
         briefing = service.latest()
         if briefing is not None:
             rendered = markdown.render(briefing.markdown, bug_mark=wb.BUG_MARK)
-            data.update(summary=briefing.summary, generated=generated_line(briefing.generated_at), usage=usage(briefing),
-                        html=rendered, sections=split_sections(rendered), details=personal_details(briefing))
+            data.update(summary=briefing.summary, generated=generated_line(briefing.generated_at, "personal.generated"),
+                        usage=usage(briefing), html=rendered, sections=split_sections(rendered), details=personal_details(briefing))
         return data
     return build
 
@@ -145,12 +145,13 @@ def open_inspiration(controller_of: Callable[[], object]) -> Callable[[], str]:
     return run
 
 
-def generated_line(generated_at: str) -> str:
+def generated_line(generated_at: str, key: str = "briefing.meta") -> str:
+    """「生成于 … · 谁做的」那一行；个人简报用自己的句子（``personal.generated``）。"""
     try:
         when = f"{dt.datetime.fromisoformat(generated_at):%m-%d %H:%M}"
     except ValueError:
         when = "?"
-    return t("briefing.meta", when=when)
+    return t(key, when=when)
 
 
 def usage(briefing: wb.Briefing) -> list[dict]:

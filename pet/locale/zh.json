@@ -1193,6 +1193,7 @@
   "personal.meta.how": "肥鱼用你自己的 API key 直连 Anthropic，只读本地克隆，没有连接器",
   "personal.meta.files": "读过：{files}",
   "personal.meta.pull_failed": "git pull 没成功（{error}），用的是本地副本",
+  "personal.generated": "生成于 {when} · 由你自己的 Claude 读本地 AI-Base 克隆写成",
   "personal.trace.rounds": "工具 {rounds} 轮 · 读了 {n} 个文件",
   "personal.status.failed": "上一次没生成出来：{error}",
   "personal.alert.subtitle": "今天的个人简报",

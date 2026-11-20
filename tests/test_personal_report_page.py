@@ -66,7 +66,7 @@ BRIEFING = pb.PersonalBriefing(ok=True, summary="先补周五的扫描。", mark
 def test_the_personal_briefing_is_a_second_report_on_the_same_page():
     data = reports.personal_briefing(lambda: _Service(BRIEFING), _config())()
     assert data["id"] == "personal_briefing" and data["title"] == "个人助理" and data["available"] is True and data["theme"] == "light"
-    assert data["summary"] == "先补周五的扫描。" and data["generated"].startswith("生成于 11-20 08:30")
+    assert data["summary"] == "先补周五的扫描。" and data["generated"] == "生成于 11-20 08:30 · 由你自己的 Claude 读本地 AI-Base 克隆写成"
     assert [u["key"] for u in data["usage"]] == ["model", "effort", "time", "tokens_in", "tokens_out"], "自己的 key：没有花费这一项"
     assert [(s["source"], s["title"], s["count"]) for s in data["sections"]] == [("other", "待复习", 1), ("other", "今天", 0)]
     assert data["action"] == {"name": "generate_report", "report": "personal_briefing", "label": "重新生成",

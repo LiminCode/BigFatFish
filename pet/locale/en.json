@@ -1201,6 +1201,7 @@
   "personal.meta.how": "The fish calls Anthropic directly with your own API key; read-only over the local clone, no connectors",
   "personal.meta.files": "Read: {files}",
   "personal.meta.pull_failed": "git pull failed ({error}); used the local copy as is",
+  "personal.generated": "Generated {when} · written by your own Claude from the local AI-Base clone",
   "personal.trace.rounds": "{rounds} tool rounds · read {n} files",
   "personal.status.failed": "Last run failed: {error}",
   "personal.alert.subtitle": "Today's personal briefing",
