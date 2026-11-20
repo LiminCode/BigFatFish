@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""个人助理的界面：自己的一扇窗（复用简报窗口的壳）——「简报」页 + 「灵感」页，底部「在 Obsidian 打开 AI-Base」。
+"""个人助理的界面。个人简报在浏览器里读（2026-11-20，配置全景的 ``/report/personal_briefing``，ADR 0018）：岛上的人形、
+提醒的「查看」都开那张页；这里只剩一扇复用简报窗口壳的 Qt 窗（``briefing_page=False``）给「灵感」页和「在 Obsidian 打开
+AI-Base」用，页面上的「记灵感…」动作也开它。不给 ``open_report`` 时还是原来的两页窗口（测试、旧路径）。
 
 窗口顶部那行写明这次是谁在处理、怎么处理（模型、思考强度、token、秒数、工具轮数、读了哪些文件），
 忙碌时写明正在让哪个模型读；灵感页的状态行写明写进了哪个文件、推没推上去。文案全部走 ``i18n.t``。
@@ -8,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -112,10 +115,15 @@ class PersonalController(QObject):
 
     state_changed = Signal(str)
 
-    def __init__(self, host, service, parent: QObject | None = None) -> None:
+    def __init__(self, host, service, parent: QObject | None = None, *, open_report: Callable[[], bool] | None = None,
+                 report_watched: Callable[[], bool] | None = None) -> None:
+        """``open_report``：在浏览器里打开个人简报页，返回是否打开了；给了它，「查看」不再开 Qt 窗口，Qt 窗口只剩灵感页。
+        ``report_watched``：有没有页面正开着看——有就不再为新一份冒提醒。两个都不给就是原来的两页窗口。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
+        self._open_report = open_report
+        self._report_watched = report_watched
         self.window: WorkBriefingWindow | None = None
         self.panel: InspirationPanel | None = None
         self._unread = False
@@ -139,12 +147,19 @@ class PersonalController(QObject):
             self._host.show_bubble(t("personal.bubble.open_failed", path=target), 5000)
 
     def open_window(self, tab: str = "") -> None:
+        """「查看」：有浏览器那条路就开简报页（打开即读过）；要的是别的页（灵感）或没有那条路时开 Qt 窗口。"""
+        if self._open_report is not None and not tab:
+            if self._open_report():
+                self._set_unread(False)
+            else:
+                self._host.show_bubble(t("briefing.bubble.page_failed"), 6000)
+            return
         if self.window is None:
             config = self.service._config
             self.window = WorkBriefingWindow(
                 title=t("personal.app"), regenerate_label=t("personal.button.regenerate"), empty_text=t("personal.empty"),
                 busy_text=t("personal.busy", model="?", effort="?"), page_label=t("personal.tab.briefing"),
-                theme=theme_preference(config))
+                theme=theme_preference(config), briefing_page=self._open_report is None)
             self.window.regenerate_btn.setAccessibleDescription(t("personal.button.regenerate_hint"))
             self.window.regenerate_requested.connect(self.generate_now)
             self.window.theme_changed.connect(lambda theme: save_theme_preference(config, theme))
@@ -161,6 +176,10 @@ class PersonalController(QObject):
         self.window.raise_()
         self.window.activateWindow()
         self._set_unread(False)
+
+    def open_inspiration(self) -> None:
+        """页面上的「记灵感…」/ 别处要记灵感：开 Qt 窗口并翻到灵感页。"""
+        self.open_window(tab=t("personal.tab.inspiration"))
 
     # ---------------------------------------------------------- 岛
     @property
@@ -182,8 +201,8 @@ class PersonalController(QObject):
 
     # ---------------------------------------------------------- 服务回调
     def _refresh_window(self) -> None:
-        if self.window is None:
-            return
+        if self.window is None or self._open_report is not None:
+            return   # 简报在浏览器里：Qt 壳没有那一页
         latest = self.service.latest()
         self.window.show_briefing(latest, busy=self.service.busy, error=self.service.last_error(),
                                   meta=meta_line(latest) if latest is not None else None,
@@ -202,7 +221,9 @@ class PersonalController(QObject):
         if not briefing.ok:
             self._host.show_bubble(t("personal.bubble.failed", error=briefing.error), 8000)
             return
-        if self.window is not None and self.window.isVisible():
+        if self._report_watched is not None and self._report_watched():
+            return   # 页面开着：它自己原地换成新的
+        if self._open_report is None and self.window is not None and self.window.isVisible():
             return
         self._set_unread(True)
         self._host.show_alert(

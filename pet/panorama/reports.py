@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""报告页：在浏览器里读一份「生成出来的内容」。现在只有工作简报；个人简报以后多登记一项就行。
+"""报告页：在浏览器里读一份「生成出来的内容」：工作简报（``work_briefing``）和个人简报（``personal_briefing``，2026-11-20）。
 
 页面薄、不认功能（ADR 0014）：应用构造 ``PanoramaService`` 时按名字登记 provider（``reports={"work_briefing": …}``）。
 provider 在**界面线程**上被调（它读 Qt 对象），返回页面要摆的那份字典：
@@ -9,6 +9,7 @@ provider 在**界面线程**上被调（它读 Qt 对象），返回页面要摆
   ``{key, text, tip}``）、``html``（全文，Markdown 已由 ``markdown.py`` 渲染成只含几个标签的 HTML）；
 - ``busy`` / ``busy_text`` / ``empty_text`` / ``error``（上一次失败的原因，已翻成整句）；
 - ``action``：底部那个按钮——``{name, report, label, hint}``，页面 ``POST /api/actions/<name>`` 时把 ``report`` 带回来；
+  ``actions``：旁边再放几个按钮（同一种字典；个人简报的「记灵感…」在肥鱼里开 Qt 窗口，动作回 ``opened``）；
 - ``available``：这台机器上有没有这项功能（工作简报要 WSL；没有就只显示一句说明）；
 - ``sections``：全文按 ``<h3>`` 切成的几区 ``{id, source, title, html, count, p3, p2, p1, bugs, updated}``（``split_sections``）：
   页面用它画左栏的分区磁贴和右栏的每区一张卡；``source`` 只是按标题猜的来源（配色、图标用），猜不到是 ``other``。
@@ -30,6 +31,8 @@ from ..i18n import t
 from . import markdown
 
 WORK_BRIEFING = "work_briefing"
+PERSONAL_BRIEFING = "personal_briefing"
+OPEN_INSPIRATION_ACTION = "open_inspiration"       # 个人简报页「记灵感…」：在肥鱼里开那扇 Qt 窗口的灵感页
 GENERATE_ACTION = "generate_report"                 # 页面上「重新生成」走的动作名（actions.generate_report）
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
 SETTINGS_URL = "__SETTINGS_URL__"                   # 详情 HTML 里的占位：页面换成 /#<令牌>&settings=<组>
@@ -52,7 +55,7 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
             "busy": False, "busy_text": t("briefing.busy"), "empty_text": t("briefing.empty"), "error": "",
             "action": {"name": GENERATE_ACTION, "report": WORK_BRIEFING,
                        "label": t("briefing.button.regenerate"), "hint": t("briefing.button.regenerate_hint")},
-            "details": [], "settings_focus": WORK_BRIEFING, "sections": [],
+            "details": [], "settings_focus": WORK_BRIEFING, "sections": [], "actions": [],
         }
         if service is None:
             return data
@@ -69,8 +72,54 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
     return build
 
 
-def generate_work_briefing(service_of: Callable[[], object]) -> Callable[[], str]:
-    """页面上点了「重新生成」：``unavailable``（没接简报服务）/ ``busy`` / ``started`` / ``failed``。"""
+def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], dict]:
+    """个人简报的 provider。``service_of()`` 给 ``PersonalService``（没装聊天模块时是 None）。
+    和工作简报同一张页；没有运行记录那套事件流，「这次是怎么生成的」只有一段：怎么连的、读了哪些文件、pull 成没成。"""
+    def build() -> dict:
+        service = service_of()
+        data = {
+            "id": PERSONAL_BRIEFING, "title": t("personal.app"), "theme": theme(config), "available": service is not None,
+            "summary": "", "generated": "", "usage": [], "html": "", "sections": [],
+            "busy": False, "busy_text": t("personal.busy", model="?", effort="?"), "empty_text": t("personal.empty"), "error": "",
+            "action": {"name": GENERATE_ACTION, "report": PERSONAL_BRIEFING,
+                       "label": t("personal.button.regenerate"), "hint": t("personal.button.regenerate_hint")},
+            "actions": [{"name": OPEN_INSPIRATION_ACTION, "report": PERSONAL_BRIEFING,
+                         "label": t("personal.button.inspiration"), "hint": t("personal.button.inspiration_hint")}],
+            "details": [], "settings_focus": "personal",
+        }
+        if service is None:
+            return data
+        data["busy"] = bool(service.busy)
+        if data["busy"]:
+            data["busy_text"] = t("personal.busy", model=service.busy_model or "?", effort=service.busy_effort or "?")
+        error = str(service.last_error() or "")
+        data["error"] = t("personal.status.failed", error=error) if error else ""
+        briefing = service.latest()
+        if briefing is not None:
+            rendered = markdown.render(briefing.markdown, bug_mark=wb.BUG_MARK)
+            data.update(summary=briefing.summary, generated=generated_line(briefing.generated_at, "personal.generated"),
+                        usage=usage(briefing), html=rendered, sections=split_sections(rendered), details=personal_details(briefing))
+        return data
+    return build
+
+
+def personal_details(briefing) -> list[dict]:
+    """个人简报的「这次是怎么生成的」：一段——怎么连的（自己的 key、只读本地克隆、没有连接器）、工具几轮、读了哪些文件、
+    git pull 没成功的话是什么原因。全部转义。"""
+    e = html.escape
+    files = [str(name) for name in getattr(briefing, "files_read", None) or []]
+    parts = [f"<p>{e(t('personal.meta.how'))}</p>",
+             f"<p>{e(t('personal.trace.rounds', rounds=int(briefing.turns or 0), n=len(files)))}</p>"]
+    if files:
+        parts.append("<ul>" + "".join(f"<li><code>{e(name)}</code></li>" for name in files) + "</ul>")
+    note = str(getattr(briefing, "pull_note", "") or "")
+    if note:
+        parts.append(f"<p class=\"bad\">{e(t('personal.meta.pull_failed', error=' '.join(note.split())[-120:]))}</p>")
+    return [{"title": t("briefing.trace.section", when=_when(briefing.generated_at), state=""), "html": "".join(parts)}]
+
+
+def generate_briefing(service_of: Callable[[], object]) -> Callable[[], str]:
+    """页面上点了「重新生成」：``unavailable``（没接简报服务）/ ``busy`` / ``started`` / ``failed``。工作简报、个人简报同用。"""
     def run() -> str:
         service = service_of()
         if service is None:
@@ -81,20 +130,39 @@ def generate_work_briefing(service_of: Callable[[], object]) -> Callable[[], str
     return run
 
 
-def generated_line(generated_at: str) -> str:
+generate_work_briefing = generate_briefing      # 老名字
+
+
+def open_inspiration(controller_of: Callable[[], object]) -> Callable[[], str]:
+    """个人简报页上点了「记灵感…」：在肥鱼里开个人助理那扇 Qt 窗口的灵感页（动作在界面线程上跑）。
+    ``opened`` / ``unavailable``（没接个人助理）。"""
+    def run() -> str:
+        controller = controller_of()
+        if controller is None:
+            return "unavailable"
+        controller.open_inspiration()
+        return "opened"
+    return run
+
+
+def generated_line(generated_at: str, key: str = "briefing.meta") -> str:
+    """「生成于 … · 谁做的」那一行；个人简报用自己的句子（``personal.generated``）。"""
     try:
         when = f"{dt.datetime.fromisoformat(generated_at):%m-%d %H:%M}"
     except ValueError:
         when = "?"
-    return t("briefing.meta", when=when)
+    return t(key, when=when)
 
 
 def usage(briefing: wb.Briefing) -> list[dict]:
-    """和 Qt 窗口底下那条图标栏同一套数字（``note_meta_bar.usage_values``），按固定顺序，空的不给。"""
+    """和 Qt 窗口底下那条图标栏同一套数字（``note_meta_bar.usage_values``），按固定顺序，空的不给。
+    个人简报没有花费这一项（自己的 key，Claude Code 才报 cost）：0 就不摆。"""
     from ..note_meta_bar import usage_values
 
-    values = usage_values(briefing.model, briefing.effort, briefing.tokens_in, briefing.tokens_out, briefing.cost_usd,
-                          briefing.seconds)
+    cost = float(getattr(briefing, "cost_usd", 0.0) or 0.0)
+    values = usage_values(briefing.model, briefing.effort, briefing.tokens_in, briefing.tokens_out, cost, briefing.seconds)
+    if not cost:
+        values.pop("cost", None)
     return [{"key": key, "text": text, "tip": tip} for key in USAGE_ORDER
             for text, tip in [values.get(key, ("", ""))] if text]
 

@@ -245,9 +245,10 @@ var dom = function () { var el = document.getElementById; return {title: el('tit
   status: el('status').textContent, statusClass: el('status').className, button: el('action').textContent, buttonHidden: el('action').hidden,
   buttonDisabled: el('action').disabled, lost: el('lost').hidden, theme: document.documentElement.dataset.theme, title_tag: document.title,
   details: el('details').innerHTML, nav: el('nav').innerHTML, filters: el('filters').innerHTML, cards: el('cards').innerHTML,
-  sideHidden: el('side').hidden, navTitle: el('nav-title').textContent}; };
+  sideHidden: el('side').hidden, navTitle: el('nav-title').textContent, actions: el('actions').innerHTML}; };
 var clicks = {};
 document.getElementById('action').addEventListener = function (type, fn) { clicks[type] = fn; };
+document.getElementById('actions').addEventListener = function (type, fn) { clicks['actions_' + type] = fn; };
 """
 
 def _payload(revision=1, **over):
@@ -323,6 +324,18 @@ def test_item_classification_and_filtering_are_pure(engine):
     assert out["bug"] == {"p": 3, "bug": True, "upd": True} and out["plain"] == {"p": 0, "bug": False, "upd": False}
     assert out["two"] == {"p": 2, "bug": False, "upd": False}
     assert out["all"] is True and out["p3only"] is False and out["union"] is True and out["upd"] is True and out["hidden"] is False
+
+
+def test_extra_actions_get_their_own_buttons_and_an_opened_answer_is_reported(engine):
+    extra = [{"name": "open_inspiration", "report": "demo", "label": "记灵感…", "hint": "h <x>"}]
+    out = _page(engine, [_ok(_payload(actions=extra)), '{"hang": true}',
+                         '{"status": 200, "data": {"report": "demo", "state": "opened"}}'],
+                "var fake = {disabled: false, dataset: {name: 'open_inspiration', report: 'demo'}, closest: function () { return fake; }};"
+                "clicks.actions_click({target: fake});")
+    assert out["dom"]["actions"] == '<button class="btn" data-name="open_inspiration" data-report="demo" title="h &lt;x&gt;">记灵感…</button>'
+    assert out["requests"][-1] == {"path": "/api/actions/open_inspiration", "method": "POST", "token": "tok-1", "body": '{"report":"demo"}'}
+    assert out["dom"]["status"] == "已在肥鱼里打开。"
+    assert _page(engine, [_ok(_payload(actions=extra, available=False)), '{"hang": true}'])["dom"]["actions"] == ""
 
 
 def test_busy_empty_unavailable_and_error_states(engine):

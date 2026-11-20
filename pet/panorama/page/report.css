@@ -27,6 +27,7 @@ html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.55 "
 .btn:hover{filter:brightness(1.08)}.btn:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
 .btn:disabled{background:var(--m-tile);color:var(--m-disabled);cursor:default;box-shadow:none}
 .btn[hidden]{display:none}
+.alt .btn{background:var(--m-tile);color:var(--m-text);box-shadow:none;margin-right:8px}.alt .btn:hover{background:var(--m-tile-hover)}
 .lost{max-width:1360px;margin:10px auto 0;padding:10px 28px;color:var(--p2);font-size:13px}
 .lost[hidden]{display:none}
 
