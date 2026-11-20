@@ -377,6 +377,9 @@ GROUPS: tuple[Group, ...] = (
         _briefing_prompt("zh"),
         _briefing_prompt("en"),
         Setting("priority_rules", "long_text", text="briefing.settings.priority_rules"),
+        # 额外放行的工具：连接器换名 / 多一条时用户自己补一行；写入过 normalize_tools（只认 mcp__ 开头的名字或 * 结尾的前缀）
+        Setting("extra_allowed_tools", "lines", disclosure="advanced", text="briefing.settings.extra_tools",
+                hint="briefing.settings.extra_tools_hint"),
     ), title_key="briefing.settings.section", available=lambda: bool(claude_hooks.wsl_exe()),
         unavailable_text="briefing.settings.no_wsl"),
     # Slack 关注：电脑在用时每隔一阵让 WSL 里公司账号的 Claude Code 经 Slack 连接器只读地看一眼。模型名、effort 同样拼进

@@ -1,7 +1,7 @@
 /* 报告页的脚本（/report/<名字>，现在只有工作简报）：取令牌 → 向 /api/report/<名字> 要数据 → 摆到页面上 →
    带着编号去「等更新的」（服务把请求挂住，生成开始 / 结束那一刻才回），页面原地重画。
 
-   页面不认识具体功能：标题、概要、用量、全文、按钮都是服务给的字段。全文是服务端渲染好的 HTML（markdown.py 只会产出
+   页面不认识具体功能：标题、概要、用量、全文、按钮、「这次是怎么生成的」几段都是服务给的字段。全文是服务端渲染好的 HTML（markdown.py 只会产出
    那几个标签，别的全转义过了），直接放进 article；概要、用量这类纯文字这里转义。
    「重新生成」：POST /api/actions/<动作名> {report}；服务回 started 之后不动按钮——生成开始的信号会让页面重画成忙碌，
    结束再重画成新内容。回 busy 时按钮保持灰，别的回答把原因写在状态栏、按钮放开。 */
@@ -11,7 +11,7 @@ import {takeToken, makeApi} from './client.js';
 (function () {
   var RETRY_MS = 1000;         /* 服务说「这段时间没有新数据」之后隔多久再去等：只为防止出错时空转 */
   var name = location.pathname.split('/').pop();
-  var api = makeApi(takeToken('report-token').token);
+  var token = takeToken('report-token').token, api = makeApi(token);
   var el = function (id) { return document.getElementById(id); };
   var revision = 0, waiting = false, dead = false, S = {};
 
@@ -31,6 +31,13 @@ import {takeToken, makeApi} from './client.js';
     if (r.available === false) el('body').innerHTML = '<p class="note">' + esc(S.report_unavailable) + '</p>';
     else if (r.html) el('body').innerHTML = r.html;
     else el('body').innerHTML = '<p class="note">' + esc(r.busy ? r.busy_text : r.empty_text) + '</p>';
+    /* 详情几段也是服务端渲染好的 HTML（reports.trace_sections），第一段默认展开；里面「到设置里改」的占位换成
+       配置全景带令牌的地址（同一个服务、同一个令牌） */
+    var settingsUrl = location.origin + '/#' + token + (r.settings_focus ? '&settings=' + encodeURIComponent(r.settings_focus) : '');
+    el('details').innerHTML = (r.details || []).map(function (d, i) {
+      return '<details' + (i === 0 ? ' open' : '') + '><summary>' + esc(d.title) + '</summary><div class="d">' +
+        String(d.html || '').split('__SETTINGS_URL__').join(settingsUrl) + '</div></details>';
+    }).join('');
     el('status').textContent = r.busy ? r.busy_text : (r.error || '');
     el('status').className = 'status' + (r.error && !r.busy ? ' bad' : '');
     var btn = el('action');

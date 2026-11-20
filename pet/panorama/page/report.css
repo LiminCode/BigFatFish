@@ -27,6 +27,20 @@ article code.chip{background:var(--chip);color:var(--chip-text);padding:1px 6px;
 article .star{font-size:13px;letter-spacing:.05em}
 article .star.s3{color:var(--p1);font-weight:700}article .star.s2{color:var(--p2)}article .star.s1{color:var(--p3)}
 article .note{color:var(--m-muted)}
+/* 「这次是怎么生成的」：几段折叠块，内容由 reports.trace_sections 渲染 */
+.details{margin-top:14px}
+.details details{background:var(--m-tile);margin:0 0 8px;padding:8px 16px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.details summary{cursor:pointer;font-weight:600;color:var(--m-title);font-size:14px}
+.details .d{font-size:13.5px;padding:6px 0 4px}
+.details .d p{margin:6px 0}.details .d .note{color:var(--m-muted)}.details .d .bad{color:var(--p1)}.details .d .ok{color:#3cb371}
+.details .d table.servers{border-collapse:collapse;width:100%;margin:6px 0}
+.details .d td{padding:3px 10px 3px 0;vertical-align:top;border-bottom:1px solid rgba(128,128,128,.18)}
+.details .d td.st{white-space:nowrap}.details .d td.st.connected{color:#3cb371}.details .d td.st.needs-auth{color:var(--p2)}.details .d td.st.failed{color:var(--p1)}
+.details .d ol.calls{margin:4px 0;padding-left:24px}.details .d ol.calls li{margin:3px 0}
+.details .d code{background:var(--chip);color:var(--chip-text);padding:1px 6px;font-size:12.5px}
+.details .d .srv{color:var(--m-muted);font-size:12px}
+.details .d pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);color:var(--chip-text);padding:8px 10px;font-size:12.5px;max-height:380px;overflow:auto;margin:4px 0}
+.details .d a{color:var(--link);text-decoration:none}.details .d a:hover{text-decoration:underline}
 .foot{display:flex;align-items:center;gap:14px;margin-top:14px}
 .status{flex:1;color:var(--m-muted);font-size:13px;min-height:1.5em}.status.bad{color:var(--p1)}
 .btn{background:var(--m-accent);color:var(--m-selected-text);border:0;padding:8px 18px;font:inherit;font-size:14px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.22)}

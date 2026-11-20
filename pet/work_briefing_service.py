@@ -67,6 +67,10 @@ class WorkBriefingService(QObject):
     def last_error(self) -> str:
         return str(wb.load_state(self._config.dir).get("error") or "")
 
+    def last_trace(self) -> dict:
+        """最近一次尝试的运行记录（成功或失败），给简报页的「这次是怎么生成的」。"""
+        return wb.last_trace(self._config.dir)
+
     def start(self) -> None:
         """开始定时检查；第一次延后 ``STARTUP_DELAY_MS``，不和启动抢时间。"""
         QTimer.singleShot(self.STARTUP_DELAY_MS, self.check)
@@ -101,7 +105,8 @@ class WorkBriefingService(QObject):
         # 用户改过的提示词按界面语言取（空 = 内置）；effort 与优先级偏好一并带过去
         extra = {"effort": settings.get("effort", wb.EFFORT),
                  "template": settings.get(f"prompt_{wb.prompt_language()}", ""),
-                 "priority_rules": settings.get("priority_rules", "")}
+                 "priority_rules": settings.get("priority_rules", ""),
+                 "extra_tools": settings.get("extra_allowed_tools", [])}
         self._busy = True
         self.started.emit(manual)
 
