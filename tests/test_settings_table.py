@@ -88,8 +88,8 @@ def test_defaults_are_what_the_feature_gives_for_an_empty_config():
     group = st.group("work_briefing")
     assert st.defaults(group) == {
         "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "effort": "high",
-        "sources.jira": True, "sources.pr": True, "sources.slack": True, "sources.calendar": True, "sources.email": False,
-        "sources.suggestions": True, "prompt_zh": "", "prompt_en": "", "priority_rules": "", "extra_allowed_tools": []}
+        "sources.sprint": True, "sources.jira": True, "sources.pr": True, "sources.slack": True, "sources.calendar": True, "sources.email": False,
+        "sources.suggestions": True, "prompt_zh": "", "prompt_en": "", "priority_rules": "", "sprint_scope": "", "extra_allowed_tools": []}
     assert list(st.defaults(group)) == [setting.id for setting in group.settings]          # 顺序就是表里声明的顺序
 
 

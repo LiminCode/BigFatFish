@@ -37,7 +37,7 @@ def test_the_english_prompt_asks_for_an_english_briefing_with_english_headings()
     prompt = wb.build_prompt(MONDAY_10, "- acme/widgets#10 Fix login")
     assert prompt.startswith("You are my work-briefing assistant") and "written entirely in English" in prompt
     assert "Monday 2026-10-12 10:00" in prompt and "last 72 hours" in prompt and "read-only" in prompt
-    assert "`## Jira`, `## PR`, `## Slack`, `## Calendar`, `## Do first` (at most 3 items)" in prompt
+    assert "`## Current sprint`, `## Jira`, `## PR`, `## Slack`, `## Calendar`, `## Do first` (at most 3 items)" in prompt
     assert "`Summary:`" in prompt and "acme/widgets#10 Fix login" in prompt
     assert "概要" not in prompt and "邮件" not in prompt and "Email" not in prompt, "邮件默认关，提示词里不提"
     assert wb.build_prompt(MONDAY_10, "", language="zh").startswith("你是我的工作简报助手")
@@ -46,7 +46,7 @@ def test_the_english_prompt_asks_for_an_english_briefing_with_english_headings()
 def test_the_chinese_prompt_is_the_same_as_before():
     prompt = wb.build_prompt(MONDAY_10, "- acme/widgets#10 Fix login")
     assert "星期一" in prompt and "72 小时" in prompt and "只读" in prompt
-    assert "`## Jira`、`## PR`、`## Slack`、`## 日程`、`## 建议先做`（最多 3 条）" in prompt
+    assert "`## 当前 Sprint`、`## Jira`、`## PR`、`## Slack`、`## 日程`、`## 建议先做`（最多 3 条）" in prompt
     assert "JQL：assignee = currentUser()" in prompt and "<pr_list>" in prompt
 
 
@@ -81,7 +81,7 @@ def test_sources_are_normalised_with_email_off_by_default():
 
 
 def test_switched_off_sources_leave_the_prompt_and_the_tool_list():
-    sources = {**ALL, "slack": False, "calendar": False, "suggestions": False}
+    sources = {**ALL, "sprint": False, "slack": False, "calendar": False, "suggestions": False}
     prompt = wb.build_prompt(MONDAY_10, "", sources=sources)
     assert "Slack：" not in prompt and "日历：" not in prompt and "建议先做" not in prompt
     assert "`## Slack`" not in prompt and "`## 日程`" not in prompt
@@ -103,7 +103,7 @@ def test_email_is_only_allowed_when_switched_on_and_never_its_writing_tools():
         assert any(name.endswith("__" + needle) and "Gmail" in name for name in denied), needle
     assert not set(denied) & set(tools)
     prompt = wb.build_prompt(MONDAY_10, "", sources=on)
-    assert "5. 邮件" in prompt and "`## 邮件`" in prompt and "search_threads" in prompt
+    assert "6. 邮件" in prompt and "`## 邮件`" in prompt and "search_threads" in prompt
 
 
 def test_generate_skips_gh_when_prs_are_off_and_passes_sources_to_the_command():
@@ -140,3 +140,60 @@ def test_the_atlassian_v2_connector_prefix_is_allowed_and_denied_like_the_others
     assert named <= v2, named - v2
     assert prefix + "listJiraIssueComments" in allowed and prefix + "getWorkActivity" in allowed
     assert prefix + "showConfluenceEditor" not in allowed
+
+
+# ---------------------------------------------------------------- 当前 Sprint
+
+def test_the_current_sprint_is_the_first_section_and_lists_every_ticket_by_jira_priority():
+    """2026-11-20 用户要求：简报要有当前 sprint 的全部工单，按优先级排，单独一节放最前面。"""
+    assert wb.SOURCES[0] == "sprint" and wb.DEFAULT_SOURCES["sprint"] is True
+    prompt = wb.build_prompt(MONDAY_10, "")
+    assert prompt.index("1. 当前 Sprint") < prompt.index("2. Jira")
+    # 先用我的工单找出 sprint，再按 sprint id 查全部（直接 openSprints() 会查遍全站）
+    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> AND project = <我的工单所在的项目> ORDER BY priority DESC" in prompt
+    assert "最多 80 条" in prompt and "不要用不带 sprint 或项目限制" in prompt
+    assert "不限经办人" in prompt and "不标星级" in prompt and "已完成" in prompt
+    assert "`## 当前 Sprint`、`## Jira`" in prompt
+    i18n.set_language("en")
+    english = wb.build_prompt(MONDAY_10, "")
+    assert "1. Current sprint:" in english and "sprint in openSprints()" in english and "`## Current sprint`, `## Jira`" in english
+
+
+def test_switching_the_sprint_off_drops_only_that_section_and_keeps_jira_tools_while_jira_is_on():
+    off = {**ALL, "sprint": False}
+    prompt = wb.build_prompt(MONDAY_10, "", sources=off)
+    assert "Sprint" not in prompt and "1. Jira" in prompt and "`## Jira`、`## PR`" in prompt
+    assert any("searchJiraIssuesUsingJql" in name for name in wb.allowed_tools(off))
+    # 只开 sprint、关 Jira：Atlassian 的只读工具照样放行（sprint 也靠它们），bug 那段话不出现
+    only_sprint = {**ALL, "jira": False}
+    prompt = wb.build_prompt(MONDAY_10, "", sources=only_sprint)
+    assert "1. 当前 Sprint" in prompt and "`## Jira`" not in prompt and "Bug 优先" not in prompt
+    assert any("searchJiraIssuesUsingJql" in name for name in wb.allowed_tools(only_sprint))
+    assert "getJiraIssue" in wb.claude_command("sonnet", only_sprint)
+    neither = {**ALL, "jira": False, "sprint": False}
+    assert not any("tlassian" in name for name in wb.allowed_tools(neither))
+    assert wb.normalize_sources({"sprint": False})["sprint"] is False and wb.normalize_sources({})["sprint"] is True
+
+
+def test_the_sprint_scope_setting_narrows_the_sprint_query_and_falls_back_to_my_project():
+    """2026-11-20 真机：公司共用的 sprint 有 964 条、我的项目也有 604 条，「全部」没意义；范围由设置里的一行 JQL 片段定。"""
+    assert wb.normalize_sprint_scope("  component = Platform  \nsecond line ") == "component = Platform"
+    assert wb.normalize_sprint_scope(None) == "" and len(wb.normalize_sprint_scope("x" * 500)) == 300
+    assert wb.normalize({"sprint_scope": " labels = team-x "})["sprint_scope"] == "labels = team-x"
+    template = wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
+    assert "`sprint = <id> {sprint_scope} ORDER BY priority DESC" in template, "模板里留着占位符，用户改过的模板也能填"
+    plain = wb.build_prompt(MONDAY_10, "")
+    assert "sprint = <id> AND project = <我的工单所在的项目> ORDER BY" in plain and "{sprint_scope}" not in plain
+    scoped = wb.build_prompt(MONDAY_10, "", sprint_scope="component = Platform")
+    assert "sprint = <id> AND (component = Platform) ORDER BY" in scoped
+    i18n.set_language("en")
+    assert "sprint = <id> AND project = <the project of my issues> ORDER BY" in wb.build_prompt(MONDAY_10, "")
+    i18n.set_language("zh")
+    prompts = []
+
+    def run(args, input_text="", timeout=0):
+        prompts.append(input_text)
+        return 0, _claude_json(REPORT)
+
+    assert wb.generate(MONDAY_10, "sonnet", sources={**ALL, "pr": False}, run=run, sprint_scope="filter = 12345").ok
+    assert "AND (filter = 12345)" in prompts[-1]

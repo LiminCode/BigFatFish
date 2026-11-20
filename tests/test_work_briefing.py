@@ -55,7 +55,7 @@ def _prs(*titles) -> str:
 def test_it_is_off_until_someone_turns_it_on(tmp_path):
     assert Config(tmp_path).get(wb.CONFIG_KEY) == {
         "enabled": False, "time": "09:00", "weekdays_only": True, "model": "sonnet", "effort": "high",
-        "sources": dict(wb.DEFAULT_SOURCES), "prompt_zh": "", "prompt_en": "", "priority_rules": "", "extra_allowed_tools": []}
+        "sources": dict(wb.DEFAULT_SOURCES), "prompt_zh": "", "prompt_en": "", "priority_rules": "", "sprint_scope": "", "extra_allowed_tools": []}
     assert wb.DEFAULT_SOURCES["email"] is False, "邮件默认关"
 
 

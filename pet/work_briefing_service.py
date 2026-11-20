@@ -106,6 +106,7 @@ class WorkBriefingService(QObject):
         extra = {"effort": settings.get("effort", wb.EFFORT),
                  "template": settings.get(f"prompt_{wb.prompt_language()}", ""),
                  "priority_rules": settings.get("priority_rules", ""),
+                 "sprint_scope": settings.get("sprint_scope", ""),
                  "extra_tools": settings.get("extra_allowed_tools", [])}
         self._busy = True
         self.started.emit(manual)

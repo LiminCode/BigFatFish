@@ -174,3 +174,8 @@ def test_the_generate_action_only_knows_registered_reports():
         with pytest.raises(actions.ActionError) as caught:
             run(body)
         assert (caught.value.status, caught.value.code) == (400, "bad_report")
+
+
+def test_the_sprint_section_gets_its_own_source_colour():
+    assert reports.source_of("当前 Sprint") == "sprint" and reports.source_of("Current sprint") == "sprint"
+    assert reports.source_of("Jira") == "jira" and reports.source_of("工单") == "jira"

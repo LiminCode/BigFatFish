@@ -75,6 +75,12 @@ def test_text_is_trimmed_but_otherwise_kept_exactly():
     assert _check({"prompt_zh": ""})[0]["prompt_zh"] == ""                              # 空 = 用内置
 
 
+def test_the_sprint_scope_is_one_trimmed_line():
+    new, errors = _check({"sprint_scope": "  component = Platform  "})
+    assert errors == [] and new["sprint_scope"] == "component = Platform"
+    assert [(e["id"], e["code"]) for e in _check({"sprint_scope": ["x"]})[1]] == [("sprint_scope", "type")]
+
+
 def test_extra_tools_are_kept_as_lines_and_a_line_the_feature_drops_is_rejected():
     new, errors = _check({"extra_allowed_tools": [" mcp__claude_ai_Atlassian_MCP__* ", "", "mcp__x__y"]})
     assert errors == [] and new["extra_allowed_tools"] == ["mcp__claude_ai_Atlassian_MCP__*", "mcp__x__y"]

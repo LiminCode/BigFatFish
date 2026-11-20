@@ -384,6 +384,8 @@ GROUPS: tuple[Group, ...] = (
         Setting("model", "choice_or_text", choices=_MODEL_CHOICES, text="briefing.settings.model"),
         Setting("effort", "choice", choices=wb.EFFORT_CHOICES, text="briefing.settings.effort"),
         *(Setting(f"sources.{source}", "toggle", text=f"briefing.settings.source.{source}") for source in wb.SOURCES),
+        # 「当前 Sprint」查哪些工单：一行 JQL 片段，只进提示词；写入过 normalize_sprint_scope（取第一行、最多 300 字）
+        Setting("sprint_scope", "text", text="briefing.settings.sprint_scope", hint="briefing.settings.sprint_scope_hint"),
         _briefing_prompt("zh"),
         _briefing_prompt("en"),
         Setting("priority_rules", "long_text", text="briefing.settings.priority_rules"),
