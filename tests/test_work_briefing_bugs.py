@@ -68,7 +68,8 @@ def test_the_atlassian_read_gateway_is_allowed_so_bug_comments_can_be_read():
         assert "mcp__plugin_atlassian_atlassian__" + name in allowed
     for name in ("executeWrite", "executeDestructive"):
         assert "mcp__plugin_atlassian_atlassian__" + name in denied and "mcp__plugin_atlassian_atlassian__" + name not in allowed
-    assert not any(name.endswith("__executeRead") for name in wb.allowed_tools({**wb.DEFAULT_SOURCES, "jira": False}))
+    # 「当前 Sprint」也靠 Atlassian 的工具，所以要 Jira 和 Sprint 都关掉它才消失
+    assert not any(name.endswith("__executeRead") for name in wb.allowed_tools({**wb.DEFAULT_SOURCES, "jira": False, "sprint": False}))
 
 
 # ---------------------------------------------------------------- 窗口

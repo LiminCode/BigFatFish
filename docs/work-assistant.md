@@ -113,9 +113,14 @@ flowchart LR
 - **PR 由肥鱼自己查**：那个账号的 Claude Code 沙箱只放行少数域名、不含 github.com，让模型自己跑 `gh` 两条查询都失败；同样的
   `gh search prs` 在 WSL 里直接跑是通的。所以第一次 `wsl.exe` 先查「等我评审的」「我开的」两组（各最多 30 条，中间用
   `PR_MARK` 隔开），写进提示词的 `<pr_list>`。查不到（没装 / 没登录）不算失败，那一段写「没查到 + 原因」让模型如实转述。
-- **来源开关 `work_briefing.sources`**（`jira / pr / slack / calendar / email / suggestions`，邮件默认关）同时决定四件事：
+- **来源开关 `work_briefing.sources`**（`sprint / jira / pr / slack / calendar / email / suggestions`，邮件默认关）同时决定四件事：
   提示词里列哪些来源、输出哪几节、放行哪些只读工具、要不要先跑 `gh`。只改其中一件就会出现「让它读邮件但工具没放行」。
-  邮件开着才放行 Gmail 的三个读取工具，关着时整个 Gmail 连接器都在拒绝名单里。
+  邮件开着才放行 Gmail 的三个读取工具，关着时整个 Gmail 连接器都在拒绝名单里。来源和工具组不是一一对应：`_TOOLS_OF_SOURCE`
+  把「当前 Sprint」映射到 Jira 那组 Atlassian 工具，两个开关任一开着工具就在。
+- **「当前 Sprint」是第一节**（2026-11-20 用户要求）：我所在看板正在进行的 sprint 里的**全部**工单，不限经办人，JQL
+  `sprint in openSprints() ORDER BY priority DESC, status ASC, updated DESC`，最多 60 条；按 Jira 的优先级字段原序排，不让模型
+  重排、不标星级（它是唯一不标星的工单列表），第一行 `共 N 条，已完成 M 条`，已完成的排最后，经办人是我时加粗。
+  「Jira」那一节仍是分配给我的未完成工单（bug 优先、带 QA 场景），两节会重叠，各管各的用途：一节看团队全貌，一节看我手上的。
 - **提示词按界面语言整套切换**（`_PROMPTS["zh" / "en"]`），不是在中文提示词里加一句「用英文写」——周围全是中文时模型遵从
   不稳。`parse_output` 同时认 `概要：` 与 `Summary:`（含加粗、反引号写法，`SUMMARY_PREFIXES`），第一行拆出来给气泡，没有
   这一行就用兜底概要。已生成的简报 / 笔记不会重译。

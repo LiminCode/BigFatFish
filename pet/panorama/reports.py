@@ -37,7 +37,7 @@ GENERATE_ACTION = "generate_report"                 # 页面上「重新生成�
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
 SETTINGS_URL = "__SETTINGS_URL__"                   # 详情 HTML 里的占位：页面换成 /#<令牌>&settings=<组>
 #: 分区标题里的关键词 → 来源 id（只用来配色和图标；提示词模板是用户可改的，所以按词猜，猜不到就是 other）
-SOURCE_WORDS = (("jira", ("jira", "工单")), ("pr", ("pull request", "pr")), ("slack", ("slack",)),
+SOURCE_WORDS = (("sprint", ("sprint", "迭代")), ("jira", ("jira", "工单")), ("pr", ("pull request", "pr")), ("slack", ("slack",)),
                 ("calendar", ("日程", "日历", "calendar", "schedule", "meeting")), ("email", ("邮件", "email", "mail")),
                 ("suggestions", ("建议", "suggest", "first")))
 _H3 = re.compile(r"<h3>(.*?)</h3>\n?", re.S)

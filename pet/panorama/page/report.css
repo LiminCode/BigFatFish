@@ -4,10 +4,10 @@
    分区的来源色（Jira 蓝 / PR 紫 / Slack 玫红 / 日程青 / 邮件琥珀 / 建议绿 / 其他灰）是 Metro 实色磁贴那一套的淡色版。
    Metro：方角、磁贴无边框、白字不描边、悬停提亮；需要层次时用玻璃阴影。 */
 :root{color-scheme:dark;--link:#6cb4ff;--chip:#38383f;--chip-text:#e6e6ea;--bug:#4a2328;--p1:#ff6b61;--p2:#ffa94d;--p3:#8c8c94;
-  --src-jira:#3b7dc4;--src-pr:#7a62b8;--src-slack:#b85c7a;--src-calendar:#2f8f86;--src-email:#b8832e;--src-suggestions:#5a8a3c;--src-other:#5f6470;
+  --src-sprint:#c4603a;--src-jira:#3b7dc4;--src-pr:#7a62b8;--src-slack:#b85c7a;--src-calendar:#2f8f86;--src-email:#b8832e;--src-suggestions:#5a8a3c;--src-other:#5f6470;
   --glass:0 10px 30px rgba(0,0,0,.28);--done:#8a8a94}
 :root[data-theme="light"]{color-scheme:light;--link:#0a6fd6;--chip:#e6e6e8;--chip-text:#1f1f1f;--bug:#fbe3e4;--p1:#d93025;--p2:#e8710a;--p3:#8a8a90;
-  --src-jira:#4a8ed6;--src-pr:#8a74c8;--src-slack:#c8708c;--src-calendar:#3aa398;--src-email:#cf9a3a;--src-suggestions:#6b9c4a;--src-other:#7a8090;
+  --src-sprint:#d6764f;--src-jira:#4a8ed6;--src-pr:#8a74c8;--src-slack:#c8708c;--src-calendar:#3aa398;--src-email:#cf9a3a;--src-suggestions:#6b9c4a;--src-other:#7a8090;
   --glass:0 10px 28px rgba(0,0,0,.12);--done:#9a9aa3}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.55 "Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}
@@ -46,7 +46,7 @@ main{padding-top:18px;padding-bottom:48px}
 .tile:hover{filter:brightness(1.1);transform:translateX(2px)}.tile:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
 .tile .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile .n{font-size:12px;opacity:.9;white-space:nowrap}
-.src-jira{--src:var(--src-jira)}.src-pr{--src:var(--src-pr)}.src-slack{--src:var(--src-slack)}.src-calendar{--src:var(--src-calendar)}
+.src-sprint{--src:var(--src-sprint)}.src-jira{--src:var(--src-jira)}.src-pr{--src:var(--src-pr)}.src-slack{--src:var(--src-slack)}.src-calendar{--src:var(--src-calendar)}
 .src-email{--src:var(--src-email)}.src-suggestions{--src:var(--src-suggestions)}.src-other{--src:var(--src-other)}
 .tile[class*="src-"]{background:var(--src)}
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
