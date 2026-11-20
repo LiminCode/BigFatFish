@@ -48,7 +48,9 @@ def test_effort_is_a_setting_with_a_safe_default():
 def test_the_builtin_template_renders_to_exactly_the_prompt_sent_today():
     template = wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
     assert "{now}" in template and "{hours}" in template and "{prs}" in template and "{priority_rules}" in template
-    assert wb.render_template(template, now="X", hours=72, prs="PRS", priority_rules="") \
+    assert "{sprint_scope}" in template
+    assert wb.render_template(template, now="X", hours=72, prs="PRS", priority_rules="",
+                              sprint_scope="AND project = <我的工单所在的项目>") \
         == wb.build_prompt(MONDAY_10, "PRS", language="zh").replace("2026-10-12 10:00 星期一", "X")
 
 

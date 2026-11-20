@@ -150,7 +150,7 @@ def test_the_current_sprint_is_the_first_section_and_lists_every_ticket_by_jira_
     prompt = wb.build_prompt(MONDAY_10, "")
     assert prompt.index("1. 当前 Sprint") < prompt.index("2. Jira")
     # 先用我的工单找出 sprint，再按 sprint id 查全部（直接 openSprints() 会查遍全站）
-    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> ORDER BY priority DESC" in prompt
+    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> AND project = <我的工单所在的项目> ORDER BY priority DESC" in prompt
     assert "最多 80 条" in prompt and "不要用不带 sprint 或项目限制" in prompt
     assert "不限经办人" in prompt and "不标星级" in prompt and "已完成" in prompt
     assert "`## 当前 Sprint`、`## Jira`" in prompt
@@ -173,3 +173,27 @@ def test_switching_the_sprint_off_drops_only_that_section_and_keeps_jira_tools_w
     neither = {**ALL, "jira": False, "sprint": False}
     assert not any("tlassian" in name for name in wb.allowed_tools(neither))
     assert wb.normalize_sources({"sprint": False})["sprint"] is False and wb.normalize_sources({})["sprint"] is True
+
+
+def test_the_sprint_scope_setting_narrows_the_sprint_query_and_falls_back_to_my_project():
+    """2026-11-20 真机：公司共用的 sprint 有 964 条、我的项目也有 604 条，「全部」没意义；范围由设置里的一行 JQL 片段定。"""
+    assert wb.normalize_sprint_scope("  component = Platform  \nsecond line ") == "component = Platform"
+    assert wb.normalize_sprint_scope(None) == "" and len(wb.normalize_sprint_scope("x" * 500)) == 300
+    assert wb.normalize({"sprint_scope": " labels = team-x "})["sprint_scope"] == "labels = team-x"
+    template = wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
+    assert "`sprint = <id> {sprint_scope} ORDER BY priority DESC" in template, "模板里留着占位符，用户改过的模板也能填"
+    plain = wb.build_prompt(MONDAY_10, "")
+    assert "sprint = <id> AND project = <我的工单所在的项目> ORDER BY" in plain and "{sprint_scope}" not in plain
+    scoped = wb.build_prompt(MONDAY_10, "", sprint_scope="component = Platform")
+    assert "sprint = <id> AND (component = Platform) ORDER BY" in scoped
+    i18n.set_language("en")
+    assert "sprint = <id> AND project = <the project of my issues> ORDER BY" in wb.build_prompt(MONDAY_10, "")
+    i18n.set_language("zh")
+    prompts = []
+
+    def run(args, input_text="", timeout=0):
+        prompts.append(input_text)
+        return 0, _claude_json(REPORT)
+
+    assert wb.generate(MONDAY_10, "sonnet", sources={**ALL, "pr": False}, run=run, sprint_scope="filter = 12345").ok
+    assert "AND (filter = 12345)" in prompts[-1]

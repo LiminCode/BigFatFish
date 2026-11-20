@@ -99,7 +99,7 @@ def test_reading_a_group_goes_through_the_gui_thread(stack, monkeypatch):
     monkeypatch.setattr(api, "read", lambda config, group: (threads.append(threading.current_thread() is threading.main_thread()),
                                                             real(config, group))[1])
     status, body = _pump(stack.app, lambda: _send(stack.server, "GET", "/api/settings/work_briefing"))
-    assert status == 200 and body["group"] == "work_briefing" and len(body["settings"]) == 15
+    assert status == 200 and body["group"] == "work_briefing" and len(body["settings"]) == 17
     assert threads == [True]                                             # Config 只在界面线程上被碰
 
 
