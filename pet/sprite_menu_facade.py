@@ -554,91 +554,36 @@ class SpriteMenuFacade:
         if callable(opener):
             opener(focus="session_fish")
 
-    # ---- 工作简报（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
-    def _work_briefing(self):
-        return getattr(self._shell, "work_briefing", None)
-
-    def work_briefing_settings(self) -> dict | None:
-        """菜单用：当前的简报设置；宿主没接简报服务时返回 None（菜单不出这一项）。"""
-        from .work_briefing import CONFIG_KEY, normalize
-
-        return normalize(self.cfg.get(CONFIG_KEY)) if self._work_briefing() is not None else None
-
-    def _set_work_briefing(self, **changes) -> None:
-        from .work_briefing import CONFIG_KEY, normalize
-
-        self.cfg.set(CONFIG_KEY, normalize({**normalize(self.cfg.get(CONFIG_KEY)), **changes}))
-        self._save()
-        controller = self._work_briefing()
-        if controller is not None:
-            controller.refresh_state()   # 灵动岛上的按钮跟着开关出现 / 收走
-
-    def toggle_work_briefing(self, on: bool) -> None:
-        """「工作日自动生成」：落盘；后台服务每分钟读一次配置，最迟一分钟生效。"""
-        self._set_work_briefing(enabled=bool(on))
-
-    def open_work_briefing_settings(self) -> None:
-        """「简报设置…」：配置全景翻到「工作简报」那一组（时间 / 模型 / effort / 来源 / 提示词都在那里改）。"""
-        opener = self.on_open_config_panorama
-        if callable(opener):
-            opener(focus="work_briefing")
-
+    # ---- 浏览器里的页（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有那项功能）：菜单项只开页，别的在页上做（ADR 0014）----
     def open_work_briefing(self) -> None:
-        controller = self._work_briefing()
+        """「工作简报」：浏览器里的简报页；开不了由控制器冒气泡。重新生成 / 工作日自动生成 / 设置都在页上。"""
+        controller = getattr(self._shell, "work_briefing", None)
         if controller is not None:
             controller.open_window()
 
-    def generate_work_briefing(self) -> None:
-        controller = self._work_briefing()
+    def open_personal_briefing(self) -> None:
+        """「个人简报」：浏览器里的个人简报页（岛上的人形走同一个方法；记灵感在页顶的输入区）。"""
+        controller = getattr(self._shell, "personal", None)
         if controller is not None:
-            controller.generate_now()
+            controller.open_window()
 
     def open_work_notes(self) -> None:
-        """「工作笔记」：开浏览器里的笔记页（控制器没接页面时是简报窗口的那一页）；宿主没接笔记服务就什么都不做。"""
+        """「工作笔记」：浏览器里的笔记页。"""
         controller = getattr(self._shell, "work_notes", None)
         if controller is not None:
             controller.open_notes()
+
+    def open_slack_watch(self) -> None:
+        """「Slack 关注」：浏览器里的 Slack 关注页（检查状态条 + 「现在检查」+ 存档）。"""
+        controller = getattr(self._shell, "slack_watch", None)
+        if controller is not None:
+            controller.open_window()
 
     def open_memory_distill(self) -> None:
         """「会话记忆蒸馏」：独立流程页；宿主没接这个服务就什么都不做。"""
         controller = getattr(self._shell, "memory_distill", None)
         if controller is not None:
             controller.open_window()
-
-    # ---- Slack 关注（控制器由 AppShell 挂在壳上；没挂 = 这台机器没有 WSL）----
-    def _slack_watch(self):
-        return getattr(self._shell, "slack_watch", None)
-
-    def slack_watch_settings(self) -> dict | None:
-        from .slack_watch import CONFIG_KEY, normalize
-
-        return normalize(self.cfg.get(CONFIG_KEY)) if self._slack_watch() is not None else None
-
-    def _set_slack_watch(self, **changes) -> None:
-        from .slack_watch import CONFIG_KEY, normalize
-
-        self.cfg.set(CONFIG_KEY, normalize({**normalize(self.cfg.get(CONFIG_KEY)), **changes}))
-        self._save()
-        controller = self._slack_watch()
-        if controller is not None:
-            controller.refresh_state()
-
-    def toggle_slack_watch(self, on: bool) -> None:
-        self._set_slack_watch(enabled=bool(on))
-
-    def set_slack_watch_interval(self, minutes: int) -> None:
-        self._set_slack_watch(interval_minutes=int(minutes))
-
-    def open_slack_watch(self) -> None:
-        """「查看最近一次检查」：浏览器里的 Slack 关注页（页开不了时是 Qt 窗）。"""
-        controller = self._slack_watch()
-        if controller is not None:
-            controller.open_window()
-
-    def check_slack_now(self) -> None:
-        controller = self._slack_watch()
-        if controller is not None:
-            controller.check_now()
 
     # ---- VS Code 工作区（右键菜单子项；条目与点击见 pet/vscode_workspaces.py）----
     def vscode_workspace_entries(self) -> list:

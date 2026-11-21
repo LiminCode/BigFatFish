@@ -419,23 +419,23 @@ def briefing_shell(shell, monkeypatch):  # noqa: F811
     return shell
 
 
-def test_the_menu_offers_the_briefing_under_agent_link(briefing_shell):
+def test_the_menu_offers_the_briefing_at_the_root(briefing_shell):
+    """2026-11-21 起浏览器里的页在根菜单第一组；一项一件事：开页。现在生成 / 工作日自动生成 / 设置都在页上（ADR 0014）。"""
+    opened = []
+    service = briefing_shell.work_briefing.service
+    briefing_shell.work_briefing = WorkBriefingController(briefing_shell, service, open_report=lambda: (opened.append(1), True)[1])
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
+    root = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert root[1] == "工作简报" and root.index("工作简报") < root.index("AI 对话")
     entry = _find(menu, "工作简报")
-    assert entry is not None and entry.menu() is not None
-    assert [a.text() for a in entry.menu().actions() if not a.isSeparator()] == [
-        "查看最近一份", "现在生成", "工作日自动生成", "简报设置…"]      # 生成时间等选值在配置全景上改（2026-11-19）
-
-    toggle = _find(entry.menu(), "工作日自动生成")
-    assert toggle.isCheckable() and not toggle.isChecked()
-    island_states = []
-    briefing_shell.work_briefing.state_changed.connect(island_states.append)
-    toggle.trigger()
-    assert briefing_shell._config.get(wb.CONFIG_KEY)["enabled"] is True
-    assert island_states == ["idle"], "灵动岛上的按钮跟着出现"
-    assert _find(entry.menu(), "生成时间") is None, "选值没有第二个入口"
+    assert entry.menu() is None, "不再是子菜单"
+    agent_link = _find(menu, "Agent 联动").menu()
+    assert not {a.text() for a in agent_link.actions()} & {"工作简报", "Slack 关注", "工作笔记", "会话记忆蒸馏"}
+    for gone in ("查看最近一份", "现在生成", "工作日自动生成", "简报设置…"):
+        assert _find(menu, gone) is None, gone
+    entry.trigger()
+    assert opened == [1], "点了就是开浏览器里的简报页"
 
 
-def test_the_menu_has_no_briefing_without_wsl(shell, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(ch, "wsl_exe", lambda: None)
+def test_the_menu_has_no_briefing_without_the_controller(shell):  # noqa: F811
     assert _find(shell._build_menu_for(shell.sprite), "工作简报") is None

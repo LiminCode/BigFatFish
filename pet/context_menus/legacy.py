@@ -22,6 +22,7 @@ from .shared import (
     add_youtube_music,
     add_no_move,
     add_on_top,
+    add_page_entries,
     add_quit,
     add_lineup_pets,
     add_rally_pets,
@@ -75,6 +76,8 @@ def build_legacy_menu(menu: QMenu, pet, template: dict) -> None:
     build_size_menu(menu, pet, icons=False)
 
     menu.addSeparator()
+    # 浏览器里的页 + 会话记忆蒸馏（2026-11-21）：旧版也平铺在这一层，和新版第一组同一张表
+    add_page_entries(menu, pet, icons=False)
     # 「DeepSeek Harness」「打开网页版 DeepSeek」2026-10-14 下线（DeepSeek 的东西用不到了）
     add_agent_link_menu(menu, pet)
 

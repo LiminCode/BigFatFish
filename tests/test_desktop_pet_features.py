@@ -853,10 +853,12 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     menu = QMenu()
     window_mod._populate_context_menu(menu, pet)
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
+    # 2026-11-21 起：根菜单第一组是浏览器里的页（这个假宠没挂控制器，只剩配置全景）；护驾 / 列队收进肥鱼控制
     expected_labels = [
         "厉害了我的鲸",
-        "护驾",
+        "配置全景",
         "AI 对话",
+        "待办提醒",
         "VS Code 工作区",
         "YouTube Music",
         "Claude Desktop",
@@ -864,7 +866,6 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
         "肥鱼控制",
         "Agent 联动",
     ]
-    expected_labels.append("待办提醒")  # 待办管理面板入口（所有平台）
     # 立即报时/语音报时开关/今日节日/节日提醒开关：2026-09-19 起默认模板
     # visible: false，不上默认菜单（用户可在菜单编辑器加回）
     expected_labels.extend([

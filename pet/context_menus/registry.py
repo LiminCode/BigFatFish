@@ -22,6 +22,7 @@ from .shared import (
     add_hide_pet,
     add_no_move,
     add_on_top,
+    add_page_entry,
     add_lineup_pets,
     add_quit,
     add_rally_pets,
@@ -35,6 +36,7 @@ from .shared import (
     build_character_menu,
     build_size_menu,
     build_speed_menu,
+    page_available,
 )
 from ..i18n import maybe_t, t
 
@@ -52,6 +54,8 @@ ACTION_LABELS = {
     "vscode_workspaces": "VS Code 工作区", "youtube_music": "YouTube Music",
     "claude_desktop": "Claude Desktop", "wsl_claude_code": "Claude Code（WSL）",
     "agent_link": "Agent 联动",
+    "work_briefing": "工作简报", "personal_briefing": "个人简报", "work_notes": "工作笔记", "slack_watch": "Slack 关注",
+    "memory_distill": "会话记忆蒸馏",
     "todo_panel": "待办提醒",
     "config_panorama": "配置全景",
     "modern_settings": "肥鱼设置", "quit": "退出",
@@ -75,6 +79,8 @@ ACTION_ICONS = {
     "vscode_workspaces": "application", "youtube_music": "play",
     "claude_desktop": "sparkle", "wsl_claude_code": "ubuntu",
     "agent_link": "automation",
+    "work_briefing": "briefing", "personal_briefing": "person", "work_notes": "note", "slack_watch": "slack",
+    "memory_distill": "automation",
     "todo_panel": "todo",
     "config_panorama": "branch",
     "modern_settings": "settings", "quit": "quit",
@@ -233,6 +239,11 @@ class MenuActionRegistry:
             ),
             "edge_probe": MenuActionSpec(add_edge_probe),
             "agent_link": MenuActionSpec(add_agent_link_menu),
+            # 浏览器里的页 + 会话记忆蒸馏：壳上挂了控制器才有（shared.PAGE_ENTRIES）
+            **{action_id: MenuActionSpec(
+                   (lambda menu, pet, action_id=action_id: add_page_entry(menu, pet, action_id)),
+                   (lambda pet, action_id=action_id: page_available(pet, action_id)))
+               for action_id in ("work_briefing", "personal_briefing", "work_notes", "slack_watch", "memory_distill")},
             "modern_settings": MenuActionSpec(
                 _build_settings, _callback_available("on_open_modern_settings")
             ),

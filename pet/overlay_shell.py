@@ -2934,8 +2934,15 @@ class OverlayShell(QObject):
                               lambda s=sprite: self.exit_pet(s))
         self._pet_visible_actions = visible_actions
         menu.addSeparator()
-        if getattr(self, "memory_distill", None) is not None:
-            menu.addAction(t("distill.menu.open"), lambda: self.memory_distill.open_window())
+        # 浏览器里的页 + 会话记忆蒸馏（2026-11-21）：和右键菜单第一组同一张表；没挂控制器的不出现。
+        # 笔记的控制器开页叫 open_notes（带选中哪条），别的叫 open_window。
+        from .context_menus.shared import PAGE_ENTRIES
+        for action_id, attr, _method, _icon in PAGE_ENTRIES:
+            controller = getattr(self, attr, None)
+            if controller is not None:
+                opener = getattr(controller, "open_notes", None) or controller.open_window
+                menu.addAction(t(f"menu.action.{action_id}"), lambda open_page=opener: open_page())
+        menu.addSeparator()
         menu.addAction(t("menu.tray.settings"), lambda: self.open_settings_for(self.sprite))
         # legacy 托盘两项（app.py:3333-3343）：鼠标穿透的取消入口只有托盘/设置页，
         # 开着时肥鱼点不动；开机自启此前只有右键菜单有勾选项。

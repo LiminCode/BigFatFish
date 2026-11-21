@@ -256,6 +256,7 @@ sequenceDiagram
 
 `agent_link` 那四组在设置窗口里本来就没有控件（只有提示音效，仍留在「互动」里，M7 再搬），删的是**右键菜单里的选值子菜单**：
 开关留在菜单（通道、每个会话一只小鱼、记录最近的对话），上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数换成一条「会话小鱼设置…」
+（工作简报 / Slack 关注的开关、间隔、「现在生成 / 现在检查」2026-11-21 起也不在菜单里了：页上有，菜单项只开页）
 （`SpriteMenuFacade.open_session_fish_settings` → `open_config_panorama(focus="session_fish")`，会话小鱼自己的菜单同一条）。
 页面改完的生效链：`_apply_external_config_change` → 各窗 `refresh_pet_settings` → `AgentLinkManager.apply_config` 启停监视器
 （**从不写 hooks**，ADR 0006；hooked 通道「在跑 → 停」时顺带卸掉肥鱼自己装的 hooks，和菜单关闭一样）；
@@ -497,7 +498,7 @@ flowchart LR
 
 ### 入口与体检结论
 
-- 右键菜单动作 `config_panorama`（`pet/context_menus/registry.py`，默认布局 `modern-default-v1.json` 的 tools 段）；宿主有
+- 右键菜单动作 `config_panorama`（`pet/context_menus/registry.py`，默认布局 `modern-default-v1.json` 第一组「页」，和四张内容页一起，2026-11-21）；宿主有
   `on_open_config_panorama` 才显示，两种渲染拓扑都接到 `AppShell.open_config_panorama`。用户已保存的菜单布局会自动并入新动作。
 - 岛的连接面板按钮（`pet/island_connections_ui.py` 的 `panorama_btn`）：单独一行（英文下并排会把面板撑宽），点了先收起面板。
 - 设置窗口里已经搬走的那一组原处的按钮：打开配置全景并直接翻到那一组（见「改设置：页面上的入口」）。
@@ -557,8 +558,8 @@ flowchart LR
 - **WSL 一侧数存储，靠把三个文件的源码拼成一份喂过去**，而不是让那边只报文件清单、这边来归类：那边可能有几万个文件，
   清单要过管道，归类结果只有几十个数。代价是三个文件得守「只用标准库、顶层名字不相撞」这两条，由测试守着。
 - **读 WSL 里的文件每次起一个 `wsl.exe`**，没有做常驻的代理：点「查看」是偶尔的事，0.1 秒可以接受，常驻进程要管生命周期。
-- 菜单项放根菜单 tools 段而不是子菜单：一次右键就点得到，代价是根菜单又长一项（「工具与帮助」子菜单 2026-11-18 已删，ADR 0017）。旧版菜单模板
-  （`pet/context_menus/legacy.py`）有意没加。
+- 菜单项放根菜单而不是子菜单：一次右键就点得到，代价是根菜单又长一项（「工具与帮助」子菜单 2026-11-18 已删，ADR 0017；2026-11-21 起和
+  四张内容页排在第一组）。旧版菜单模板（`pet/context_menus/legacy.py`）有意没加它（四张内容页旧版有）。
 - 个人账号的 connector 只能画成「探测不到」：它们挂在 claude.ai 账号上，磁盘上只有「连过哪些」，Windows 上
   `claude mcp list` 返回空。如实画成灰点线并写进待处理，不猜。
 

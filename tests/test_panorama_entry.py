@@ -80,7 +80,7 @@ def test_english_menu_label_has_no_chinese():
     assert MENU_ACTIONS.label("config_panorama") == "Config panorama"
 
 
-def test_default_layout_puts_it_in_tools_before_settings():
+def test_default_layout_puts_it_in_the_pages_group_before_settings():
     import json
     from pathlib import Path
 
@@ -96,8 +96,8 @@ def test_default_layout_puts_it_in_tools_before_settings():
     rows = [n for n in flat(nodes["nodes"] if isinstance(nodes, dict) else nodes) if n.get("type") == "action"]
     ids = [n["id"] for n in rows]
     node = rows[ids.index("config_panorama")]
-    assert node["visible"] is True and node["section"] == "tools"
-    assert ids.index("todo_panel") < ids.index("config_panorama") < ids.index("modern_settings")
+    assert node["visible"] is True and node["section"] == "pages", "2026-11-21 起和四张内容页一组"
+    assert ids.index("slack_watch") < ids.index("config_panorama") < ids.index("todo_panel") < ids.index("modern_settings"), "第五张页，紧跟四张内容页"
 
 
 # ---------------------------------------------------------------- 岛的「模型连接」面板

@@ -95,9 +95,11 @@ def test_the_chinese_right_click_menu_is_unchanged(tmp_path, stubs):
     shell_, menu = _menu(tmp_path, "modern", "zh")
     try:
         top = _labels(menu)
-        for label in ("护驾", "AI 对话", "肥鱼控制", "Agent 联动", "肥鱼设置", "退出", "Claude Code（WSL）"):
+        for label in ("配置全景", "AI 对话", "肥鱼控制", "Agent 联动", "肥鱼设置", "退出", "Claude Code（WSL）"):
             assert label in top, label
         assert top[-2:] == ["肥鱼设置", "退出"]
+        controls = next(a.menu() for a in menu.actions() if a.text() == "肥鱼控制")
+        assert _labels(controls)[:2] == ["护驾", "列队"], "2026-11-21 起护驾 / 列队收进肥鱼控制最前"
     finally:
         shell_._delete_runtime_marker()
 

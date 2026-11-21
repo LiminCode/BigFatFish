@@ -3,8 +3,7 @@
 
 - 控制器只认「开报告页」那条路：「查看」开浏览器、打开即算读过、开不了冒气泡；页面开着看时新一份不再冒提醒；
 - 没接页面（测试、旧接线）时「查看」也只能冒那句气泡：Qt 的 ``WorkBriefingWindow`` 没有了；
-- 气泡文字跟界面语言；
-- 右键菜单：「生成时间」子菜单没了，多一条「简报设置…」翻到配置全景那一组。
+- 气泡文字跟界面语言。右键菜单那一项见 test_work_briefing / test_menu_pages。
 """
 from __future__ import annotations
 
@@ -12,17 +11,13 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from types import SimpleNamespace  # noqa: E402
-
 import pytest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMenu  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from pet import claude_hooks, i18n  # noqa: E402
+from pet import i18n  # noqa: E402
 from pet import work_briefing as wb  # noqa: E402
 from pet import work_briefing_ui as ui  # noqa: E402
 from pet.config import Config  # noqa: E402
-from pet.context_menus import shared  # noqa: E402
-from pet.sprite_menu_facade import SpriteMenuFacade  # noqa: E402
 from pet.work_briefing_service import WorkBriefingService  # noqa: E402
 from tests.test_work_briefing import FakeHost, _service  # noqa: E402
 
@@ -101,37 +96,3 @@ def test_the_bubbles_speak_english(tmp_path):
     zh, en = i18n.table("zh"), i18n.table("en")
     keys = [k for k in zh if k.startswith(("briefing.", "slack."))]
     assert len(keys) >= 25 and all(k in en for k in keys)
-
-
-# ---------------------------------------------------------------- 菜单
-
-def _pet(**extra):
-    calls = []
-    return SimpleNamespace(
-        work_briefing_settings=lambda: {"enabled": True, "time": "09:00"},
-        open_work_briefing=lambda: calls.append("view"), generate_work_briefing=lambda: calls.append("generate"),
-        toggle_work_briefing=lambda on: calls.append(("toggle", on)), **extra), calls
-
-
-def _texts(menu: QMenu) -> list[str]:
-    return [a.text() for a in menu.actions() if not a.isSeparator()]
-
-
-def test_the_briefing_menu_keeps_the_switch_and_commands_but_sends_values_to_the_panorama(monkeypatch):
-    monkeypatch.setattr(claude_hooks, "wsl_exe", lambda: "wsl.exe")
-    pet, calls = _pet(open_work_briefing_settings=lambda: calls.append("settings"))
-    menu = QMenu()
-    shared.add_work_briefing_menu(menu, pet)
-    sub = menu.actions()[0].menu()
-    assert menu.actions()[0].text() == "工作简报"
-    assert _texts(sub) == ["查看最近一份", "现在生成", "工作日自动生成", "简报设置…"]
-    assert all(a.menu() is None for a in sub.actions()), "没有「生成时间」这类选值子菜单了：在配置全景上改"
-    sub.actions()[-1].trigger()
-    assert calls == ["settings"]
-
-
-def test_the_settings_entry_opens_the_panorama_at_the_briefing_group():
-    opened = []
-    SpriteMenuFacade.open_work_briefing_settings(SimpleNamespace(on_open_config_panorama=lambda focus="": opened.append(focus)))
-    assert opened == ["work_briefing"]
-    assert not hasattr(SpriteMenuFacade, "set_work_briefing_time"), "时间只在配置全景上改"
