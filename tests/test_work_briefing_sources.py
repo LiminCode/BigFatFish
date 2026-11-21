@@ -150,13 +150,17 @@ def test_the_current_sprint_is_the_first_section_and_lists_every_ticket_by_jira_
     prompt = wb.build_prompt(MONDAY_10, "")
     assert prompt.index("1. 当前 Sprint") < prompt.index("2. Jira")
     # 先用我的工单找出 sprint，再按 sprint id 查全部（直接 openSprints() 会查遍全站）
-    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> AND project = <我的工单所在的项目> ORDER BY priority DESC" in prompt
+    assert "assignee = currentUser() AND sprint in openSprints()" in prompt and "`sprint = <id> AND statusCategory != Done AND project = <我的工单所在的项目> ORDER BY priority DESC" in prompt
     assert "最多 80 条" in prompt and "不要用不带 sprint 或项目限制" in prompt
-    assert "不限经办人" in prompt and "不标星级" in prompt and "已完成" in prompt
+    assert "不限经办人" in prompt and "不标星级" in prompt
+    # 2026-11-20 用户：Done 的跳过——JQL 里排除、段首只数未完成、不再有「已完成的排段尾」
+    assert "已完成（statusCategory = Done）的不查也不列" in prompt and "已完成 M 条" not in prompt and "排在段尾" not in prompt
     assert "`## 当前 Sprint`、`## Jira`" in prompt
     i18n.set_language("en")
     english = wb.build_prompt(MONDAY_10, "")
     assert "1. Current sprint:" in english and "sprint in openSprints()" in english and "`## Current sprint`, `## Jira`" in english
+    assert "sprint = <id> AND statusCategory != Done AND project = <the project of my issues> ORDER BY" in english
+    assert "· N open issues`" in english and "go last" not in english
 
 
 def test_switching_the_sprint_off_drops_only_that_section_and_keeps_jira_tools_while_jira_is_on():
@@ -181,13 +185,13 @@ def test_the_sprint_scope_setting_narrows_the_sprint_query_and_falls_back_to_my_
     assert wb.normalize_sprint_scope(None) == "" and len(wb.normalize_sprint_scope("x" * 500)) == 300
     assert wb.normalize({"sprint_scope": " labels = team-x "})["sprint_scope"] == "labels = team-x"
     template = wb.default_prompt_template("zh", wb.DEFAULT_SOURCES)
-    assert "`sprint = <id> {sprint_scope} ORDER BY priority DESC" in template, "模板里留着占位符，用户改过的模板也能填"
+    assert "`sprint = <id> AND statusCategory != Done {sprint_scope} ORDER BY priority DESC" in template, "模板里留着占位符，用户改过的模板也能填"
     plain = wb.build_prompt(MONDAY_10, "")
-    assert "sprint = <id> AND project = <我的工单所在的项目> ORDER BY" in plain and "{sprint_scope}" not in plain
+    assert "sprint = <id> AND statusCategory != Done AND project = <我的工单所在的项目> ORDER BY" in plain and "{sprint_scope}" not in plain
     scoped = wb.build_prompt(MONDAY_10, "", sprint_scope="component = Platform")
-    assert "sprint = <id> AND (component = Platform) ORDER BY" in scoped
+    assert "sprint = <id> AND statusCategory != Done AND (component = Platform) ORDER BY" in scoped
     i18n.set_language("en")
-    assert "sprint = <id> AND project = <the project of my issues> ORDER BY" in wb.build_prompt(MONDAY_10, "")
+    assert "sprint = <id> AND statusCategory != Done AND project = <the project of my issues> ORDER BY" in wb.build_prompt(MONDAY_10, "")
     i18n.set_language("zh")
     prompts = []
 

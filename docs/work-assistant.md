@@ -117,11 +117,12 @@ flowchart LR
   提示词里列哪些来源、输出哪几节、放行哪些只读工具、要不要先跑 `gh`。只改其中一件就会出现「让它读邮件但工具没放行」。
   邮件开着才放行 Gmail 的三个读取工具，关着时整个 Gmail 连接器都在拒绝名单里。来源和工具组不是一一对应：`_TOOLS_OF_SOURCE`
   把「当前 Sprint」映射到 Jira 那组 Atlassian 工具，两个开关任一开着工具就在。
-- **「当前 Sprint」是第一节**（2026-11-20 用户要求）：我所在团队正在进行的 sprint 里的**全部**工单，不限经办人。两步查：先用
-  `assignee = currentUser() AND sprint in openSprints()` 找出我的工单所在的 sprint（id），再 `sprint = <id> ORDER BY priority DESC,
-  status ASC, updated DESC` 查全部，最多 80 条。**不许**不带限制地 `sprint in openSprints()`——第一次真机就是这么查的，拿回来的 60 条
+- **「当前 Sprint」是第一节**（2026-11-20 用户要求）：我所在团队正在进行的 sprint 里的**全部未完成**工单，不限经办人。两步查：先用
+  `assignee = currentUser() AND sprint in openSprints()` 找出我的工单所在的 sprint（id），再 `sprint = <id> AND statusCategory != Done
+  {sprint_scope} ORDER BY priority DESC, status ASC, updated DESC` 查，最多 80 条。Done 的在 JQL 里就排除（同日第一版把已完成的也列了，
+  用户要跳过；要看已完成的改提示词模板）。**不许**不带限制地 `sprint in openSprints()`——第一次真机就是这么查的，拿回来的 60 条
   全是别的团队的 Critical，我的一条都没进来。按 Jira 的优先级字段原序排，不让模型重排、不标星级（它是唯一不标星的工单列表），
-  每个 sprint 一段，段首 `**<sprint 名>** · 共 N 条，已完成 M 条`，已完成的排段尾，经办人是我时加粗。
+  每个 sprint 一段，段首 `**<sprint 名>** · 未完成 N 条`，经办人是我时加粗。
   **范围由设置 `sprint_scope` 定**（一行 JQL 片段，占位符 `{sprint_scope}` 填成 `AND (<片段>)`；空 = `AND project = <我的项目>`）：
   第二次真机发现公司共用的 sprint 有 964 条、我的项目在里面也有 604 条，「全部」在这个规模下没意义，按看板的过滤条件
   （组件 / 标签 / filter id）填才是团队的 sprint。它只进提示词，不进 shell 命令，所以只做取第一行、限 300 字。
