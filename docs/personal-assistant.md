@@ -11,8 +11,8 @@
 | `pet/personal_vault.py` | 零 Qt、不导入 `pet.chat`。配置键 `personal`、Windows 的 git（`run_git` / `token_env` / `sync_path`）、`append_inspiration`、`obsidian_vault_uri` |
 | `pet/personal_briefing.py` | 提示词、`GuardedKnowledgeBase`（拒绝名单）/ `RecordingToolset`（记读过的文件）、`generate`、状态文件 `personal-briefing.json` |
 | `pet/personal_service.py` | `PersonalService`：每分钟 `check()`，线程里先 `pull` 再 `generate`；灵感落盘后后台推送（一把 git 锁） |
-| `pet/personal_ui.py` / `pet/settings_personal.py` | `PersonalController`（「查看」开浏览器里的简报页；Qt 壳 `WorkBriefingWindow(briefing_page=False)` 只给灵感页；岛状态、提醒）、`InspirationPanel`、`meta_line`；设置节 |
-| `pet/panorama/reports.py` | `personal_briefing` provider、`personal_details`（怎么连的、读了哪些文件、pull 结果）、`open_inspiration` 动作。见[配置全景](config-panorama.md)「报告页」 |
+| `pet/personal_ui.py` / `pet/settings_personal.py` | `PersonalController`（「查看」开浏览器里的简报页；岛状态、提醒、推送失败的气泡、`open_obsidian`）；设置节 |
+| `pet/panorama/reports.py` | `personal_briefing` provider、`personal_details`（怎么连的、读了哪些文件、pull 结果）、`inspiration_composer` / `inspiration_status` / `add_inspiration`（页顶输入区记灵感）、`open_obsidian` 动作。见[配置全景](config-panorama.md)「报告页」 |
 | `pet/chat/connectors.py` | 这次对话挂不挂 GitHub MCP 服务器的唯一判断点：`mcp_servers_for` |
 | `pet/chat/knowledge_base.py` | `sync`（下载 zip → 原子替换）、`KnowledgeBase`（路径沙箱内的 list / read / search）、`KnowledgeToolset`、`toolset_for` |
 | `pet/chat/knowledge_sync.py` | `KnowledgeBaseSync`：主进程里的每日同步定时器 |
@@ -146,10 +146,14 @@ sequenceDiagram
 - **简报在浏览器里读**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)，路线图 M4b 第二项）：岛上的人形、
   提醒的「查看」都走 `open_report("personal_briefing")`（同工作简报那张报告页：概要、用量、分区卡片、筛选、勾掉；
   「这次是怎么生成的」只有一段——怎么连的、工具几轮、读了哪些文件、pull 没成功的原因）；打开即读过；页面开着时不为新一份冒提醒。
-  个人简报没有花费这一项（自己的 key），用量条上不摆。页面上的「记灵感…」是一个动作（`open_inspiration` → 界面线程上
-  `controller.open_inspiration()` → 回 `opened`），在肥鱼里开那扇 Qt 窗口的灵感页。
-- `PersonalController` 的 Qt 窗口是 `WorkBriefingWindow(briefing_page=False)`：只有「灵感」页和「在 Obsidian 打开」；
-  不给 `open_report` 时还是原来的两页窗口（`show_briefing(meta=, busy_text=)` 覆盖元信息行），样式与主题规则同公司侧那扇窗。
+  个人简报没有花费这一项（自己的 key），用量条上不摆。
+- **记灵感在页面顶部的输入区**（2026-11-21，M4b 收尾）：provider 给 `composer{placeholder, label, hint, status, failed, action}`，
+  页面 Ctrl+Enter 或「记下」`POST /api/actions/add_inspiration {report, text}` → 界面线程上 `service.add_inspiration` → 回
+  `saved / empty / failed` 和一句状态（`inspiration_status`：正在推 / 已推送到 GitHub（几点）/ 没推上去的原因）；回 `saved` 页面清空框。
+  之后服务的 `changed / synced` 让应用 `publish_report("personal_briefing")`，输入区下面那行随重画更新。推送失败时只在没人开着
+  页面时冒气泡。副按钮「在 Obsidian 打开 AI-Base」= `open_obsidian` 动作 → `controller.open_obsidian()`（没登记成库就开文件夹并
+  冒气泡说明）。
+- Qt 窗口（简报 + 灵感两页，复用简报窗口壳）2026-11-21 随简报窗口一起删了；本机服务起不来时「查看」冒一句气泡，没有离线退路。
 - [灵动岛](island.md)上的人形图标排在工作简报按钮右边，`hidden / idle / unread` 三态；没开自动生成也从没生成过时不显示。
   个人助理不受「有没有 WSL」门控；没装聊天模块时不接。
 

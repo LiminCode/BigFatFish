@@ -1,6 +1,6 @@
-/* 报告页（工作简报）的样式。控件颜色用和 Qt 共用的令牌（tokens.css 的 --m-*，深色默认、data-theme="light" 换浅色）；
-   下面这组是简报自己多出来的几个：链接色、工单状态小标签、bug 行底色、三级优先级的星色——
-   和 Qt 窗口 work_briefing_ui._EXTRA_TOKENS 一字不差，改一处就两处一起改。
+/* 报告页（工作简报、个人简报）的样式。控件颜色用和 Qt 共用的令牌（tokens.css 的 --m-*，深色默认、data-theme="light" 换浅色）；
+   下面这组是简报自己多出来的几个：链接色、工单状态小标签、bug 行底色、三级优先级的星色（Qt 简报窗口 2026-11-21 下线后
+   只剩这一份）。
    分区的来源色（Jira 蓝 / PR 紫 / Slack 玫红 / 日程青 / 邮件琥珀 / 建议绿 / 其他灰）是 Metro 实色磁贴那一套的淡色版。
    Metro：方角、磁贴无边框、白字不描边、悬停提亮；需要层次时用玻璃阴影。 */
 :root{color-scheme:dark;--link:#6cb4ff;--chip:#38383f;--chip-text:#e6e6ea;--bug:#4a2328;--p1:#ff6b61;--p2:#ffa94d;--p3:#8c8c94;
@@ -34,6 +34,17 @@ html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.55 "
 main{padding-top:18px;padding-bottom:48px}
 .summary{font-size:19px;font-weight:600;margin:0 0 18px;color:var(--m-title);line-height:1.45}
 .summary[hidden]{display:none}
+
+/* 顶部的输入区（个人简报的「记灵感」）：这页的主动作之一，大而显眼；下面一行说明、一行推送到哪一步了 */
+.compose{margin:0 0 20px;background:var(--m-tile);padding:10px;box-shadow:var(--glass)}
+.compose[hidden]{display:none}
+.compose .row{display:flex;gap:10px;align-items:stretch}
+.compose textarea{flex:1;min-height:72px;resize:vertical;border:0;background:var(--m-page);color:var(--m-text);font:inherit;padding:10px 12px}
+.compose textarea:focus-visible{outline:2px solid var(--m-outline)}
+.compose .btn.big{align-self:stretch;padding:8px 22px;font-size:15px}
+.compose .hint,.compose .cstatus{margin:8px 2px 0;font-size:12.5px;color:var(--m-muted)}
+.compose .hint:empty,.compose .cstatus:empty{display:none}
+.compose .cstatus.bad{color:var(--p1)}
 
 /* 两栏：左栏 240 贴着滚，右栏卡片。窄屏单栏，左栏变成顶部一行可横滚的磁贴。 */
 .grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:0 26px;align-items:start}

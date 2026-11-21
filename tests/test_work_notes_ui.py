@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""工作笔记的 Qt 侧：服务（线程 / 定时 / git）、简报窗口里的「笔记」页、提醒气泡、菜单入口。
+"""工作笔记的 Qt 侧：服务（线程 / 定时 / git）、提醒气泡、菜单入口。看、记、处理的页面在浏览器里（test_panorama_notes*）。
 
 纪律：不起真的 wsl.exe、不碰真实数据目录、不真的打开 Obsidian。总结 / git 都用同步的假函数。
 """
@@ -16,9 +16,8 @@ from PySide6.QtWidgets import QApplication
 from pet import claude_hooks as ch
 from pet import work_notes as wn
 from pet.config import Config
-from pet.work_briefing_ui import WorkBriefingController, WorkBriefingWindow
 from pet.work_notes_service import WorkNotesService
-from pet.work_notes_ui import ALERT_PREFIX, WorkNotesController, WorkNotesPanel, detail_markdown, row_label
+from pet.work_notes_ui import ALERT_PREFIX, WorkNotesController
 from tests.test_session_pet_details import shell  # noqa: F401 - shell 是 fixture
 from tests.test_work_briefing import _find, briefing_shell  # noqa: F401 - fixture
 
@@ -197,46 +196,6 @@ def test_the_repo_must_exist_for_git_but_not_for_writing(tmp_path):
     assert note is not None and (tmp_path / "missing" / "note" / note.filename).exists()
 
 
-# ---------------------------------------------------------------- 标签页
-def test_row_and_detail_text():
-    note = wn.new_note(f"{SLACK}\n看一下", NOW).replace(remind_at="2026-10-16T09:00:00", summary="摘要", details="- a")
-    assert row_label(note, False) == "● 看一下\n   提醒 10-16 09:00", "提醒另起一行：列表现在在左边、窄"
-    assert row_label(note, True).startswith("… ")
-    assert row_label(wn.finish(note), False).startswith("✓ ") and "提醒" not in row_label(wn.finish(note), False)
-    text = detail_markdown(note, False)
-    assert "**摘要**" in text and "- a" in text and note.original in text and "提醒 10-16 09:00" in text
-    assert "正在让" in detail_markdown(note, True)
-
-
-def test_the_panel_lists_notes_and_submits_new_text(tmp_path, repo):
-    fakes = _Fakes()
-    service = _service(tmp_path, repo, fakes)
-    controller = WorkNotesController(_Host(), service, colors=_COLORS)
-    panel = controller.panel()
-    assert panel.hint_label.isVisible() or panel.list.count() == 0
-    # 用户 2026-10-16：列表和详情上下分开太挤，改成左右（可拖的分隔条）
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QSplitter
-    assert isinstance(panel.splitter, QSplitter) and panel.splitter.orientation() == Qt.Orientation.Horizontal
-    assert panel.splitter.widget(0) is panel.list and panel.splitter.widget(1) is panel.detail_pane
-    assert panel.detail_pane.isAncestorOf(panel.detail) and panel.detail_pane.isAncestorOf(panel.meta_bar), \
-        "右边 = 详情 + 底部信息栏（2026-10-20）"
-    panel.input.setPlainText(f"{SLACK}\n看一下")
-    panel.add_btn.click()
-    assert panel.input.toPlainText() == "" and panel.list.count() == 1
-    assert panel.list.item(0).text().startswith("● 看一下")
-    assert panel.current_name() == service.notes()[0].name
-    assert "摘要：看一下" in panel.detail.toPlainText() and panel.resummarize_btn.isEnabled()
-    panel.done_btn.click()
-    assert panel.list.item(0).text().startswith("✓ ") and not panel.done_btn.isEnabled()
-
-
-def test_the_panel_says_when_the_repo_copy_is_missing(tmp_path):
-    service = _service(tmp_path, tmp_path / "missing", _Fakes())
-    panel = WorkNotesController(_Host(), service, colors=_COLORS).panel()
-    assert "没找到仓库副本" in panel.status_label.text() and "missing" in panel.status_label.text()
-
-
 class _Host:
     def __init__(self):
         self.bubbles, self.alerts, self.resolved = [], [], []
@@ -251,16 +210,12 @@ class _Host:
         self.resolved.append(alert_id)
 
 
-_COLORS = {"window": "#fff", "card": "#fff", "border": "#ddd", "title": "#000", "text": "#111", "muted": "#777",
-           "hover": "#eee", "link": "#00f", "chip": "#eee", "chip_text": "#333"}
-
-
 def test_a_due_reminder_becomes_a_sticky_alert_with_view_snooze_and_done(tmp_path, repo):
     fakes = _Fakes(remind_at="2026-10-15T19:50:00")
     service = _service(tmp_path, repo, fakes)
     host = _Host()
     opened = []
-    controller = WorkNotesController(host, service, colors=_COLORS, open_window=lambda: opened.append(1))
+    controller = WorkNotesController(host, service, open_report=lambda name: (opened.append(name), True)[1])
     note = service.add("x")
     service._now = lambda: dt.datetime(2026, 10, 15, 19, 55)
     service.check_reminders()
@@ -269,7 +224,7 @@ def test_a_due_reminder_becomes_a_sticky_alert_with_view_snooze_and_done(tmp_pat
     buttons = dict(kw["buttons"])
     assert list(buttons) == ["查看", "稍后 1 小时", "完成"]
     buttons["查看"]()
-    assert opened == [1] and host.resolved == [kw["alert_id"]]
+    assert opened == [note.name] and host.resolved == [kw["alert_id"]], "「查看」开浏览器里的笔记页并选中它"
     buttons["稍后 1 小时"]()
     assert service.note(note.name).remind_at == "2026-10-15T20:55:00"
     buttons["完成"]()
@@ -279,93 +234,63 @@ def test_a_due_reminder_becomes_a_sticky_alert_with_view_snooze_and_done(tmp_pat
 def test_a_failed_summary_is_said_in_a_bubble(tmp_path, repo):
     host = _Host()
     service = _service(tmp_path, repo, _Fakes(ok=False))
-    WorkNotesController(host, service, colors=_COLORS)
+    WorkNotesController(host, service)
     service.add("x")
     assert any("没总结出来" in text for text in host.bubbles)
 
 
-def test_obsidian_hint_when_the_vault_is_not_registered(tmp_path, repo, monkeypatch):
-    monkeypatch.setenv("APPDATA", str(tmp_path / "no-obsidian"))
-    host = _Host()
-    service = _service(tmp_path, repo, _Fakes())
-    controller = WorkNotesController(host, service, colors=_COLORS)
-    note = service.add("x")
-    controller.open_in_obsidian(note.name)
-    assert any("Open folder as vault" in text for text in host.bubbles)
-
-
-def test_delete_asks_first_then_removes_the_file_and_pushes(tmp_path, repo):
-    """用户 2026-10-15：notes 要能删。删前问一句；确认了文件没了、推一次；拒绝了什么都不动。"""
+def test_delete_removes_the_file_and_pushes(tmp_path, repo):
+    """用户 2026-10-15：notes 要能删。删前问一句现在在页面上（confirm，test_panorama_notes_page）；服务这一层：文件没了、推一次。"""
     fakes = _Fakes()
     service = _service(tmp_path, repo, fakes)
-    host = _Host()
-    answers: list[bool] = []
-    asked: list[tuple[str, str]] = []
-
-    def confirm(title, text):
-        asked.append((title, text))
-        return answers.pop(0)
-
-    controller = WorkNotesController(host, service, colors=_COLORS, confirm=confirm)
-    panel = controller.panel()
     note = service.add("要删的")
     path = repo / "note" / note.filename
-    assert panel.delete_btn.isEnabled() and path.exists()
-
-    answers.append(False)
-    panel.delete_btn.click()
-    assert path.exists() and asked[-1][0] == "删除这条笔记？" and "要删的" in asked[-1][1]
-    assert fakes.syncs[-1] != "note: 删除"
-
-    answers.append(True)
-    panel.delete_btn.click()
-    assert not path.exists() and fakes.syncs[-1] == "note: 删除"
-    assert panel.list.count() == 0 and not panel.delete_btn.isEnabled()
-    assert host.bubbles[-1] == "删掉了：要删的"
+    assert path.exists()
+    assert service.delete(note.name) is not None
+    assert not path.exists() and fakes.syncs[-1] == "note: 删除" and service.notes() == []
     assert service.delete("nope") is None
 
 
-# ---------------------------------------------------------------- 挂进简报窗口
-def test_the_briefing_window_mounts_a_second_pivot_page():
-    window = WorkBriefingWindow()
-    assert window.tabs.tabBar().isVisibleTo(window), "Metro 的 pivot 页头一直显示，哪怕只有一页"
-    window.add_tab("笔记", WorkNotesPanel(_COLORS))
-    assert window.tabs.count() == 2
-    assert window.select_tab("笔记") and window.tabs.currentIndex() == 1
-    assert not window.select_tab("没有这页")
-    window.close()
-
-
-def test_open_notes_goes_to_the_browser_page_and_falls_back_to_the_qt_shell_only_when_it_cannot(briefing_shell, tmp_path, repo):  # noqa: F811
-    """2026-11-20 起笔记在浏览器里看（配置全景的笔记页）：open_report(name) 开它；本机服务起不来时才退回简报窗口的那一页。"""
+# ---------------------------------------------------------------- 开浏览器里的笔记页
+def test_open_notes_goes_to_the_browser_page_and_only_says_so_when_it_cannot(tmp_path, repo):
+    """2026-11-20 起笔记在浏览器里看（配置全景的笔记页）：open_report(name) 开它；Qt 的「笔记」页 11-21 删了，本机服务起不来只冒一句气泡。"""
     service = _service(tmp_path, repo, _Fakes())
-    briefing = briefing_shell.work_briefing
-    opened, can = [], {"ok": True}
-    notes = WorkNotesController(briefing_shell, service, colors=_COLORS, open_report=lambda name: (opened.append(name), can["ok"])[1],
-                                open_window=lambda: briefing.open_window(tab="笔记"))
+    host, opened, can = _Host(), [], {"ok": True}
+    notes = WorkNotesController(host, service, open_report=lambda name: (opened.append(name), can["ok"])[1])
     notes.open_notes("2026-11-20-1200-x")
     notes.open_notes()
-    assert opened == ["2026-11-20-1200-x", ""] and briefing.window is None, "开的是浏览器，不建 Qt 窗口"
+    assert opened == ["2026-11-20-1200-x", ""] and host.bubbles == []
     can["ok"] = False
-    briefing.tab_providers.append(lambda: [("笔记", notes.panel())])
+    notes.open_notes()
+    assert opened[-1] == "" and host.bubbles == ["笔记页打不开：本机服务起不来，看日志里「配置全景」那几行"]
+    WorkNotesController(host, service).open_notes()
+    assert len(host.bubbles) == 2, "没接页面（旧接线、测试）：也只能这么说"
+    WorkNotesController(host, service, slack=True).open_notes()
+    assert host.bubbles[-1].startswith("Slack 关注页打不开")
+
+
+def test_notes_speak_english_when_the_ui_language_is_english(tmp_path, repo):
+    """用户 2026-10-15：新功能要支持中英文（界面语言已经能切）。页面上的字见 test_panorama_notes；这里是服务写进文件的字和提示词。"""
+    from pet import i18n
+
+    service = _service(tmp_path, repo, _Fakes(remind_at="2026-10-16T09:00:00"))
+    service._config.set("ui_language", "en")   # 和真实路径一样：语言由 Config 设置
     try:
-        notes.open_notes()
-        assert opened[-1] == "" and briefing.window is not None, "浏览器开不了：退回 Qt 壳"
-        assert briefing.window.tabs.count() == 2 and briefing.window.tabs.tabText(1) == "笔记"
-        assert briefing.window.tabs.currentIndex() == 1
-        briefing.open_window()
-        assert briefing.window.tabs.currentIndex() == 1, "不指定标签就保持原样"
-        briefing.open_window(tab="简报")
-        assert briefing.window.tabs.currentIndex() == 0
+        assert i18n.current_language() == "en"
+        note = service.add("look at this")
+        later = service.snooze(note.name, 60)
+        assert later.reason == "Snoozed: remind again in 60 min"
+        prompt = wn.build_prompt(later, NOW)
+        assert prompt.startswith("You are my work-notes assistant") and "write everything in English" in prompt, \
+            "2026-10-19 起英文界面用整套英文提示词，不只是「用 English 写」一句"
     finally:
-        briefing.window.close()
+        i18n.set_language("zh")
 
 
 def test_the_menu_offers_the_notes_page_under_the_briefing(briefing_shell, tmp_path, repo):  # noqa: F811
     service = _service(tmp_path, repo, _Fakes())
-    briefing = briefing_shell.work_briefing
     opened = []
-    briefing_shell.work_notes = WorkNotesController(briefing_shell, service, colors=_COLORS,
+    briefing_shell.work_notes = WorkNotesController(briefing_shell, service,
                                                     open_report=lambda name: (opened.append(name), True)[1])
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
     entry = _find(menu, "工作笔记")
@@ -374,42 +299,12 @@ def test_the_menu_offers_the_notes_page_under_the_briefing(briefing_shell, tmp_p
     assert entry in agent_link.actions(), "用户 2026-10-15：直接放在 Agent 联动 这一层，不藏在 工作简报 里"
     assert _find(_find(agent_link, "工作简报").menu(), "工作笔记") is None
     entry.trigger()
-    assert opened == [""] and briefing.window is None, "菜单项开的是浏览器里的笔记页"
+    assert opened == [""], "菜单项开的是浏览器里的笔记页"
 
 
 def test_without_the_notes_service_the_menu_is_unchanged(briefing_shell):  # noqa: F811
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
     assert _find(menu, "工作笔记") is None
-
-
-def test_the_panel_speaks_english_when_the_ui_language_is_english(tmp_path, repo):
-    """用户 2026-10-15：新功能要支持中英文（界面语言已经能切）。"""
-    from pet import i18n
-
-    service = _service(tmp_path, repo, _Fakes(remind_at="2026-10-16T09:00:00"))
-    service._config.set("ui_language", "en")   # 和真实路径一样：语言由 Config 设置
-    try:
-        assert i18n.current_language() == "en"
-        host = _Host()
-        panel = WorkNotesController(host, service, colors=_COLORS).panel()
-        assert panel.add_btn.text() == "Save" and panel.obsidian_btn.text() == "Open in Obsidian"
-        assert [a.text() for a in panel.snooze_menu.actions()] == ["In 1 hour", "In 3 hours", "Tomorrow 9:00"]
-        assert "No notes yet" in panel.hint_label.text()
-        panel.input.setPlainText("look at this")
-        panel.add_btn.click()
-        assert panel.list.item(0).text() == "● look at this\n   remind 10-16 09:00"
-        assert "**Original**" in detail_markdown(service.notes()[0], False)
-        assert host.bubbles[-1].startswith("Saved")
-        later = service.snooze(service.notes()[0].name, 60)
-        assert later.reason == "Snoozed: remind again in 60 min"
-        prompt = wn.build_prompt(later, NOW)
-        assert prompt.startswith("You are my work-notes assistant") and "write everything in English" in prompt, \
-            "2026-10-19 起英文界面用整套英文提示词，不只是「用 English 写」一句"
-        window = WorkBriefingWindow()
-        assert window.tabs.tabText(0) == "Briefing"
-        window.close()
-    finally:
-        i18n.set_language("zh")
 
 
 def test_every_notes_string_has_both_languages():
@@ -430,10 +325,7 @@ def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
     config.set(wn.CONFIG_KEY, {"enabled": False, "repo_dir": str(tmp_path), "model": "sonnet"})
 
     class _Briefing:
-        tab_providers: list = []
-
-        def open_window(self, tab=""):
-            pass
+        pass
 
     class _Shell:
         pass
@@ -442,12 +334,11 @@ def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
     fake.config, fake.app, fake._overlay_shell, fake._work_briefing = config, app, _Shell(), _Briefing()
     fake._open_report, fake._publish_report = lambda name, note="": True, lambda name: None
     AppShell._start_work_notes(fake)
-    assert getattr(fake, "_work_notes", None) is None and _Briefing.tab_providers == []
+    assert getattr(fake, "_work_notes", None) is None
 
     config.set(wn.CONFIG_KEY, {"enabled": True, "repo_dir": str(tmp_path), "model": "sonnet"})
     monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")
     AppShell._start_work_notes(fake)
     assert fake._work_notes is not None and fake._overlay_shell.work_notes is fake._work_notes
-    assert fake._work_briefing.tab_providers == [], "不再挂 Qt 页"
     assert fake._work_notes._open_report is not None
     fake._work_notes.service.stop()

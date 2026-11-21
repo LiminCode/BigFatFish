@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Slack 关注摆在哪：有新的需要你看的 → 一个带按钮的提醒气泡；最近一次结果和存档在浏览器里的 Slack 关注页
-（``open_report``，2026-11-20 起）；页开不了时退回简报窗口那扇 Qt 窗。
+（``open_report``，配置全景的 ``/report/slack_watch``）。
 
 自动检查什么新的都没有时一声不吭；用户点「现在检查」时不管有没有都回一句。失败只在手动时说，
-自动检查失败记在状态文件里（窗口底部能看到），不每 15 分钟冒一次。
+自动检查失败记在状态文件里（页面的检查状态条能看到），不每 15 分钟冒一次。
 
-接了「Slack 关注」页（``notes``，一个 ``WorkNotesController(slack=True)``）之后：每条新的先存成仓库 ``slack/``
-里的 Markdown（防止错过），总提醒多一个「稍后 1 小时」把这批都放到一小时后，「查看」开到那一页。
+接了「Slack 关注」存档（``notes``，一个 ``WorkNotesController(slack=True)``）之后：每条新的先存成仓库 ``slack/``
+里的 Markdown（防止错过），总提醒多一个「稍后 1 小时」把这批都放到一小时后，「查看」开到页面上那一条。
+
+Qt 的独立结果窗口 2026-11-21 随简报窗口一起下线；本机服务起不来时只冒一句气泡。
 """
 
 from __future__ import annotations
@@ -16,18 +18,9 @@ from typing import Callable
 from PySide6.QtCore import QObject, Signal
 
 from . import slack_watch as sw
-from . import work_briefing as wb
 from .i18n import t
-from .work_briefing_ui import WorkBriefingWindow, theme_preference, save_theme_preference
 
 ALERT_ID = "slack-watch"
-
-
-def _as_briefing(result: sw.WatchResult) -> wb.Briefing:
-    """窗口认 ``Briefing``：把检查结果装进去（概要 + 条目列表）。"""
-    headline = result.summary or (t("slack.ui.d_slack_messages_need_your") % len(result.items) if result.items else t("slack.ui.nothing_needs_your_attention"))
-    return wb.Briefing(ok=True, summary=headline, markdown=result.markdown, generated_at=result.checked_at,
-                       seconds=result.seconds, turns=result.turns, denied=list(result.denied))
 
 
 class SlackWatchController(QObject):
@@ -39,14 +32,12 @@ class SlackWatchController(QObject):
 
     def __init__(self, host, service, *, notes=None, open_report: Callable[[], object] | None = None,
                  parent: QObject | None = None) -> None:
-        """``open_report()``：在浏览器里开 Slack 关注页（返回真假）；给了它就不再开 Qt 窗，开不了才退回。"""
+        """``open_report()``：在浏览器里开 Slack 关注页（返回真假）；没给或开不了时「查看最近一次检查」只能冒一句「打不开」。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
         self._notes = notes
         self._open_report = open_report
-        self.window: WorkBriefingWindow | None = None
-        service.started.connect(self._on_started)
         service.finished.connect(self._on_finished)
 
     # ---------------------------------------------------------- 菜单动作
@@ -57,35 +48,16 @@ class SlackWatchController(QObject):
             self._host.show_bubble(t("slack.bubble.started"), 4000)
 
     def open_window(self) -> None:
-        """看最近一次结果：浏览器里的 Slack 关注页；开不了（本机服务起不来）才退回 Qt 窗。"""
+        """「查看最近一次检查」：浏览器里的 Slack 关注页；开不了（本机服务起不来）冒一句气泡。名字沿用 Qt 窗口时代的。"""
         if self._open_report is not None and self._open_report():
             return
-        if self.window is None:
-            self.window = WorkBriefingWindow(title=t("slack.app"), regenerate_label=t("slack.button.check"),
-                                             empty_text=t("slack.empty"), busy_text=t("slack.busy"),
-                                             page_label=t("slack.tab"), theme=theme_preference(self.service._config))
-            self.window.theme_changed.connect(lambda theme: save_theme_preference(self.service._config, theme))
-            self.window.regenerate_requested.connect(self.service.check_now)
-        self._refresh_window()
-        self.window.show()
-        self.window.raise_()
-        self.window.activateWindow()
+        self._host.show_bubble(t("slack.bubble.page_failed"), 7000)
 
     def refresh_state(self) -> None:
         self.state_changed.emit()
 
     # ---------------------------------------------------------- 服务回调
-    def _refresh_window(self) -> None:
-        if self.window is not None:
-            latest = self.service.latest()
-            self.window.show_briefing(_as_briefing(latest) if latest is not None else None,
-                                      busy=self.service.busy, error=self.service.last_error())
-
-    def _on_started(self, _manual: bool) -> None:
-        self._refresh_window()
-
     def _on_finished(self, result, manual: bool, fresh) -> None:
-        self._refresh_window()
         fresh = list(fresh or [])
         if not result.ok:
             if manual:
@@ -108,7 +80,7 @@ class SlackWatchController(QObject):
         )
 
     def _archive(self, fresh: list[dict]) -> list[str]:
-        """每条新的存进仓库的 slack/（有「Slack 关注」页才存）；返回存下的文件名。"""
+        """每条新的存进仓库的 slack/（有「Slack 关注」存档才存）；返回存下的文件名。"""
         if self._notes is None:
             return []
         try:

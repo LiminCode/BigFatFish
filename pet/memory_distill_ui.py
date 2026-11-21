@@ -26,7 +26,7 @@ from . import memory_distill_service as svc
 from . import i18n
 from .i18n import t
 from .settings_widgets import TiltButton
-from .work_briefing_ui import THEMES, briefing_tokens, resolve_dark, save_theme_preference, theme_preference
+from .window_theme import THEMES, resolve_dark, save_theme_preference, theme_preference, window_tokens
 
 STAGES = ("source", "extract", "store", "distill", "review", "sink")
 STAGE_PHASE = {"source": 1, "extract": 1, "store": 1, "distill": 2, "review": 2, "sink": 2}   # 第二期做完：都实装了，样式上不再区分
@@ -590,7 +590,7 @@ class MemoryDistillWindow(QWidget):
         self.setObjectName("memoryDistill")
         self.setWindowTitle(t("distill.app"))
         self._theme = theme if theme in THEMES else "system"
-        self._colors = briefing_tokens(resolve_dark(self._theme))
+        self._colors = window_tokens(resolve_dark(self._theme))
         self._rows: list[dict] = []
         self._proposals: list[run.Proposal] = []
         self._work_roots: tuple[str, ...] = ()
@@ -831,7 +831,7 @@ class MemoryDistillWindow(QWidget):
     def apply_theme(self, theme: str) -> None:
         self._theme = theme if theme in THEMES else "system"
         dark = resolve_dark(self._theme)
-        self._colors = briefing_tokens(dark)
+        self._colors = window_tokens(dark)
         self.setProperty("settingsDark", dark)
         self.setStyleSheet(_QSS.format(**self._colors))
         self.theme_btn.setText("☀" if dark else "☾")

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""个人助理的 Qt 侧：服务（定时 / 线程 / git 锁）、自己的窗口（简报 + 灵感页、「在 Obsidian 打开」）、提醒、岛状态。
+"""个人助理的 Qt 侧：服务（定时 / 线程 / git 锁）、提醒、岛状态、「在 Obsidian 打开」。页面（简报、灵感输入区）在浏览器里，
+见 test_personal_report_page。
 
 纪律：不调 Anthropic、不起 git、不打开 Obsidian——全部用同步的假函数；样例文字中性。
 """
@@ -7,7 +8,6 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -17,11 +17,9 @@ from PySide6.QtWidgets import QApplication
 from pet import i18n
 from pet import personal_briefing as pb
 from pet import personal_vault as pv
-from pet import work_briefing as wb
 from pet.config import Config
 from pet.personal_service import PersonalService
-from pet.personal_ui import ALERT_ID, InspirationPanel, PersonalController, meta_line
-from pet.work_briefing_ui import WorkBriefingWindow
+from pet.personal_ui import ALERT_ID, PersonalController
 
 app = QApplication.instance() or QApplication([])
 
@@ -173,65 +171,31 @@ def test_without_a_clone_nothing_is_written(tmp_path):
     assert service.sync_state == "failed" and "missing" in service.sync_error and not service.repo_ready()
 
 
-# ---------------------------------------------------------------- 窗口
-def test_the_window_shows_who_handled_it_and_how(tmp_path, clone):
-    fakes = _Fakes()
-    service = _service(tmp_path, clone, fakes)
-    host = _Host()
-    controller = PersonalController(host, service)
-    controller.open_window()
-    window = controller.window
-    try:
-        assert isinstance(window, WorkBriefingWindow) and window.windowTitle() == "个人助理"
-        assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == ["简报", "灵感"]
-        assert window.body.toPlainText().startswith("还没有个人简报")
-        assert controller.obsidian_btn.text() == "在 Obsidian 打开 AI-Base"
-        assert window.buttons_layout.indexOf(controller.obsidian_btn) < window.buttons_layout.indexOf(window.regenerate_btn)
-
-        service.generate_now()
-        app.processEvents()
-        meta = window.meta_label.text()
-        assert "claude-sonnet-5-20260101" in meta and "思考 medium" in meta and "48,210" in meta and "1,130" in meta
-        assert "63 秒" in meta and "工具 6 轮" in meta and "读了 2 个文件" in meta
-        assert "读过：INDEX.md · 5-Daily/2026-10-17.md" in meta and "直连 Anthropic" in meta
-        assert "先补周五的扫描。" in window.body.toPlainText() and "风险观察" in window.body.toPlainText()
-        assert host.alerts == [], "窗口开着时不再冒提醒"
-    finally:
-        window.close()
-
-
-def test_the_busy_line_names_the_model_and_a_closed_window_gets_an_alert(tmp_path, clone):
-    fakes = _Fakes()
-    service = _service(tmp_path, clone, fakes, model="claude-haiku-5-5", effort="low")
-    host = _Host()
-    controller = PersonalController(host, service)
+# ---------------------------------------------------------------- 提醒与岛
+def test_a_finished_briefing_is_an_alert_whose_view_opens_the_browser_page(tmp_path, clone):
+    service = _service(tmp_path, clone, _Fakes(), model="claude-haiku-5-5", effort="low")
+    host, opened = _Host(), []
+    controller = PersonalController(host, service, open_report=lambda: (opened.append(1), True)[1])
     states = []
     controller.state_changed.connect(states.append)
-    busy_seen = []
-    service.started.connect(lambda _m: busy_seen.append(controller.window and controller.window.status_label.text()))
-    controller.open_window()
-    controller.window.hide()
     service.generate_now()
     app.processEvents()
-    assert busy_seen and "claude-haiku-5-5" in busy_seen[0] and "思考 low" in busy_seen[0]
     (text, kwargs), = host.alerts
     assert text == "先补周五的扫描。" and kwargs["alert_id"] == ALERT_ID and kwargs["alert_type"] == "personal_briefing"
     assert [label for label, _cb in kwargs["buttons"]] == ["查看", "知道了"] and states == ["unread"]
     dict(kwargs["buttons"])["查看"]()
-    assert host.resolved == [ALERT_ID] and controller.window.isVisible() and states == ["unread", "idle"]
-    controller.window.close()
+    assert host.resolved == [ALERT_ID] and opened == [1] and states == ["unread", "idle"]
 
 
 def test_island_state_is_hidden_until_enabled_or_generated(tmp_path, clone):
     service = _service(tmp_path, clone, _Fakes(), enabled=False)
-    controller = PersonalController(_Host(), service)
+    controller = PersonalController(_Host(), service, open_report=lambda: True)
     assert controller.island_state == "hidden"
     service.generate_now()
     app.processEvents()
     assert controller.island_state == "unread"
     controller.open_window()
     assert controller.island_state == "idle"
-    controller.window.close()
     assert PersonalController(_Host(), _service(tmp_path / "b", clone, _Fakes())).island_state == "idle"
 
 
@@ -244,28 +208,7 @@ def test_a_failed_briefing_is_a_bubble_not_an_alert(tmp_path, clone):
     assert host.alerts == [] and host.bubbles and "认证失败" in host.bubbles[-1]
 
 
-# ---------------------------------------------------------------- 灵感页与 Obsidian
-def test_the_inspiration_page_saves_and_reports_the_push(tmp_path, clone):
-    fakes = _Fakes()
-    service = _service(tmp_path, clone, fakes)
-    controller = PersonalController(_Host(), service)
-    controller.open_window(tab="灵感")
-    panel = controller.panel
-    try:
-        assert isinstance(panel, InspirationPanel) and controller.window.tabs.currentIndex() == 1
-        assert panel.save_btn.height() == panel.input.height() and panel.save_btn.text() == "记下"
-        panel.input.setPlainText("周末把旧书整理出来")
-        panel.save_btn.click()
-        assert panel.input.toPlainText() == "" and fakes.syncs and "周末把旧书整理出来" in pv.inspiration_path(clone).read_text(encoding="utf-8")
-        assert panel.status_label.text() == "已推送到 GitHub（09:00）"
-        service._sync = _Fakes(sync_ok=False).sync
-        panel.input.setPlainText("再一条")
-        panel._submit()
-        assert panel.status_label.text().startswith("已写进本地文件，但没推上去：")
-    finally:
-        controller.window.close()
-
-
+# ---------------------------------------------------------------- Obsidian
 def test_open_in_obsidian_falls_back_to_the_folder_with_a_hint_until_the_vault_is_registered(tmp_path, clone, monkeypatch):
     fakes = _Fakes()
     service = _service(tmp_path, clone, fakes)
@@ -277,40 +220,3 @@ def test_open_in_obsidian_falls_back_to_the_folder_with_a_hint_until_the_vault_i
     monkeypatch.setattr(pv.wn, "obsidian_vaults", lambda: {"x": {"path": str(clone)}})
     controller.open_obsidian()
     assert fakes.opened[-1].startswith("obsidian://open?path=") and len(host.bubbles) == 1
-
-
-# ---------------------------------------------------------------- 文案与窗口壳
-def test_meta_line_and_english(tmp_path, clone):
-    briefing = pb.PersonalBriefing(ok=True, summary="s", markdown="m", generated_at="2026-10-17T09:00:00", seconds=63.4,
-                                   turns=6, model="claude-sonnet-5", effort="medium", tokens_in=48210, tokens_out=1130,
-                                   files_read=[f"f{i}.md" for i in range(10)], pull_note="fatal: x")
-    text = meta_line(briefing)
-    assert text.startswith("生成于 10-17 09:00 · claude-sonnet-5 · 思考 medium · 输入 48,210 / 输出 1,130 tokens · 63 秒")
-    assert "f7.md +2" in text and "git pull 没成功（fatal: x）" in text
-    i18n.set_language("en")
-    service = _service(tmp_path, clone, _Fakes())
-    service._config.set("ui_language", "en")
-    controller = PersonalController(_Host(), service)
-    controller.open_window()
-    try:
-        assert controller.window.windowTitle() == "Personal Assistant" and controller.window.tabs.tabText(1) == "Ideas"
-        assert "Generated 10-17 09:00" in meta_line(briefing) and "read 10 files" in meta_line(briefing)
-        assert controller.panel.save_btn.text() == "Save"
-    finally:
-        controller.window.close()
-
-
-def test_the_window_shell_accepts_meta_and_busy_overrides():
-    window = WorkBriefingWindow(theme="light")
-    try:
-        window.show_briefing(wb.Briefing(ok=True, summary="s", markdown="m", generated_at="2026-10-17T09:00:00", seconds=1),
-                             meta="自定义元信息")
-        assert window.meta_label.text() == "自定义元信息"
-        window.show_briefing(None, busy=True, busy_text="正在让 X 读")
-        assert window.status_label.text() == "正在让 X 读" and window.body.toPlainText() == "正在让 X 读"
-        button = window.add_action_button("动作", "提示")
-        assert window.buttons_layout.indexOf(button) == window.buttons_layout.indexOf(window.regenerate_btn) - 1
-        assert button.accessibleDescription() == "提示"
-    finally:
-        window.close()
-    assert Path(pv.INSPIRATION_FILE).name == "灵感 Inspiration.md"

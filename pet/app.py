@@ -3096,7 +3096,6 @@ class AppShell:
             return existing
         try:
             from . import work_notes as wn
-            from .i18n import t
             from .work_notes_service import WorkNotesService
             from .work_notes_ui import WorkNotesController
 
@@ -3105,8 +3104,7 @@ class AppShell:
             if not service.settings()["enabled"]:
                 return None
             controller = WorkNotesController(self._overlay_shell, service, slack=True,
-                                             open_report=lambda name="": self._open_report("slack_watch", note=name),
-                                             open_window=lambda: briefing.open_window(tab=t("slack.app")))
+                                             open_report=lambda name="": self._open_report("slack_watch", note=name))
             for signal in (service.changed, service.summarized, service.synced):
                 signal.connect(lambda *_: self._publish_report("slack_watch"))
             self._slack_notes = controller
@@ -3215,8 +3213,9 @@ class AppShell:
             self._personal = PersonalController(
                 self._overlay_shell, service, open_report=lambda: self._open_report("personal_briefing"),
                 report_watched=lambda: self._report_watched("personal_briefing"))
-            service.started.connect(lambda *_: self._publish_report("personal_briefing"))
-            service.finished.connect(lambda *_: self._publish_report("personal_briefing"))
+            # 灵感记在页面顶部的输入区：记下 / 推送结果（changed / synced）也让页面重画，输入区下面那行跟着变
+            for signal in (service.started, service.finished, service.changed, service.synced):
+                signal.connect(lambda *_: self._publish_report("personal_briefing"))
             self._overlay_shell.personal = self._personal
             self._personal.state_changed.connect(self._push_island_personal_state)
             service.start()
@@ -3508,7 +3507,8 @@ class AppShell:
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份。
             # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
-            #          （没装聊天模块时同样只显示一句）；个人简报页的「记灵感…」在肥鱼里开 Qt 窗口的灵感页。
+            #          （没装聊天模块时同样只显示一句）；个人简报页顶部的输入区记灵感（add_inspiration），副按钮
+            #          「在 Obsidian 打开 AI-Base」在肥鱼里开 Obsidian（open_obsidian）。
             #          笔记页（notes.py）：工作笔记的列表 / 详情 / 记一条 / 完成 / 稍后 / 删除，动作走 note；
             #          Slack 关注页：检查状态条 + 「现在检查」（generate_report 的分发表里多一项）+ 存档列表（同一个 note 动作）。
             service = self._panorama_service = PanoramaService(
@@ -3520,8 +3520,9 @@ class AppShell:
                              {panorama_reports.WORK_BRIEFING: panorama_reports.generate_briefing(briefing_service),
                               panorama_reports.PERSONAL_BRIEFING: panorama_reports.generate_briefing(personal_service),
                               panorama_notes.SLACK_WATCH: panorama_notes.check_slack(slack_watch_service)}),
-                         panorama_reports.OPEN_INSPIRATION_ACTION: panorama_actions.generate_report(
-                             {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_inspiration(personal)}),
+                         panorama_reports.INSPIRATION_ACTION: panorama_reports.add_inspiration(personal_service),
+                         panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
+                             {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),
                          panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,
                                                                                   panorama_notes.SLACK_WATCH: slack_notes_service})},
                 reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),

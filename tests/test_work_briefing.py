@@ -26,7 +26,7 @@ from pet import claude_hooks as ch
 from pet import work_briefing as wb
 from pet.config import Config
 from pet.work_briefing_service import WorkBriefingService
-from pet.work_briefing_ui import ALERT_ID, WorkBriefingController, WorkBriefingWindow
+from pet.work_briefing_ui import ALERT_ID, WorkBriefingController
 from tests.test_claude_hooks import _payload, _run_hook
 from tests.test_session_pet_details import shell  # noqa: F401 - shell 是 fixture
 
@@ -327,11 +327,16 @@ def test_only_one_generation_at_a_time(tmp_path):
     assert not service.busy
 
 
-# ---------------------------------------------------------------- 气泡与窗口
+# ---------------------------------------------------------------- 气泡
 
 class FakeHost:
     def __init__(self):
-        self.alerts, self.resolved, self.bubbles = [], [], []
+        self.alerts, self.resolved, self.bubbles, self.opened = [], [], [], []
+
+    def open_report(self):
+        """假的「开浏览器里的简报页」：记一下，总能开。"""
+        self.opened.append(1)
+        return True
 
     def show_alert(self, text, **kwargs):
         self.alerts.append((text, kwargs))
@@ -346,7 +351,7 @@ class FakeHost:
 def _controller(tmp_path, **kwargs):
     service, made, _finished = _service(tmp_path, **kwargs)
     host = FakeHost()
-    return WorkBriefingController(host, service), host, service, made
+    return WorkBriefingController(host, service, open_report=host.open_report), host, service, made
 
 
 def test_a_finished_briefing_is_announced_with_a_way_to_read_it(tmp_path):
@@ -361,10 +366,7 @@ def test_a_finished_briefing_is_announced_with_a_way_to_read_it(tmp_path):
     assert labels == ["查看", "知道了"]
 
     dict(kwargs["buttons"])["查看"]()
-    window = controller.window
-    assert window.isVisible() and host.resolved == [ALERT_ID]
-    assert "DEMO-1" in window.body.toPlainText()
-    window.close()
+    assert host.opened == [1] and host.resolved == [ALERT_ID], "「查看」开浏览器里的简报页"
 
 
 def test_dismissing_just_closes_the_bubble(tmp_path):
@@ -372,7 +374,7 @@ def test_dismissing_just_closes_the_bubble(tmp_path):
     service.check()
     app.processEvents()
     dict(host.alerts[0][1]["buttons"])["知道了"]()
-    assert host.resolved == [ALERT_ID] and controller.window is None
+    assert host.resolved == [ALERT_ID] and host.opened == []
 
 
 def test_a_failure_is_said_out_loud_not_swallowed(tmp_path):
@@ -393,30 +395,6 @@ def test_asking_for_one_now_says_it_has_started_and_does_not_start_twice(tmp_pat
     controller.generate_now()
     controller.generate_now()
     assert len(pending) == 1 and len(host.bubbles) == 2, "第二次只是告诉用户还在生成"
-
-
-def test_the_window_says_so_when_there_is_nothing_yet(tmp_path):
-    controller, _host, _service_, _made = _controller(tmp_path, settings={**ON, "enabled": False})
-    controller.open_window()
-    window = controller.window
-    assert window.isVisible() and "还没有" in window.body.toPlainText()
-    assert window.regenerate_btn.isEnabled()
-    window.close()
-
-
-def test_the_window_can_ask_for_a_fresh_one(tmp_path):
-    controller, host, _service_, made = _controller(tmp_path, settings={**ON, "enabled": False})
-    controller.open_window()
-    controller.window.regenerate_btn.click()
-    app.processEvents()
-    assert len(made) == 1 and "DEMO-1" in controller.window.body.toPlainText()
-    controller.window.close()
-
-
-def test_the_window_renders_markdown_headings_as_headings():
-    window = WorkBriefingWindow()
-    window.show_briefing(wb.parse_output(_claude_json()))
-    assert "##" not in window.body.toPlainText() and "Jira" in window.body.toPlainText()
 
 
 # ---------------------------------------------------------------- 菜单

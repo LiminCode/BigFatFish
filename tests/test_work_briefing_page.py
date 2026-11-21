@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""工作简报的阅读页搬到浏览器之后，肥鱼这一侧的行为（2026-11-19）：
+"""工作简报的阅读页搬到浏览器之后，肥鱼这一侧的行为（2026-11-19；11-21 删掉 Qt 窗口后收口）：
 
-- 控制器接了「开报告页」那条路：「查看」开浏览器、打开即算读过、开不了冒气泡；页面开着看时新一份不再冒提醒；
-- Qt 的 ``WorkBriefingWindow`` 只剩给笔记 / Slack 关注当壳：不带「简报」页；
+- 控制器只认「开报告页」那条路：「查看」开浏览器、打开即算读过、开不了冒气泡；页面开着看时新一份不再冒提醒；
+- 没接页面（测试、旧接线）时「查看」也只能冒那句气泡：Qt 的 ``WorkBriefingWindow`` 没有了；
+- 气泡文字跟界面语言；
 - 右键菜单：「生成时间」子菜单没了，多一条「简报设置…」翻到配置全景那一组。
 """
 from __future__ import annotations
@@ -14,12 +15,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from types import SimpleNamespace  # noqa: E402
 
 import pytest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel, QMenu  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMenu  # noqa: E402
 
 from pet import claude_hooks, i18n  # noqa: E402
+from pet import work_briefing as wb  # noqa: E402
 from pet import work_briefing_ui as ui  # noqa: E402
+from pet.config import Config  # noqa: E402
 from pet.context_menus import shared  # noqa: E402
 from pet.sprite_menu_facade import SpriteMenuFacade  # noqa: E402
+from pet.work_briefing_service import WorkBriefingService  # noqa: E402
 from tests.test_work_briefing import FakeHost, _service  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
@@ -49,7 +53,7 @@ def test_view_opens_the_browser_page_and_counts_as_read(tmp_path):
     assert controller.island_state == "unread" and len(host.alerts) == 1
 
     controller.open_window()
-    assert opens == [1] and controller.window is None, "开的是浏览器里的页，不是 Qt 窗口"
+    assert opens == [1] and not hasattr(controller, "window"), "开的是浏览器里的页；Qt 窗口没有了"
     assert controller.island_state == "idle" and states == ["unread", "idle"] and host.bubbles == []
 
     (_text, kwargs), = host.alerts
@@ -70,27 +74,33 @@ def test_no_alert_while_the_page_is_open_in_the_browser(tmp_path):
     assert host.alerts == [] and controller.island_state == "idle", "页面已经原地换成新的了"
 
 
-def test_the_qt_window_is_only_a_shell_for_the_other_tabs(tmp_path):
-    controller, _host, _service_, opens = _controller(tmp_path)
-    controller.tab_providers.append(lambda: [("笔记", QLabel("n"))])
-    controller.open_window(tab="笔记")
-    try:
-        assert opens == [], "给了 tab 开的是 Qt 窗口（那几页还在 Qt 里）"
-        tabs = controller.window.tabs
-        assert [tabs.tabText(i) for i in range(tabs.count())] == ["笔记"], "没有「简报」那一页"
-        assert controller.window.briefing_page.isHidden()
-    finally:
-        controller.window.close()
-
-
-def test_without_the_browser_path_the_old_window_still_has_its_briefing_page(tmp_path):
+def test_without_the_browser_path_view_can_only_say_so(tmp_path):
+    """没接 ``open_report``（旧接线、测试）：没有第二个看简报的地方了，「查看」只能说页打不开，未读也不算读过。"""
     service, _made, _finished = _service(tmp_path)
-    controller = ui.WorkBriefingController(FakeHost(), service)
+    host = FakeHost()
+    controller = ui.WorkBriefingController(host, service)
+    service.check()
+    app.processEvents()
+    assert controller.island_state == "unread"
     controller.open_window()
-    try:
-        assert controller.window.tabs.tabText(0) == "简报"
-    finally:
-        controller.window.close()
+    assert host.bubbles == ["简报页打不开：本机服务起不来，看日志里「配置全景」那几行"] and controller.island_state == "unread"
+
+
+def test_the_bubbles_speak_english(tmp_path):
+    config = Config(base=tmp_path)
+    config.set("ui_language", "en")
+    host = FakeHost()
+    service = WorkBriefingService(config, generate=lambda when, model, **_kw: wb.Briefing(error="boom"), spawn=lambda run: run())
+    controller = ui.WorkBriefingController(host, service, open_report=lambda: False)
+    controller.generate_now()
+    # spawn 是同步的：失败那句先于「出发」那句冒出来，只看两句都在
+    assert any(b.startswith("Off to see") for b in host.bubbles)
+    assert any(b.startswith("Couldn't generate the briefing: boom") for b in host.bubbles)
+    controller.open_window()
+    assert host.bubbles[-1].startswith("Couldn't open the briefing page")
+    zh, en = i18n.table("zh"), i18n.table("en")
+    keys = [k for k in zh if k.startswith(("briefing.", "slack."))]
+    assert len(keys) >= 25 and all(k in en for k in keys)
 
 
 # ---------------------------------------------------------------- 菜单

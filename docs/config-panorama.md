@@ -29,7 +29,7 @@
 | `pet/panorama/feed.py` | 发布台 `Feed`：存最近一次发布的数据和它的编号，让「等新数据」的请求等到有为止。**只用标准库** |
 | `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
 | `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
-| `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`open_inspiration` |
+| `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`inspiration_composer` / `add_inspiration`（个人简报页顶部记灵感）、`open_obsidian` |
 | `pet/panorama/notes.py` | 笔记页的数据与动作：`work_notes(service_of, config)` / `slack_watch(notes_of, watch_of, config)` 把 `WorkNotesService`（和 Slack 关注的检查状态）翻成页面字典（provider 带 `page = "notes"`）；`note_action` 把页面的 `add / done / snooze / delete / resummarize / open_link / obsidian / folder / push` 分发到服务；`check_slack` 是 Slack 页「现在检查」的分发项 |
 | `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |
@@ -330,7 +330,9 @@ flowchart LR
 - **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": …, "personal_briefing": …}`（`reports.py`）。provider 在**界面线程**上被调
   （它读 Qt 对象），返回固定字段的字典：`title / theme / summary / generated / usage[] / html / busy / busy_text / empty_text /
   error / action{name, report, label, hint} / actions[] / available / details[] / settings_focus`。页面（`report.js`）只按字段摆，不认识功能。
-  `actions[]` 是主按钮旁边的副按钮（同一种字典，走同一个动作通道；个人简报的「记灵感…」回 `opened`，页面在状态栏说一声）。
+  `actions[]` 是主按钮旁边的副按钮（同一种字典，走同一个动作通道；个人简报的「在 Obsidian 打开 AI-Base」回 `opened`，页面在状态栏说一声）；
+  `composer` 是顶部的输入区（个人简报记灵感，2026-11-21 起；工作简报是 null）：`{placeholder, label, hint, status, failed, action}`，
+  页面 `POST` 时带 `text`，`status` 是服务说的推送进度，页面不自己编。
   `details` 是「这次是怎么生成的」那几段 `{title, html}`（服务端渲染、全部转义，见[公司侧助理](work-assistant.md)的
   「运行记录」），页面折叠着摆在全文下面、第一段默认展开；里面的 `__SETTINGS_URL__` 占位由页面换成
   `/#<令牌>&settings=<settings_focus>`（同一个服务、同一个令牌）。
@@ -354,9 +356,10 @@ flowchart LR
   bug 记号开头的项 → `<li class="bug">`（它的子列表随它上底色）。这几条就是原来 Qt 窗口 `_decorate` 的上色规则。
   其余一律转义：`<script>` 只是几个字。
 - **样式**：`report.css` 用 `tokens.css` 的 `--m-*`（跟「外观」里的主题：provider 给 `theme`，页面设 `data-theme`），顶部那组
-  链接色 / 小标签 / bug 底色 / 星色和 Qt 壳的 `_EXTRA_TOKENS` 一字不差。没有圆角。页面上不放明暗切换（偏好只在一处改）。
+  链接色 / 小标签 / bug 底色 / 星色（Qt 简报窗口 2026-11-21 删了之后只剩这一份）。没有圆角。页面上不放明暗切换（偏好只在一处改）。
 - **「重新生成」**：`POST /api/actions/generate_report {report}` → `generate_briefing`（按报告名分发）→ `started / busy / failed / unavailable`。
-  个人简报页的「记灵感…」：`POST /api/actions/open_inspiration {report}` → `open_inspiration` → 界面线程上开 Qt 窗口的灵感页 → `opened`。
+  个人简报页输入区的「记下」：`POST /api/actions/add_inspiration {report, text}` → `add_inspiration` → `saved / empty / failed` + 一句推送状态
+  （空的页面不发；没接个人助理 503 `unavailable`；报告名不对 400）；「在 Obsidian 打开 AI-Base」：`POST /api/actions/open_obsidian {report}` → `opened`。
   回 `started` 页面不动按钮，等 `started` 信号带来的重画把它变灰、`finished` 再放开。
 - **隐私**：内容不进全景图、不落快照、不进日志（服务只记请求行）；只经带令牌的接口给 `127.0.0.1` 上的浏览器。
 - 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`items.js` 是报告页的纯函数；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
@@ -381,13 +384,13 @@ flowchart LR
 - **动作**：`POST /api/actions/note {report, op, name, text?, minutes?}` → `note_action` 在界面线程上调服务，回 `{state}`；删除前的
   确认在页面（`confirm()`，同「修复」）。页面拿到回答只在状态栏说一句，**不自己改列表**：服务发 `changed / summarized / synced`，
   应用 `publish_report("work_notes")`，页面等到新数据再重画（选中、筛选、搜索保持）。
-- **Qt 侧**：`WorkNotesController(open_report=)`——提醒气泡的「查看」、菜单「工作笔记」都开浏览器到那一条；本机服务起不来时退回
-  简报窗口里的「笔记」页（`WorkNotesPanel` 还在，M4b 最后一项才删）。
+- **Qt 侧**：`WorkNotesController(open_report=)`——提醒气泡的「查看」、菜单「工作笔记」都开浏览器到那一条；本机服务起不来时
+  冒一句「笔记页打不开」（Qt 的「笔记」页 2026-11-21 随简报窗口一起删了）。
 - **Slack 关注页**（`/report/slack_watch`）是同一张页：`composer: false`，顶上多一条**检查状态条**（`watch`：上次检查几点、多久前、
   发现几条、概要、下一次约几点 = 上次 + 间隔、失败原因、忙不忙）和「现在检查」（走报告页的 `generate_report` 动作，分发表里
   `slack_watch → SlackWatchService.check_now`）；下面是存档（仓库 `slack/` 里的笔记，`note` 动作同一个处理器，报告名区分服务）。
   没有 WSL → 整页只说一句；有 WSL 但工作笔记关着 → 只有状态条，列表空、说明写着存档要开工作笔记。检查开始 / 结束、存档变了都
-  `publish_report("slack_watch")`。Qt 的 Slack 关注独立窗口只剩退路。
+  `publish_report("slack_watch")`。Qt 的 Slack 关注独立窗口 2026-11-21 删了，开不了页只冒一句气泡。
 - 隐私同报告页：内容只经带令牌的接口给本机浏览器，不进全景图、不落快照、不进日志。
 
 ### 文件查看（只读）

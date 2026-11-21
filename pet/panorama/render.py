@@ -69,7 +69,8 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
 REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "report_action_busy", "report_action_failed",
                "report_action_lost", "report_sections", "report_filters", "report_filter_all", "report_filter_p3",
                "report_filter_p2", "report_filter_p1", "report_filter_bug", "report_filter_upd", "report_hide_done",
-               "report_items", "report_untitled", "report_fold", "report_trace", "report_done", "report_action_opened")
+               "report_items", "report_untitled", "report_fold", "report_trace", "report_done", "report_action_opened",
+               "report_compose_empty")
 #: 笔记页的界面文字（计数片、筛选片、详情里的字、按钮、动作的回答）；副按钮沿用报告页那几句
 NOTES_KEYS = ("report_lost", "report_action_started", "report_action_busy", "report_action_failed", "report_action_opened",
               "report_action_lost", "notes_unavailable", "notes_count_open", "notes_count_due", "notes_count_busy", "notes_count_done",

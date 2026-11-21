@@ -202,7 +202,7 @@ def test_wsl_claude_dir_is_empty_without_wsl_or_on_failure(monkeypatch):
 
 @pytest.mark.parametrize("dark", [False, True])
 def test_window_is_metro_square_and_uses_theme_tokens(dark):
-    qss = ui._QSS.format(**ui.briefing_tokens(dark))
+    qss = ui._QSS.format(**ui.window_tokens(dark))
     assert "border-radius: 0" in qss
     for line in qss.splitlines():
         if "border-radius" in line:
@@ -301,7 +301,7 @@ def test_window_theme_toggle_saves_the_shared_preference(tmp_path):
 
 def test_flow_diagram_tiles_are_solid_metro_colors():
     """用户 2026-10-31：流程图的框要 Windows Phone 磁贴（实色、白字），不是只画一道边。"""
-    diagram = ui.FlowDiagram(ui.briefing_tokens(False))
+    diagram = ui.FlowDiagram(ui.window_tokens(False))
     diagram.resize(640, diagram.height())
     image = diagram.grab().toImage()
     assert set(ui.STAGE_COLORS) == set(ui.STAGES) and len(set(ui.STAGE_COLORS.values())) == len(ui.STAGES), "六格六色"
@@ -451,7 +451,7 @@ def test_flow_page_scrolls_instead_of_squashing_the_diagram(tmp_path):
 
 
 def test_flow_diagram_layout_is_two_rows_of_three_and_paints():
-    diagram = ui.FlowDiagram(ui.briefing_tokens(False))
+    diagram = ui.FlowDiagram(ui.window_tokens(False))
     diagram.resize(600, 240)
     rects = diagram.tile_rects()
     assert list(rects) == list(ui.STAGES)

@@ -197,8 +197,8 @@ def test_the_service_checks_when_due_and_not_while_the_computer_is_idle(tmp_path
 
 def test_new_items_raise_an_alert_with_a_way_to_read_them(tmp_path):
     service, _made = _service(tmp_path)
-    host = FakeHost()
-    controller = SlackWatchController(host, service)
+    host, opened = FakeHost(), []
+    controller = SlackWatchController(host, service, open_report=lambda: (opened.append(1), True)[1])
     service.check()
     app.processEvents()
     (text, kwargs), = host.alerts
@@ -206,10 +206,8 @@ def test_new_items_raise_an_alert_with_a_way_to_read_them(tmp_path):
     assert kwargs["subtitle"].startswith("Slack · 2 条") and "急" in kwargs["subtitle"]
     assert [label for label, _cb in kwargs["buttons"]] == ["查看", "知道了"]
     dict(kwargs["buttons"])["查看"]()
-    window = controller.window
-    assert window.isVisible() and host.resolved == [ALERT_ID] and window.windowTitle() == "Slack 关注"
-    assert "发布窗口" in window.body.toPlainText()
-    window.close()
+    assert opened == [1] and host.resolved == [ALERT_ID], "没接存档时「查看」开浏览器里的 Slack 关注页"
+    assert controller.service is service
 
 
 def test_nothing_new_means_silence_unless_asked_by_hand(tmp_path):
@@ -236,22 +234,15 @@ def test_failures_are_only_said_out_loud_for_manual_checks(tmp_path):
     assert any("没登录" in text for text in host.bubbles) and service.last_error() == "没登录"
 
 
-def test_open_window_goes_to_the_browser_page_and_falls_back_to_the_qt_window_only_when_it_cannot(tmp_path):
-    """2026-11-20 起最近一次结果在浏览器里的 Slack 关注页看；本机服务起不来才退回 Qt 窗。"""
+def test_open_window_goes_to_the_browser_page_and_only_says_so_when_it_cannot(tmp_path):
+    """2026-11-20 起最近一次结果在浏览器里的 Slack 关注页看；Qt 窗 11-21 删了，本机服务起不来只冒一句气泡。"""
     service, _made = _service(tmp_path)
-    opened, can = [], {"ok": True}
-    controller = SlackWatchController(FakeHost(), service, open_report=lambda: (opened.append(1), can["ok"])[1])
+    host, opened, can = FakeHost(), [], {"ok": True}
+    controller = SlackWatchController(host, service, open_report=lambda: (opened.append(1), can["ok"])[1])
     controller.open_window()
-    assert opened == [1] and controller.window is None
+    assert opened == [1] and host.bubbles == [] and not hasattr(controller, "window")
     can["ok"] = False
     controller.open_window()
-    assert opened == [1, 1] and controller.window is not None and controller.window.isVisible()
-    controller.window.close()
-
-
-def test_the_window_says_so_when_there_is_nothing_yet(tmp_path):
-    service, _made = _service(tmp_path, settings={**ON, "enabled": False})
-    controller = SlackWatchController(FakeHost(), service)
-    controller.open_window()
-    assert controller.window.isVisible() and "还没有检查过" in controller.window.body.toPlainText()
-    controller.window.close()
+    assert opened == [1, 1] and host.bubbles == ["Slack 关注页打不开：本机服务起不来，看日志里「配置全景」那几行"]
+    SlackWatchController(host, service).open_window()
+    assert len(host.bubbles) == 2, "没接页面（旧接线、测试）：也只能这么说"

@@ -9,7 +9,9 @@ provider 在**界面线程**上被调（它读 Qt 对象），返回页面要摆
   ``{key, text, tip}``）、``html``（全文，Markdown 已由 ``markdown.py`` 渲染成只含几个标签的 HTML）；
 - ``busy`` / ``busy_text`` / ``empty_text`` / ``error``（上一次失败的原因，已翻成整句）；
 - ``action``：底部那个按钮——``{name, report, label, hint}``，页面 ``POST /api/actions/<name>`` 时把 ``report`` 带回来；
-  ``actions``：旁边再放几个按钮（同一种字典；个人简报的「记灵感…」在肥鱼里开 Qt 窗口，动作回 ``opened``）；
+  ``actions``：旁边再放几个按钮（同一种字典；个人简报的「在 Obsidian 打开 AI-Base」在肥鱼里开 Obsidian，动作回 ``opened``）；
+- ``composer``：顶部的输入区（个人简报的「记灵感」，2026-11-21 起；工作简报是 None）——``{placeholder, label, hint, status,
+  failed, action{name, report}}``，页面 ``POST /api/actions/<name>`` 时带 ``{report, text}``，``status`` 是推送到哪一步了；
 - ``available``：这台机器上有没有这项功能（工作简报要 WSL；没有就只显示一句说明）；
 - ``sections``：全文按 ``<h3>`` 切成的几区 ``{id, source, title, html, count, p3, p2, p1, bugs, updated}``（``split_sections``）：
   页面用它画左栏的分区磁贴和右栏的每区一张卡；``source`` 只是按标题猜的来源（配色、图标用），猜不到是 ``other``。
@@ -23,16 +25,20 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import os
 import re
 from typing import Callable
 
+from .. import personal_vault as pv
 from .. import work_briefing as wb
 from ..i18n import t
 from . import markdown
+from .actions import ActionError
 
 WORK_BRIEFING = "work_briefing"
 PERSONAL_BRIEFING = "personal_briefing"
-OPEN_INSPIRATION_ACTION = "open_inspiration"       # 个人简报页「记灵感…」：在肥鱼里开那扇 Qt 窗口的灵感页
+INSPIRATION_ACTION = "add_inspiration"              # 个人简报页顶部输入区的「记下」：追加进 AI-Base 并推送（add_inspiration）
+OBSIDIAN_ACTION = "open_obsidian"                   # 个人简报页「在 Obsidian 打开 AI-Base」：在肥鱼里开 Obsidian（open_obsidian）
 GENERATE_ACTION = "generate_report"                 # 页面上「重新生成」走的动作名（actions.generate_report）
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
 SETTINGS_URL = "__SETTINGS_URL__"                   # 详情 HTML 里的占位：页面换成 /#<令牌>&settings=<组>
@@ -55,7 +61,7 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
             "busy": False, "busy_text": t("briefing.busy"), "empty_text": t("briefing.empty"), "error": "",
             "action": {"name": GENERATE_ACTION, "report": WORK_BRIEFING,
                        "label": t("briefing.button.regenerate"), "hint": t("briefing.button.regenerate_hint")},
-            "details": [], "settings_focus": WORK_BRIEFING, "sections": [], "actions": [],
+            "details": [], "settings_focus": WORK_BRIEFING, "sections": [], "actions": [], "composer": None,
         }
         if service is None:
             return data
@@ -83,9 +89,9 @@ def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], 
             "busy": False, "busy_text": t("personal.busy", model="?", effort="?"), "empty_text": t("personal.empty"), "error": "",
             "action": {"name": GENERATE_ACTION, "report": PERSONAL_BRIEFING,
                        "label": t("personal.button.regenerate"), "hint": t("personal.button.regenerate_hint")},
-            "actions": [{"name": OPEN_INSPIRATION_ACTION, "report": PERSONAL_BRIEFING,
-                         "label": t("personal.button.inspiration"), "hint": t("personal.button.inspiration_hint")}],
-            "details": [], "settings_focus": "personal",
+            "actions": [{"name": OBSIDIAN_ACTION, "report": PERSONAL_BRIEFING,
+                         "label": t("personal.button.obsidian"), "hint": t("personal.button.obsidian_hint")}],
+            "composer": inspiration_composer(service), "details": [], "settings_focus": "personal",
         }
         if service is None:
             return data
@@ -133,14 +139,55 @@ def generate_briefing(service_of: Callable[[], object]) -> Callable[[], str]:
 generate_work_briefing = generate_briefing      # 老名字
 
 
-def open_inspiration(controller_of: Callable[[], object]) -> Callable[[], str]:
-    """个人简报页上点了「记灵感…」：在肥鱼里开个人助理那扇 Qt 窗口的灵感页（动作在界面线程上跑）。
-    ``opened`` / ``unavailable``（没接个人助理）。"""
+def inspiration_composer(service) -> dict:
+    """个人简报页顶部的输入区：占位、「记下」、一行说明、一行推送状态；``service`` 为 None（没接个人助理）时状态为空
+    （页面那时整页只显示一句说明，输入区也藏着）。"""
+    return {"placeholder": t("personal.inspiration.placeholder"), "label": t("personal.button.save"),
+            "hint": t("personal.inspiration.hint"), "status": inspiration_status(service) if service is not None else "",
+            "failed": service is not None and service.sync_state == "failed",
+            "action": {"name": INSPIRATION_ACTION, "report": PERSONAL_BRIEFING}}
+
+
+def inspiration_status(service) -> str:
+    """输入区下面那行：灵感记下之后推送到哪一步了（正在推 / 已推送几点 / 没推上去为什么）；还没记过是空串。"""
+    state = service.sync_state
+    if state == "pushing":
+        return t("personal.inspiration.saved", file=os.path.basename(pv.INSPIRATION_FILE))
+    if state == "pushed":
+        return t("personal.inspiration.pushed", when=service.pushed_at)
+    if state == "failed":
+        return t("personal.inspiration.push_failed", error=" ".join(service.sync_error.split())[-160:])
+    return ""
+
+
+def add_inspiration(service_of: Callable[[], object]) -> Callable[[object], dict]:
+    """个人简报页输入区的「记下」：``POST /api/actions/add_inspiration {report, text}``，在界面线程上跑。
+    回 ``{report, state, status}``：``saved`` / ``empty`` / ``failed``（没记下，``status`` 写着原因：仓库副本不在、写不进文件）。
+    没接个人助理 503 ``unavailable``；报告名不对 400 ``bad_report``。记下之后服务自己后台 commit + push，推送结果经
+    ``changed / synced`` → ``publish_report`` 让页面重画，输入区下面那行跟着变。"""
+    def run(body) -> dict:
+        report = body.get("report") if isinstance(body, dict) else None
+        if report != PERSONAL_BRIEFING:
+            raise ActionError(400, "bad_report")
+        service = service_of()
+        if service is None:
+            raise ActionError(503, "unavailable")
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return {"report": report, "state": "empty", "status": ""}
+        saved = service.add_inspiration(text)
+        return {"report": report, "state": "saved" if saved is not None else "failed", "status": inspiration_status(service)}
+    return run
+
+
+def open_obsidian(controller_of: Callable[[], object]) -> Callable[[], str]:
+    """个人简报页上点了「在 Obsidian 打开 AI-Base」：在肥鱼里开（``PersonalController.open_obsidian``：登记成库就开 Obsidian，
+    没登记就开文件夹并冒气泡说明）。``opened`` / ``unavailable``（没接个人助理）。"""
     def run() -> str:
         controller = controller_of()
         if controller is None:
             return "unavailable"
-        controller.open_inspiration()
+        controller.open_obsidian()
         return "opened"
     return run
 
@@ -155,7 +202,7 @@ def generated_line(generated_at: str, key: str = "briefing.meta") -> str:
 
 
 def usage(briefing: wb.Briefing) -> list[dict]:
-    """和 Qt 窗口底下那条图标栏同一套数字（``note_meta_bar.usage_values``），按固定顺序，空的不给。
+    """和笔记页同一套数字（``note_meta_bar.usage_values``），按固定顺序，空的不给。
     个人简报没有花费这一项（自己的 key，Claude Code 才报 cost）：0 就不摆。"""
     from ..note_meta_bar import usage_values
 
@@ -274,6 +321,6 @@ def trace_sections(trace: dict) -> list[dict]:
 
 def theme(config) -> str:
     """页面的明暗：跟「外观」里的主题偏好（``system`` 按系统调色板定）。页面上不放切换按钮——那个偏好只在一处改。"""
-    from ..work_briefing_ui import resolve_dark, theme_preference
+    from ..window_theme import resolve_dark, theme_preference
 
     return "dark" if resolve_dark(theme_preference(config)) else "light"

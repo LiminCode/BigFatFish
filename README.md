@@ -118,10 +118,6 @@ the effort level and when each one runs.
   You accept, edit or reject each proposal; accepted ones go into a managed block of `~/.claude/CLAUDE.md` and
   your project memory, so later sessions follow them.
 
-<p align="center">
-  <img src="docs/images/readme/briefing-en.png" alt="Work briefing window" width="49%">
-  <img src="docs/images/readme/personal-en.png" alt="Personal briefing window" width="49%">
-</p>
 <p align="center"><img src="docs/images/readme/distill-en.png" alt="Session memory distill flow page" width="60%"></p>
 
 ### Chat with Claude

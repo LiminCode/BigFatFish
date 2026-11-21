@@ -10,7 +10,7 @@
 - 简报自己的记号：列表项开头的 ``★`` 按星数打类（``star s1`` / ``s2`` / ``s3``，★★★ 最醒目）；开头是 bug 记号
   （``work_briefing.BUG_MARK``）的列表项打 ``bug`` 类，它下面缩进的场景行是它的子列表，底色随它。
 
-这些上色规则在 Qt 窗口里是 ``WorkBriefingWindow._decorate`` 遍历文本片段做的；这里改成渲染时打类名，样式在
+这些上色规则原来在 Qt 简报窗口里是遍历文本片段做的（那扇窗 2026-11-21 删了）；这里是渲染时打类名，样式在
 ``page/report.css``。产出的 HTML 里除了这几个标签和类名没有别的：文字全部经 ``escape``，链接地址也转义过。
 """
 from __future__ import annotations

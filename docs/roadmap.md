@@ -111,7 +111,7 @@ flowchart LR
 - [x] 个人简报（`/report/personal_briefing`：岛上的人形、提醒都开浏览器；Qt 壳只剩灵感页，页上「记灵感…」开它）
 - [x] 工作笔记页（`/report/work_notes`：列表 + 详情 + 记一条 / 完成 / 稍后 / 删除 / 重新总结；菜单、提醒「查看」都开浏览器）
 - [x] Slack 关注页（`/report/slack_watch`：检查状态条 + 「现在检查」+ 存档列表；菜单、提醒「查看」都开浏览器）
-- [ ] 下线 `WorkBriefingWindow`
+- [x] 下线 `WorkBriefingWindow`（2026-11-21：个人助理的灵感页变成个人简报页顶部的输入区、「在 Obsidian 打开」变成页上的副按钮；笔记 / Slack / 个人助理退回 Qt 窗的几条路一并删，本机服务起不来只冒一句气泡；主题偏好函数搬到 `pet/window_theme.py`）
 
 ### M5 能编辑：记忆与知识
 
