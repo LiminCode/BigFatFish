@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -43,14 +42,12 @@ from .fun_image_popup import oijingjing_image_path, resolve_fun_asset
 from .persona_phrases import PUBLIC_DIALOGUE_EVENTS, builtin_phrases, phrase_keys
 from .persona_template import build_persona_template
 from .settings_widgets import (
-    AUDIO_NAME_FILTER,
+    ResourcePathPicker,
     BrowserDoubleSpinBox,
     BrowserSpinBox,
     ClickSoundPackPicker,
     ColorPicker,
     ModernSelect,
-    ResourcePathPicker,
-    ResponsiveToggleActionRow,
     SettingRow,
     TiltButton,
     ToggleSwitch,
@@ -524,49 +521,8 @@ def build_pet_controls(host) -> None:
     dialogue_template_buttons.addWidget(host.dialogue_template_export_btn)
     dialogue_template_buttons.addWidget(host.dialogue_template_import_btn)
     dialogue_template_actions_layout.addLayout(dialogue_template_buttons)
-    host.agent_sound_check = ToggleSwitch(host)
-    host.agent_sound_check.setChecked(bool(agent_link_cfg.get("sound_enabled", False)))
-
-    # 辅助构建包含“开关+路径选择+试听”的组合控件
-    def _build_agent_event_row(evt_key: str, default_builtin: str) -> tuple[QWidget, ToggleSwitch, ResourcePathPicker, QPushButton]:
-        toggle = ToggleSwitch(host)
-        toggle.setChecked(bool(agent_link_cfg.get(f"sound_{evt_key}_enabled", True)))
-        path_val = str(agent_link_cfg.get(f"sound_{evt_key}_path") or default_builtin)
-        picker = ResourcePathPicker(path_val, name_filter=AUDIO_NAME_FILTER, parent=host)
-        preview_btn = TiltButton(t("settings.pet.preview"), host)
-        preview_btn.setIcon(vector_widget_icon(host, "sound", 14))
-        preview_btn.setMinimumWidth(72)
-        preview_btn.clicked.connect(lambda _, k=evt_key: host._preview_agent_sound(k))
-        container = ResponsiveToggleActionRow(toggle, picker, preview_btn, host)
-        return container, toggle, picker, preview_btn
-
-    (host.agent_sound_start_widget, host.agent_sound_start_check,
-     host.agent_sound_start_picker, host.agent_sound_start_preview) = _build_agent_event_row("start", "builtin:agent-start")
-
-    (host.agent_sound_done_widget, host.agent_sound_done_check,
-     host.agent_sound_done_picker, host.agent_sound_done_preview) = _build_agent_event_row("done", "builtin:agent-done")
-
-    (host.agent_sound_error_widget, host.agent_sound_error_check,
-     host.agent_sound_error_picker, host.agent_sound_error_preview) = _build_agent_event_row("error", "builtin:agent-error")
-
-    host.agent_sound_volume_spin = BrowserSpinBox(host)
-    host.agent_sound_volume_spin.setRange(0, 100)
-    host.agent_sound_volume_spin.setSuffix(" %")
-    agent_vol = float(agent_link_cfg.get("sound_volume", 0.65))
-    host.agent_sound_volume_spin.setValue(int(round(agent_vol * 100)))
-
-    host.agent_sound_cooldown_spin = BrowserDoubleSpinBox(host)
-    host.agent_sound_cooldown_spin.setRange(0.0, 30.0)
-    host.agent_sound_cooldown_spin.setSingleStep(0.5)
-    host.agent_sound_cooldown_spin.setDecimals(1)
-    host.agent_sound_cooldown_spin.setSuffix(t("settings.pet.s"))
-    host.agent_sound_cooldown_spin.setValue(float(agent_link_cfg.get("sound_cooldown_seconds", 2.0)))
-
-    host.agent_sound_check.toggled.connect(host._update_agent_sound_controls)
-    host.agent_sound_check.toggled.connect(host._apply_agent_sound_enabled_now)
-    host.agent_sound_start_check.toggled.connect(lambda: host._update_agent_sound_subcontrols())
-    host.agent_sound_done_check.toggled.connect(lambda: host._update_agent_sound_subcontrols())
-    host.agent_sound_error_check.toggled.connect(lambda: host._update_agent_sound_subcontrols())
+    # Agent 联动的提示音效 2026-11-21 搬到配置全景（settings_table 的 link_sounds 组）；这里不再建控件，
+    # 设置窗口里只剩 modern_settings_dialog 放的那一行「搬到配置全景了」。
 
     # 待办提醒：偏好两键（条目在右键菜单「待办提醒」面板中管理）
     host.todo_reminder_check = ToggleSwitch(host)

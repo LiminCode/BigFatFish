@@ -115,6 +115,9 @@ FEATURES: tuple[Feature, ...] = (
             note="session_fish"),
     Feature("session_history", "link", "stack", "agent_link.session_history*", _link("session_history", True),
             settings_group="session_history", note="session_history"),
+    # 会话提示音：开始干活 / 等批准 / 停下来 / 出错各一声。不调模型，吃的是联动事件，所以和会话小鱼一样走 link 这条路
+    Feature("link_sounds", "link", "bell", "agent_link.sound_*", _link("sound_enabled", False), settings_group="link_sounds",
+            note="link_sounds"),
     Feature("chat", "personal", "chat", "chat", _chat, page="ai_chat", follows_provider=True,
             writes=(("gh_personal", "github", _chat_uses_github),)),
     # 会话记忆蒸馏的设置也搬到了配置全景；一个配置键分两组，所以两块磁贴各自写明是哪一组

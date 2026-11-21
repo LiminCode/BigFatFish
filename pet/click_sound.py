@@ -36,6 +36,20 @@ log = logging.getLogger("pet.click_sound")
 
 SUPPORTED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a"}
 
+#: 内置的 Agent 提示音：``(id, 文件名)``，配置里写 ``builtin:<id>``，文件在 ``assets/sounds/agent/``（``scripts/gen_agent_sounds.py`` 合成）。
+#: 顺序就是配置全景设置页下拉里的顺序；前四个分别是四个时刻的默认音。设置表（``pet/settings_table.py``）按它列可选值，
+#: 所以这个模块导入时不能碰 Qt（现在也没有：QtMultimedia 是用到才惰性 import 的）。
+BUILTIN_AGENT_SOUNDS: tuple[tuple[str, str], ...] = (
+    ("agent-start", "start.wav"),
+    ("agent-done", "done.wav"),
+    ("agent-error", "error.wav"),
+    ("agent-attention", "attention.wav"),
+    ("agent-chime", "chime.wav"),
+    ("agent-bell", "bell.wav"),
+    ("agent-pop", "pop.wav"),
+    ("agent-trill", "trill.wav"),
+)
+
 
 class ClickSoundPool:
     """模块级单例音效池：收编全部 QtMultimedia 音效对象与缓存状态（A14）。
@@ -918,12 +932,8 @@ def resolve_builtin_sound(sound_id: str) -> Path | None:
     root = _sounds_root()
     sounds_dir = root / "assets" / "sounds"
 
-    # Agent 音效别名或直接文件名
-    agent_map = {
-        "agent-start": sounds_dir / "agent" / "start.wav",
-        "agent-done": sounds_dir / "agent" / "done.wav",
-        "agent-error": sounds_dir / "agent" / "error.wav",
-    }
+    # Agent 提示音（表在 BUILTIN_AGENT_SOUNDS）
+    agent_map = {sound_id: sounds_dir / "agent" / file_name for sound_id, file_name in BUILTIN_AGENT_SOUNDS}
     if s_id in agent_map:
         target = agent_map[s_id]
         return target if target.is_file() else None

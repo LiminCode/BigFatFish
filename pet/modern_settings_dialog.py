@@ -107,6 +107,7 @@ def _chat_feature_available() -> bool:
         raise
     return True
 
+from .settings_moved import moved_row
 from .settings_widgets import (
     _system_font_families,
     BROWSER_CONTROL_SPEC,
@@ -565,16 +566,9 @@ class ModernSettingsDialog(QDialog):
         behavior_layout.addWidget(self.collision_policy_note)
         # 「点击反馈」与「自言自语」两组归「互动」域（settings_interaction 构建，
         # 行数预算原因；组名与顺序的既有契约见 tests/test_menu_layout.py）。
-        # Agent 联动：音效设置
-        agent_sound_rows = [
-            SettingRow("agent_sound_enabled", t("settings.dlg.agent_sound_effects"), t("settings.dlg.play_sound_when_agent_starts"), self.agent_sound_check),
-            SettingRow("agent_sound_start", t("settings.dlg.start_sound"), t("settings.dlg.played_when_agent_starts_working"), self.agent_sound_start_widget, stacked=True),
-            SettingRow("agent_sound_done", t("settings.dlg.done_sound"), t("settings.dlg.played_when_agent_finishes_task"), self.agent_sound_done_widget, stacked=True),
-            SettingRow("agent_sound_error", t("settings.dlg.error_sound"), t("settings.dlg.played_when_agent_runs_into"), self.agent_sound_error_widget, stacked=True),
-            SettingRow("agent_sound_volume", t("settings.dlg.sound_volume"), t("settings.dlg.volume_agent_sounds"), self.agent_sound_volume_spin),
-            SettingRow("agent_sound_cooldown", t("settings.dlg.cooldown"), t("settings.dlg.keeps_sounds_from_firing_too"), self.agent_sound_cooldown_spin),
-        ]
-        behavior_layout.addWidget(SettingsSection(t("settings.dlg.agent_link_sounds"), agent_sound_rows, behavior_content))
+        # Agent 联动的提示音效 2026-11-21 搬到配置全景（settings_table 的 link_sounds 组，ADR 0014）：这里只剩
+        # 「搬到配置全景了」那一行（settingRow_link_sounds_moved），仍由「自动化与联动」的 Agent 联动折叠框认领。
+        behavior_layout.addWidget(SettingsSection(t("settings.dlg.agent_link_sounds"), [moved_row(self, "link_sounds")], behavior_content))
         labels = {key: dialogue_label(key) for key in DIALOGUE_LABELS}
         behavior_layout.addWidget(
             SettingsSection(
@@ -804,8 +798,6 @@ class ModernSettingsDialog(QDialog):
         # 初始同步须在全部 SettingRow 构建完成后执行，否则 findChild 找不到行
         self._update_click_sound_controls(self.click_sound_check.isChecked())
         self._update_golden_spin_controls(self.golden_spin_click_check.isChecked())
-        self._update_agent_sound_controls(self.agent_sound_check.isChecked())
-        self._update_agent_sound_subcontrols()
 
         self.menu_theme_select.currentIndexChanged.connect(self._apply_selected_theme)
         self._apply_selected_theme()
@@ -964,33 +956,6 @@ class ModernSettingsDialog(QDialog):
             vol = float(self.click_sound_volume_spin.value()) / 100.0
             play_sound(sound_file, volume=vol)
 
-    def _preview_agent_sound(self, event_name: str) -> None:
-        """试听当前填写的 Agent 音效（不保存配置、不触发 Agent 业务逻辑）。"""
-        from .click_sound import play_sound, resolve_builtin_sound
-
-        picker = {
-            "start": self.agent_sound_start_picker,
-            "done": self.agent_sound_done_picker,
-            "error": self.agent_sound_error_picker,
-        }.get(event_name)
-        if picker is None:
-            return
-        path_str = picker.text().strip()
-        if not path_str:
-            path_str = f"builtin:agent-{event_name}"
-
-        target = None
-        if path_str.startswith("builtin:"):
-            target = resolve_builtin_sound(path_str)
-        else:
-            p = Path(path_str).expanduser()
-            if p.is_file():
-                target = p
-
-        if target:
-            vol = float(self.agent_sound_volume_spin.value()) / 100.0
-            play_sound(target, volume=vol)
-
     def _import_dialogue_template_json(self) -> None:
         """Import a complete persona template from the inline JSON editor."""
         settings_pet_controls._import_dialogue_template_json(self)
@@ -1038,29 +1003,6 @@ class ModernSettingsDialog(QDialog):
             if isinstance(card, SettingsCard):
                 card.refresh_separators()
 
-    def _update_agent_sound_controls(self, enabled: bool) -> None:
-        """Agent 音效总开关联动控制整组子项可见性/可用性。"""
-        for row_key in ("agent_sound_start", "agent_sound_done", "agent_sound_error", "agent_sound_volume", "agent_sound_cooldown"):
-            row = self.findChild(SettingRow, f"settingRow_{row_key}")
-            if row is not None:
-                row.setVisible(bool(enabled))
-                card = row.parentWidget()
-                if isinstance(card, SettingsCard):
-                    card.refresh_separators()
-        if enabled:
-            self._update_agent_sound_subcontrols()
-
-    def _update_agent_sound_subcontrols(self) -> None:
-        """单事件关闭时保留开关，仅隐藏其路径选择器和试听按钮。"""
-        for toggle, picker, preview in (
-            (self.agent_sound_start_check, self.agent_sound_start_picker, self.agent_sound_start_preview),
-            (self.agent_sound_done_check, self.agent_sound_done_picker, self.agent_sound_done_preview),
-            (self.agent_sound_error_check, self.agent_sound_error_picker, self.agent_sound_error_preview),
-        ):
-            visible = toggle.isChecked()
-            picker.setVisible(visible)
-            preview.setVisible(visible)
-
     def _update_translucency_controls(self, enabled: bool) -> None:
         self._set_setting_rows_visible(("menu_opacity",), enabled)
 
@@ -1102,13 +1044,6 @@ class ModernSettingsDialog(QDialog):
             logging.info("退出子肥鱼：已写下指令（target=%s，主进程消费）", target)
         else:
             logging.warning("退出子肥鱼：写指令文件失败，本次未执行")
-
-    def _apply_agent_sound_enabled_now(self, checked: bool) -> None:
-        """音效总开关即时生效，不等对话框关闭（合并写回，不动其他 agent_link 键）。"""
-        agent_cfg = dict(self.config.get("agent_link", {}))
-        agent_cfg["sound_enabled"] = bool(checked)
-        self.config.set("agent_link", agent_cfg)
-        self.config.save()
 
     def _apply_click_sound_enabled_now(self, checked: bool) -> None:
         """点击音效开关即时生效，不等对话框关闭。"""
@@ -1398,11 +1333,10 @@ class ModernSettingsDialog(QDialog):
         # 「Agent 联动」＝两级结构：折叠框下按用途分子组（提示音效）。
         # 用现成的 CollapsibleGroup.add_group，不需要新造控件。
         agent_box = CollapsibleGroup(t("settings.dlg.agent_link"), automation)
-        agent_box.add_group(t("settings.dlg.sounds"), claim_prefix("agent_sound_"))
+        # 提示音效 2026-11-21 搬到配置全景，子组里只剩那一行「搬到配置全景了」（claim_prefix 顺带登记进 claimed，不会再落进「待分类」）。
+        agent_box.add_group(t("settings.dlg.sounds"), claim_prefix("link_sounds_"))
         agent_box.set_expanded(True)
         self.agent_link_box = agent_box
-        # 这些行已被上面的折叠框认领，必须登记，否则会再落进「待分类」。
-        claimed.update(claim_prefix("agent_sound_"))
         # dialogue_* 里的全局风格控件（表达风格、专属文案对象、弹窗文案模板 JSON）
         # 不是某个事件的气泡文案，已被 claim_prefix("dialogue_") 认领（不再进
         # leftovers），若不显式放回本域就会从设置页里彻底消失。
@@ -1454,8 +1388,8 @@ class ModernSettingsDialog(QDialog):
         # 「语音」总域（2026-09-17 定稿口径）：只收鱼开口说话（TTS）类设置——
         # 语音报时整组 + 节日提醒 12 行（原「自动化与联动」域，带 speak/TTS 播报
         # 能力）。音效类回各自功能分组：点击音效 4 行回「互动 · 点击反馈」、
-        # 碰撞音效 2 行回「肥鱼」碰撞组；Agent 提示音效（agent_sound_*）留在
-        # Agent 联动折叠框内不动。
+        # 碰撞音效 2 行回「肥鱼」碰撞组；Agent 提示音效搬到了配置全景，原处那一行
+        # 「搬到配置全景了」留在 Agent 联动折叠框内。
         voice = page_content(
             [
                 (t("settings.dlg.spoken_time"), voice_chime_rows),
@@ -1752,20 +1686,7 @@ class ModernSettingsDialog(QDialog):
             self.config.set("dialogue_phrases", new_global)
         # 记住上次编辑层：下次打开设置直接回到该 Agent 专属层（未知值回落全局）
         self.config.set("dialogue_last_scope", str(getattr(self, "_dialogue_scope", "") or ""))
-        agent_cfg = dict(self.config.get("agent_link", {}))
-
-        # Agent 联动音效写回
-        agent_cfg["sound_enabled"] = self.agent_sound_check.isChecked()
-        agent_cfg["sound_start_enabled"] = self.agent_sound_start_check.isChecked()
-        agent_cfg["sound_start_path"] = self.agent_sound_start_picker.text().strip() or "builtin:agent-start"
-        agent_cfg["sound_done_enabled"] = self.agent_sound_done_check.isChecked()
-        agent_cfg["sound_done_path"] = self.agent_sound_done_picker.text().strip() or "builtin:agent-done"
-        agent_cfg["sound_error_enabled"] = self.agent_sound_error_check.isChecked()
-        agent_cfg["sound_error_path"] = self.agent_sound_error_picker.text().strip() or "builtin:agent-error"
-        agent_cfg["sound_volume"] = float(self.agent_sound_volume_spin.value()) / 100.0
-        agent_cfg["sound_cooldown_seconds"] = float(self.agent_sound_cooldown_spin.value())
-
-        self.config.set("agent_link", agent_cfg)
+        # agent_link 这个键这扇窗不再写（2026-11-21 起最后一组——提示音效——也搬到了配置全景；ADR 0014：一项设置一个编辑入口）
         self.config.set("todo_reminder_enabled", self.todo_reminder_check.isChecked())
         self.config.set("todo_reminder_lead_minutes", int(self.todo_reminder_lead_spin.value()))
         # 语音报时设置页写回（仅写 voice_chime_* 11 键）

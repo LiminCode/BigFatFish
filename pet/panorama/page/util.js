@@ -19,6 +19,7 @@ export const ICONS = {
   plugoff:'<path d="M9 2v4M15 2v6M6 8h12v3a6 6 0 0 1-9 5M12 17v5M3 3l18 18"/>',
   book:'<path d="M4 4h7a3 3 0 0 1 1 2 3 3 0 0 1 1-2h7v15h-7a2 2 0 0 0-1 1 2 2 0 0 0-1-1H4zM12 6v14"/>',
   stack:'<path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5"/>',
+  bell:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/>',
   gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
   puzzle:'<path d="M4 8h4a2 2 0 1 1 4 0h4v4a2 2 0 1 1 0 4v4H4z"/>',
   repo:'<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 7v10M18 11c0 4-6 3-12 6"/>',

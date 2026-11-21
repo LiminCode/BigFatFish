@@ -3856,6 +3856,10 @@ class AgentLinkManager(QObject):
                 or payload.get("requestId") or payload.get("callId")):
             log.debug("approval/request 缺可关联身份，忽略（不弹窗）: %s", str(payload)[:200])
             return
+        # 「等批准」提示音：和 start / done / error 同一条漏斗（总开关、各时刻开关、全局冷却），肥鱼隐藏时不出声。
+        # Claude Code 的 Notification(permission_prompt) 和 DSH 的 approval/request 都走到这里。
+        if hasattr(self.win, "isVisible") and self.win.isVisible():
+            self._emit_sound("attention", agent_key)
         name = self.AGENT_NAMES.get(agent_key, agent_key)
         tool = str(payload.get("toolName") or payload.get("tool") or "").strip()
         session_id = str(payload.get("sessionId") or "")
@@ -4391,7 +4395,11 @@ class AgentLinkManager(QObject):
         self._query_cost_balance(agent_key, "done")
 
     def _emit_sound(self, event_name: str, agent_key: str) -> None:
-        """播放 Agent 生命周期音效；所有 Agent 共用一组全局冷却。"""
+        """播放 Agent 生命周期音效；所有 Agent 共用一组全局冷却。
+
+        四个时刻：``start``（某 Agent 从不忙到忙）、``attention``（有审批等用户决定，见 ``_on_approval_request``）、
+        ``done``（忙后 800 ms 稳定不忙且本周期没出过错，Claude 的 Stop 也算）、``error``。每个时刻各有
+        ``sound_<时刻>_enabled`` / ``sound_<时刻>_path``；总开关 ``sound_enabled``；配置在配置全景「会话提示音」里改。"""
         agent_cfg = self.cfg.get("agent_link", {})
         if not agent_cfg.get("sound_enabled", False):
             return
