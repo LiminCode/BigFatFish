@@ -109,6 +109,8 @@ class PanoramaService(QObject):
         self.actions: dict = dict(actions or {})   # 页面上的动作：名字 → 处理器（见 actions.py），应用登记
         self._reports: dict = dict(reports or {})  # 报告页：名字 → provider（见 reports.py），应用登记
         self._report_feeds = {name: Feed() for name in self._reports}   # 每份报告自己的发布台（页面挂在上面等更新）
+        # 每份报告用哪种外壳 / 哪套界面文字：provider 函数的 page 属性（report = 简报那张页，notes = 笔记页）
+        self._report_pages = {name: str(getattr(provider, "page", "") or "report") for name, provider in self._reports.items()}
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
@@ -377,6 +379,10 @@ class PanoramaService(QObject):
     def has_report(self, name: str) -> bool:
         return name in self._reports
 
+    def report_page(self, name: str) -> str:
+        """这份报告用哪种页面外壳（``render.PAGE_SHELLS`` 的键）；没登记的当 report。"""
+        return self._report_pages.get(name, "report")
+
     def report(self, name: str, after: int | None, wait_seconds: float) -> bytes | None:
         """（请求线程）一份报告的数据。``after`` 是 None：要现成的，还没有就先到界面线程上做一份；
         否则等比 ``after`` 更新的那份，最多 ``wait_seconds`` 秒，没有就 None。不认识的名字抛 ``ActionError(404)``。"""
@@ -397,7 +403,7 @@ class PanoramaService(QObject):
         if feed is None or provider is None or (not force and feed.latest() is None):
             return False
         data = provider()
-        feed.publish(lambda revision: render.report_payload(data, revision=revision))
+        feed.publish(lambda revision: render.report_payload(data, revision=revision, page=self.report_page(name)))
         return True
 
     def report_watched(self, name: str) -> bool:
@@ -405,15 +411,20 @@ class PanoramaService(QObject):
         feed = self._report_feeds.get(name)
         return feed is not None and feed.waiting > 0
 
-    def open_report(self, name: str) -> bool:
+    def open_report(self, name: str, *, note: str = "") -> bool:
         """（界面线程）在浏览器里打开一份报告：起本机服务（**不**采集全景那一轮），开 ``/report/<名字>``。
-        没登记这个名字、或服务起不来返回 False（报告没有离线快照可退）。"""
+        没登记这个名字、或服务起不来返回 False（报告没有离线快照可退）。
+        ``note``：笔记页要直接选中的那一条（跟在令牌后面的 ``&note=<名字>`` 片段：不发给服务器、不进日志）。"""
         if name not in self._reports:
             return False
         self.publish_report(name, force=True)
         url = self._server_url(f"/report/{name}")
         if not url:
             return False
+        if note:
+            from urllib.parse import quote
+
+            url += "&note=" + quote(str(note), safe="")
         self._open_page(url)
         return True
 

@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""工作笔记摆在哪：简报窗口里的「笔记」标签页 + 到点的提醒气泡。
+"""工作笔记摆在哪：浏览器里的笔记页（``open_report``，2026-11-20 起）+ 到点的提醒气泡。
+
+简报窗口里的「笔记」标签页（``WorkNotesPanel``）还留着：没给 ``open_report``、或浏览器开不了（本机服务起不来）时退回它；
+Qt 壳整个下线是 M4b 的最后一项。
 
 标签页：上面一个输入框（粘贴 Slack / Jira 链接或片段，Ctrl+Enter 记下），中间笔记列表，下面
 选中那条的全文（摘要 + 原文）和几个按钮：在 Obsidian 打开、重新总结、稍后、完成。
@@ -301,14 +304,17 @@ class WorkNotesController(QObject):
 
     def __init__(self, host, service, *, open_window: Callable[[], None] | None = None,
                  colors: dict | None = None, confirm: Callable[[str, str], bool] | None = None,
-                 slack: bool = False, parent: QObject | None = None) -> None:
-        """``slack=True``：这是「Slack 关注」页的控制器——提醒的「查看」直接开那条 Slack 链接，提醒 id 另起前缀。"""
+                 slack: bool = False, open_report: Callable[[str], object] | None = None,
+                 parent: QObject | None = None) -> None:
+        """``slack=True``：这是「Slack 关注」页的控制器——提醒的「查看」直接开那条 Slack 链接，提醒 id 另起前缀。
+        ``open_report(name)``：在浏览器里开笔记页并选中那一条（返回真假）；给了它就不再开 Qt 壳，开不了才退回。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
         self._slack = slack
         self._alert_prefix = SLACK_ALERT_PREFIX if slack else ALERT_PREFIX
         self._open_window = open_window or (lambda: None)
+        self._open_report = open_report
         self._colors = colors
         self._confirm = confirm or _ask
         self._panel: WorkNotesPanel | None = None
@@ -337,6 +343,9 @@ class WorkNotesController(QObject):
         return self._panel
 
     def open_notes(self, name: str = "") -> None:
+        """开到笔记：浏览器里的笔记页（选中 ``name``）；没接页面或开不了时退回 Qt 壳。"""
+        if self._open_report is not None and self._open_report(name):
+            return
         self._open_window()
         if name and self._panel is not None:
             self._panel.select(name)

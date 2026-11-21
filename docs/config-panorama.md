@@ -30,6 +30,7 @@
 | `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
 | `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
 | `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`open_inspiration` |
+| `pet/panorama/notes.py` | 笔记页的数据与动作：`work_notes(service_of, config)` 把 `WorkNotesService` 的现状翻成页面字典（provider 带 `page = "notes"`）；`note_action` 把页面的 `add / done / snooze / delete / resummarize / open_link / obsidian / folder / push` 分发到服务 |
 | `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |
 | `pet/panorama/files.py` | 文件查看的那道门：`VIEWABLE` 名单、`Reader.listing` / `Reader.read`。**只用标准库、不碰 Qt** |
@@ -360,6 +361,29 @@ flowchart LR
 - **隐私**：内容不进全景图、不落快照、不进日志（服务只记请求行）；只经带令牌的接口给 `127.0.0.1` 上的浏览器。
 - 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`items.js` 是报告页的纯函数；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
   （不能拼进全景的离线快照）。
+
+### 笔记页：看、记、处理工作笔记（2026-11-20，M4b 第三项）
+
+报告类页面的第二种外壳。登记方式和报告页一样（`reports={"work_notes": notes.work_notes(…)}`），不同的只是 provider 函数带属性
+`page = "notes"`：服务记在 `_report_pages` 里，`GET /report/work_notes` 发 `notes.html`（`render.report_shell("notes")`），数据里的
+`strings` 换成 `render.NOTES_KEYS` 那套。Feed / `publish_report` / `report_watched` / `open_report` 原样复用；`open_report(name, note=)`
+把要选中的那条放进片段（`#<令牌>&note=<名字>`，`client.takeToken` 把令牌后面的段原样交给页面）。
+
+- **provider 给什么**（`notes.py` 模块说明有全表）：`notes[]` 每条的字段、`counts`、`repo{ready, dir, status}`、`composer`（有没有输入框）、
+  `watch`（Slack 页的检查状态条，笔记页是 null）、`action` / `actions`。顺序在 Python 里排好：未完成的在前（有提醒的按提醒时间，没提醒的
+  按记下时间倒序），已完成的在后。要点 `details_html` 由 `markdown.render` 渲染；原文 `original_html` 只转义 + 裸链接变链接
+  （`markdown.linkify`），**不当 Markdown 解析**。
+- **页面**（`notes.html / notes.css / notes.js`，纯函数在 `notelist.js`）：顶栏 sticky（标题 · 待办 / 有提醒 / 已完成 计数片 · 状态 · 仓库
+  状态 + 「再推一次」· 打开文件夹 · 设置）；下面是输入区（多行框 + 「记下」，Ctrl+Enter）；≥ 980px 两栏——左 380px 列表（筛选片
+  `全部 / 待办 / 有提醒 / 总结中 / 已完成` 带计数、> 5 条有搜索框、每条左边 4px 类型色条 slack / jira / confluence / link / text），右详情卡
+  （类型色磁贴头 + 标题 + 状态徽章、元信息、摘要大字 + 要点、原文、用量小片、动作区：完成为主按钮，打开链接 / Obsidian / 重新总结 /
+  稍后 1 小时 · 3 小时 · 明天 9:00 / 删除）。选中的那条记 `sessionStorage`（刷新不丢）。
+- **动作**：`POST /api/actions/note {report, op, name, text?, minutes?}` → `note_action` 在界面线程上调服务，回 `{state}`；删除前的
+  确认在页面（`confirm()`，同「修复」）。页面拿到回答只在状态栏说一句，**不自己改列表**：服务发 `changed / summarized / synced`，
+  应用 `publish_report("work_notes")`，页面等到新数据再重画（选中、筛选、搜索保持）。
+- **Qt 侧**：`WorkNotesController(open_report=)`——提醒气泡的「查看」、菜单「工作笔记」都开浏览器到那一条；本机服务起不来时退回
+  简报窗口里的「笔记」页（`WorkNotesPanel` 还在，M4b 最后一项才删）。
+- 隐私同报告页：内容只经带令牌的接口给本机浏览器，不进全景图、不落快照、不进日志。
 
 ### 文件查看（只读）
 

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/notes.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap bar">
+    <div class="tl">
+      <h1 id="title"></h1>
+      <div class="counts" id="counts"></div>
+    </div>
+    <div class="tr">
+      <span class="status" id="status"></span>
+      <span class="repo" id="repo"></span>
+      <span class="alt" id="actions"></span>
+      <button class="btn ghost" id="folder" hidden></button>
+      <a class="btn ghost" id="settings-link" href="#"></a>
+    </div>
+  </div>
+</header>
+<div class="lost" id="lost" hidden>__LOST__</div>
+<main class="wrap">
+  <section class="watch" id="watch" hidden></section>
+  <section class="composer" id="composer" hidden>
+    <textarea id="text" rows="3"></textarea>
+    <button class="btn big" id="add"></button>
+  </section>
+  <p class="note empty" id="empty" hidden></p>
+  <div class="grid" id="grid">
+    <aside class="side" id="side">
+      <div class="filters" id="filters"></div>
+      <input class="search" id="search" type="search" hidden>
+      <div class="rows" id="rows"></div>
+    </aside>
+    <section class="detail" id="detail"></section>
+  </div>
+</main>
+<script type="module" src="/notes.js"></script>
+</body>
+</html>

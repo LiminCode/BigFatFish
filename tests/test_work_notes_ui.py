@@ -336,14 +336,21 @@ def test_the_briefing_window_mounts_a_second_pivot_page():
     window.close()
 
 
-def test_the_briefing_controller_mounts_the_notes_page_and_can_open_to_it(briefing_shell, tmp_path, repo):  # noqa: F811
+def test_open_notes_goes_to_the_browser_page_and_falls_back_to_the_qt_shell_only_when_it_cannot(briefing_shell, tmp_path, repo):  # noqa: F811
+    """2026-11-20 起笔记在浏览器里看（配置全景的笔记页）：open_report(name) 开它；本机服务起不来时才退回简报窗口的那一页。"""
     service = _service(tmp_path, repo, _Fakes())
     briefing = briefing_shell.work_briefing
-    notes = WorkNotesController(briefing_shell, service, colors=_COLORS,
+    opened, can = [], {"ok": True}
+    notes = WorkNotesController(briefing_shell, service, colors=_COLORS, open_report=lambda name: (opened.append(name), can["ok"])[1],
                                 open_window=lambda: briefing.open_window(tab="笔记"))
+    notes.open_notes("2026-11-20-1200-x")
+    notes.open_notes()
+    assert opened == ["2026-11-20-1200-x", ""] and briefing.window is None, "开的是浏览器，不建 Qt 窗口"
+    can["ok"] = False
     briefing.tab_providers.append(lambda: [("笔记", notes.panel())])
     try:
         notes.open_notes()
+        assert opened[-1] == "" and briefing.window is not None, "浏览器开不了：退回 Qt 壳"
         assert briefing.window.tabs.count() == 2 and briefing.window.tabs.tabText(1) == "笔记"
         assert briefing.window.tabs.currentIndex() == 1
         briefing.open_window()
@@ -357,21 +364,17 @@ def test_the_briefing_controller_mounts_the_notes_page_and_can_open_to_it(briefi
 def test_the_menu_offers_the_notes_page_under_the_briefing(briefing_shell, tmp_path, repo):  # noqa: F811
     service = _service(tmp_path, repo, _Fakes())
     briefing = briefing_shell.work_briefing
+    opened = []
     briefing_shell.work_notes = WorkNotesController(briefing_shell, service, colors=_COLORS,
-                                                    open_window=lambda: briefing.open_window(tab="笔记"))
-    briefing.tab_providers.append(lambda: [("笔记", briefing_shell.work_notes.panel())])
+                                                    open_report=lambda name: (opened.append(name), True)[1])
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
     entry = _find(menu, "工作笔记")
     assert entry is not None
     agent_link = _find(menu, "Agent 联动").menu()
     assert entry in agent_link.actions(), "用户 2026-10-15：直接放在 Agent 联动 这一层，不藏在 工作简报 里"
     assert _find(_find(agent_link, "工作简报").menu(), "工作笔记") is None
-    try:
-        entry.trigger()
-        assert briefing.window is not None and briefing.window.tabs.tabText(briefing.window.tabs.currentIndex()) == "笔记"
-    finally:
-        if briefing.window is not None:
-            briefing.window.close()
+    entry.trigger()
+    assert opened == [""] and briefing.window is None, "菜单项开的是浏览器里的笔记页"
 
 
 def test_without_the_notes_service_the_menu_is_unchanged(briefing_shell):  # noqa: F811
@@ -420,7 +423,7 @@ def test_every_notes_string_has_both_languages():
 
 
 def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
-    """接线函数本身：开关关着不建；开着就把页挂到简报控制器上。"""
+    """接线函数本身：开关关着不建；开着就建控制器、挂到壳上，不再往简报窗口挂页（笔记在浏览器里看）。"""
     from pet.app import AppShell
 
     config = Config(base=tmp_path / "cfg")
@@ -437,6 +440,7 @@ def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
 
     fake = type("A", (), {})()
     fake.config, fake.app, fake._overlay_shell, fake._work_briefing = config, app, _Shell(), _Briefing()
+    fake._open_report, fake._publish_report = lambda name, note="": True, lambda name: None
     AppShell._start_work_notes(fake)
     assert getattr(fake, "_work_notes", None) is None and _Briefing.tab_providers == []
 
@@ -444,5 +448,6 @@ def test_the_app_wires_notes_only_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")
     AppShell._start_work_notes(fake)
     assert fake._work_notes is not None and fake._overlay_shell.work_notes is fake._work_notes
-    assert len(fake._work_briefing.tab_providers) == 1
+    assert fake._work_briefing.tab_providers == [], "不再挂 Qt 页"
+    assert fake._work_notes._open_report is not None
     fake._work_notes.service.stop()

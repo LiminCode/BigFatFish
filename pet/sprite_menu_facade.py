@@ -594,7 +594,7 @@ class SpriteMenuFacade:
             controller.generate_now()
 
     def open_work_notes(self) -> None:
-        """「工作笔记」：简报窗口开到「笔记」那一页；宿主没接笔记服务就什么都不做。"""
+        """「工作笔记」：开浏览器里的笔记页（控制器没接页面时是简报窗口的那一页）；宿主没接笔记服务就什么都不做。"""
         controller = getattr(self._shell, "work_notes", None)
         if controller is not None:
             controller.open_notes()
