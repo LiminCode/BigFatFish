@@ -14,6 +14,8 @@ let live = null;
 /* 表单的 send：把一次改动连同它所基于的版本交给服务；结果是 {status, body}，连不上就 reject */
 export const sender = (api, group) => (changes, base) =>
   api.patch('/api/settings/' + encodeURIComponent(group), {base: base, changes: changes});
+/* 表单的 act：一项旁边的动作按钮（试听）；和待处理里的「修复」走同一个口 POST /api/actions/<名字> */
+export const actor = api => (name, body) => api.post('/api/actions/' + encodeURIComponent(name), body);
 
 export function settingsPanel(api, S) {
 if (live) return live;
@@ -33,7 +35,7 @@ function open(group, title) {
     `<button class="btn" data-close="1">${esc(S.viewer_close)}</button></header>` +
     `<div class="sbody" id="settings-form"><p class="hint">${esc(S.viewer_loading)}</p></div></div>`;
   api('/api/settings/' + encodeURIComponent(group)).then(desc => { if (mine !== turn) return;
-    form = settingsForm(part('settings-form'), S, sender(api, group), {});
+    form = settingsForm(part('settings-form'), S, sender(api, group), {}, actor(api));
     form.show(desc);
   }).then(null, () => { if (mine === turn) part('settings-form').innerHTML = `<p class="hint">${esc(S.settings_failed)}</p>`; });
 }

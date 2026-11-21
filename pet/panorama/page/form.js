@@ -11,11 +11,15 @@
    长文本可以有「内置文字」（builtin）：值为空时功能实际用的那一段。框里没写东西时显示它；
    存的时候文字和内置的一样，就存空（= 继续用内置，内置以后更新了也跟着更新），和 Qt 设置窗口的提示词编辑器一个规矩。
 
+   一项可以带一个动作按钮（描述里的 action，现在只有「试听」）：点了把组、项和此刻选着的值交给 act(name, body)，
+   回答写在状态行上（played / missing / failed / 连不上），不改任何值、不锁表单。
+
    send(changes, base) 返回一个 Promise，结果是 {status, body}；连不上就 reject。页面上怎么发请求由调用方定。
+   act(name, body) 同样（动作走 POST /api/actions/<name>）；不给 act 就不画动作按钮。
    所有来自服务的文字都转义后再进页面。 */
 import {esc} from './util.js';
 
-export function settingsForm(host, S, send, on) {
+export function settingsForm(host, S, send, on, act) {
 const CUSTOM = '__custom__';
 let st = null;
 const row = id => st.desc.settings.find(r => r.id === id);
@@ -91,11 +95,15 @@ function control(r) {
   return `<textarea data-draft="${key}"${off} id="${id}" rows="${hasBuiltin(r) ? 12 : listy(r) ? 3 : 4}" spellcheck="false">${esc(text)}</textarea>` + buttons(r);
 }
 
+/* 一项旁边的动作按钮（试听）：文字按动作名取（form_<动作名>），锁着的项它也灰 */
+const actionBtn = r => !r.action || !act ? '' :
+  `<button class="btn mini fact" data-act="${esc(r.id)}"${locked(r) ? ' disabled' : ''}>${esc(S['form_' + r.action] || S.form_preview)}</button>`;
+
 function rowHtml(r) {
   const error = st.errors[r.id];
   return `<div class="frow f-${esc(r.control)}${r.control === 'long_text' || listy(r) || recordy(r) ? ' stacked' : ''}${dirty(r) ? ' dirty' : ''}${error ? ' bad' : ''}" data-row="${esc(r.id)}">` +
     `<div class="flabel"><label for="${idOf(r)}">${esc(r.title)}</label>${r.hint ? `<small>${esc(r.hint)}</small>` : ''}</div>` +
-    `<div class="fctl">${control(r)}</div>` +
+    `<div class="fctl">${control(r)}${actionBtn(r)}</div>` +
     (error ? `<p class="ferr" role="alert">${esc(errorText(r, error))}</p>` : '') + '</div>';
 }
 
@@ -181,8 +189,21 @@ host.addEventListener('input', ev => {
   st.drafts[r.id] = t.value;
   refresh(r);
 }, on);
+/* 动作：把此刻选着的值交出去，回答只写在状态行上。不锁表单、不动任何值 */
+function runAct(r) {
+  say(S.form_preview_working);
+  draw();
+  act(r.action, {group: st.desc.group, id: r.id, value: shown(r)}).then(reply => {
+    const state = reply && reply.status === 200 && reply.body && reply.body.state ? reply.body.state : 'failed';
+    say(S['form_preview_' + state] || S.form_preview_failed, state === 'played' ? 'ok' : 'bad');
+    draw();
+  }, () => { say(S.form_lost, 'bad'); draw(); });
+}
+
 host.addEventListener('click', ev => {
   if (ev.target.closest('[data-advanced]')) { st.advanced = !st.advanced; return draw(); }
+  const go = ev.target.closest('[data-act]');
+  if (go) { const r = row(go.dataset.act); if (r && r.action && act && !locked(r)) runAct(r); return; }
   const save = ev.target.closest('[data-save]');
   if (save) { const r = row(save.dataset.save); if (r && dirty(r) && !locked(r)) commit({[r.id]: stored(r, st.drafts[r.id])}); return; }
   const back = ev.target.closest('[data-revert]');

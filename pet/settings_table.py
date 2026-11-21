@@ -24,7 +24,9 @@
   写入时超出范围报 ``out_of_range``（不然 ``normalize`` 会悄悄夹到边上，用户以为存的是 3，其实是 5）；
 - ``unit``：数字后面的单位（文案键），比如「分钟」；
 - ``labels``：只给下拉用——``((可选值, 文案键), ...)``，选项上显示的文字。没写的选项照原样显示值；写了的显示「文字 · 值」，
-  值是空串时只显示文字（个人助理的「跟 AI 对话一致」就是存空串）。
+  值是空串时只显示文字（个人助理的「跟 AI 对话一致」就是存空串）；
+- ``action``：这一项旁边放一个动作按钮（``ACTIONS`` 里的一个名字，页面 ``POST /api/actions/<名字>``，带上组、项和此刻的值）。
+  现在只有 ``preview_sound``：试听一项音效设置选中的声音。动作不是改设置，处理器在 ``pet/panorama/actions.py``。
 
 文字不在这里：标题和说明在字表里，键由 ``title_key`` / ``hint_key`` 给出（默认 ``settings.<组>.<id>`` 和它加 ``_hint``；
 从 Qt 设置窗口搬过来的那些直接沿用原来的键，不抄第二份）。
@@ -39,6 +41,7 @@ from typing import Any, Callable
 
 from . import claude_hooks
 from . import memory_distill as md
+from .click_sound import BUILTIN_AGENT_SOUNDS      # 导入时不碰 Qt（QtMultimedia 在它里面是惰性的）
 from . import session_card_themes as sct
 from . import personal_vault as pv
 from . import slack_watch as sw
@@ -49,6 +52,7 @@ ZONES = ("personal", "work")                # 这一组设置管的是哪个账�
 CONTROLS = ("toggle", "choice", "choice_or_text", "number", "text", "long_text", "lines", "records")
 COMMITS = ("immediate", "on_finish", "confirm")
 DISCLOSURES = ("primary", "advanced")
+ACTIONS = ("preview_sound",)                # 一项设置旁边能放的动作按钮
 _TEXT_CONTROLS = ("text", "long_text")
 
 
@@ -67,6 +71,7 @@ class Setting:
     unit: str = ""                          # 数字的单位（文案键）
     labels: tuple = ()                      # 下拉选项上显示的文字：((值, 文案键), ...)
     fields: tuple = ()                      # records 的列：((字段 id, 文案键), ...)；值是这些字段组成的字典的列表
+    action: str = ""                        # 旁边的动作按钮（ACTIONS 之一）；空 = 没有
 
     @property
     def commit_policy(self) -> str:
@@ -282,6 +287,8 @@ def validate(groups: tuple[Group, ...] | None = None) -> None:
                 raise bad(f"{setting.id}: a choice needs choices")
             if (setting.control == "records") != bool(setting.fields):
                 raise bad(f"{setting.id}: records need fields and only records have them")
+            if setting.action and setting.action not in ACTIONS:
+                raise bad(f"{setting.id}: unknown action {setting.action!r}")
             if setting.id not in produced:
                 raise bad(f"{setting.id}: the feature's normalize() does not produce this key")
             if not _fits(setting.control, produced[setting.id]):
@@ -330,21 +337,36 @@ def _notes_prompt(language: str) -> Setting:
                    text=f"settings.work_notes.prompt_{language}", hint="notes.settings.prompt_hint")
 
 
-#: ``agent_link`` 一个配置键分四组，按配置全景的账号带和磁贴分：本机联动 / WSL 联动（公司带）/ 会话小鱼 / 最近的对话。
-#: 每组的 ``not_editable`` = 其余三组的键 + 四组都不给改的几个（见 _AGENT_LINK_ELSEWHERE）。
+#: ``agent_link`` 一个配置键分五组，按配置全景的账号带和磁贴分：本机联动 / WSL 联动（公司带）/ 会话小鱼 / 最近的对话 /
+#: 会话提示音（2026-11-21 从设置窗口「互动」搬来）。每组的 ``not_editable`` = 其余四组的键 + 五组都不给改的（见 _AGENT_LINK_ELSEWHERE）。
 _AGENT_LINK_GROUPS = {
     "link_win": ("claude", "cursor", "opencode", "custom_agents"),
     "link_wsl": ("claude_wsl",),
     "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models", "session_card_theme",
                      "session_card_text_size"),
     "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max"),
+    "link_sounds": ("sound_enabled", "sound_start_enabled", "sound_start_path", "sound_attention_enabled", "sound_attention_path",
+                    "sound_done_enabled", "sound_done_path", "sound_error_enabled", "sound_error_path", "sound_volume",
+                    "sound_cooldown_seconds"),
 }
 _AGENT_LINK_ELSEWHERE = {
     "dsh": "DSH 联动的菜单项 2026-10-14 下线；从页面打开只会起一个没有桥接插件的监视器，所以不给开（要不要整个删掉另议）",
-    **{key: "提示音效留在设置窗口「互动 · Agent 联动音效」，M7 搬「互动」时一起走" for key in (
-        "sound_enabled", "sound_start_enabled", "sound_done_enabled", "sound_error_enabled", "sound_start_path",
-        "sound_done_path", "sound_error_path", "sound_volume", "sound_cooldown_seconds")},
 }
+
+#: 提示音的可选值：内置的几个（``builtin:<id>``，表在 click_sound）；「自定义…」填音频文件的完整路径。
+_SOUND_EVENTS = ("start", "attention", "done", "error")
+_SOUND_CHOICES = tuple(f"builtin:{sound_id}" for sound_id, _file in BUILTIN_AGENT_SOUNDS)
+# 文案键不能带连字符（i18n 的键名规则），所以 agent-start 的文字在 settings.link_sounds.builtin.agent_start
+_SOUND_LABELS = tuple((f"builtin:{sound_id}", f"settings.link_sounds.builtin.{sound_id.replace('-', '_')}")
+                      for sound_id, _file in BUILTIN_AGENT_SOUNDS)
+
+
+def _sound_event(event: str, title: str, hint: str) -> tuple[Setting, Setting]:
+    """一个时刻的两项：响不响（挂在总开关下）、用哪个声音（挂在这个时刻的开关下，旁边一个「试听」）。"""
+    return (Setting(f"sound_{event}_enabled", "toggle", depends_on="sound_enabled", text=title, hint=hint),
+            Setting(f"sound_{event}_path", "choice_or_text", choices=_SOUND_CHOICES, labels=_SOUND_LABELS,
+                    depends_on=f"sound_{event}_enabled", action="preview_sound",
+                    text=f"settings.link_sounds.sound_{event}_path", hint="settings.link_sounds.path_hint"))
 
 
 #: 会话小鱼上限的硬顶，抄自 ``config.SESSION_PETS_MAX_CAP``（不能导入 ``pet.config``：它经 speech_bubble_text 带进 Qt，
@@ -497,6 +519,20 @@ GROUPS: tuple[Group, ...] = (
                 labels=tuple((size, f"menu.card_text_size.{sct.text_size_name(size)}") for size in sct.TEXT_SIZES),
                 text="menu.shared.detail_card_text_size", hint="settings.session_fish.session_card_text_size_hint"),
     ), "panorama.feature.session_fish"),
+    # 会话提示音：四个时刻各一个开关 + 一个声音（内置几个或自填路径，旁边「试听」是页面上的动作 preview_sound，不改设置）。
+    # 音量 0~1、冷却 0~30 秒照抄 _clean_agent_link_data 夹值的范围。播放点在 AgentLinkManager._emit_sound，读的是配置的当前值，
+    # 所以存了就生效。标题沿用设置窗口原来的文案键；只有「等批准」这个时刻（2026-11-21 新增）和「用哪个声音」几行是新键。
+    _agent_link_group("link_sounds", "personal", (
+        Setting("sound_enabled", "toggle", text="settings.dlg.agent_sound_effects", hint="settings.dlg.play_sound_when_agent_starts"),
+        *_sound_event("start", "settings.dlg.start_sound", "settings.dlg.played_when_agent_starts_working"),
+        *_sound_event("attention", "settings.link_sounds.attention_sound", "settings.link_sounds.attention_sound_hint"),
+        *_sound_event("done", "settings.dlg.done_sound", "settings.dlg.played_when_agent_finishes_task"),
+        *_sound_event("error", "settings.dlg.error_sound", "settings.dlg.played_when_agent_runs_into"),
+        Setting("sound_volume", "number", bounds=(0.0, 1.0), depends_on="sound_enabled", text="settings.dlg.sound_volume",
+                hint="settings.link_sounds.volume_hint"),
+        Setting("sound_cooldown_seconds", "number", bounds=(0.0, 30.0), unit="settings.unit.seconds", disclosure="advanced",
+                depends_on="sound_enabled", text="settings.dlg.cooldown", hint="settings.dlg.keeps_sounds_from_firing_too"),
+    ), "panorama.feature.link_sounds"),
     # 灵动岛「最近的对话」：保留几天、最多几条这两项以前只能手改 config.json，这次一起露出来。
     _agent_link_group("session_history", "personal", (
         Setting("session_history", "toggle", text="menu.shared.remember_recent_chats", hint="settings.session_history.session_history_hint"),

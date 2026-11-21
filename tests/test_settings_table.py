@@ -350,16 +350,19 @@ def test_a_list_of_lines_is_its_own_control():
                                  "settings": (st.Setting("work_roots", "text"),), "not_editable": {}}),))
 
 
-# ───────────────────────── Claude Code 联动 / 会话小鱼 / 最近的对话（M4 第六项）：一个配置键、四组 ─────────────────────────
+# ───────────── Claude Code 联动 / 会话小鱼 / 最近的对话（M4 第六项）/ 会话提示音（2026-11-21）：一个配置键、五组 ─────────────
 
 _AGENT_LINK_GROUPS = {"link_win": ("claude", "cursor", "opencode", "custom_agents"), "link_wsl": ("claude_wsl",),
                       "session_fish": ("session_pets", "session_pets_max", "session_fish_keep_days", "crown_models",
                                        "session_card_theme", "session_card_text_size"),
-                      "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max")}
+                      "session_history": ("session_history", "session_history_rows", "session_history_days", "session_history_max"),
+                      "link_sounds": ("sound_enabled", "sound_start_enabled", "sound_start_path", "sound_attention_enabled",
+                                      "sound_attention_path", "sound_done_enabled", "sound_done_path", "sound_error_enabled",
+                                      "sound_error_path", "sound_volume", "sound_cooldown_seconds")}
 
 
-def test_agent_link_is_four_groups_on_one_config_key():
-    """按配置全景的账号带和磁贴分：本机联动、WSL 联动（公司带、要有 WSL）、会话小鱼、最近的对话。读写都走 config 的清洗函数。"""
+def test_agent_link_is_five_groups_on_one_config_key():
+    """按配置全景的账号带和磁贴分：本机联动、WSL 联动（公司带、要有 WSL）、会话小鱼、最近的对话、会话提示音。读写都走 config 的清洗函数。"""
     from pet import claude_hooks
     from pet.config import _clean_agent_link_data
 
@@ -370,16 +373,18 @@ def test_agent_link_is_four_groups_on_one_config_key():
         for raw in ({}, {"claude": False, "session_pets_max": 99, "crown_models": ["Opus"], "extra": 1}):
             assert groups[group_id].normalize(raw) == _clean_agent_link_data(raw), "读写都走 config 的清洗（惰性导入，模块本身不带 Qt）"
     assert groups["link_wsl"].zone == "work" and groups["link_wsl"].available is not None and groups["link_wsl"].unavailable_text
-    assert {groups[g].zone for g in ("link_win", "session_fish", "session_history")} == {"personal"}
+    assert {groups[g].zone for g in ("link_win", "session_fish", "session_history", "link_sounds")} == {"personal"}
     assert groups["link_wsl"].available() == bool(claude_hooks.wsl_exe())
-    # 每个键恰好在一组里能改，另外三组写明去哪改；dsh / 音效在四组里都只说明不给改（自定义 Agent 2026-11-20 起在 link_win 里改）
+    # 每个键恰好在一组里能改，另外四组写明去哪改；dsh 在五组里都只说明不给改（自定义 Agent 2026-11-20 起在 link_win 里改，
+    # 音效 2026-11-21 起在 link_sounds 里改）
     produced = set(st.flatten(_clean_agent_link_data({})))
     declared = {s.id for g in groups.values() for s in g.settings}
     assert declared <= produced and len(declared) == sum(len(g.settings) for g in groups.values())
     for g in groups.values():
         assert set(g.not_editable) == produced - {s.id for s in g.settings}, g.id
-    for key in ("dsh", "sound_enabled", "sound_volume", "sound_start_path"):
-        assert all(key in g.not_editable for g in groups.values()), key
+    assert all("dsh" in g.not_editable for g in groups.values())
+    for key in ("sound_enabled", "sound_volume", "sound_start_path"):
+        assert all(key in g.not_editable for gid, g in groups.items() if gid != "link_sounds"), key
     custom = next(s for s in groups["link_win"].settings if s.id == "custom_agents")
     assert custom.control == "records" and [name for name, _key in custom.fields] == ["key", "name", "path"]
     assert custom.commit_policy == "on_finish" and custom.disclosure == "advanced"
@@ -428,3 +433,43 @@ def test_agent_link_writes_go_through_the_config_cleaner_and_leave_the_other_gro
     new, errors = st.check_changes(wsl, raw, {"claude_wsl": False})
     assert errors == [] and new["claude_wsl"] is False and new["claude"] is True
     assert st.check_changes(wsl, raw, {"claude": False})[1] == [{"id": "claude", "code": "unknown"}], "本机那条在另一组"
+
+
+# ───────────────────────── 会话提示音（2026-11-21 从设置窗口「互动」搬来） ─────────────────────────
+
+def test_link_sounds_is_the_fifth_agent_link_group_with_a_switch_a_sound_and_a_preview_per_moment():
+    """四个时刻各一个开关 + 一个声音；声音是内置几个或自填路径的下拉，旁边一个「试听」动作；音量、冷却照抄配置的夹值范围。"""
+    from pet.click_sound import BUILTIN_AGENT_SOUNDS
+
+    group = st.group("link_sounds")
+    assert group.config_key == "agent_link" and group.zone == "personal" and group.domain == "automation"
+    by_id = {s.id: s for s in group.settings}
+    assert list(by_id) == ["sound_enabled", "sound_start_enabled", "sound_start_path", "sound_attention_enabled", "sound_attention_path",
+                           "sound_done_enabled", "sound_done_path", "sound_error_enabled", "sound_error_path", "sound_volume",
+                           "sound_cooldown_seconds"]
+    builtin = tuple(f"builtin:{sound_id}" for sound_id, _file in BUILTIN_AGENT_SOUNDS)
+    for moment in ("start", "attention", "done", "error"):
+        assert by_id[f"sound_{moment}_enabled"].control == "toggle" and by_id[f"sound_{moment}_enabled"].depends_on == "sound_enabled"
+        path = by_id[f"sound_{moment}_path"]
+        assert path.control == "choice_or_text" and path.choices == builtin and path.action == "preview_sound"
+        assert path.depends_on == f"sound_{moment}_enabled" and len(path.labels) == len(builtin)
+    assert by_id["sound_volume"].bounds == (0.0, 1.0) and by_id["sound_cooldown_seconds"].bounds == (0.0, 30.0)
+    assert by_id["sound_cooldown_seconds"].disclosure == "advanced" and by_id["sound_cooldown_seconds"].unit
+    defaults = st.defaults(group)
+    assert defaults["sound_enabled"] is False and defaults["sound_attention_path"] == "builtin:agent-attention"
+    assert all(defaults[f"sound_{m}_enabled"] is True for m in ("start", "attention", "done", "error"))
+    # 别的四组都写明了提示音在这一组改；这一组之外不再有「M7 搬」的借口
+    for other in ("link_win", "link_wsl", "session_fish", "session_history"):
+        assert "link_sounds" in st.group(other).not_editable["sound_enabled"]
+    assert "sound_enabled" not in group.not_editable and "dsh" in group.not_editable
+
+
+def test_a_custom_sound_path_is_stored_as_typed_and_an_unknown_action_is_refused():
+    group = st.group("link_sounds")
+    final, errors = st.check_changes(group, {}, {"sound_done_path": "C:/sounds/ding.wav", "sound_volume": 0.3})
+    assert errors == [] and final["sound_done_path"] == "C:/sounds/ding.wav" and final["sound_volume"] == 0.3
+    assert st.check_changes(group, {}, {"sound_done_path": "  C:/x.wav "})[1] == [{"id": "sound_done_path", "code": "rejected"}]   # 页面交来的已去过首尾空白
+    assert st.check_changes(group, {}, {"sound_volume": 1.5}) == (None, [{"id": "sound_volume", "code": "out_of_range"}])
+    assert st.check_changes(group, {}, {"sound_done_path": ""})[1] == [{"id": "sound_done_path", "code": "rejected"}]   # 空会被退回默认
+    with pytest.raises(ValueError):
+        st.validate((_group(settings=(st.Setting("enabled", "toggle", action="dance"),)),))

@@ -23,13 +23,15 @@ def qapp():
 
 
 def test_builtin_agent_sounds_exist_and_valid_wav():
-    """验证三个内置 Agent 音效文件存在，且是合法 16-bit 22050Hz 单声道 WAV。"""
-    for sound_id, key in [
-        ("builtin:agent-start", "agent-start"),
-        ("builtin:agent-done", "agent-done"),
-        ("builtin:agent-error", "agent-error"),
-    ]:
+    """BUILTIN_AGENT_SOUNDS 表里的每个内置 Agent 音效文件都在，且是合法 16-bit 22050Hz 单声道 WAV（表和生成脚本要一致）。"""
+    from pet.click_sound import BUILTIN_AGENT_SOUNDS
+
+    assert [sound_id for sound_id, _file in BUILTIN_AGENT_SOUNDS][:4] == ["agent-start", "agent-done", "agent-error", "agent-attention"]
+    assert len(BUILTIN_AGENT_SOUNDS) >= 8 and len({f for _s, f in BUILTIN_AGENT_SOUNDS}) == len(BUILTIN_AGENT_SOUNDS)
+    for key, file_name in BUILTIN_AGENT_SOUNDS:
+        sound_id = f"builtin:{key}"
         sound_path = resolve_builtin_sound(sound_id)
+        assert sound_path.name == file_name
         assert sound_path is not None, f"无法解析内置音效: {sound_id}"
         assert sound_path.is_file(), f"音效文件不存在: {sound_path}"
         assert sound_path.suffix.lower() == ".wav"
@@ -57,9 +59,7 @@ def test_modern_settings_dialog_round_trip(qapp, tmp_path: Path):
         assert dialog.throw_strength_select.currentData() == "standard"
         assert dialog.click_sound_check.isChecked() is True
         assert dialog.click_sound_volume_spin.value() == 70
-        assert dialog.agent_sound_check.isChecked() is False
-        assert dialog.agent_sound_volume_spin.value() == 65
-        assert dialog.agent_sound_cooldown_spin.value() == 2.0
+        assert not hasattr(dialog, "agent_sound_check"), "Agent 提示音效 2026-11-21 搬到配置全景，这扇窗里没有它的控件了"
         assert dialog.spawn_inherit_size_check.isChecked() is True
         assert dialog.spawn_inherit_dynamic_island_check.isChecked() is False
 
@@ -71,14 +71,6 @@ def test_modern_settings_dialog_round_trip(qapp, tmp_path: Path):
         dialog.spawn_inherit_size_check.setChecked(False)
         dialog.spawn_scale_combo.setCurrentData(0.5)
         dialog.spawn_inherit_dynamic_island_check.setChecked(True)
-
-        dialog.agent_sound_check.setChecked(True)
-        dialog.agent_sound_start_check.setChecked(True)
-        dialog.agent_sound_start_picker.setText("C:/custom/start.wav")
-        dialog.agent_sound_done_check.setChecked(False)
-        dialog.agent_sound_error_check.setChecked(True)
-        dialog.agent_sound_volume_spin.setValue(90)
-        dialog.agent_sound_cooldown_spin.setValue(3.5)
 
         # 3. 触发写入
         ok = dialog._write_config()
@@ -95,15 +87,8 @@ def test_modern_settings_dialog_round_trip(qapp, tmp_path: Path):
     assert reloaded_cfg.get("spawn_inherit_size") is False
     assert abs(reloaded_cfg.get("spawn_scale") - 0.5) < 1e-6
     assert reloaded_cfg.get("spawn_inherit_dynamic_island") is True
-
-    agent_cfg = reloaded_cfg.get("agent_link")
-    assert agent_cfg["sound_enabled"] is True
-    assert agent_cfg["sound_start_enabled"] is True
-    assert agent_cfg["sound_start_path"] == "C:/custom/start.wav"
-    assert agent_cfg["sound_done_enabled"] is False
-    assert agent_cfg["sound_error_enabled"] is True
-    assert abs(agent_cfg["sound_volume"] - 0.90) < 1e-4
-    assert abs(agent_cfg["sound_cooldown_seconds"] - 3.5) < 1e-4
+    # agent_link 这扇窗不再写（提示音效 2026-11-21 搬到配置全景，是它在这扇窗里的最后一组）：盘上还是默认值
+    assert reloaded_cfg.get("agent_link")["sound_enabled"] is False
 
 
 def test_import_dialogue_template_reads_entries_and_top_level_phrases(tmp_path, monkeypatch):
@@ -193,36 +178,6 @@ def test_spawn_smaller_switch_round_trip_and_dependency(qapp, tmp_path: Path):
 
     assert Config(cfg_root).get("spawn_smaller_than_main") is False
 
-
-def test_agent_sound_controls_visibility_and_subcontrols(qapp, tmp_path: Path):
-    """总开关隐藏子项；单事件开关隐藏路径和试听，但保留自身以便恢复。"""
-    cfg_root = tmp_path / "appdata"
-    cfg = Config(cfg_root)
-    dialog = ModernSettingsDialog(cfg, include_ai=False)
-    try:
-        # 初始 sound_enabled=False
-        dialog._update_agent_sound_controls(False)
-        start_row = dialog.findChild(SettingRow, "settingRow_agent_sound_start")
-        assert start_row is not None
-        assert start_row.isHidden() is True
-
-        # 开启总开关
-        dialog.agent_sound_check.setChecked(True)
-        dialog._update_agent_sound_controls(True)
-        assert start_row.isHidden() is False
-
-        # 单独关闭 start 事件
-        dialog.agent_sound_start_check.setChecked(False)
-        assert dialog.agent_sound_start_picker.isHidden() is True
-        assert dialog.agent_sound_start_preview.isHidden() is True
-        assert dialog.agent_sound_start_check.isHidden() is False
-
-        # 打开 start 事件
-        dialog.agent_sound_start_check.setChecked(True)
-        assert dialog.agent_sound_start_picker.isHidden() is False
-        assert dialog.agent_sound_start_preview.isHidden() is False
-    finally:
-        dialog.deleteLater()
 
 def test_dialogue_key_params_match_runtime_call_sites():
     """设置页每 key 的“可用参数”提示直接派生自 PARAMETERS（单一真相源）。

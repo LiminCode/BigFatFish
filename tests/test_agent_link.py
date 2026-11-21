@@ -526,11 +526,13 @@ class TestAgentLinkManager:
             "session_history_rows": 10,
             "sound_enabled": False,
             "sound_start_path": "builtin:agent-start",
+            "sound_attention_path": "builtin:agent-attention",
             "sound_done_path": "builtin:agent-done",
             "sound_error_path": "builtin:agent-error",
             "sound_volume": 0.65,
             "sound_cooldown_seconds": 2.0,
             "sound_start_enabled": True,
+            "sound_attention_enabled": True,
             "sound_done_enabled": True,
             "sound_error_enabled": True,
         }
@@ -1630,6 +1632,29 @@ class TestAgentLinkSounds:
         mgr.cfg.data["agent_link"]["sound_enabled"] = False
         clock[0] += 3
         mgr._on_agent_state("cursor", "working")
+        assert len(calls) == 2
+
+    def test_an_approval_request_plays_the_attention_sound_through_the_same_funnel(self, tmp_path, monkeypatch):
+        """「等批准」（2026-11-21 起的第四个时刻）：有可关联身份的审批请求响一声；它走同一条漏斗——
+        这个时刻的开关关了不响，总开关关了不响，全局冷却也算它。"""
+        mgr, clock, calls = self._make(tmp_path, monkeypatch, sound_cooldown_seconds=0.0)
+        mgr._on_approval_request("claude", {"approvalId": "claude-permission:s1", "sessionId": "s1"})
+        assert len(calls) == 1
+        mgr._on_approval_request("claude", {})                       # 没有身份的记录：不弹窗也不响
+        assert len(calls) == 1
+        mgr.cfg.data["agent_link"]["sound_attention_enabled"] = False
+        clock[0] += 1
+        mgr._on_approval_request("claude", {"approvalId": "claude-permission:s2", "sessionId": "s2"})
+        assert len(calls) == 1
+        mgr.cfg.data["agent_link"]["sound_attention_enabled"] = True
+        mgr.cfg.data["agent_link"]["sound_cooldown_seconds"] = 5.0
+        clock[0] += 10
+        mgr._on_agent_state("dsh", "working")                        # start 占住冷却
+        mgr._on_approval_request("claude", {"approvalId": "claude-permission:s3", "sessionId": "s3"})
+        assert len(calls) == 2, "冷却期内的等批准不响：和别的时刻共用一个冷却"
+        mgr.cfg.data["agent_link"]["sound_enabled"] = False
+        clock[0] += 10
+        mgr._on_approval_request("claude", {"approvalId": "claude-permission:s4", "sessionId": "s4"})
         assert len(calls) == 2
 
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""配置全景页面上的**动作**：不是改一项设置，而是请主进程做一件事。现在只有一个——给联动通道装 hooks。
+"""配置全景页面上的**动作**：不是改一项设置，而是请主进程做一件事：给联动通道装 hooks、重新生成报告、试听一个提示音……
 
 一个动作 = 一个处理器 ``handler(body) -> dict``，由应用构造 ``PanoramaService`` 时登记（``actions={"名字": handler}``），
 页面 ``POST /api/actions/<名字>`` 来调；服务把它转到界面线程上跑（和改设置同一条路，见 ``PanoramaService.on_gui``）。
@@ -12,10 +12,54 @@
 from __future__ import annotations
 
 import weakref
+from pathlib import Path
 from typing import Callable
+
+from .. import settings_table as st
+from ..click_sound import play_sound, resolve_builtin_sound
 
 #: 要靠 hooks 的两条通道 → 它们在图上的哪一侧（装完重探那一侧）
 HOOKED_SIDES = {"claude": "win", "claude_wsl": "wsl"}
+#: 设置表里 ``Setting.action`` 写的名字：一项音效设置旁边的「试听」
+PREVIEW_SOUND_ACTION = "preview_sound"
+
+
+def preview_sound(config_of: Callable[[], object | None], play: Callable[..., object] = play_sound) -> Callable[[object], dict]:
+    """「试听」：请求体 ``{group, id, value?}``——哪一组、哪一项、页面上此刻选着的值（不给就放存着的）。
+
+    值是 ``builtin:<id>`` 就按内置表找文件，否则当作音频文件的路径；文件不在回 ``missing``（页面说一句，不算错误），
+    放了回 ``played``。音量取那一组存着的 ``sound_volume``（没有这一项的组按 1.0）。只认设置表里标了 ``action="preview_sound"``
+    的项，别的项 400。**不存配置、不碰联动的冷却**：它和 ``AgentLinkManager._emit_sound`` 只共用 ``play_sound`` 这一个出口。
+    必须在界面线程上跑（服务的 ``on_gui`` 保证）：``play_sound`` 退到 QtMultimedia 时只能在那条线程上建对象。"""
+    def run(body) -> dict:
+        if not isinstance(body, dict):
+            raise ActionError(400, "bad_request")
+        try:
+            group = st.group(str(body.get("group")))
+        except KeyError:
+            raise ActionError(404, "unknown_group") from None
+        setting = next((item for item in group.settings if item.id == body.get("id")), None)
+        if setting is None or setting.action != PREVIEW_SOUND_ACTION:
+            raise ActionError(400, "bad_setting")
+        config = config_of()
+        if config is None:
+            raise ActionError(503, "no_config")
+        values = st.values(group, config.get(group.config_key))
+        value = body.get("value", values[setting.id])
+        if not isinstance(value, str):
+            raise ActionError(400, "bad_value")
+        value = value.strip()
+        if value.startswith("builtin:"):
+            path = resolve_builtin_sound(value)
+        else:
+            path = Path(value).expanduser() if value else None
+        if path is None or not path.is_file():
+            return {"group": group.id, "id": setting.id, "state": "missing"}
+        volume = values.get("sound_volume", 1.0)
+        play(path, volume=float(volume))
+        return {"group": group.id, "id": setting.id, "state": "played"}
+
+    return run
 
 
 def generate_report(generators: dict) -> Callable[[object], dict]:

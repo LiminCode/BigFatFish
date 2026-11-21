@@ -250,11 +250,13 @@ sequenceDiagram
 
 ### 改设置：页面上的入口
 
-已搬过来的组（2026-11-19）：工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏（两组），以及 `agent_link` 一个配置键分成的四组——
-本机联动 `link_win`、WSL 联动 `link_wsl`（公司带）、会话小鱼 `session_fish`、最近的对话 `session_history`。
+已搬过来的组（2026-11-19）：工作简报、Slack 关注、工作笔记、个人助理、会话记忆蒸馏（两组），以及 `agent_link` 一个配置键分成的五组——
+本机联动 `link_win`、WSL 联动 `link_wsl`（公司带）、会话小鱼 `session_fish`、最近的对话 `session_history`、
+会话提示音 `link_sounds`（2026-11-21 从设置窗口「互动 · Agent 联动音效」搬来：总开关、四个时刻各自的开关和声音、音量、冷却；
+设置窗口原处留 `settings_moved.moved_row`；播放点 `AgentLinkManager._emit_sound` 每次读配置的当前值，存了就生效）。
 搬一组，设置窗口里那一组的控件和保存代码同时删掉，原处留一行说明和一个按钮（ADR 0014：任何时刻一项设置只有一个编辑入口）。
 
-`agent_link` 那四组在设置窗口里本来就没有控件（只有提示音效，仍留在「互动」里，M7 再搬），删的是**右键菜单里的选值子菜单**：
+`agent_link` 前四组在设置窗口里本来就没有控件（提示音效那一组有，2026-11-21 搬的时候删了控件和保存代码），删的是**右键菜单里的选值子菜单**：
 开关留在菜单（通道、每个会话一只小鱼、记录最近的对话），上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数换成一条「会话小鱼设置…」
 （工作简报 / Slack 关注的开关、间隔、「现在生成 / 现在检查」2026-11-21 起也不在菜单里了：页上有，菜单项只开页）
 （`SpriteMenuFacade.open_session_fish_settings` → `open_config_panorama(focus="session_fish")`，会话小鱼自己的菜单同一条）。
@@ -294,6 +296,16 @@ sequenceDiagram
   WSL 那条装完由 `install_finished` 信号触发重探（处理器对同一个管理器只接一次）。
 - **页面**：`repair.js` 的 `actionButton` / `runAction`；结果写在按钮上（`installed` / `pending` / `failed` 可再点 / 连不上可再点）。
   离线快照里按钮是灰的。待处理项在数据里多一个 `action: {name, agent, side}`（`Graph.quest(..., action=)`），别的待处理项没有。
+
+### 动作：设置项旁边的「试听」
+
+第二种动作（2026-11-21）：**一项设置旁边的按钮**。设置表里 `Setting.action` 写一个 `settings_table.ACTIONS` 里的名字（现在只有
+`preview_sound`），`describe` 把它随这一项交给页面；`form.js` 画一个按钮（文字取 `form_<动作名>`），点了把
+`{group, id, value: 页面上此刻选着的值}` `POST /api/actions/<名字>`（`settings.js` 的 `actor`，和「修复」同一个口），回答只写在表单的
+状态行上（`played` / `missing` / 失败 / 连不上），不改任何值、不锁表单、不用确认框。处理器 `actions.preview_sound`：只认设置表里标了这个动作
+的项（别的 400 `bad_setting`），`builtin:<id>` 按 `click_sound.BUILTIN_AGENT_SOUNDS` 找文件、否则当路径，文件不在回 `missing`；音量取那一组
+存着的 `sound_volume`；在界面线程上 `play_sound`（QtMultimedia 的对象只能在那条线程上建）。它和联动真正的播放点只共用 `play_sound`
+这一个出口，不动联动的冷却。
 
 ```mermaid
 flowchart LR

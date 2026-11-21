@@ -1091,9 +1091,10 @@ def test_collision_sound_rows_return_to_pet_collision_groups(tmp_path, monkeypat
         app.processEvents()
 
 
-def test_agent_sound_rows_stay_in_agent_link_fold(tmp_path, monkeypatch):
-    """Agent 提示音效 6 行按主人拍板留在「自动化与联动」的 Agent 联动折叠框内，
-    不随「语音」域搬家。"""
+def test_agent_sound_settings_moved_to_panorama_leave_one_jump_row_in_agent_link_fold(tmp_path, monkeypatch):
+    """Agent 提示音效 2026-11-21 搬到配置全景（settings_table 的 link_sounds 组，ADR 0014）：设置窗口里那 6 行控件
+    一行不剩，原处只有一行「搬到配置全景了」（settingRow_link_sounds_moved），仍在「自动化与联动」的 Agent 联动折叠框内，
+    不随「语音」域搬家；保存时这扇窗不再写 agent_link（页面改的值不会被盖回去）。"""
     from PySide6.QtWidgets import QApplication
 
     from pet import modern_settings_dialog as settings_mod
@@ -1102,7 +1103,11 @@ def test_agent_sound_rows_stay_in_agent_link_fold(tmp_path, monkeypatch):
 
     app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    dialog = ModernSettingsDialog(Config(tmp_path), include_ai=True)
+    config = Config(tmp_path)
+    config.data["agent_link"]["sound_enabled"] = True
+    config.data["agent_link"]["sound_done_path"] = "builtin:agent-bell"
+    config.save()
+    dialog = ModernSettingsDialog(config, include_ai=True)
     try:
         labels = [dialog.sidebar.item(i).text() for i in range(dialog.sidebar.count())]
         voice_page = dialog.pages.widget(labels.index("语音"))
@@ -1112,25 +1117,18 @@ def test_agent_sound_rows_stay_in_agent_link_fold(tmp_path, monkeypatch):
             for section in dialog.agent_link_box.groups
         ]
         assert "提示音效" in group_titles
-        for setting_id in (
-            "agent_sound_enabled",
-            "agent_sound_start",
-            "agent_sound_done",
-            "agent_sound_error",
-            "agent_sound_volume",
-            "agent_sound_cooldown",
-        ):
-            row = dialog.findChild(SettingRow, f"settingRow_{setting_id}")
-            assert row is not None, f"{setting_id} 行必须存在"
-            assert dialog.agent_link_box.isAncestorOf(row), (
-                f"{setting_id} 必须留在 Agent 联动折叠框内"
-            )
-            assert automation_page.isAncestorOf(row), (
-                f"{setting_id} 必须留在「自动化与联动」域"
-            )
-            assert not voice_page.isAncestorOf(row), (
-                f"{setting_id} 不应被「语音」域收走"
-            )
+        for setting_id in ("agent_sound_enabled", "agent_sound_start", "agent_sound_done", "agent_sound_error",
+                           "agent_sound_volume", "agent_sound_cooldown"):
+            assert dialog.findChild(SettingRow, f"settingRow_{setting_id}") is None, f"{setting_id} 已搬走，不该再有这一行"
+        row = dialog.findChild(SettingRow, "settingRow_link_sounds_moved")
+        assert row is not None and dialog.agent_link_box.isAncestorOf(row) and automation_page.isAncestorOf(row)
+        assert not voice_page.isAncestorOf(row)
+        assert dialog.link_sounds_open_panorama is not None
+        before = dict(config.get("agent_link"))
+        dialog._save_only()
+        app.processEvents()
+        after = Config(tmp_path).get("agent_link")
+        assert after["sound_enabled"] is True and after["sound_done_path"] == "builtin:agent-bell" and after == before
     finally:
         dialog.reject()
         app.processEvents()
@@ -1161,7 +1159,7 @@ def test_sound_and_festival_search_jump_to_owning_domains(tmp_path, monkeypatch)
             ("报时频率", "语音", True),
             ("节日提醒", "语音", True),
             ("立即试听", "语音", True),
-            ("agent_sound_enabled", "自动化与联动", True),
+            ("link_sounds_moved", "自动化与联动", True),
         )
         for query, domain, should_be_visible in cases:
             dialog.search_edit.setText(query)
@@ -1486,58 +1484,6 @@ def test_responsive_action_row_inline_mode_does_not_reserve_compact_height():
     assert row.property("responsiveMode") == "inline"
     assert row.minimumSizeHint().height() == expected_height
     row.close()
-    app.processEvents()
-
-
-def test_compact_agent_sound_controls_reflow_inside_their_setting_row(tmp_path, monkeypatch):
-    from PySide6.QtCore import QPoint
-    from PySide6.QtWidgets import QApplication, QScrollArea
-
-    from pet import modern_settings_dialog as settings_mod
-    from pet.config import Config
-    from pet.modern_settings_dialog import ModernSettingsDialog, SettingRow
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings_mod.autostart_mod, "is_enabled", lambda: False)
-    dialog = ModernSettingsDialog(Config(tmp_path), include_ai=False)
-    dialog.agent_sound_check.setChecked(True)
-    dialog.resize(720, 760)
-    automation_index = next(
-        index for index in range(dialog.sidebar.count())
-        if dialog.sidebar.item(index).text() == "自动化与联动"
-    )
-    dialog.sidebar.setCurrentRow(automation_index)
-    for control in (
-        dialog.agent_sound_start_picker,
-        dialog.agent_sound_start_preview,
-    ):
-        font = control.font()
-        font.setPixelSize(17)
-        control.setFont(font)
-    dialog.show()
-    dialog.resize(721, 760)
-    app.processEvents()
-    dialog.resize(720, 760)
-    app.processEvents()
-
-    row = dialog.findChild(SettingRow, "settingRow_agent_sound_start")
-    for control in (
-        dialog.agent_sound_start_check,
-        dialog.agent_sound_start_picker,
-        dialog.agent_sound_start_preview,
-    ):
-        left = control.mapTo(row, QPoint(0, 0)).x()
-        assert left >= 16
-        assert left + control.width() <= row.width() - 16
-    assert dialog.agent_sound_start_widget.property("responsiveStacked") is True
-    scroll = row.parentWidget()
-    while scroll is not None and not isinstance(scroll, QScrollArea):
-        scroll = scroll.parentWidget()
-    assert scroll is not None
-    row_left = row.mapTo(scroll.viewport(), QPoint(0, 0)).x()
-    assert row_left >= 0
-    assert row_left + row.width() <= scroll.viewport().width()
-    dialog.reject()
     app.processEvents()
 
 

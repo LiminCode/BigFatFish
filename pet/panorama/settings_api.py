@@ -72,6 +72,7 @@ def describe(group: st.Group, raw) -> dict:
             "unit": _text(setting.unit),
             "labels": _labels(setting),
             "fields": [{"id": name, "title": _text(key)} for name, key in setting.fields],
+            "action": setting.action,
         } for setting in group.settings],
     }
 

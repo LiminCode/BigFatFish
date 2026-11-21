@@ -68,7 +68,8 @@ def engine():
 RECORDS = {"id": "custom_agents", "control": "records", "title": "自定义联动 Agent", "hint": "", "default": [],
            "value": [{"key": "gemini", "name": "Gemini", "path": "~/g.jsonl"}], "choices": [], "commit": "on_finish",
            "disclosure": "primary", "depends_on": "", "builtin": None, "min": None, "max": None, "unit": "", "labels": [],
-           "fields": [{"id": "key", "title": "标识"}, {"id": "name", "title": "显示名"}, {"id": "path", "title": "事件文件"}]}
+           "fields": [{"id": "key", "title": "标识"}, {"id": "name", "title": "显示名"}, {"id": "path", "title": "事件文件"}],
+           "action": ""}
 
 
 def _page(engine, steps: str) -> dict:

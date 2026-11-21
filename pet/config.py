@@ -253,14 +253,17 @@ def _default_agent_link_data() -> dict:
         "session_history_max": 30,
         # 列表展开后最多露几行（3~20），超出的在框里滚动
         "session_history_rows": 10,
-        # 音效配置
+        # 提示音：四个时刻（开始干活 / 等批准 / 停下来 / 出错）各一个开关和一个声音（``builtin:<id>`` 见 click_sound.BUILTIN_AGENT_SOUNDS，
+        # 或音频文件的完整路径）；在配置全景「会话提示音」里改（settings_table 的 link_sounds 组）。
         "sound_enabled": False,
         "sound_start_path": "builtin:agent-start",
+        "sound_attention_path": "builtin:agent-attention",
         "sound_done_path": "builtin:agent-done",
         "sound_error_path": "builtin:agent-error",
         "sound_volume": 0.65,
         "sound_cooldown_seconds": 2.0,
         "sound_start_enabled": True,
+        "sound_attention_enabled": True,
         "sound_done_enabled": True,
         "sound_error_enabled": True,
     }
@@ -360,6 +363,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
         "session_history",
         "sound_enabled",
         "sound_start_enabled",
+        "sound_attention_enabled",
         "sound_done_enabled",
         "sound_error_enabled",
     ):
@@ -381,7 +385,7 @@ def _clean_agent_link_data(raw: Any) -> dict:
             result[key] = max(low, min(high, int(raw.get(key, defaults[key]))))
         except (TypeError, ValueError):
             result[key] = defaults[key]
-    for key in ("sound_start_path", "sound_done_path", "sound_error_path"):
+    for key in ("sound_start_path", "sound_attention_path", "sound_done_path", "sound_error_path"):
         if key in raw:
             val = str(raw[key] or "").strip()[:500]
             result[key] = val or defaults[key]

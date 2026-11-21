@@ -326,7 +326,7 @@ def test_the_real_description_of_the_work_briefing_draws_every_setting(engine, m
     html = out["html"]
     for row in desc["settings"]:
         assert f'data-row="{row["id"]}"' in html, row["id"]
-    assert html.count('role="switch"') == 8                               # 开关、只在工作日、6 个来源
+    assert html.count('role="switch"') == 9                               # 开关、只在工作日、7 个来源（#94 加了「当前 Sprint」）
     assert 'data-custom="time"' in html and 'value="07:05"' in html and 'data-custom="model"' in html
     assert html.count('data-builtin="') == 2                              # 两种语言的提示词
     assert "panorama." not in html
@@ -446,3 +446,65 @@ def test_an_integer_choice_is_sent_back_as_a_number(engine):
     out = _run(engine, desc, [_ok(desc, size=115)], "fire('change', {set: 'size'}, '115');")
     assert out["sent"][0]["changes"] == {"size": 115}
     assert 'value="115" selected' in out["html"] and ">small · 85<" in out["html"] and ">100<" in out["html"]
+
+
+
+# ───────────────────────── 一项旁边的动作按钮（试听，2026-11-21） ─────────────────────────
+
+ACT_HARNESS = """
+var acted = [];
+function actor(replies) {
+  return function (name, body) {
+    acted.push({name: name, body: body});
+    var r = replies.shift();
+    return r === undefined ? done(new Error('gone'), true) : done(r, false);
+  };
+}
+"""
+
+
+def _run_act(engine, desc: dict, replies: list, steps: str, *, with_act: bool = True) -> dict:
+    i18n.set_language("zh")
+    strings = json.dumps(render.page_strings(), ensure_ascii=False)
+    actor = f"actor({json.dumps(replies)})" if with_act else "undefined"
+    return _evaluate(engine, FAKE_DOM + HARNESS + ACT_HARNESS + render.bundle(("util.js", "form.js")) + f"""
+        var f = settingsForm(host, {strings}, sender([]), {{}}, {actor});
+        f.show({json.dumps(desc, ensure_ascii=False)});
+        {steps}
+        return JSON.stringify({{html: host.innerHTML, acted: acted, sent: sent}});""")
+
+
+def _desc_with_action() -> dict:
+    desc = _desc()
+    for row in desc["settings"]:
+        row["action"] = "preview_sound" if row["id"] == "time" else ""
+    return desc
+
+
+def test_a_setting_with_an_action_gets_a_button_and_the_others_do_not(engine):
+    html = _run_act(engine, _desc_with_action(), [], "")["html"]
+    assert html.count("data-act=") == 1 and 'data-act="time"' in html and ">试听<" in html
+    assert 'data-act=' not in _run_act(engine, _desc_with_action(), [], "", with_act=False)["html"], "没有 act 就不画动作按钮"
+    assert 'data-act=' not in _run(engine, _desc(), [], "")["html"]
+
+
+def test_clicking_the_action_sends_the_groups_id_and_the_shown_value_and_reports_the_outcome(engine):
+    desc = _desc_with_action()
+    out = _run_act(engine, desc, [{"status": 200, "body": {"state": "played"}}], "fire('click', {act: 'time'});")
+    assert out["acted"] == [{"name": "preview_sound", "body": {"group": "demo", "id": "time", "value": "09:00"}}]
+    assert out["sent"] == [] and "放过了" in out["html"] and 'fstatus ok' in out["html"]
+    missing = _run_act(engine, desc, [{"status": 200, "body": {"state": "missing"}}], "fire('click', {act: 'time'});")["html"]
+    assert "找不到这个音频文件" in missing and 'fstatus bad' in missing
+    failed = _run_act(engine, desc, [{"status": 400, "body": {"error": "bad_setting"}}], "fire('click', {act: 'time'});")["html"]
+    assert "没放出来" in failed
+    lost = _run_act(engine, desc, [], "fire('click', {act: 'time'});")["html"]
+    assert "连接" in lost or "断" in lost or "连不上" in lost
+
+
+def test_the_action_button_is_disabled_and_inert_while_its_setting_is_locked(engine):
+    desc = _desc_with_action()
+    for row in desc["settings"]:
+        if row["id"] == "time":
+            row["depends_on"] = "on"            # 开关 on 是关着的
+    out = _run_act(engine, desc, [{"status": 200, "body": {"state": "played"}}], "fire('click', {act: 'time'});")
+    assert 'data-act="time" disabled' in out["html"] and out["acted"] == []
