@@ -11,7 +11,9 @@
   summary, details_html, original_html, links, usage[]}``——要点是 Markdown 渲染出的 HTML（``markdown.render``），原文**逐字**：
   只转义、裸链接变链接；顺序已经排好：未完成的在前（有提醒的按提醒时间，没提醒的按记下时间倒序），已完成的在后；
 - ``counts``：``{open, due, busy, done}``；``repo``：``{ready, dir, status}``（``status`` 是翻好的那一句：仓库没找到 / git 失败原因，空 = 正常）；
-- ``watch``：只有 Slack 页有（见 ``slack_watch``）；``action`` / ``actions``：和报告页同一种按钮字典（Slack 页的「现在检查」）。
+- ``watch``：只有 Slack 页有（见 ``slack_watch``）：``{checked_at, checked_text, ago_text, found, next_text, summary, error, busy}``；
+  ``action`` / ``actions``：和报告页同一种按钮字典（Slack 页的「现在检查」走报告页的 ``generate_report`` 动作，见 ``check_slack``）；
+  ``unavailable_text``：没接服务时页面说的那一句（每页自己的理由）。
 
 动作走 ``POST /api/actions/note {report, op, name, text?, minutes?}``（``note_action``），在界面线程上调 ``WorkNotesService``。
 隐私：笔记内容只经带令牌的接口给本机浏览器，不落快照、不进日志。
@@ -21,11 +23,13 @@ from __future__ import annotations
 import datetime as dt
 from typing import Callable
 
+from .. import slack_watch as sw
 from .. import work_notes as wn
 from ..i18n import t
 from . import markdown
 from .actions import ActionError
-from .reports import theme
+from .reports import GENERATE_ACTION, theme
+from .sources import L
 
 WORK_NOTES = "work_notes"
 SLACK_WATCH = "slack_watch"
@@ -71,9 +75,10 @@ def order(notes: list[wn.Note]) -> list[wn.Note]:
     return due + rest + done
 
 
-def _base(name: str, title: str, config, *, composer: bool, empty_key: str, settings_focus: str) -> dict:
+def _base(name: str, title: str, config, *, composer: bool, empty_key: str, settings_focus: str, unavailable_key: str) -> dict:
     return {
         "id": name, "page": PAGE, "title": title, "theme": theme(config), "available": False, "settings_focus": settings_focus,
+        "unavailable_text": t(unavailable_key),
         "composer": composer, "placeholder": t("notes.input.placeholder") if composer else "",
         "add_label": t("notes.button.add") if composer else "", "add_hint": t("notes.button.add_hint") if composer else "",
         "empty_text": t(empty_key), "notes": [], "counts": {"open": 0, "due": 0, "busy": 0, "done": 0},
@@ -104,13 +109,80 @@ def fill_notes(data: dict, service, now: dt.datetime | None = None) -> dict:
 def work_notes(service_of: Callable[[], object], config, *, now: Callable[[], dt.datetime] | None = None) -> Callable[[], dict]:
     """工作笔记页的 provider。``service_of()`` 给笔记的 ``WorkNotesService``（功能关着 / 没有 WSL 时是 None）。"""
     def build() -> dict:
-        data = _base(WORK_NOTES, t("notes.menu.open"), config, composer=True, empty_key="notes.hint.empty", settings_focus=WORK_NOTES)
+        data = _base(WORK_NOTES, t("notes.menu.open"), config, composer=True, empty_key="notes.hint.empty", settings_focus=WORK_NOTES,
+                     unavailable_key="panorama.ui.notes_unavailable")
         service = service_of()
         if service is None:
             return data
         return fill_notes(data, service, now() if now else None)
     build.page = PAGE  # type: ignore[attr-defined]
     return build
+
+
+def _ago(then: dt.datetime, now: dt.datetime) -> str:
+    """「N 分钟前」那一句（和页面 ``util.ago`` 同一组字）。"""
+    seconds = max(0.0, (now - then).total_seconds())
+    if seconds < 60:
+        return L("ui.ago_now")
+    if seconds < 3600:
+        return L("ui.ago_minutes", n=int(seconds // 60))
+    if seconds < 86400:
+        return L("ui.ago_hours", n=int(seconds // 3600))
+    return L("ui.ago_days", n=int(seconds // 86400))
+
+
+def watch_block(service, now: dt.datetime) -> dict:
+    """Slack 关注的检查状态条：上次检查（几点、多久前、发现几条、概要）、下一次大约几点（上次 + 间隔）、失败原因、忙不忙。
+    上次的结果来自 ``service.latest()``（状态文件里的最近一次成功）；失败原因是 ``last_error()``（自动检查失败不冒气泡，只在这里看得到）。"""
+    latest = service.latest()
+    block = {"checked_at": "", "checked_text": "", "ago_text": "", "found": None, "next_text": "", "summary": "",
+             "error": str(service.last_error() or ""), "busy": bool(service.busy)}
+    if latest is None or not latest.checked_at:
+        return block
+    try:
+        checked = dt.datetime.fromisoformat(latest.checked_at)
+    except ValueError:
+        return block
+    interval = int(service.settings().get("interval_minutes") or sw.DEFAULT_INTERVAL_MIN)
+    block.update(checked_at=latest.checked_at, checked_text=f"{checked:%m-%d %H:%M}", ago_text=_ago(checked, now), found=len(latest.items),
+                 next_text=f"{checked + dt.timedelta(minutes=interval):%H:%M}", summary=latest.summary)
+    return block
+
+
+def slack_watch(notes_of: Callable[[], object], watch_of: Callable[[], object], config, *,
+                now: Callable[[], dt.datetime] | None = None) -> Callable[[], dict]:
+    """Slack 关注页的 provider：上面是检查状态条 + 「现在检查」，下面是存档（仓库 ``slack/`` 里的那些笔记，没有输入框）。
+    ``watch_of()`` 给 ``SlackWatchService``（没有 WSL 时 None → 页面只说一句不可用）；``notes_of()`` 给存档的 ``WorkNotesService``
+    （工作笔记关着时 None → 只有状态条，列表是空的、说明写着要开工作笔记）。"""
+    def build() -> dict:
+        data = _base(SLACK_WATCH, t("slack.app"), config, composer=False, empty_key="slack.notes.hint.empty", settings_focus=SLACK_WATCH,
+                     unavailable_key="panorama.ui.notes_slack_unavailable")
+        watch = watch_of()
+        if watch is None:
+            return data
+        at = now() if now else dt.datetime.now()
+        data["available"] = True
+        data["watch"] = watch_block(watch, at)
+        data["action"] = {"name": GENERATE_ACTION, "report": SLACK_WATCH, "label": t("slack.button.check"), "hint": ""}
+        notes_service = notes_of()
+        if notes_service is None:
+            data["empty_text"] = t("panorama.ui.notes_slack_no_archive")
+            return data
+        return fill_notes(data, notes_service, at)
+    build.page = PAGE  # type: ignore[attr-defined]
+    return build
+
+
+def check_slack(service_of: Callable[[], object]) -> Callable[[], str]:
+    """Slack 页的「现在检查」（走报告页的 ``generate_report`` 动作）：``unavailable`` / ``busy`` / ``started`` / ``failed``。"""
+    def run() -> str:
+        service = service_of()
+        if service is None:
+            return "unavailable"
+        if service.busy:
+            return "busy"
+        return "started" if service.check_now() else "failed"
+    return run
 
 
 def note_action(services: dict[str, Callable[[], object]]) -> Callable[[object], dict]:

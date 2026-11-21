@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Slack 关注摆在哪：有新的需要你看的 → 一个带按钮的提醒气泡；全文在一个窗口里（复用简报的窗口）。
+"""Slack 关注摆在哪：有新的需要你看的 → 一个带按钮的提醒气泡；最近一次结果和存档在浏览器里的 Slack 关注页
+（``open_report``，2026-11-20 起）；页开不了时退回简报窗口那扇 Qt 窗。
 
 自动检查什么新的都没有时一声不吭；用户点「现在检查」时不管有没有都回一句。失败只在手动时说，
 自动检查失败记在状态文件里（窗口底部能看到），不每 15 分钟冒一次。
@@ -9,6 +10,8 @@
 """
 
 from __future__ import annotations
+
+from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 
@@ -34,11 +37,14 @@ class SlackWatchController(QObject):
 
     SNOOZE_MINUTES = 60
 
-    def __init__(self, host, service, *, notes=None, parent: QObject | None = None) -> None:
+    def __init__(self, host, service, *, notes=None, open_report: Callable[[], object] | None = None,
+                 parent: QObject | None = None) -> None:
+        """``open_report()``：在浏览器里开 Slack 关注页（返回真假）；给了它就不再开 Qt 窗，开不了才退回。"""
         super().__init__(parent or service)
         self._host = host
         self.service = service
         self._notes = notes
+        self._open_report = open_report
         self.window: WorkBriefingWindow | None = None
         service.started.connect(self._on_started)
         service.finished.connect(self._on_finished)
@@ -51,6 +57,9 @@ class SlackWatchController(QObject):
             self._host.show_bubble(t("slack.bubble.started"), 4000)
 
     def open_window(self) -> None:
+        """看最近一次结果：浏览器里的 Slack 关注页；开不了（本机服务起不来）才退回 Qt 窗。"""
+        if self._open_report is not None and self._open_report():
+            return
         if self.window is None:
             self.window = WorkBriefingWindow(title=t("slack.app"), regenerate_label=t("slack.button.check"),
                                              empty_text=t("slack.empty"), busy_text=t("slack.busy"),

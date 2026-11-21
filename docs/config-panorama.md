@@ -30,7 +30,7 @@
 | `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
 | `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
 | `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`open_inspiration` |
-| `pet/panorama/notes.py` | 笔记页的数据与动作：`work_notes(service_of, config)` 把 `WorkNotesService` 的现状翻成页面字典（provider 带 `page = "notes"`）；`note_action` 把页面的 `add / done / snooze / delete / resummarize / open_link / obsidian / folder / push` 分发到服务 |
+| `pet/panorama/notes.py` | 笔记页的数据与动作：`work_notes(service_of, config)` / `slack_watch(notes_of, watch_of, config)` 把 `WorkNotesService`（和 Slack 关注的检查状态）翻成页面字典（provider 带 `page = "notes"`）；`note_action` 把页面的 `add / done / snooze / delete / resummarize / open_link / obsidian / folder / push` 分发到服务；`check_slack` 是 Slack 页「现在检查」的分发项 |
 | `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |
 | `pet/panorama/files.py` | 文件查看的那道门：`VIEWABLE` 名单、`Reader.listing` / `Reader.read`。**只用标准库、不碰 Qt** |
@@ -362,7 +362,7 @@ flowchart LR
 - 两张页共用 `client.js`（取令牌、`api` / `api.patch` / `api.post`）；`items.js` 是报告页的纯函数；`report.js` 是会自己跑起来的入口，**不在 `MODULES` 里**
   （不能拼进全景的离线快照）。
 
-### 笔记页：看、记、处理工作笔记（2026-11-20，M4b 第三项）
+### 笔记页：看、记、处理工作笔记；Slack 关注的状态与存档（2026-11-20，M4b 第三、四项）
 
 报告类页面的第二种外壳。登记方式和报告页一样（`reports={"work_notes": notes.work_notes(…)}`），不同的只是 provider 函数带属性
 `page = "notes"`：服务记在 `_report_pages` 里，`GET /report/work_notes` 发 `notes.html`（`render.report_shell("notes")`），数据里的
@@ -383,6 +383,11 @@ flowchart LR
   应用 `publish_report("work_notes")`，页面等到新数据再重画（选中、筛选、搜索保持）。
 - **Qt 侧**：`WorkNotesController(open_report=)`——提醒气泡的「查看」、菜单「工作笔记」都开浏览器到那一条；本机服务起不来时退回
   简报窗口里的「笔记」页（`WorkNotesPanel` 还在，M4b 最后一项才删）。
+- **Slack 关注页**（`/report/slack_watch`）是同一张页：`composer: false`，顶上多一条**检查状态条**（`watch`：上次检查几点、多久前、
+  发现几条、概要、下一次约几点 = 上次 + 间隔、失败原因、忙不忙）和「现在检查」（走报告页的 `generate_report` 动作，分发表里
+  `slack_watch → SlackWatchService.check_now`）；下面是存档（仓库 `slack/` 里的笔记，`note` 动作同一个处理器，报告名区分服务）。
+  没有 WSL → 整页只说一句；有 WSL 但工作笔记关着 → 只有状态条，列表空、说明写着存档要开工作笔记。检查开始 / 结束、存档变了都
+  `publish_report("slack_watch")`。Qt 的 Slack 关注独立窗口只剩退路。
 - 隐私同报告页：内容只经带令牌的接口给本机浏览器，不进全景图、不落快照、不进日志。
 
 ### 文件查看（只读）

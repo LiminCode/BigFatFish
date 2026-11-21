@@ -12,6 +12,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
+from pet import slack_watch as sw
 from pet import work_notes as wn
 from pet.panorama import markdown, notes, render
 from pet.panorama.actions import ActionError
@@ -154,6 +155,76 @@ def test_linkify_escapes_everything_and_only_turns_bare_urls_into_links():
     assert markdown.linkify("看 https://a.example/x?q=1, 再看 <b>**不是粗体**</b>\n第二行") == (
         '看 <a href="https://a.example/x?q=1" target="_blank" rel="noopener noreferrer">https://a.example/x?q=1</a>, 再看 &lt;b&gt;**不是粗体**&lt;/b&gt;\n第二行')
     assert markdown.linkify("") == ""
+
+
+# ───────────────────────── Slack 关注页 ─────────────────────────
+
+class _Watch:
+    """``SlackWatchService`` 的替身。"""
+
+    def __init__(self, latest=None, *, busy=False, error="", interval=15, started=True):
+        self._latest, self.busy, self._error, self._interval, self._started, self.asked = latest, busy, error, interval, started, 0
+
+    def latest(self):
+        return self._latest
+
+    def last_error(self):
+        return self._error
+
+    def settings(self):
+        return {"interval_minutes": self._interval}
+
+    def check_now(self):
+        self.asked += 1
+        return self._started
+
+
+RESULT = sw.WatchResult(ok=True, summary="发布窗口在等你拍板", items=[{"title": "a", "key": "k1"}, {"title": "b", "key": "k2"}],
+                        checked_at="2026-11-20T17:48:00", seconds=31.0, turns=4)
+
+
+def test_the_slack_page_has_the_check_strip_the_check_button_and_the_archive_without_a_composer():
+    watch, archive = _Watch(RESULT, interval=30), _Service([OLD, DONE])
+    data = notes.slack_watch(lambda: archive, lambda: watch, _config(), now=lambda: NOW)()
+    assert data["id"] == "slack_watch" and data["page"] == "notes" and data["title"] == "Slack 关注" and data["available"] is True
+    assert data["composer"] is False and data["placeholder"] == "" and data["settings_focus"] == "slack_watch" and "Slack 关注记录" in data["empty_text"]
+    assert data["watch"] == {"checked_at": "2026-11-20T17:48:00", "checked_text": "11-20 17:48", "ago_text": "12 分钟前", "found": 2,
+                             "next_text": "18:18", "summary": "发布窗口在等你拍板", "error": "", "busy": False}
+    assert data["action"] == {"name": "generate_report", "report": "slack_watch", "label": "现在检查", "hint": ""}
+    assert [n["name"] for n in data["notes"]] == ["n-old", "n-done"] and data["counts"]["open"] == 1
+
+
+def test_the_check_strip_shows_busy_failure_and_nothing_yet():
+    data = notes.slack_watch(lambda: _Service(), lambda: _Watch(None, busy=True, error="没登录"), _config(), now=lambda: NOW)()
+    assert data["watch"] == {"checked_at": "", "checked_text": "", "ago_text": "", "found": None, "next_text": "", "summary": "", "error": "没登录", "busy": True}
+    old = sw.WatchResult(ok=True, checked_at="2026-11-18T09:00:00")
+    assert notes.watch_block(_Watch(old), NOW)["ago_text"] == "2 天前" and notes.watch_block(_Watch(sw.WatchResult(ok=True, checked_at="坏")), NOW)["checked_text"] == ""
+    assert notes.watch_block(_Watch(sw.WatchResult(ok=True, checked_at="2026-11-20T17:59:30")), NOW)["ago_text"] == "刚刚"
+    assert notes.watch_block(_Watch(sw.WatchResult(ok=True, checked_at="2026-11-20T15:00:00")), NOW)["ago_text"] == "3 小时前"
+
+
+def test_without_wsl_the_slack_page_is_unavailable_and_without_work_notes_only_the_strip_shows():
+    data = notes.slack_watch(lambda: _Service([OLD]), lambda: None, _config(), now=lambda: NOW)()
+    assert data["available"] is False and data["notes"] == [] and data["watch"] is None and "WSL" in data["unavailable_text"]
+    data = notes.slack_watch(lambda: None, lambda: _Watch(RESULT), _config(), now=lambda: NOW)()
+    assert data["available"] is True and data["watch"]["found"] == 2 and data["notes"] == [] and "工作笔记" in data["empty_text"]
+    assert notes.work_notes(lambda: None, _config())()["unavailable_text"].startswith("这台机器上没有这项功能（工作笔记")
+
+
+def test_check_slack_reports_the_service_state():
+    assert notes.check_slack(lambda: None)() == "unavailable"
+    busy = _Watch(None, busy=True)
+    assert notes.check_slack(lambda: busy)() == "busy" and busy.asked == 0
+    ok, failed = _Watch(None), _Watch(None, started=False)
+    assert notes.check_slack(lambda: ok)() == "started" and ok.asked == 1 and notes.check_slack(lambda: failed)() == "failed"
+
+
+def test_the_note_action_tells_the_two_pages_services_apart():
+    work, slack = _Service([DUE]), _Service([OLD])
+    handler = notes.note_action({"work_notes": lambda: work, "slack_watch": lambda: slack})
+    assert handler({"report": "slack_watch", "op": "done", "name": "n-old"})["state"] == "done"
+    assert handler({"report": "work_notes", "op": "done", "name": "n-old"})["state"] == "missing"
+    assert slack.calls == [("done", "n-old")] and work.calls == []
 
 
 # ───────────────────────── 动作 ─────────────────────────

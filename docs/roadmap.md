@@ -110,7 +110,7 @@ flowchart LR
 - [x] 工作简报的阅读页（`/report/work_briefing`：岛按钮、提醒「查看」、菜单都开浏览器；Qt 壳不再带「简报」页）
 - [x] 个人简报（`/report/personal_briefing`：岛上的人形、提醒都开浏览器；Qt 壳只剩灵感页，页上「记灵感…」开它）
 - [x] 工作笔记页（`/report/work_notes`：列表 + 详情 + 记一条 / 完成 / 稍后 / 删除 / 重新总结；菜单、提醒「查看」都开浏览器）
-- [ ] Slack 关注页
+- [x] Slack 关注页（`/report/slack_watch`：检查状态条 + 「现在检查」+ 存档列表；菜单、提醒「查看」都开浏览器）
 - [ ] 下线 `WorkBriefingWindow`
 
 ### M5 能编辑：记忆与知识

@@ -195,6 +195,8 @@ def test_empty_and_unavailable_states(engine):
     assert dom["emptyHidden"] is False and dom["empty"] == "还没有笔记" and dom["gridHidden"] is True and dom["composerHidden"] is False
     dom = _page(engine, [_ok(_payload(available=False, notes=[])), '{"hang": true}'])["dom"]
     assert dom["empty"] == "这台机器上没有这项功能（工作笔记要装了 WSL、并在设置里打开才有）。" and dom["composerHidden"] is True and dom["folderHidden"] is True
+    dom = _page(engine, [_ok(_payload(available=False, notes=[], unavailable_text="Slack 关注要 WSL")), '{"hang": true}'])["dom"]
+    assert dom["empty"] == "Slack 关注要 WSL", "每页自己说为什么不可用"
 
 
 def test_adding_a_note_posts_the_text_and_clears_the_box_when_saved(engine):

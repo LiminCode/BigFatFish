@@ -236,6 +236,19 @@ def test_failures_are_only_said_out_loud_for_manual_checks(tmp_path):
     assert any("没登录" in text for text in host.bubbles) and service.last_error() == "没登录"
 
 
+def test_open_window_goes_to_the_browser_page_and_falls_back_to_the_qt_window_only_when_it_cannot(tmp_path):
+    """2026-11-20 起最近一次结果在浏览器里的 Slack 关注页看；本机服务起不来才退回 Qt 窗。"""
+    service, _made = _service(tmp_path)
+    opened, can = [], {"ok": True}
+    controller = SlackWatchController(FakeHost(), service, open_report=lambda: (opened.append(1), can["ok"])[1])
+    controller.open_window()
+    assert opened == [1] and controller.window is None
+    can["ok"] = False
+    controller.open_window()
+    assert opened == [1, 1] and controller.window is not None and controller.window.isVisible()
+    controller.window.close()
+
+
 def test_the_window_says_so_when_there_is_nothing_yet(tmp_path):
     service, _made = _service(tmp_path, settings={**ON, "enabled": False})
     controller = SlackWatchController(FakeHost(), service)
