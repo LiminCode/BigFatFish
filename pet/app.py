@@ -3085,9 +3085,9 @@ class AppShell:
             logging.exception("工作笔记接线失败")
 
     def _start_slack_notes(self):
-        """「Slack 关注」页（用户 2026-10-20）：Slack 关注查到的每条存成 AI-Base-Memory 的 slack/ 下一条 Markdown，
-        在简报窗口里按最新最前列出，查看 / 稍后 / 完成；稍后到点由同一套提醒气泡再提醒。要工作笔记开着
-        （同一个仓库、同一条 git 通道），简报窗口也得有。返回控制器；没接返回 None。"""
+        """「Slack 关注」的存档（用户 2026-10-20）：Slack 关注查到的每条存成 AI-Base-Memory 的 slack/ 下一条 Markdown，
+        在浏览器里的 Slack 关注页（2026-11-20 起；之前是简报窗口的一页）按最新最前列出，查看 / 稍后 / 完成；稍后到点由
+        同一套提醒气泡再提醒。要工作笔记开着（同一个仓库、同一条 git 通道）。返回控制器；没接返回 None。"""
         briefing = getattr(self, "_work_briefing", None)
         if self._overlay_shell is None or briefing is None:
             return None
@@ -3105,8 +3105,10 @@ class AppShell:
             if not service.settings()["enabled"]:
                 return None
             controller = WorkNotesController(self._overlay_shell, service, slack=True,
+                                             open_report=lambda name="": self._open_report("slack_watch", note=name),
                                              open_window=lambda: briefing.open_window(tab=t("slack.app")))
-            briefing.tab_providers.append(lambda: [(t("slack.app"), controller.panel())])
+            for signal in (service.changed, service.summarized, service.synced):
+                signal.connect(lambda *_: self._publish_report("slack_watch"))
             self._slack_notes = controller
             self._overlay_shell.slack_notes = controller
             service.start()
@@ -3129,7 +3131,11 @@ class AppShell:
 
             service = SlackWatchService(self.config, parent=self.app)
             notes = self._start_slack_notes()
-            self._slack_watch = SlackWatchController(self._overlay_shell, service, notes=notes)
+            # 最近一次结果在浏览器里的 Slack 关注页上看（检查状态条 + 存档）；检查开始 / 结束时让页面重画
+            self._slack_watch = SlackWatchController(self._overlay_shell, service, notes=notes,
+                                                     open_report=lambda: self._open_report("slack_watch"))
+            service.started.connect(lambda *_: self._publish_report("slack_watch"))
+            service.finished.connect(lambda *_: self._publish_report("slack_watch"))
             self._overlay_shell.slack_watch = self._slack_watch
             service.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
@@ -3496,12 +3502,15 @@ class AppShell:
             personal = lambda: getattr(self, "_personal", None)  # noqa: E731
             personal_service = lambda: getattr(personal(), "service", None)  # noqa: E731
             notes_service = lambda: getattr(getattr(self, "_work_notes", None), "service", None)  # noqa: E731
+            slack_notes_service = lambda: getattr(getattr(self, "_slack_notes", None), "service", None)  # noqa: E731
+            slack_watch_service = lambda: getattr(getattr(self, "_slack_watch", None), "service", None)  # noqa: E731
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份。
             # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
             #          （没装聊天模块时同样只显示一句）；个人简报页的「记灵感…」在肥鱼里开 Qt 窗口的灵感页。
-            #          笔记页（notes.py）：工作笔记的列表 / 详情 / 记一条 / 完成 / 稍后 / 删除，动作走 note。
+            #          笔记页（notes.py）：工作笔记的列表 / 详情 / 记一条 / 完成 / 稍后 / 删除，动作走 note；
+            #          Slack 关注页：检查状态条 + 「现在检查」（generate_report 的分发表里多一项）+ 存档列表（同一个 note 动作）。
             service = self._panorama_service = PanoramaService(
                 self.config, health=self._panorama_health, apply=self._apply_external_config_change, parent=self.app,
                 actions={"repair_hooks": panorama_actions.repair_hooks(
@@ -3509,13 +3518,16 @@ class AppShell:
                              lambda side: self._panorama_service.refresh(side)),
                          panorama_reports.GENERATE_ACTION: panorama_actions.generate_report(
                              {panorama_reports.WORK_BRIEFING: panorama_reports.generate_briefing(briefing_service),
-                              panorama_reports.PERSONAL_BRIEFING: panorama_reports.generate_briefing(personal_service)}),
+                              panorama_reports.PERSONAL_BRIEFING: panorama_reports.generate_briefing(personal_service),
+                              panorama_notes.SLACK_WATCH: panorama_notes.check_slack(slack_watch_service)}),
                          panorama_reports.OPEN_INSPIRATION_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_inspiration(personal)}),
-                         panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service})},
+                         panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,
+                                                                                  panorama_notes.SLACK_WATCH: slack_notes_service})},
                 reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
                          panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config),
-                         panorama_notes.WORK_NOTES: panorama_notes.work_notes(notes_service, self.config)})
+                         panorama_notes.WORK_NOTES: panorama_notes.work_notes(notes_service, self.config),
+                         panorama_notes.SLACK_WATCH: panorama_notes.slack_watch(slack_notes_service, slack_watch_service, self.config)})
         return service
 
     def _open_report(self, name: str, *, note: str = "") -> bool:

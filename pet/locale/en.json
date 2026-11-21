@@ -2480,6 +2480,8 @@
   "briefing.bubble.page_failed": "Couldn't open the briefing page: the local service failed to start, see the panorama lines in the log",
   "panorama.ui.report_shell_title": "Big Fat Fish",
   "panorama.ui.notes_unavailable": "This feature is not available on this machine (work notes need WSL and the setting switched on).",
+  "panorama.ui.notes_slack_unavailable": "This feature is not available on this machine (Slack watch needs WSL).",
+  "panorama.ui.notes_slack_no_archive": "The archive needs “Work notes” switched on (same repo): every item Slack watch finds is saved as a note under slack/ and listed here.",
   "panorama.ui.notes_count_open": "{n} open",
   "panorama.ui.notes_count_due": "{n} with reminder",
   "panorama.ui.notes_count_busy": "{n} summarizing",

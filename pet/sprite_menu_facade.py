@@ -630,6 +630,7 @@ class SpriteMenuFacade:
         self._set_slack_watch(interval_minutes=int(minutes))
 
     def open_slack_watch(self) -> None:
+        """「查看最近一次检查」：浏览器里的 Slack 关注页（页开不了时是 Qt 窗）。"""
         controller = self._slack_watch()
         if controller is not None:
             controller.open_window()

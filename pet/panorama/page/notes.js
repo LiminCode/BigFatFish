@@ -59,7 +59,7 @@ import {filterNotes, countsHtml, filterChips, rowsHtml, detailHtml, repoHtml, wa
       return '<button class="btn" data-name="' + esc(a.name) + '" data-report="' + esc(a.report) + '" title="' + esc(a.hint || '') + '">' + esc(a.label) + '</button>';
     }).join('');
     if (R.available === false) {
-      el('empty').hidden = false; el('empty').textContent = S.notes_unavailable || '';
+      el('empty').hidden = false; el('empty').textContent = R.unavailable_text || S.notes_unavailable || '';
       el('grid').hidden = true;
     } else if (!notes.length) {
       el('empty').hidden = false; el('empty').textContent = R.empty_text || '';
