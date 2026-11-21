@@ -336,61 +336,10 @@ def build_character_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:
     return submenu
 
 
-def add_work_briefing_menu(menu: QMenu, pet) -> None:
-    """「工作简报」子菜单：WSL 里的 Claude Code 汇总 Jira / PR / Slack / 日程。
-
-    只有装了 WSL、且宿主接了简报服务（overlay 壳）时才出现。「查看 / 现在生成」是命令，「工作日自动生成」是开关；
-    生成时间、模型、来源这些选值在配置全景上改（「简报设置…」翻到那一组），菜单里不再有第二个入口（ADR 0014）。"""
-    state_of = getattr(pet, "work_briefing_settings", None)
-    settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
-    if settings is None:
-        return
-
-    sub = add_submenu(menu, t("menu.shared.daily_briefing"), None)
-    add_action(sub, t("menu.shared.view_latest"), None, pet.open_work_briefing, close_on_trigger=True)
-    add_action(sub, t("menu.shared.generate_now"), None, pet.generate_work_briefing, close_on_trigger=True)
-    sub.addSeparator()
-    act = sub.addAction(t("menu.shared.generate_weekdays"))
-    act.setCheckable(True)
-    act.setChecked(bool(settings["enabled"]))
-    act.toggled.connect(lambda on: pet.toggle_work_briefing(on))
-    open_settings = getattr(pet, "open_work_briefing_settings", None)
-    if callable(open_settings):
-        add_action(sub, t("menu.shared.briefing_settings"), None, open_settings, close_on_trigger=True)
-
-
-def add_slack_watch_menu(menu: QMenu, pet) -> None:
-    """「Slack 关注」子菜单：电脑在用时每隔几分钟让 WSL 里的 Claude Code 看一眼 Slack。
-
-    和「工作简报」同一个条件才出现（装了 WSL、宿主接了服务）。"""
-    state_of = getattr(pet, "slack_watch_settings", None)
-    settings = state_of() if callable(state_of) and claude_hooks.wsl_exe() else None
-    if settings is None:
-        return
-    from ..slack_watch import INTERVAL_CHOICES
-
-    sub = add_submenu(menu, t("menu.shared.slack_watch"), None)
-    add_action(sub, t("menu.shared.view_latest_check"), None, pet.open_slack_watch, close_on_trigger=True)
-    add_action(sub, t("menu.shared.check_now"), None, pet.check_slack_now, close_on_trigger=True)
-    sub.addSeparator()
-    act = sub.addAction(t("menu.shared.check_automatically_while_i_m"))
-    act.setCheckable(True)
-    act.setChecked(bool(settings["enabled"]))
-    act.toggled.connect(lambda on: pet.toggle_slack_watch(on))
-    interval_menu = add_submenu(sub, t("menu.shared.check_interval"), None)
-    group = QActionGroup(interval_menu)
-    group.setExclusive(True)
-    for value in sorted({*INTERVAL_CHOICES, settings["interval_minutes"]}):
-        choice = interval_menu.addAction(t("menu.shared.every_value_min", value=value))
-        choice.setCheckable(True)
-        choice.setChecked(value == settings["interval_minutes"])
-        group.addAction(choice)
-        connect_action(choice, lambda value=value: pet.set_slack_watch_interval(value))
-
-
 def add_agent_link_menu(menu: QMenu, pet) -> None:
     """Agent 联动二级菜单：开关留在这里（通道、每个会话一只小鱼、记录最近的对话，失败 / 拒绝自动回滚勾选），
-    选值的（上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数）2026-11-19 起在配置全景里改，这里只留一条「会话小鱼设置…」跳过去。"""
+    选值的（上限 / 保留天数 / 配色 / 字号 / 桂冠 / 行数）2026-11-19 起在配置全景里改，这里只留一条「会话小鱼设置…」跳过去。
+    工作简报 / 工作笔记 / Slack 关注 / 会话记忆蒸馏 2026-11-21 起在根菜单第一组（``PAGE_ENTRIES``），不再挂在这里。"""
     sub = add_submenu(menu, t("menu.shared.agent_link"), None)
     agent_cfg = dict(pet.cfg.get('agent_link', {}))
     agents = [
@@ -431,14 +380,6 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
     open_fish_settings = getattr(pet, "open_session_fish_settings", None)
     if callable(open_fish_settings) and (callable(toggle_session_pets) or callable(toggle_session_history)):
         add_action(sub, t("menu.shared.session_fish_settings"), None, open_fish_settings, close_on_trigger=True)
-    # 「工作笔记」直接放在这一层（用户 2026-10-15：Agent 联动 → 工作简报 → 工作笔记 太深）
-    if getattr(getattr(pet, "_shell", None), "work_notes", None) is not None:
-        add_action(sub, t("notes.menu.open"), None, pet.open_work_notes, close_on_trigger=True)
-    # 「会话记忆蒸馏」的独立流程页（2026-10-30）
-    if getattr(getattr(pet, "_shell", None), "memory_distill", None) is not None:
-        add_action(sub, t("distill.menu.open"), None, pet.open_memory_distill, close_on_trigger=True)
-    add_work_briefing_menu(sub, pet)
-    add_slack_watch_menu(sub, pet)
     # 自定义联动 Agent（config.json 的 agent_link.custom_agents，只读监听）：
     # 收进三级子菜单，避免用户配了多个自定义通道后把联动菜单撑长。
     custom_items = [
@@ -453,6 +394,36 @@ def add_agent_link_menu(menu: QMenu, pet) -> None:
             act.setCheckable(True)
             act.setChecked(bool(agent_cfg.get(key, False)))
             act.toggled.connect(lambda on, k=key, a=act: pet.toggle_agent_link(k, on, a))
+
+
+#: 根菜单第一组：浏览器里的页（工作简报 / 个人简报 / 工作笔记 / Slack 关注）和会话记忆蒸馏的流程页（2026-11-21，用户要「放在第一层」）。
+#: 每项 =（动作 id, 壳上挂的控制器属性, 门面方法名, 图标名）。控制器没挂（这台机器没有 WSL / 没装聊天模块 / 功能关着）整项不出现；
+#: 点了只做一件事——开页；页上能做的（重新生成、现在检查、开关、设置）不在菜单里重复（ADR 0014）。托盘菜单用同一张表。
+PAGE_ENTRIES = (
+    ("work_briefing", "work_briefing", "open_work_briefing", "briefing"),
+    ("personal_briefing", "personal", "open_personal_briefing", "person"),
+    ("work_notes", "work_notes", "open_work_notes", "note"),
+    ("slack_watch", "slack_watch", "open_slack_watch", "slack"),
+    ("memory_distill", "memory_distill", "open_memory_distill", "automation"),
+)
+_PAGE_BY_ID = {entry[0]: entry for entry in PAGE_ENTRIES}
+
+
+def page_available(pet, action_id: str) -> bool:
+    """这张页在这台机器上有没有：门面背后的壳挂了对应的控制器（旧 PetWindow 没有壳 → 一律没有）。"""
+    _id, attr, method, _icon = _PAGE_BY_ID[action_id]
+    return callable(getattr(pet, method, None)) and getattr(getattr(pet, "_shell", None), attr, None) is not None
+
+
+def add_page_entry(menu: QMenu, pet, action_id: str, *, icons: bool = True):
+    """根菜单里的一张页：点了开它（菜单收起）。"""
+    _id, _attr, method, icon = _PAGE_BY_ID[action_id]
+    return add_action(menu, t(f"menu.action.{action_id}"), icon if icons else None, getattr(pet, method), close_on_trigger=True)
+
+
+def add_page_entries(menu: QMenu, pet, *, icons: bool = True) -> list:
+    """旧版扁平菜单用：按表顺序把有的页都加上。"""
+    return [add_page_entry(menu, pet, action_id, icons=icons) for action_id, *_rest in PAGE_ENTRIES if page_available(pet, action_id)]
 
 
 def build_size_menu(menu: QMenu, pet, *, icons: bool = True) -> QMenu:

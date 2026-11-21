@@ -13,9 +13,15 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
     assert [node["id"] for node in layout["nodes"]] == [
         "ojingjing",
         "default.separator-profile",
-        "rally_pets",
-        "lineup_pets",
+        "work_briefing",
+        "personal_briefing",
+        "work_notes",
+        "slack_watch",
+        "config_panorama",
+        "default.separator-pages",
         "chat",
+        "todo_panel",
+        "memory_distill",
         "default.separator-interaction",
         "vscode_workspaces",
         "youtube_music",
@@ -25,8 +31,6 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
         "pet_controls",
         "default.separator-pet",
         "agent_link",
-        "todo_panel",
-        "config_panorama",
         "voice_chime_now",
         "voice_chime_toggle",
         "festival_now",
@@ -323,6 +327,11 @@ def test_missing_user_layout_resolves_versioned_default():
         "agent_link",
         "todo_panel",
         "config_panorama",
+        "work_briefing",
+        "personal_briefing",
+        "work_notes",
+        "slack_watch",
+        "memory_distill",
         "voice_chime_now",
         "voice_chime_toggle",
         "festival_now",
@@ -341,17 +350,20 @@ def test_missing_user_layout_resolves_versioned_default():
     assert result.diagnostics == ()
     assert [node["id"] for node in result.nodes if node["type"] != "separator"] == [
         "ojingjing",
-        "rally_pets",
-        "lineup_pets",
+        "work_briefing",
+        "personal_briefing",
+        "work_notes",
+        "slack_watch",
+        "config_panorama",
         "chat",
+        "todo_panel",
+        "memory_distill",
         "vscode_workspaces",
         "youtube_music",
         "claude_desktop",
         "wsl_claude_code",
         "pet_controls",
         "agent_link",
-        "todo_panel",
-        "config_panorama",
         "modern_settings",
         "quit",
     ]
@@ -497,11 +509,12 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     populate_context_menu(menu, FakePet())
 
     root = [action.text() for action in menu.actions() if not action.isSeparator()]
+    # 浏览器里的四张页 + 会话记忆蒸馏：这个假宠没挂控制器，整项不出现；配置全景（第五张页）在第一组
     expected_root = [
         "厉害了我的鲸",
-        "护驾",
-        "列队",
+        "配置全景",
         "AI 对话",
+        "待办提醒",
         "VS Code 工作区",
         "YouTube Music",
         "Claude Desktop",
@@ -511,27 +524,25 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
         "肥鱼设置",
         "退出",
     ]
-    expected_root.insert(-2, "待办提醒")
-    expected_root.insert(-2, "配置全景")
     # 报时/节日四项默认不在菜单上（模板 visible: false，2026-09-19 起）
     assert root == expected_root
     rendered = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
     expected_rendered = [
         "厉害了我的鲸", "|",
-        "护驾", "列队", "AI 对话", "|",
+        "配置全景", "|",
+        "AI 对话", "待办提醒", "|",
         "VS Code 工作区", "YouTube Music",
         "Claude Desktop", "Claude Code（WSL）", "|",
         "肥鱼控制", "|",
         "Agent 联动", "|",
         "肥鱼设置", "退出",
     ]
-    # tools 段顺序：… Agent 联动 待办提醒 配置全景 | 肥鱼设置 退出
     # （报时/节日四项默认 visible: false，不渲染）
-    expected_rendered.insert(-3, "待办提醒")
-    expected_rendered.insert(-3, "配置全景")
     assert rendered == expected_rendered
     pet_controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     assert [action.text() for action in pet_controls.actions() if not action.isSeparator()] == [
+        "护驾",
+        "列队",
         "播放动画",
         "切换角色",
         "播放速率",
@@ -619,7 +630,7 @@ def test_menu_editor_reorders_and_promotes_actions_with_button_controls():
     editor.move_down_action.trigger()
     reordered_ids = [node["id"] for node in editor.value()["nodes"]]
     chat_index = root_ids.index("chat")
-    assert reordered_ids[chat_index : chat_index + 2] == ["default.separator-interaction", "chat"]
+    assert reordered_ids[chat_index : chat_index + 2] == ["todo_panel", "chat"], "往下挪一格：越过待办提醒"
 
     promoted = editor.item_for_action("drag_physics")
     editor.tree.setCurrentItem(promoted)
@@ -2515,8 +2526,9 @@ def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
     assert not set(grouped) & set(root_ids)
     controls = next(node for node in layout["nodes"] if node["id"] == "pet_controls")
     child_ids = [child["id"] for child in controls["children"]]
-    assert child_ids[:4] == grouped and controls["children"][4]["type"] == "separator"
-    assert child_ids[5:] == ["drag_physics", "no_move", "on_top", "autostart", "return_corner", "hide_pet",
+    assert child_ids[:2] == ["rally_pets", "lineup_pets"] and controls["children"][2]["type"] == "separator", "2026-11-21 起护驾 / 列队也收进来，排最前"
+    assert child_ids[3:7] == grouped and controls["children"][7]["type"] == "separator"
+    assert child_ids[8:] == ["drag_physics", "no_move", "on_top", "autostart", "return_corner", "hide_pet",
                              "spawn_pet", "clear_spawned_pets", "golden_spin", "edge_probe"], "原来的控制项一个不少、顺序不变"
 
     class FakePet:
@@ -2536,8 +2548,8 @@ def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
     assert not {"播放动画", "切换角色", "播放速率", "大小"} & set(root)
     controls_menu = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     rendered = ["|" if action.isSeparator() else action.text() for action in controls_menu.actions()]
-    assert rendered[:5] == ["播放动画", "切换角色", "播放速率", "大小", "|"]
-    assert all(controls_menu.actions()[i].menu() is not None for i in range(4)), "四项照旧各带自己的下一级"
+    assert rendered[:8] == ["护驾", "列队", "|", "播放动画", "切换角色", "播放速率", "大小", "|"]
+    assert all(controls_menu.actions()[i].menu() is not None for i in range(3, 7)), "四项照旧各带自己的下一级"
     menu.close()
     app.processEvents()
 

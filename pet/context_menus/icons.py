@@ -311,6 +311,23 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None, ink: str |
         for point in ((12.0, 4.0), (13.5, 4.1), (12.4, 5.1), (12.8, 6.6), (11.4, 5.8), (10.0, 6.6), (10.4, 5.1), (9.3, 4.1), (10.8, 4.0), (11.4, 2.6)):
             star.lineTo(QPointF(*point))
         painter.drawPath(star)
+    elif name == "person":
+        # 个人简报：一个人形（头 + 肩），和岛上的人形同一个意思
+        painter.drawEllipse(QPointF(8.0, 5.2), 2.7, 2.7)
+        painter.drawArc(QRectF(2.8, 9.4, 10.4, 9.2), 0, 180 * 16)
+    elif name == "note":
+        # 工作笔记：折角的便签 + 两行字
+        page = QPainterPath(QPointF(3.2, 2.0))
+        for point in ((9.8, 2.0), (12.8, 5.0), (12.8, 14.0), (3.2, 14.0)):
+            page.lineTo(QPointF(*point))
+        page.closeSubpath()
+        painter.drawPath(page)
+        painter.drawLine(QPointF(9.8, 2.0), QPointF(9.8, 5.0)); painter.drawLine(QPointF(9.8, 5.0), QPointF(12.8, 5.0))
+        painter.drawLine(QPointF(5.6, 8.6), QPointF(10.4, 8.6)); painter.drawLine(QPointF(5.6, 11.2), QPointF(9.0, 11.2))
+    elif name == "slack":
+        # Slack 关注：一个井号（频道）
+        painter.drawLine(QPointF(6.3, 2.6), QPointF(5.3, 13.4)); painter.drawLine(QPointF(10.7, 2.6), QPointF(9.7, 13.4))
+        painter.drawLine(QPointF(2.8, 6.2), QPointF(13.6, 6.2)); painter.drawLine(QPointF(2.4, 9.8), QPointF(13.2, 9.8))
     elif name == "bell":
         # 通知：一只铃铛（钟体 + 底边 + 小铃舌），和灵动岛上的铃铛同一个样子
         bell = QPainterPath(QPointF(3.0, 11.6))

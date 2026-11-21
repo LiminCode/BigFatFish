@@ -150,10 +150,11 @@ flowchart LR
 ### Slack 关注
 
 - **最近一次结果和存档都在浏览器里**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/slack_watch`，
-  机制见[配置全景](config-panorama.md)「笔记页」。菜单「查看最近一次检查」、提醒的「查看」都开它；页上「现在检查」= 菜单的
-  「现在检查」。自动检查失败不冒气泡，页面状态条上看得到原因。本机服务起不来时退回 Qt 窗。
+  机制见[配置全景](config-panorama.md)「笔记页」。右键菜单根菜单第一组的「Slack 关注」、提醒的「查看」都开它；「现在检查」、
+  自动检查的开关和间隔都在页上（菜单里那个子菜单 2026-11-21 删了，ADR 0014）。自动检查失败不冒气泡，页面状态条上看得到原因。
+  本机服务起不来时冒一句气泡。
 - **设置在配置全景上改**：点「Slack 关注」磁贴的「设置」。两个分钟数的范围（间隔 5–240、离开 1–240）照抄 `slack_watch` 的
-  `INTERVAL_RANGE` / `IDLE_RANGE`，改范围时两处一起改（`tests/test_settings_table.py` 会对）。右键菜单里的开关和间隔由主进程直接写，照旧可用。
+  `INTERVAL_RANGE` / `IDLE_RANGE`，改范围时两处一起改（`tests/test_settings_table.py` 会对）。
 - **人在才跑**（`session_active`）：输入桌面名是 `Default`（`OpenInputDesktop` + `GetUserObjectInformationW`；锁屏 / 安全桌面
   时打不开或是 `Winlogon`）**且**最近 `idle_minutes` 分钟内动过键鼠（`GetLastInputInfo`）。探测出错按「不在」算。不用
   `session_watcher` 收到的 WTS 锁屏消息：它是关机闸门的一部分，没有可查询的锁屏状态；直接问系统一次 0.04 ms。
@@ -172,7 +173,7 @@ flowchart LR
 ### 工作笔记
 
 - **看、记、处理都在浏览器里**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/work_notes`，机制见
-  [配置全景](config-panorama.md)「笔记页」。菜单「工作笔记」、提醒气泡的「查看」都开它（「查看」直接选中那一条）；笔记服务每次
+  [配置全景](config-panorama.md)「笔记页」。右键菜单根菜单第一组的「工作笔记」、提醒气泡的「查看」都开它（「查看」直接选中那一条）；笔记服务每次
   `changed / summarized / synced` 都让页面重画。页面上的动作走 `POST /api/actions/note`，删除前在页面上确认。本机服务起不来时
   只冒一句「笔记页打不开」（Qt 的「笔记」页 2026-11-21 随简报窗口一起删了，没有离线退路——原来的窗口也要肥鱼开着才有）。
 - **设置在配置全景上改**：点「工作笔记」磁贴的「设置」（开关、仓库副本目录、模型、effort；中 / 英文两份提示词收在「高级」里）。
@@ -211,7 +212,10 @@ flowchart LR
   本机服务起不来时三个控制器各冒一句「页打不开」（`briefing.bubble.page_failed` / `notes.bubble.page_failed` /
   `slack.bubble.page_failed`）。随之：`WorkBriefingController` 不再有 `window` / `tab_providers`（`open_window()` 这个名字留着，
   菜单外观层和岛都这么调，它现在就是开页），`WorkNotesController` 只剩提醒与「查看」，样式令牌从此只有 `report.css` 顶部那一组。
-- 菜单「工作简报」只剩「查看最近一份 / 现在生成 / 工作日自动生成 / 简报设置…」；生成时间等选值在配置全景上改。
+- **菜单入口在根菜单第一组**（2026-11-21）：工作简报 / 个人简报 / 工作笔记 / Slack 关注 / 配置全景五张页排在彩蛋下面，一项一件事——
+  开页；「现在生成 / 工作日自动生成 / 简报设置…」「现在检查 / 自动检查 / 间隔」那些子菜单删了，页上都有（ADR 0014）。表在
+  `context_menus/shared.py` 的 `PAGE_ENTRIES`（动作 id、壳上的控制器属性、门面方法、图标），注册表、旧版菜单、托盘菜单共用；
+  壳上没挂控制器的页整项不出现。见[设置与菜单](settings-and-menu.md)「右键菜单：布局树」。
 - **主题只有一个来源**：`context_menu_appearance.theme`。页面读它（provider 给 `theme`，页面设 `data-theme`）；还在的 Qt 窗口
   （会话记忆蒸馏、用量看板、岛的连接面板）经 `pet/window_theme.py` 的 `resolve_dark` / `theme_preference` 取同一个偏好，
   记忆蒸馏窗口右上角 ☾ / ☀ `save_theme_preference` 写回它，设置页和右键菜单跟着变——这是有意的全局白天 / 黑夜，不要给某扇窗

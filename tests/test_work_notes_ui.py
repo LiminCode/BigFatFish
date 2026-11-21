@@ -287,17 +287,16 @@ def test_notes_speak_english_when_the_ui_language_is_english(tmp_path, repo):
         i18n.set_language("zh")
 
 
-def test_the_menu_offers_the_notes_page_under_the_briefing(briefing_shell, tmp_path, repo):  # noqa: F811
+def test_the_menu_offers_the_notes_page_at_the_root(briefing_shell, tmp_path, repo):  # noqa: F811
     service = _service(tmp_path, repo, _Fakes())
     opened = []
     briefing_shell.work_notes = WorkNotesController(briefing_shell, service,
                                                     open_report=lambda name: (opened.append(name), True)[1])
     menu = briefing_shell._build_menu_for(briefing_shell.sprite)
     entry = _find(menu, "工作笔记")
-    assert entry is not None
+    assert entry in menu.actions(), "2026-11-21 起在根菜单第一组（之前在 Agent 联动 里）"
     agent_link = _find(menu, "Agent 联动").menu()
-    assert entry in agent_link.actions(), "用户 2026-10-15：直接放在 Agent 联动 这一层，不藏在 工作简报 里"
-    assert _find(_find(agent_link, "工作简报").menu(), "工作笔记") is None
+    assert _find(agent_link, "工作笔记") is None
     entry.trigger()
     assert opened == [""], "菜单项开的是浏览器里的笔记页"
 

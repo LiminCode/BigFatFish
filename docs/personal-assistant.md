@@ -146,7 +146,8 @@ sequenceDiagram
 - **简报在浏览器里读**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)，路线图 M4b 第二项）：岛上的人形、
   提醒的「查看」都走 `open_report("personal_briefing")`（同工作简报那张报告页：概要、用量、分区卡片、筛选、勾掉；
   「这次是怎么生成的」只有一段——怎么连的、工具几轮、读了哪些文件、pull 没成功的原因）；打开即读过；页面开着时不为新一份冒提醒。
-  个人简报没有花费这一项（自己的 key），用量条上不摆。
+  个人简报没有花费这一项（自己的 key），用量条上不摆。右键菜单根菜单第一组有「个人简报」（2026-11-21 起；之前只有岛上的人形），
+  `SpriteMenuFacade.open_personal_briefing` → 同一个 `controller.open_window()`；没接个人助理（没装聊天模块）整项不出现。
 - **记灵感在页面顶部的输入区**（2026-11-21，M4b 收尾）：provider 给 `composer{placeholder, label, hint, status, failed, action}`，
   页面 Ctrl+Enter 或「记下」`POST /api/actions/add_inspiration {report, text}` → 界面线程上 `service.add_inspiration` → 回
   `saved / empty / failed` 和一句状态（`inspiration_status`：正在推 / 已推送到 GitHub（几点）/ 没推上去的原因）；回 `saved` 页面清空框。
