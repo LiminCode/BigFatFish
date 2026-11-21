@@ -46,7 +46,7 @@ def fake_service(monkeypatch):
 # ---------------------------------------------------------------- 右键菜单
 
 def test_menu_item_is_registered_with_a_label_and_an_icon():
-    assert ACTION_LABELS["config_panorama"] == "配置全景" and ACTION_ICONS["config_panorama"] == "branch"
+    assert ACTION_LABELS["config_panorama"] == "配置全景" and ACTION_ICONS["config_panorama"] == "globe"
     assert "config_panorama" in MENU_ACTIONS.ids
     assert MENU_ACTIONS.label("config_panorama") == "配置全景"
 
@@ -151,7 +151,7 @@ def test_shell_opens_the_panorama_from_the_island_panel_and_reuses_one_service(t
         assert len(fake_service.made) == 1 and fake_service.made[0].opened == 1
         assert fake_service.made[0].config is shell.config
         assert fake_service.made[0].apply == shell._apply_external_config_change      # 页面改了设置后跑的应用链，和设置进程存盘后的是同一条
-        assert set(fake_service.made[0].actions) == {"repair_hooks", "generate_report", "add_inspiration", "open_obsidian", "note"}   # 「修复」、「重新生成」、记灵感、开 Obsidian、笔记动作
+        assert set(fake_service.made[0].actions) == {"repair_hooks", "generate_report", "add_inspiration", "open_obsidian", "note", "preview_sound"}   # 「修复」、「重新生成」、记灵感、开 Obsidian、笔记动作
         assert set(fake_service.made[0].reports) == {"work_briefing", "personal_briefing", "work_notes", "slack_watch"}   # 报告页与笔记页都登记进了服务
         shell._api_key_monitor.status_changed.emit("bad", "DeepSeek · 认证失败")
         state, _detail = fake_service.made[0].health()

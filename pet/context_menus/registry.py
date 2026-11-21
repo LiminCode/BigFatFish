@@ -82,7 +82,7 @@ ACTION_ICONS = {
     "work_briefing": "briefing", "personal_briefing": "person", "work_notes": "note", "slack_watch": "slack",
     "memory_distill": "automation",
     "todo_panel": "todo",
-    "config_panorama": "branch",
+    "config_panorama": "globe",
     "modern_settings": "settings", "quit": "quit",
     "voice_chime_now": "chat", "voice_chime_toggle": "chat",
     "festival_now": "todo", "festival_toggle": "todo",
@@ -144,7 +144,7 @@ def _build_todo_panel(menu, pet):
 
 
 def _build_config_panorama(menu, pet):
-    return add_action(menu, t("menu.registry.config_panorama"), "branch", pet.on_open_config_panorama, close_on_trigger=True)
+    return add_action(menu, t("menu.registry.config_panorama"), "globe", pet.on_open_config_panorama, close_on_trigger=True)
 
 
 def _build_voice_chime_now(menu, pet):

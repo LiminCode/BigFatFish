@@ -402,6 +402,13 @@ def vector_menu_icon(menu: QMenu, name: str, size: int | None = None, ink: str |
         path.moveTo(1.8, 4.0); path.lineTo(6.0, 4.0); path.lineTo(7.6, 5.8); path.lineTo(14.2, 5.8)
         path.lineTo(14.2, 12.8); path.lineTo(1.8, 12.8); path.closeSubpath()
         painter.drawPath(path)
+    elif name == "globe":
+        # 配置全景：一个地球仪——圆、一条经线、赤道和两条纬线（用户 2026-11-21：分支图标代表不了「全景」）
+        painter.drawEllipse(QPointF(8.0, 8.0), 6.2, 6.2)
+        painter.drawEllipse(QPointF(8.0, 8.0), 2.7, 6.2)
+        painter.drawLine(QPointF(1.8, 8.0), QPointF(14.2, 8.0))
+        painter.drawLine(QPointF(3.2, 4.6), QPointF(12.8, 4.6))
+        painter.drawLine(QPointF(3.2, 11.4), QPointF(12.8, 11.4))
     elif name == "branch":
         # Git 分支：主干 + 一条分出去的枝
         painter.drawEllipse(QPointF(5.0, 3.4), 1.6, 1.6)
