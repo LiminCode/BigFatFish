@@ -33,14 +33,21 @@ REPORT_SHELL = "report.html"
 REPORT_STYLES = ("tokens.css", "report.css")
 REPORT_MODULES = ("util.js", "client.js", "items.js", "report.js")
 REPORT_SCRIPT_TAG = '<script type="module" src="/report.js"></script>'
+#: 笔记页（``/report/work_notes`` / ``/report/slack_watch``，见 ``notes.py``）：同一条数据路、另一套外壳和模块。
+NOTES_SHELL = "notes.html"
+NOTES_STYLES = ("tokens.css", "notes.css")
+NOTES_MODULES = ("util.js", "client.js", "notelist.js", "notes.js")
+NOTES_SCRIPT_TAG = '<script type="module" src="/notes.js"></script>'
+#: 报告类页面的种类 → （外壳文件, 它的 script 标签）。provider 函数的 ``page`` 属性选哪一种（没有就是 report）。
+PAGE_SHELLS = {"report": (REPORT_SHELL, REPORT_SCRIPT_TAG), "notes": (NOTES_SHELL, NOTES_SCRIPT_TAG)}
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
 #: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
 MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "viewer.js", "memory.js", "form.js", "settings.js", "repair.js",
            "interact.js", "app.js", "client.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
-ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES + REPORT_STYLES},
-          **{name: "text/javascript; charset=utf-8" for name in MODULES + REPORT_MODULES}}
+ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES + REPORT_STYLES + NOTES_STYLES},
+          **{name: "text/javascript; charset=utf-8" for name in MODULES + REPORT_MODULES + NOTES_MODULES}}
 # 模块里只许这两种写法，bundle() 才拼得起来：整行的具名 import，和顶层声明前的 export。
 _IMPORT_LINE = re.compile(r"^import \{\w+(?:, \w+)*\} from '\./[a-z]+\.js';\n", re.M)
 _EXPORT_PREFIX = re.compile(r"^export (?=(?:function|const) )", re.M)
@@ -63,6 +70,18 @@ REPORT_KEYS = ("report_lost", "report_unavailable", "report_action_started", "re
                "report_action_lost", "report_sections", "report_filters", "report_filter_all", "report_filter_p3",
                "report_filter_p2", "report_filter_p1", "report_filter_bug", "report_filter_upd", "report_hide_done",
                "report_items", "report_untitled", "report_fold", "report_trace", "report_done", "report_action_opened")
+#: 笔记页的界面文字（计数片、筛选片、详情里的字、按钮、动作的回答）；副按钮沿用报告页那几句
+NOTES_KEYS = ("report_lost", "report_action_started", "report_action_busy", "report_action_failed", "report_action_opened",
+              "report_action_lost", "notes_unavailable", "notes_count_open", "notes_count_due", "notes_count_busy", "notes_count_done",
+              "notes_filter_all", "notes_filter_open", "notes_filter_due", "notes_filter_busy", "notes_filter_done", "notes_search",
+              "notes_select", "notes_original", "notes_busy", "notes_busy_short", "notes_no_summary", "notes_remind", "notes_overdue",
+              "notes_done_mark", "notes_kind_slack", "notes_kind_jira", "notes_kind_confluence", "notes_kind_link", "notes_kind_text",
+              "notes_btn_link", "notes_btn_obsidian", "notes_btn_resummarize", "notes_btn_done", "notes_btn_delete", "notes_btn_push",
+              "notes_btn_folder", "notes_btn_settings", "notes_snooze", "notes_snooze_hour", "notes_snooze_three", "notes_snooze_tomorrow",
+              "notes_confirm_delete", "notes_saved", "notes_empty_text", "notes_failed", "notes_started", "notes_opened",
+              "notes_folder_opened", "notes_no_link", "notes_missing", "notes_lost",
+              "notes_watch_last", "notes_watch_found", "notes_watch_next", "notes_watch_never", "notes_watch_busy")
+PAGE_STRING_KEYS = {"report": REPORT_KEYS, "notes": NOTES_KEYS}
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 
@@ -123,18 +142,20 @@ def bundle(names: tuple[str, ...] = MODULES) -> str:
     return "\n".join(parts)
 
 
-def report_payload(report: dict, *, revision: int = 0) -> bytes:
-    """报告页向 ``/api/report/<名字>`` 要到的那份：provider 给的字典 + 编号 + 页面信息 + 几句界面文字。"""
+def report_payload(report: dict, *, revision: int = 0, page: str = "report") -> bytes:
+    """报告页 / 笔记页向 ``/api/report/<名字>`` 要到的那份：provider 给的字典 + 编号 + 页面信息 + 那种页面自己的几句界面文字。"""
     data = {"revision": revision,
             "page": {"lang": _language(), "title": L("ui.report_window_title", title=str(report.get("title") or ""))},
-            "report": report, "strings": {key: L(f"ui.{key}") for key in REPORT_KEYS}}
+            "report": report, "strings": {key: L(f"ui.{key}") for key in PAGE_STRING_KEYS.get(page, REPORT_KEYS)}}
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def report_shell() -> str:
-    """报告页的外壳：公开的静态文件，没有数据，只有结构、语言、临时标题（页面拿到数据后再换）和「连接断了」那句话。"""
-    page = (PAGE_DIR / REPORT_SHELL).read_text(encoding="utf-8")
-    if REPORT_SCRIPT_TAG not in page:
+def report_shell(page: str = "report") -> str:
+    """报告页 / 笔记页的外壳：公开的静态文件，没有数据，只有结构、语言、临时标题（页面拿到数据后再换）和「连接断了」那句话。
+    ``page`` 是 ``PAGE_SHELLS`` 里的一种；不认识的当 report。"""
+    shell_name, script_tag = PAGE_SHELLS.get(page, PAGE_SHELLS["report"])
+    page = (PAGE_DIR / shell_name).read_text(encoding="utf-8")
+    if script_tag not in page:
         raise RuntimeError("report shell lost its script tag")
     return page.replace("__LANG__", _language()).replace("__TITLE__", _html(L("ui.report_shell_title"))).replace(
         "__LOST__", _html(L("ui.report_lost")))

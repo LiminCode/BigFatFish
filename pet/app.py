@@ -3062,21 +3062,22 @@ class AppShell:
             logging.exception("工作简报接线失败")
 
     def _start_work_notes(self) -> None:
-        """工作笔记（可选服务）：挂在简报窗口的「笔记」页里，总结靠 WSL 里的 Claude Code；没开就不接。"""
+        """工作笔记（可选服务）：看、记、处理都在浏览器里的笔记页（配置全景的本机服务，2026-11-20 起；之前是简报窗口的
+        「笔记」页），总结靠 WSL 里的 Claude Code；没开就不接。笔记变了就让页面重画——没人开着页面时 publish 什么都不做。"""
         briefing = getattr(self, "_work_briefing", None)
         if self._overlay_shell is None or briefing is None or getattr(self, "_work_notes", None) is not None:
             return
         try:
             from .work_notes_service import WorkNotesService
-            from .i18n import t
             from .work_notes_ui import WorkNotesController
 
             service = WorkNotesService(self.config, parent=self.app)
             if not service.settings()["enabled"]:
                 return
             controller = WorkNotesController(self._overlay_shell, service,
-                                             open_window=lambda: briefing.open_window(tab=t("notes.tab")))
-            briefing.tab_providers.append(lambda: [(t("notes.tab"), controller.panel())])
+                                             open_report=lambda name="": self._open_report("work_notes", note=name))
+            for signal in (service.changed, service.summarized, service.synced):
+                signal.connect(lambda *_: self._publish_report("work_notes"))
             self._work_notes = controller
             self._overlay_shell.work_notes = controller
             service.start()
@@ -3487,17 +3488,20 @@ class AppShell:
         service = getattr(self, "_panorama_service", None)
         if service is None or not shiboken6.isValid(service):
             from .panorama import actions as panorama_actions
+            from .panorama import notes as panorama_notes
             from .panorama import reports as panorama_reports
             from .panorama.service import PanoramaService
 
             briefing_service = lambda: getattr(getattr(self, "_work_briefing", None), "service", None)  # noqa: E731
             personal = lambda: getattr(self, "_personal", None)  # noqa: E731
             personal_service = lambda: getattr(personal(), "service", None)  # noqa: E731
+            notes_service = lambda: getattr(getattr(self, "_work_notes", None), "service", None)  # noqa: E731
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份。
             # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
             #          （没装聊天模块时同样只显示一句）；个人简报页的「记灵感…」在肥鱼里开 Qt 窗口的灵感页。
+            #          笔记页（notes.py）：工作笔记的列表 / 详情 / 记一条 / 完成 / 稍后 / 删除，动作走 note。
             service = self._panorama_service = PanoramaService(
                 self.config, health=self._panorama_health, apply=self._apply_external_config_change, parent=self.app,
                 actions={"repair_hooks": panorama_actions.repair_hooks(
@@ -3507,14 +3511,16 @@ class AppShell:
                              {panorama_reports.WORK_BRIEFING: panorama_reports.generate_briefing(briefing_service),
                               panorama_reports.PERSONAL_BRIEFING: panorama_reports.generate_briefing(personal_service)}),
                          panorama_reports.OPEN_INSPIRATION_ACTION: panorama_actions.generate_report(
-                             {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_inspiration(personal)})},
+                             {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_inspiration(personal)}),
+                         panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service})},
                 reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
-                         panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config)})
+                         panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config),
+                         panorama_notes.WORK_NOTES: panorama_notes.work_notes(notes_service, self.config)})
         return service
 
-    def _open_report(self, name: str) -> bool:
-        """在浏览器里打开一份报告（工作简报的「查看」走这里）。"""
-        return bool(self._panorama().open_report(name))
+    def _open_report(self, name: str, *, note: str = "") -> bool:
+        """在浏览器里打开一份报告（工作简报的「查看」走这里）；``note`` 让笔记页直接选中那一条。"""
+        return bool(self._panorama().open_report(name, note=note))
 
     def _report_watched(self, name: str) -> bool:
         service = getattr(self, "_panorama_service", None)

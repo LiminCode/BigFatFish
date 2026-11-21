@@ -13,10 +13,11 @@
 | `pet/work_briefing_service.py` | `WorkBriefingService`：每分钟 `check()`，到点在 daemon 线程里 `generate`，信号排队回 GUI 线程落盘 |
 | `pet/work_briefing_ui.py` | `WorkBriefingController`（提醒气泡、岛按钮状态、`tab_providers`；「查看」开浏览器里的简报页）、`WorkBriefingWindow`（Metro 窗口壳：笔记 / Slack 关注 / 个人助理还在用；工作简报的那一页 2026-11-19 起不再加进去） |
 | `pet/panorama/reports.py` / `markdown.py` | 浏览器里的简报页：把 `WorkBriefingService` 的最近一份翻成页面数据，Markdown → HTML。见[配置全景](config-panorama.md)「报告页」 |
+| `pet/panorama/notes.py` | 浏览器里的笔记页：把 `WorkNotesService` 的现状翻成页面数据，页面的动作分发回服务。见[配置全景](config-panorama.md)「笔记页」 |
 | `pet/slack_watch.py` / `slack_watch_service.py` / `slack_watch_ui.py` | Slack 关注：`session_active`、`is_due`、`since_for`、JSON 约定、去重 `fresh_items`、总提醒与存档 |
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
-| `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | 「笔记」页与「Slack 关注」页（同一个面板，`slack=True` 切换）；详情底部的信息栏 |
+| `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | `WorkNotesController`（提醒气泡；`open_report` 开浏览器里的笔记页）；Qt 的「笔记」/「Slack 关注」面板（`slack=True` 切换）只剩退路用，详情底部的信息栏 |
 | `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**三节的设置都已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里只剩跳转那一行和流程说明 |
 | `pet/claude_hooks.py` | `run_wsl` / `wsl_exe`；`HEADLESS_ENV` 与 hook 脚本里认它的那一行 |
 
@@ -167,6 +168,10 @@ flowchart LR
 
 ### 工作笔记
 
+- **看、记、处理都在浏览器里**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/work_notes`，机制见
+  [配置全景](config-panorama.md)「笔记页」。菜单「工作笔记」、提醒气泡的「查看」都开它（「查看」直接选中那一条）；笔记服务每次
+  `changed / summarized / synced` 都让页面重画。页面上的动作走 `POST /api/actions/note`，删除前在页面上确认。本机服务起不来时
+  退回简报窗口里的 Qt 页。
 - **设置在配置全景上改**：点「工作笔记」磁贴的「设置」（开关、仓库副本目录、模型、effort；中 / 英文两份提示词收在「高级」里）。
   目录清空会被 `work_notes.normalize` 退回默认目录，所以页面上清空目录会被拒（`rejected`），要换回默认就填默认路径。
 - **格式**：`note/YYYY-MM-DD-HHMM-<slug>.md`，frontmatter + `# 标题` + `## 原文` / `## AI 摘要` / `## 提醒` 三节。frontmatter
@@ -197,9 +202,9 @@ flowchart LR
   生成开始 / 结束时 `publish_report`，页面原地重画；没人打开过页面时什么都不做。页面上的「重新生成」= `POST /api/actions/generate_report`
   → `WorkBriefingService.generate_now()`。本机服务起不来时冒一句气泡（没有离线退路：原来的窗口也要肥鱼开着）。
   内容只经带令牌的接口给本机浏览器，不进全景图、不落快照；服务日志只有请求行。
-- `WorkBriefingWindow` 现在是别的页的壳：笔记 / Slack 关注（经 `tab_providers` 挂上，`open_window(tab=…)` 开它，建窗口时
-  `briefing_page=False`，没有「简报」页）、右键菜单的 Slack 关注独立窗口（最近一次结果）、个人助理（还带自己的简报页）。
-  都搬到浏览器之后这扇窗删掉（顺序见路线图 M4b）。
+- `WorkBriefingWindow` 现在是别的页的壳：Slack 关注（经 `tab_providers` 挂上，`open_window(tab=…)` 开它，建窗口时
+  `briefing_page=False`，没有「简报」页）、右键菜单的 Slack 关注独立窗口（最近一次结果）、个人助理的灵感页。笔记 2026-11-20 起
+  不再挂进来（只在浏览器开不了时退回）。都搬到浏览器之后这扇窗删掉（顺序见路线图 M4b）。
 - 菜单「工作简报」只剩「查看最近一份 / 现在生成 / 工作日自动生成 / 简报设置…」；生成时间等选值在配置全景上改。
 - **Metro 令牌复用**：颜色直接取 `settings_theme_qss.METRO_TOKENS`，只多链接色、小标签色等几组（`briefing_tokens`）；样式表
   里不许有非零圆角（有测试守着）；pivot 页头哪怕只有一页也显示。

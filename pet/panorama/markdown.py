@@ -115,6 +115,19 @@ def render(text: str, *, bug_mark: str = "") -> str:
     return "\n".join(out)
 
 
+def linkify(text: str) -> str:
+    """逐字的文本 → HTML：只转义，再把裸地址变成新标签页的链接（笔记的原文用：不当 Markdown 解析）。换行原样留着。"""
+    out: list[str] = []
+    pos = 0
+    for match in _BARE_URL.finditer(text):
+        url = match.group(0).rstrip(".,;:!?，。；：")
+        out.append(html.escape(text[pos:match.start()], quote=False))
+        out.append(_anchor(url, html.escape(url)) + html.escape(match.group(0)[len(url):], quote=False))
+        pos = match.end()
+    out.append(html.escape(text[pos:], quote=False))
+    return "".join(out)
+
+
 def _inline(text: str) -> str:
     """行内：先把代码和链接摘出来占位（里面的东西不再被别的规则碰），转义，再放回去。"""
     held: list[str] = []
