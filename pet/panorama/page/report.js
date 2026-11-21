@@ -1,4 +1,4 @@
-/* 报告页的脚本（/report/<名字>，现在只有工作简报）：取令牌 → 向 /api/report/<名字> 要数据 → 摆到页面上 →
+/* 报告页的脚本（/report/<名字>：工作简报、个人简报）：取令牌 → 向 /api/report/<名字> 要数据 → 摆到页面上 →
    带着编号去「等更新的」（服务把请求挂住，生成开始 / 结束那一刻才回），页面原地重画。
 
    页面不认识具体功能：标题、概要、用量、分区、全文、按钮、「这次是怎么生成的」几段都是服务给的字段。
@@ -9,7 +9,9 @@
    全文、每区的 html 都是服务端渲染好的（markdown.py 只会产出那几个标签，别的全转义过了），直接放进去；概要、用量、标题
    这类纯文字这里转义。
    「重新生成」：POST /api/actions/<动作名> {report}；服务回 started 之后不动按钮——生成开始的信号会让页面重画成忙碌，
-   结束再重画成新内容。回 busy 时按钮保持灰，别的回答把原因写在状态栏、按钮放开。 */
+   结束再重画成新内容。回 busy 时按钮保持灰，别的回答把原因写在状态栏、按钮放开。
+   顶部的输入区（composer，个人简报的「记灵感」）：POST /api/actions/<动作名> {report, text}，回 saved 就清空框；推送到哪一步了
+   由服务说（回答里的 status，之后每次重画也带着），页面不自己编。 */
 import {esc} from './util.js';
 import {takeToken, makeApi} from './client.js';
 import {classify, passes, navTiles, filterChips, card} from './items.js';
@@ -22,7 +24,7 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
   var revision = 0, waiting = false, dead = false, S = {};
   var filters = [], hideDone = false, collapsed = {}, doneKey = '', done = {};
 
-  function lost() { dead = true; waiting = false; el('lost').hidden = false; el('action').disabled = true; }
+  function lost() { dead = true; waiting = false; el('lost').hidden = false; el('action').disabled = true; el('add').disabled = true; }
 
   function load(key) { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 隐私窗口等：勾掉就只在这一次 */ } }
@@ -70,10 +72,22 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
       btn.dataset.name = r.action.name;
       btn.dataset.report = r.action.report;
     } else btn.hidden = true;
-    /* 旁边的几个按钮（个人简报的「记灵感…」）：同一个动作通道，回 opened 就在状态栏说一声 */
+    /* 旁边的几个按钮（个人简报的「在 Obsidian 打开 AI-Base」）：同一个动作通道，回 opened 就在状态栏说一声 */
     el('actions').innerHTML = r.available === false ? '' : (r.actions || []).map(function (a) {
       return '<button class="btn" data-name="' + esc(a.name) + '" data-report="' + esc(a.report) + '" title="' + esc(a.hint || '') + '">' + esc(a.label) + '</button>';
     }).join('');
+    /* 顶部的输入区：服务给什么字就摆什么；推送到哪一步了也是服务说的 */
+    var c = r.composer;
+    el('composer').hidden = !(c && r.available !== false);
+    if (c) {
+      el('text').placeholder = c.placeholder || '';
+      el('add').textContent = c.label || '';
+      el('add').dataset.name = c.action.name;
+      el('add').dataset.report = c.action.report;
+      el('composer-hint').textContent = c.hint || '';
+      el('composer-status').textContent = c.status || '';
+      el('composer-status').className = 'cstatus' + (c.failed ? ' bad' : '');
+    }
     /* 详情几段也是服务端渲染好的 HTML（reports.trace_sections），第一段默认展开；里面「到设置里改」的占位换成
        配置全景带令牌的地址（同一个服务、同一个令牌） */
     var settingsUrl = location.origin + '/#' + token + (r.settings_focus ? '&settings=' + encodeURIComponent(r.settings_focus) : '');
@@ -163,6 +177,24 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
     }).then(null, function () { el('status').textContent = S.report_action_lost || ''; btn.disabled = false; });
   }
   el('action').addEventListener('click', function () { act(el('action')); });
+
+  function compose() {
+    var box = el('text'), btn = el('add'), status = el('composer-status');
+    if (btn.disabled || dead) return;
+    if (!String(box.value || '').trim()) { status.textContent = S.report_compose_empty || ''; status.className = 'cstatus bad'; return; }
+    btn.disabled = true;
+    api.post('/api/actions/' + btn.dataset.name, {report: btn.dataset.report, text: box.value}).then(function (r) {
+      var body = r.body || {}, state = body.state;
+      btn.disabled = false;
+      if (r.status === 200 && state === 'saved') box.value = '';
+      status.textContent = body.status || S[state === 'empty' ? 'report_compose_empty' : 'report_action_failed'] || '';
+      status.className = 'cstatus' + (state === 'saved' ? '' : ' bad');
+    }).then(null, function () { btn.disabled = false; status.textContent = S.report_action_lost || ''; status.className = 'cstatus bad'; });
+  }
+  el('add').addEventListener('click', compose);
+  el('text').addEventListener('keydown', function (event) {
+    if ((event.key === 'Enter' || event.keyCode === 13) && (event.ctrlKey || event.metaKey)) { event.preventDefault(); compose(); }
+  });
   el('actions').addEventListener('click', function (event) {
     var btn = event.target.closest ? event.target.closest('[data-name]') : null;
     if (btn) act(btn);

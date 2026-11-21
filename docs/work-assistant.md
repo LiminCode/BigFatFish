@@ -11,13 +11,13 @@
 |---|---|
 | `pet/work_briefing.py` | 零 Qt。配置 `normalize`、`is_due`、放行 / 拒绝名单（含设置里的 `extra_allowed_tools`）、`claude_command`、`pr_command` / `format_pull_requests`、提示词模板与 `render_template`、`parse_output`、`parse_trace`（运行记录）、`linkify`、状态文件 |
 | `pet/work_briefing_service.py` | `WorkBriefingService`：每分钟 `check()`，到点在 daemon 线程里 `generate`，信号排队回 GUI 线程落盘 |
-| `pet/work_briefing_ui.py` | `WorkBriefingController`（提醒气泡、岛按钮状态、`tab_providers`；「查看」开浏览器里的简报页）、`WorkBriefingWindow`（Metro 窗口壳：笔记 / Slack 关注 / 个人助理还在用；工作简报的那一页 2026-11-19 起不再加进去） |
+| `pet/work_briefing_ui.py` | `WorkBriefingController`：提醒气泡、岛按钮状态、「查看」开浏览器里的简报页。Qt 的简报窗口 `WorkBriefingWindow` 2026-11-21 删了；主题偏好的几个函数在 `pet/window_theme.py` |
 | `pet/panorama/reports.py` / `markdown.py` | 浏览器里的简报页：把 `WorkBriefingService` 的最近一份翻成页面数据，Markdown → HTML。见[配置全景](config-panorama.md)「报告页」 |
 | `pet/panorama/notes.py` | 浏览器里的笔记页与 Slack 关注页：把 `WorkNotesService`（和 Slack 关注的检查状态）翻成页面数据，页面的动作分发回服务。见[配置全景](config-panorama.md)「笔记页」 |
 | `pet/slack_watch.py` / `slack_watch_service.py` / `slack_watch_ui.py` | Slack 关注：`session_active`、`is_due`、`since_for`、JSON 约定、去重 `fresh_items`、总提醒与存档；控制器的 `open_report` 开浏览器里的 Slack 关注页 |
 | `pet/work_notes.py` | 零 Qt。`Note`、Markdown 往返 `render` / `parse`、`summarize` / `apply_summary`、提醒、经 WSL 的 git（`sync_command`）、Obsidian 地址 |
 | `pet/work_notes_service.py` | `WorkNotesService(folder=, label=, pull_on_start=)`：落盘、后台总结、进程级 git 锁、每分钟 `check_reminders` |
-| `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | `WorkNotesController`（提醒气泡；`open_report` 开浏览器里的笔记页）；Qt 的「笔记」/「Slack 关注」面板（`slack=True` 切换）只剩退路用，详情底部的信息栏 |
+| `pet/work_notes_ui.py` / `pet/note_meta_bar.py` | `WorkNotesController`（提醒气泡；`open_report` 开浏览器里的笔记页；`slack=True` 是 Slack 存档那一份）；用量数字的缩写与悬停提示（`usage_values`，报告页 / 笔记页用） |
 | `pet/settings_work_briefing.py` / `settings_slack_watch.py` / `settings_work_notes.py` | 设置页「简报与笔记」里的三节，各带默认收起的「这个功能怎么运作」（`settings_help.help_section`）。**三节的设置都已经搬到[配置全景](config-panorama.md)**（声明在 `pet/settings_table.py`），设置窗口里只剩跳转那一行和流程说明 |
 | `pet/claude_hooks.py` | `run_wsl` / `wsl_exe`；`HEADLESS_ENV` 与 hook 脚本里认它的那一行 |
 
@@ -28,7 +28,7 @@ flowchart LR
     subgraph WIN["Windows · 肥鱼进程"]
         SVC["三个服务<br/>每分钟 check()，到点起 daemon 线程"]
         ST[("数据目录的状态文件<br/>只留最近一份")]
-        UI["提醒气泡 / 简报窗口"]
+        UI["提醒气泡 / 浏览器里的报告页、笔记页"]
         REPO[("公司侧笔记仓库副本（NTFS）<br/>note/ slack/ .obsidian")]
     end
     subgraph WSL["WSL · 公司账号"]
@@ -174,7 +174,7 @@ flowchart LR
 - **看、记、处理都在浏览器里**（2026-11-20，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/work_notes`，机制见
   [配置全景](config-panorama.md)「笔记页」。菜单「工作笔记」、提醒气泡的「查看」都开它（「查看」直接选中那一条）；笔记服务每次
   `changed / summarized / synced` 都让页面重画。页面上的动作走 `POST /api/actions/note`，删除前在页面上确认。本机服务起不来时
-  退回简报窗口里的 Qt 页。
+  只冒一句「笔记页打不开」（Qt 的「笔记」页 2026-11-21 随简报窗口一起删了，没有离线退路——原来的窗口也要肥鱼开着才有）。
 - **设置在配置全景上改**：点「工作笔记」磁贴的「设置」（开关、仓库副本目录、模型、effort；中 / 英文两份提示词收在「高级」里）。
   目录清空会被 `work_notes.normalize` 退回默认目录，所以页面上清空目录会被拒（`rejected`），要换回默认就填默认路径。
 - **格式**：`note/YYYY-MM-DD-HHMM-<slug>.md`，frontmatter + `# 标题` + `## 原文` / `## AI 摘要` / `## 提醒` 三节。frontmatter
@@ -205,18 +205,17 @@ flowchart LR
   生成开始 / 结束时 `publish_report`，页面原地重画；没人打开过页面时什么都不做。页面上的「重新生成」= `POST /api/actions/generate_report`
   → `WorkBriefingService.generate_now()`。本机服务起不来时冒一句气泡（没有离线退路：原来的窗口也要肥鱼开着）。
   内容只经带令牌的接口给本机浏览器，不进全景图、不落快照；服务日志只有请求行。
-- `WorkBriefingWindow` 现在只剩退路和个人助理的灵感页：笔记页、Slack 关注页 2026-11-20 起都在浏览器里（`tab_providers`
-  不再挂页，只在浏览器开不了时 `open_window(tab=…)` 退回）。删掉这扇窗是路线图 M4b 的最后一项。
+- **Qt 的简报窗口 `WorkBriefingWindow` 2026-11-21 删了**（路线图 M4b 收尾）：它曾是简报 / 笔记 / Slack 关注 / 个人助理四页的
+  Metro 壳（2026-10-15 起）。四页都在浏览器里之后，剩下的只有「本机服务起不来时退回它」——而原来的窗口也要肥鱼开着才有，
+  并不算离线退路，于是连同 `WorkNotesPanel`、`NoteMetaBar`、个人助理的 `InspirationPanel`、四个 `capture_*` 截图脚本一起删掉；
+  本机服务起不来时三个控制器各冒一句「页打不开」（`briefing.bubble.page_failed` / `notes.bubble.page_failed` /
+  `slack.bubble.page_failed`）。随之：`WorkBriefingController` 不再有 `window` / `tab_providers`（`open_window()` 这个名字留着，
+  菜单外观层和岛都这么调，它现在就是开页），`WorkNotesController` 只剩提醒与「查看」，样式令牌从此只有 `report.css` 顶部那一组。
 - 菜单「工作简报」只剩「查看最近一份 / 现在生成 / 工作日自动生成 / 简报设置…」；生成时间等选值在配置全景上改。
-- **Metro 令牌复用**：颜色直接取 `settings_theme_qss.METRO_TOKENS`，只多链接色、小标签色等几组（`briefing_tokens`）；样式表
-  里不许有非零圆角（有测试守着）；pivot 页头哪怕只有一页也显示。
-- **一张样式表管整扇窗**：挂上来的页不带自己的样式表，靠 objectName 被窗口的样式表选中，换主题只要窗口 `setStyleSheet`
-  一次。
-- **主题只有一个来源**：`context_menu_appearance.theme`。右上角 ☾ / ☀ 写回同一个偏好，设置页和右键菜单会跟着变——这是有意
-  的全局白天 / 黑夜，不要给这扇窗单独加主题键。
-- 正文的链接色、状态小标签在 `setMarkdown` **之后**由 `_decorate` 遍历文本片段上色：Qt 的文档样式表只在导入 HTML 时生效。
-- 笔记的时间 / 模型 / token / 花费 / 用时放在详情下面不随正文滚动的 `NoteMetaBar`，图标自己画线条、跟主题换色；没总结过的
-  只显示时间。
+- **主题只有一个来源**：`context_menu_appearance.theme`。页面读它（provider 给 `theme`，页面设 `data-theme`）；还在的 Qt 窗口
+  （会话记忆蒸馏、用量看板、岛的连接面板）经 `pet/window_theme.py` 的 `resolve_dark` / `theme_preference` 取同一个偏好，
+  记忆蒸馏窗口右上角 ☾ / ☀ `save_theme_preference` 写回它，设置页和右键菜单跟着变——这是有意的全局白天 / 黑夜，不要给某扇窗
+  单独加主题键。
 
 ## 设计取舍
 

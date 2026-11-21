@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Slack 关注的每一条都落成仓库里的 Markdown，并在简报窗口里多一页「Slack 关注」（用户 2026-10-20）。
+"""Slack 关注的每一条都落成仓库里的 Markdown，并在浏览器里的 Slack 关注页列出来（用户 2026-10-20；页面见 test_panorama_notes）。
 
 - 每条需要你看的 Slack 消息 → ``AI-Base-Memory/slack/<日期-时间>-<标题>.md``（和笔记同一种 Obsidian 格式），
   同一条链接不重复存；和 note/ 一起提交推送。
@@ -28,7 +28,7 @@ from pet.slack_watch_ui import ALERT_ID, SlackWatchController
 from pet.work_notes_service import WorkNotesService
 from pet.work_notes_ui import SLACK_ALERT_PREFIX, WorkNotesController
 from tests.test_slack_watch import ITEMS, _claude_json
-from tests.test_work_notes_ui import _COLORS, _Fakes, _Host
+from tests.test_work_notes_ui import _Fakes, _Host
 
 app = QApplication.instance() or QApplication([])
 
@@ -108,7 +108,7 @@ def test_snoozing_a_slack_item_brings_the_fish_back_with_view_snooze_done(tmp_pa
     service = _slack_service(tmp_path, repo, fakes)
     host = _Host()
     opened = []
-    controller = WorkNotesController(host, service, colors=_COLORS, open_window=lambda: opened.append(1), slack=True)
+    controller = WorkNotesController(host, service, open_report=lambda name: (opened.append(name), True)[1], slack=True)
     note, = service.add_slack_items([URGENT])
     assert service.check_reminders() == [], "刚存的不提醒（总提醒已经冒过一次）"
     service.snooze(note.name, 180)
@@ -133,47 +133,23 @@ def test_snoozing_a_slack_item_brings_the_fish_back_with_view_snooze_done(tmp_pa
     assert fakes.syncs[-3:] == ["slack: 稍后再提醒", "slack: 稍后再提醒", "slack: 完成"]
 
 
-def test_viewing_an_item_without_a_link_opens_the_tab_instead(tmp_path, repo):
+def test_viewing_an_item_without_a_link_opens_the_page_at_that_item(tmp_path, repo):
     fakes = _Fakes()
     service = _slack_service(tmp_path, repo, fakes)
     host = _Host()
     opened = []
-    controller = WorkNotesController(host, service, colors=_COLORS, open_window=lambda: opened.append(1), slack=True)
+    controller = WorkNotesController(host, service, open_report=lambda name: (opened.append(name), True)[1], slack=True)
     note, = service.add_slack_items([PLAIN])
     controller.view(note.name)
-    assert fakes.opened == [] and opened == [1]
-    assert controller.panel().current_name() == note.name
+    assert fakes.opened == [] and opened == [note.name], "没有链接：开浏览器里的 Slack 关注页并选中它"
 
 
-# ---------------------------------------------------------------- 「Slack 关注」页
+# ---------------------------------------------------------------- 「Slack 关注」页在浏览器里（test_panorama_notes）；这里只守字表
 
-def test_the_slack_page_has_no_input_but_a_view_button(tmp_path, repo):
-    fakes = _Fakes()
-    service = _slack_service(tmp_path, repo, fakes)
-    controller = WorkNotesController(_Host(), service, colors=_COLORS, slack=True)
-    panel = controller.panel()
-    assert panel.input.isHidden() and panel.add_btn.isHidden() and not panel.view_btn.isHidden()
-    assert panel.view_btn.text() == "查看" and "Slack 关注" in panel.hint_label.text()
-    assert not panel.view_btn.isEnabled(), "没选中就不能点"
-    service.add_slack_items([PLAIN, URGENT])
-    service._now = lambda: NOW + dt.timedelta(minutes=1)
-    service.add_slack_items([{**PLAIN, "title": "新来的一条", "key": "k3"}])
-    assert [panel.list.item(i).text() for i in range(3)] == ["○ 新来的一条", "○ 问你发布窗口定了没", "○ 私信：周会改到四点可以吗"]
-    panel.select(service.notes()[1].name)
-    assert panel.view_btn.isEnabled()
-    panel.view_btn.click()
-    assert fakes.opened == [URGENT["link"]]
-    assert "`urgent`" in panel.detail.toMarkdown() or "urgent" in panel.detail.toPlainText()
-
-
-def test_the_slack_page_speaks_english(tmp_path, repo):
-    service = _slack_service(tmp_path, repo, _Fakes())
-    service._config.set("ui_language", "en")
-    panel = WorkNotesController(_Host(), service, colors=_COLORS, slack=True).panel()
-    assert panel.view_btn.text() == "Open" and "Slack Watch" in panel.hint_label.text()
+def test_every_slack_page_string_has_both_languages():
     zh, en = i18n.table("zh"), i18n.table("en")
     keys = [k for k in zh if k.startswith("slack.notes.")]
-    assert len(keys) >= 5 and all(k in en for k in keys)
+    assert len(keys) >= 3 and all(k in en for k in keys), "存档页的提醒 / 空列表那几句（Qt 面板的「查看」按钮那两句 11-21 删了）"
 
 
 # ---------------------------------------------------------------- 总提醒多一个「稍后 1 小时」，查看开到那一页
@@ -183,7 +159,7 @@ def test_new_items_are_archived_and_the_alert_can_snooze_them_all(tmp_path, repo
     notes_service = _slack_service(tmp_path, repo, fakes)
     host = _Host()
     opened = []
-    notes = WorkNotesController(host, notes_service, colors=_COLORS, open_window=lambda: opened.append(1), slack=True)
+    notes = WorkNotesController(host, notes_service, open_report=lambda name: (opened.append(name), True)[1], slack=True)
     config = notes_service._config
     config.set(sw.CONFIG_KEY, {"enabled": True, "interval_minutes": 15, "idle_minutes": 10, "model": "sonnet"})
     watch = SlackWatchService(config, generate=lambda when, since, model, **_kw: sw.parse_output(_claude_json()),
@@ -200,7 +176,7 @@ def test_new_items_are_archived_and_the_alert_can_snooze_them_all(tmp_path, repo
     buttons["稍后 1 小时"]()
     assert all(n.remind_at == "2026-10-20T11:30:00" for n in notes_service.notes()) and host.resolved == [ALERT_ID]
     buttons["查看"]()
-    assert opened == [1] and notes.panel().current_name() == stored[0].name
+    assert opened == [stored[0].name], "「查看」开到页面上最新那条"
     # 下次查到同样两条：不是新的 → 不提醒也不重复存
     watch._generation += 0
     watch.check_now()
@@ -222,7 +198,7 @@ def test_without_the_notes_service_the_alert_is_as_before(tmp_path):
 
 # ---------------------------------------------------------------- 接线
 
-def test_the_app_mounts_the_slack_page_when_notes_are_enabled(tmp_path, monkeypatch):
+def test_the_app_wires_the_slack_archive_when_notes_are_enabled(tmp_path, monkeypatch):
     from pet.app import AppShell
 
     config = Config(base=tmp_path / "cfg")
@@ -230,25 +206,21 @@ def test_the_app_mounts_the_slack_page_when_notes_are_enabled(tmp_path, monkeypa
     monkeypatch.setattr(ch, "wsl_exe", lambda: "wsl.exe")
 
     class _Briefing:
-        tab_providers: list = []
-
-        def open_window(self, tab=""):
-            pass
+        pass
 
     class _Shell:
         pass
 
     fake = type("A", (), {})()
     fake.config, fake.app, fake._overlay_shell, fake._work_briefing = config, app, _Shell(), _Briefing()
+    fake._open_report, fake._publish_report = lambda name, note="": True, lambda name: None
     fake._start_slack_notes = lambda: AppShell._start_slack_notes(fake)
     AppShell._start_slack_watch(fake)
     try:
         assert fake._slack_watch is not None and fake._slack_notes is not None
         assert fake._slack_watch._notes is fake._slack_notes
         assert fake._slack_notes.service.notes_dir() == tmp_path / "repo" / "slack"
-        assert len(_Briefing.tab_providers) == 1
-        label, widget = _Briefing.tab_providers[0]()[0]
-        assert label == "Slack 关注" and widget.input.isHidden()
+        assert fake._slack_notes._open_report is not None and fake._slack_notes._slack, "「查看」开浏览器里的 Slack 关注页"
     finally:
         fake._slack_notes.service.stop()
         fake._slack_watch.service.stop()
@@ -256,11 +228,10 @@ def test_the_app_mounts_the_slack_page_when_notes_are_enabled(tmp_path, monkeypa
     config.set(wn.CONFIG_KEY, {"enabled": False, "repo_dir": str(tmp_path / "repo"), "model": "sonnet"})
     other = type("A", (), {})()
     other.config, other.app, other._overlay_shell, other._work_briefing = config, app, _Shell(), _Briefing()
+    other._open_report, other._publish_report = lambda name, note="": True, lambda name: None
     other._start_slack_notes = lambda: AppShell._start_slack_notes(other)
-    _Briefing.tab_providers.clear()
     AppShell._start_slack_watch(other)
     try:
         assert getattr(other, "_slack_notes", None) is None and other._slack_watch._notes is None
-        assert _Briefing.tab_providers == []
     finally:
         other._slack_watch.service.stop()

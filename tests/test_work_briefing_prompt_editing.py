@@ -5,7 +5,7 @@
   {priority_rules}；用户改过就整份存进配置（按界面语言分 prompt_zh / prompt_en），改过之后来源开关只管
   工具权限，提示词里要不要提某个来源由用户自己写。
 - effort 显式传给 claude -p（low / medium / high / xhigh，默认 high）。
-- 优先级：每条行首 ★★★ / ★★ / ★ 三级，由模型判断；用户的「优先级偏好」追加进提示词；窗口按星数上色。
+- 优先级：每条行首 ★★★ / ★★ / ★ 三级，由模型判断；用户的「优先级偏好」追加进提示词；页面按星数上色（``panorama/markdown.py``）。
 
 纪律：不起真的 wsl.exe、不读真实数据目录。
 """
@@ -16,12 +16,10 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from pet import i18n
 from pet import work_briefing as wb
-from pet import work_briefing_ui as ui
 from tests.test_work_briefing import MONDAY_10, FakeWsl, _claude_json
 
 app = QApplication.instance() or QApplication([])
@@ -90,54 +88,3 @@ def test_priority_rules_are_injected_only_when_set():
     with_rules = wb.build_prompt(MONDAY_10, "", language="zh", priority_rules="QA 报的 bug 一律 ★★★")
     assert "优先级偏好" in with_rules and "QA 报的 bug 一律 ★★★" in with_rules
     assert wb.normalize({"priority_rules": "  x  "})["priority_rules"] == "x"
-
-
-REPORT = ("## Jira\n"
-          f"- ★★★ {wb.BUG_MARK} [DEMO-7](https://example.test/browse/DEMO-7) Login freezes · `Open` · High\n"
-          "  - QA 报的场景：Safari 连点两次。\n"
-          "- ★★ [DEMO-8](https://example.test/browse/DEMO-8) Tidy build · `Open`\n"
-          "- ★ [DEMO-9](https://example.test/browse/DEMO-9) Docs typo · `Open`\n"
-          "\n## 建议先做\n1. ★★★ 先看 DEMO-7。\n")
-
-
-def _star_colors(window: ui.WorkBriefingWindow) -> dict[str, str]:
-    """每个以星开头的段落 → 星那一段文字的前景色。"""
-    out = {}
-    block = window.body.document().begin()
-    while block.isValid():
-        text = block.text().strip()
-        if text.startswith("★"):
-            it = block.begin()
-            while not it.atEnd():
-                frag = it.fragment()
-                if frag.text().strip().startswith("★"):
-                    out[text] = frag.charFormat().foreground().color().name()
-                    break
-                it += 1
-        block = block.next()
-    return out
-
-
-@pytest.mark.parametrize("theme", ["light", "dark"])
-def test_stars_are_coloured_by_level_and_bug_lines_still_get_their_tint(theme):
-    window = ui.WorkBriefingWindow(theme=theme)
-    try:
-        window.show_briefing(wb.Briefing(ok=True, summary="s", markdown=REPORT, generated_at="2026-10-24T09:00:00", seconds=1))
-        tokens = ui.briefing_tokens(theme == "dark")
-        colors = _star_colors(window)
-        three = next(v for k, v in colors.items() if "DEMO-7" in k)
-        two = next(v for k, v in colors.items() if "DEMO-8" in k)
-        one = next(v for k, v in colors.items() if "DEMO-9" in k)
-        assert (three, two, one) == (tokens["p1"], tokens["p2"], tokens["p3"])
-        assert next(v for k, v in colors.items() if "先看" in k) == tokens["p1"], "建议里的星也上色"
-        # bug 行前面多了星，底色照旧
-        block = window.body.document().begin()
-        tinted = []
-        while block.isValid():
-            if block.blockFormat().background().style() != Qt.BrushStyle.NoBrush:
-                tinted.append(block.text().strip())
-            block = block.next()
-        assert any("DEMO-7" in t for t in tinted) and any(t.startswith("QA") for t in tinted)
-        assert not any("DEMO-8" in t for t in tinted)
-    finally:
-        window.close()

@@ -23,7 +23,6 @@ from PySide6.QtWidgets import QApplication
 from pet import work_briefing as wb
 from pet.config import Config
 from pet.dynamic_island import DynamicIsland
-from pet.work_briefing_ui import WorkBriefingWindow
 from tests.test_work_briefing import MONDAY_10, FakeWsl, _claude_json, _controller
 
 app = QApplication.instance() or QApplication([])
@@ -83,28 +82,6 @@ def test_generating_links_the_final_text():
                   pr_stdout=_prs("Fix login") + f"\n{wb.PR_MARK}\n[]")
     briefing = wb.generate(MONDAY_10, "sonnet", run=wsl)
     assert f"[widgets#10]({PR_URL})" in briefing.markdown
-
-
-def _fragments(window):
-    block = window.body.document().begin()
-    while block.isValid():
-        it = block.begin()
-        while not it.atEnd():
-            yield it.fragment()
-            it += 1
-        block = block.next()
-
-
-def test_the_window_shows_links_and_status_chips():
-    window = WorkBriefingWindow()
-    md = f"## Jira\n- [DEMO-1]({JIRA}DEMO-1) 示例 · `进行中`\n"
-    window.show_briefing(wb.Briefing(ok=True, summary="概要", markdown=md, generated_at="2026-10-12T09:00:00"))
-
-    anchors = [(f.text(), f.charFormat().anchorHref()) for f in _fragments(window) if f.charFormat().isAnchor()]
-    chips = [f.charFormat() for f in _fragments(window) if f.text() == "进行中"]
-    assert ("DEMO-1", f"{JIRA}DEMO-1") in anchors
-    assert window.body.openExternalLinks()
-    assert chips and chips[0].background().style() != Qt.BrushStyle.NoBrush, "状态画成一个小标签"
 
 
 # ---------------------------------------------------------------- 灵动岛上的按钮
@@ -187,8 +164,8 @@ def test_an_unread_briefing_looks_different_and_says_so(tmp_path):
         island.close()
 
 
-def test_the_controller_reports_unread_until_the_window_is_opened(tmp_path):
-    controller, _host, service, _made = _controller(tmp_path)
+def test_the_controller_reports_unread_until_the_page_is_opened(tmp_path):
+    controller, host, service, _made = _controller(tmp_path)
     states = []
     controller.state_changed.connect(states.append)
     assert controller.island_state == "idle"
@@ -198,8 +175,7 @@ def test_the_controller_reports_unread_until_the_window_is_opened(tmp_path):
     assert controller.island_state == "unread" and states == ["unread"]
 
     controller.open_window()
-    assert controller.island_state == "idle" and states == ["unread", "idle"]
-    controller.window.close()
+    assert controller.island_state == "idle" and states == ["unread", "idle"] and host.opened == [1]
 
 
 def test_people_who_never_use_the_briefing_do_not_get_the_button(tmp_path):
@@ -219,7 +195,6 @@ def test_people_who_never_use_the_briefing_do_not_get_the_button(tmp_path):
     app.processEvents()
     controller.open_window()
     assert controller.island_state == "idle", "关着自动生成但手动做过一份：按钮留着，好再打开看"
-    controller.window.close()
 
 
 def test_the_app_shows_the_button_only_when_the_briefing_is_wired_and_opens_it_on_click(tmp_path):
@@ -234,7 +209,7 @@ def test_the_app_shows_the_button_only_when_the_briefing_is_wired_and_opens_it_o
         AppShell._push_island_briefing_state(shell)
         assert island.briefing_button_rect() is None, "没接简报服务（没有 WSL）就没有按钮"
 
-        controller, _host, service, _made = _controller(tmp_path / "briefing")
+        controller, host, service, _made = _controller(tmp_path / "briefing")
         shell._work_briefing = controller
         controller.state_changed.connect(lambda _state: AppShell._push_island_briefing_state(shell))
         AppShell._push_island_briefing_state(shell)
@@ -245,7 +220,6 @@ def test_the_app_shows_the_button_only_when_the_briefing_is_wired_and_opens_it_o
         assert "新" in island.briefing_tooltip()
 
         AppShell._open_work_briefing_from_island(shell)
-        assert controller.window.isVisible() and island.briefing_tooltip() == "工作简报"
-        controller.window.close()
+        assert host.opened == [1] and island.briefing_tooltip() == "工作简报", "岛的点击开浏览器里的简报页"
     finally:
         island.close()

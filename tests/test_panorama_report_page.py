@@ -245,8 +245,12 @@ var dom = function () { var el = document.getElementById; return {title: el('tit
   status: el('status').textContent, statusClass: el('status').className, button: el('action').textContent, buttonHidden: el('action').hidden,
   buttonDisabled: el('action').disabled, lost: el('lost').hidden, theme: document.documentElement.dataset.theme, title_tag: document.title,
   details: el('details').innerHTML, nav: el('nav').innerHTML, filters: el('filters').innerHTML, cards: el('cards').innerHTML,
-  sideHidden: el('side').hidden, navTitle: el('nav-title').textContent, actions: el('actions').innerHTML}; };
+  sideHidden: el('side').hidden, navTitle: el('nav-title').textContent, actions: el('actions').innerHTML,
+  composerHidden: el('composer').hidden, placeholder: el('text').placeholder, text: el('text').value, addLabel: el('add').textContent,
+  addDisabled: el('add').disabled, hint: el('composer-hint').textContent, cstatus: el('composer-status').textContent,
+  cstatusClass: el('composer-status').className}; };
 var clicks = {};
+document.getElementById('add').addEventListener = function (type, fn) { clicks['add_' + type] = fn; };
 document.getElementById('action').addEventListener = function (type, fn) { clicks[type] = fn; };
 document.getElementById('actions').addEventListener = function (type, fn) { clicks['actions_' + type] = fn; };
 """
@@ -327,15 +331,44 @@ def test_item_classification_and_filtering_are_pure(engine):
 
 
 def test_extra_actions_get_their_own_buttons_and_an_opened_answer_is_reported(engine):
-    extra = [{"name": "open_inspiration", "report": "demo", "label": "记灵感…", "hint": "h <x>"}]
+    extra = [{"name": "open_obsidian", "report": "demo", "label": "在 Obsidian 打开", "hint": "h <x>"}]
     out = _page(engine, [_ok(_payload(actions=extra)), '{"hang": true}',
                          '{"status": 200, "data": {"report": "demo", "state": "opened"}}'],
-                "var fake = {disabled: false, dataset: {name: 'open_inspiration', report: 'demo'}, closest: function () { return fake; }};"
+                "var fake = {disabled: false, dataset: {name: 'open_obsidian', report: 'demo'}, closest: function () { return fake; }};"
                 "clicks.actions_click({target: fake});")
-    assert out["dom"]["actions"] == '<button class="btn" data-name="open_inspiration" data-report="demo" title="h &lt;x&gt;">记灵感…</button>'
-    assert out["requests"][-1] == {"path": "/api/actions/open_inspiration", "method": "POST", "token": "tok-1", "body": '{"report":"demo"}'}
+    assert out["dom"]["actions"] == '<button class="btn" data-name="open_obsidian" data-report="demo" title="h &lt;x&gt;">在 Obsidian 打开</button>'
+    assert out["requests"][-1] == {"path": "/api/actions/open_obsidian", "method": "POST", "token": "tok-1", "body": '{"report":"demo"}'}
     assert out["dom"]["status"] == "已在肥鱼里打开。"
     assert _page(engine, [_ok(_payload(actions=extra, available=False)), '{"hang": true}'])["dom"]["actions"] == ""
+
+
+COMPOSER = {"placeholder": "一句灵感", "label": "记下", "hint": "说明", "status": "", "failed": False,
+            "action": {"name": "add_inspiration", "report": "demo"}}
+
+
+def test_the_composer_is_laid_out_from_the_payload_and_posts_the_text(engine):
+    """个人简报的「记灵感」在页面顶部的输入区：字都是服务给的；Ctrl+Enter / 「记下」POST 文本，回 saved 清空框，
+    状态行写服务说的推送进度；空的不发；失败不清空、标红。工作简报没有这块。"""
+    out = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}',
+                         '{"status": 200, "data": {"report": "demo", "state": "saved", "status": "已写进文件，正在推送…"}}'],
+                "document.getElementById('text').value = ' 周末整理旧书 ';\nclicks.add_click();")
+    dom = out["dom"]
+    assert dom["composerHidden"] is False and dom["placeholder"] == "一句灵感" and dom["addLabel"] == "记下" and dom["hint"] == "说明"
+    assert out["requests"][-1] == {"path": "/api/actions/add_inspiration", "method": "POST", "token": "tok-1",
+                                   "body": '{"report":"demo","text":" 周末整理旧书 "}'}
+    assert dom["text"] == "" and dom["cstatus"] == "已写进文件，正在推送…" and dom["cstatusClass"] == "cstatus" and dom["addDisabled"] is False
+    empty = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}'], "clicks.add_click();")
+    assert len(empty["requests"]) == 2 and empty["dom"]["cstatus"] == "先写点什么再记。" and empty["dom"]["cstatusClass"] == "cstatus bad"
+    shown = _page(engine, [_ok(_payload(composer={**COMPOSER, "status": "没推上去：x", "failed": True})), '{"hang": true}'])["dom"]
+    assert shown["cstatus"] == "没推上去：x" and shown["cstatusClass"] == "cstatus bad", "重画时推送状态随数据来"
+    failed = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}',
+                            '{"status": 200, "data": {"report": "demo", "state": "failed", "status": "没找到仓库副本：p"}}'],
+                   "document.getElementById('text').value = 'x';\nclicks.add_click();")
+    assert failed["dom"]["text"] == "x" and failed["dom"]["cstatus"] == "没找到仓库副本：p" and failed["dom"]["cstatusClass"] == "cstatus bad"
+    lost = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}'], "document.getElementById('text').value = 'x';\nclicks.add_click();")
+    assert lost["dom"]["cstatus"] == "连不上肥鱼。" and lost["dom"]["addDisabled"] is False
+    assert _page(engine, [_ok(_payload()), '{"hang": true}'])["dom"]["composerHidden"] is True, "工作简报没有输入区"
+    assert _page(engine, [_ok(_payload(composer=COMPOSER, available=False)), '{"hang": true}'])["dom"]["composerHidden"] is True
 
 
 def test_busy_empty_unavailable_and_error_states(engine):

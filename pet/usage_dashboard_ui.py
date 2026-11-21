@@ -25,8 +25,9 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QToolTip, QVBoxL
 
 from .i18n import t
 from .settings_theme_qss import METRO_TOKENS
-from .settings_widgets import TiltButton, _system_dark
+from .settings_widgets import TiltButton
 from .usage_dashboard import Bar, Tile
+from .window_theme import resolve_dark  # noqa: F401 - 岛的连接面板也从这里导（口径同简报窗口时代）
 
 TILE_W, TILE_H = 236, 200
 TILE_GAP = 8
@@ -95,11 +96,6 @@ class _HaloLabel(QLabel):
             painter.drawText(rect.translated(dx, dy), flags, self.text())
         painter.setPen(self._ink)
         painter.drawText(rect, flags, self.text())
-
-
-def resolve_dark(theme: str) -> bool:
-    """``system`` 跟随系统；别的按字面（和简报窗口同一口径）。"""
-    return theme == "dark" or (theme != "light" and _system_dark())
 
 
 class MetricTile(QWidget):

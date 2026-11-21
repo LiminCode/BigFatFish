@@ -144,18 +144,13 @@ Also capture 720 px for layout changes and `--dark` for color/surface changes. I
 alone is not acceptance. The offscreen platform has no CJK font, so text renders as boxes there — real-window
 screenshots on the available desktop are the acceptance for typography.
 
-## Briefing / notes window (2026-10-15)
+## Content pages in the browser (2026-11-21)
 
-`pet/work_briefing_ui.py` (`WorkBriefingWindow`, also used by Slack watch; hosts the work-notes page) reuses
-`METRO_TOKENS` plus two extra token pairs (`link`, `chip` / `chip_text`; see `briefing_tokens`). Composition:
-
-```text
-briefing window
-├── app line (12 px / 600, muted) … day/night toggle (☾ / ☀, writes context_menu_appearance.theme)
-├── pivot header (QTabBar: 28 px / 300; selected = title colour, others muted; always visible)
-└── page: flat tiles (no border, radius 0), outlined tilt buttons (2 px outline, pressed = inverted)
-```
-
-One stylesheet on the window styles every page by objectName; mounted pages only re-colour their link
-palette in `apply_theme(colors)`. Evidence: `scripts/capture_briefing_window.py` →
-`.scratch/screenshots/briefing-metro/`.
+The Qt briefing / notes window (`WorkBriefingWindow`, 2026-10-15) was removed on 2026-11-21 once every content page had
+moved to the browser (ADR 0018). Work briefing, personal briefing, work notes and Slack watch render in the panorama's
+local-service pages: `pet/panorama/page/report.*` and `notes.*`. They take the shared tokens from `tokens.css`
+(`--m-*`, the same values as `METRO_TOKENS`) and keep the Metro rules — square corners, solid tiles, white text without
+outlines, hover brightening, glass shadow only where depth is needed. Day / night follows `context_menu_appearance.theme`
+(the provider passes `theme`, the page sets `data-theme`); pages carry no toggle of their own. The Qt windows that
+remain (memory distill, usage dashboard, the island's connections panel) take their palette through
+`pet/window_theme.py`.

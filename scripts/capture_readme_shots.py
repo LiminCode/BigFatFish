@@ -345,41 +345,6 @@ def window_shot(window: QWidget, width: int, height: int) -> QImage:
     return shot
 
 
-def work_briefing(lang: str, out: Path) -> list[Path]:
-    """工作简报窗口：WSL 里登录工作账号的 Claude Code 只读汇总 Jira / PR / Slack / 日程。"""
-    from pet import work_briefing as wb
-    from pet.work_briefing_ui import WorkBriefingWindow
-
-    summary, markdown = DEMO[lang]["briefing"]
-    briefing = wb.Briefing(ok=True, summary=summary, markdown=markdown,
-                           generated_at=dt.datetime.now().replace(hour=9, minute=2).isoformat(timespec="seconds"),
-                           seconds=52, turns=14, model="claude-sonnet-5-5", effort="medium",
-                           tokens_in=48210, tokens_out=1320, cost_usd=0.06)
-    window = WorkBriefingWindow(theme="light")
-    window.show_briefing(briefing)
-    return [save(window_shot(window, 860, 700), out, f"briefing-{lang}")]
-
-
-def personal_briefing(lang: str, out: Path) -> list[Path]:
-    """个人助理的个人简报：肥鱼自己的 Claude 只读地读本地知识库副本。"""
-    from pet import personal_briefing as pb
-    from pet.personal_ui import meta_line
-    from pet.work_briefing_ui import WorkBriefingWindow
-
-    summary, markdown = pb.parse_text(DEMO[lang]["personal"])
-    briefing = pb.PersonalBriefing(ok=True, summary=summary, markdown=markdown,
-                                   generated_at=dt.datetime.now().replace(hour=8, minute=30).isoformat(timespec="seconds"),
-                                   seconds=71.2, turns=7, model="claude-sonnet-5-5", effort="medium",
-                                   tokens_in=52340, tokens_out=1480,
-                                   files_read=["INDEX.md", "Decisions/2026-10 log.md", "Reading/queue.md"])
-    t = i18n.t
-    window = WorkBriefingWindow(title=t("personal.app"), regenerate_label=t("personal.button.regenerate"),
-                                empty_text=t("personal.empty"), page_label=t("personal.tab.briefing"), theme="dark")
-    window.add_action_button(t("personal.button.obsidian"))
-    window.show_briefing(briefing, meta=meta_line(briefing))
-    return [save(window_shot(window, 860, 700), out, f"personal-{lang}")]
-
-
 def dashboard(lang: str, out: Path) -> list[Path]:
     """点岛上「今日用量」弹出的近 7 天仪表盘。"""
     from pet import activity_log, claude_week
@@ -455,23 +420,6 @@ DEMO = {
            "slack_stack": ("#release", ["Amy: Build 2.3.0 is green", "Amy: QA signed off on the login fix",
                                         "Ben: Ready to ship?"]),
            "chrome": ("Weekly report", "mail.example.com · Due on Friday, please send it to Amy"),
-           "briefing": ("Reply to Ben first; the platform sync is at 15:00.",
-                        "## Jira\n"
-                        "- 🐞 [DEMO-12](https://example.atlassian.net/browse/DEMO-12) Login page sometimes goes blank · "
-                        "`In progress` · High · **updated**\n"
-                        "  - QA scenario: Safari, click Sign in twice → blank page; expected the home page.\n"
-                        "- [DEMO-9](https://example.atlassian.net/browse/DEMO-9) Rate-limit rollout plan · `In review`\n\n"
-                        "## Pull requests\n- [team/api#88](https://github.com/team/api/pull/88) Move /connect behind "
-                        "the gateway · review requested\n\n"
-                        "## Slack\n- **Waiting on you**: Ben asks how many replicas before the rollout "
-                        "[open](https://example.slack.com/archives/C1/p1)\n\n"
-                        "## Calendar\n- 15:00 Platform sync\n\n"
-                        "## Suggested order\n1. Reply to Ben\n2. Read the new comment on DEMO-12\n3. Review team/api#88\n"),
-           "personal": ("Summary: Two reviews are due and the reading list is piling up.\n\n"
-                        "## To review\n- 2026-10-20 decision: switch the blog to static hosting — check back today\n\n"
-                        "## Reading\n- Chapter 4 of the book on your queue (last opened 9 days ago)\n\n"
-                        "## Ideas\n- Motion-sensor light for the balcony\n- Sort old books on the weekend\n\n"
-                        "## Suggestions\n1. Spend 20 minutes on the review\n2. Read one chapter after dinner\n"),
            "candidates": [("decision", r"C:\Users\me\Github\demo-app", "Yes, ship the toast stack with Slack grouped by channel."),
                           ("rule", r"C:\Users\me\Github\demo-app", "Always reply in English and keep commits small."),
                           ("correction", r"C:\Users\me\Github\demo-api", "No, don't mock the database in these tests."),
@@ -486,20 +434,6 @@ DEMO = {
            "prompt": "加一个「保存」按钮：写入配置但不关窗口，绑定 Ctrl+S。",
            "slack_stack": ("#发布", ["Amy: 2.3.0 构建通过了", "Amy: 登录页的修复 QA 验过了", "Ben: 可以发了吗？"]),
            "chrome": ("周报", "mail.example.com · 周五前发给 Amy"),
-           "briefing": ("先回 Ben 的私信，下午三点有平台例会。",
-                        "## Jira\n"
-                        "- 🐞 [DEMO-12](https://example.atlassian.net/browse/DEMO-12) 登录页偶发白屏 · `进行中` · 高 · **有更新**\n"
-                        "  - QA 报的场景：Safari 里连点两次「登录」，页面白屏，预期跳到首页。\n"
-                        "- [DEMO-9](https://example.atlassian.net/browse/DEMO-9) 限流上线方案 · `待评审`\n\n"
-                        "## PR\n- [team/api#88](https://github.com/team/api/pull/88) 把 /connect 挪到网关后面 · 等你评审\n\n"
-                        "## Slack\n- **等你回复**：Ben 问上线前要几个副本 [打开](https://example.slack.com/archives/C1/p1)\n\n"
-                        "## 日程\n- 15:00 平台例会\n\n"
-                        "## 建议先做\n1. 回 Ben\n2. 看 DEMO-12 的新评论\n3. 评审 team/api#88\n"),
-           "personal": ("概要：有两项复盘到期，待读清单越攒越多。\n\n"
-                        "## 待复盘\n- 2026-10-20 决定：博客改成静态托管——今天回看\n\n"
-                        "## 阅读\n- 清单里那本书的第 4 章（上次打开是 9 天前）\n\n"
-                        "## 灵感\n- 阳台换感应灯\n- 周末整理旧书\n\n"
-                        "## 建议\n1. 花 20 分钟做复盘\n2. 晚饭后读一章\n"),
            "candidates": [("decision", r"C:\Users\me\Github\demo-app", "好，通知弹窗按 Slack 频道叠放就这么定。"),
                           ("rule", r"C:\Users\me\Github\demo-app", "以后都用中文回复，提交拆小。"),
                           ("correction", r"C:\Users\me\Github\demo-api", "不对，这些测试别 mock 数据库。"),
@@ -511,8 +445,6 @@ SHOTS = {
     "island": island_card,
     "card": session_card,
     "toasts": toasts,
-    "briefing": work_briefing,
-    "personal": personal_briefing,
     "dashboard": dashboard,
     "distill": memory_distill,
 }
