@@ -150,6 +150,15 @@ def test_fetch_only_asks_the_remote_and_does_not_wait_as_long_as_a_push(tmp_path
     assert offline.calls[-1][2] == pv.FETCH_TIMEOUT_S, "没有 Token 时交给凭据管理器，也只等这么久（有人在页面上等）"
 
 
+def test_upstream_state_says_where_the_remote_branch_points_and_how_far_apart_they_are(tmp_path):
+    git = _Git({"rev-parse": (0, "5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e\n"), "rev-list": (0, "46\t2\n")})
+    assert pv.upstream_state(tmp_path, run=git) == {"head": "5d6e7f8a9b0c", "behind": 46, "ahead": 2}
+    assert [call[0] for call in git.calls] == [("rev-parse", "@{upstream}"), ("rev-list", "--left-right", "--count", "@{upstream}...HEAD")]
+    assert all(call[1] is None for call in git.calls), "两条都是本地命令：不带 Token、不联网"
+    no_upstream = _Git({"rev-parse": (128, "fatal: no upstream configured"), "rev-list": (128, "fatal")})
+    assert pv.upstream_state(tmp_path, run=no_upstream) == {"head": "", "behind": None, "ahead": None}, "问不出来 ≠ 没有差距"
+
+
 def test_token_scopes_come_from_the_github_header(monkeypatch):
     class _Response:
         headers = {"X-OAuth-Scopes": "repo, read:user"}

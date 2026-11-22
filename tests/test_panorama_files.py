@@ -71,6 +71,8 @@ def test_the_list_holds_settings_and_written_content_but_never_logins_or_keys():
     assert {s.id for s in local} - set(files.VIEWABLE) == {"island_icons", "user_assets"}
     assert files.viewable("claude_settings") and files.viewable("claude_json") and files.viewable("config")
     assert files.viewable("claude_md_wsl") and not files.viewable("claude_login_wsl") and not files.viewable("no-such-store")
+    # 日志量大，一般不给看；运行记录是例外：一次运行一行元数据，瀑布流页做出来之前这是唯一能看它的地方
+    assert files.viewable("run_journal") and not files.viewable("logs") and not files.viewable("settings_audit")
 
 
 def test_a_login_or_key_cannot_be_made_viewable_by_adding_it_to_the_list(monkeypatch):

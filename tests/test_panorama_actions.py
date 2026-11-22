@@ -208,3 +208,62 @@ def test_only_registered_clones_can_be_checked(tmp_path, body):
     with pytest.raises(actions.ActionError) as caught:
         checker.handler()(body)
     assert (caught.value.status, caught.value.code) == (400, "bad_repo") and checker.log == []
+
+
+# ───────────────────────── 核对一次 = 运行记录里的一行（瀑布流的第一种来源）─────────────────────────
+
+class _States:
+    """核对前后各问一次「远端分支此刻指向哪、差几个提交」；按脚本依次回答。"""
+
+    def __init__(self, *answers):
+        self.answers, self.asked = list(answers), []
+
+    def __call__(self, repo_dir):
+        self.asked.append(str(repo_dir))
+        return self.answers.pop(0)
+
+
+def _journaled(tmp_path, states, **overrides):
+    from pet import run_journal
+
+    checker = _Checker(tmp_path, **overrides)
+    journal = run_journal.Journal(tmp_path / "journal")
+    return checker, journal, checker.handler(journal=journal, state=states)
+
+
+def test_a_check_that_brings_news_is_recorded_with_what_moved(tmp_path):
+    states = _States({"head": "1a2b3c4d5e6f", "behind": 0, "ahead": 0}, {"head": "5d6e7f8a9b0c", "behind": 46, "ahead": 0})
+    checker, journal, run = _journaled(tmp_path, states)
+    assert run({"repo": "personal"})["state"] == "checked"
+    row, = journal.read()
+    assert (row["job"], row["trigger"], row["result"]) == ("vault_check", "manual", "ok")
+    assert row["effects"] == [{"kind": "git", "op": "fetch", "repo": "personal", "before": "1a2b3c4d5e6f", "after": "5d6e7f8a9b0c",
+                               "behind": 46, "ahead": 0}]
+    assert [step["name"] for step in row["steps"]] == ["fetch"] and states.asked == [str(checker.repo)] * 2
+
+
+def test_a_check_that_finds_nothing_new_is_a_noop(tmp_path):
+    same = {"head": "1a2b3c4d5e6f", "behind": 0, "ahead": 2}
+    _, journal, run = _journaled(tmp_path, _States(dict(same), dict(same)))
+    run({"repo": "personal"})
+    row, = journal.read()
+    assert row["result"] == "noop" and row["effects"][0]["ahead"] == 2
+
+
+def test_a_check_that_cannot_connect_is_recorded_as_failed_with_gits_last_words(tmp_path):
+    before = {"head": "1a2b3c4d5e6f", "behind": 0, "ahead": 0}
+    _, journal, run = _journaled(tmp_path, _States(dict(before), dict(before)), outcome=(False, "fatal: unable to access the remote"))
+    assert run({"repo": "personal"})["state"] == "failed"
+    row, = journal.read()
+    assert row["result"] == "failed" and row["error"] == "fatal: unable to access the remote"
+
+
+def test_a_check_that_never_ran_leaves_no_record(tmp_path):
+    _, journal, run = _journaled(tmp_path, _States(), ready=False)
+    assert run({"repo": "personal"})["state"] == "missing" and journal.read() == []
+
+
+def test_checking_works_without_a_journal(tmp_path):
+    checker = _Checker(tmp_path)
+    assert checker.handler(state=_States({"head": "a", "behind": 0, "ahead": 0}, {"head": "a", "behind": 0, "ahead": 0}))(
+        {"repo": "personal"})["state"] == "checked"
