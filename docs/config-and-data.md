@@ -133,6 +133,24 @@ Token 与知识库同步 / GitHub 连接器共用（钥匙串 `connector/github`
 [配置全景](config-panorama.md)每次打开都把数据目录和两个 Claude Code 家目录走一遍，表不认得的文件单独列成一块磁贴和一条待处理。
 `pet/data_stores.py` 会被原样喂给 WSL 里的 `python3`（和走目录的代码、家目录探针拼成一个文件），所以它**只能用标准库**。
 
+### 运行记录：肥鱼自己跑过什么（2026-11-22）
+
+`pet/run_journal.py`，决定见 [ADR 0019](adr/0019-run-journal-and-git-are-the-timeline.md)。只用标准库，不碰 Qt。
+
+- 落在数据目录的 `run-journal/<年>-<月>.jsonl`，一次运行一行：`id`、`job`（任务名）、`trigger`（被什么触发）、`at`（开始时间）、
+  `seconds`、`result`、`steps`（每步的名字和耗时）、`effects`（它对外面做了什么）、没办成时的 `error`（报错的末 200 个字符）。
+- `trigger` 只能取 `TRIGGERS`（到点 / 停笔后 / 启动后 / 唤醒后 / 用户点的 / 某个功能写完之后），`result` 只能取 `RESULTS`
+  （`ok` 办成且有变化 / `noop` 跑了没事可做 / `failed` / `needs_you` 停下来等用户 / `skipped`）。别的值当场抛 `ValueError`。
+- 用法：`run = journal.start(任务, 触发)` → `with run.step("fetch"): …`（那一步抛了也照样计时）→ `run.effect("git", …)` →
+  `run.finish(结果, 报错)`。`finish` 只落一次盘；写不进去只进日志、返回 `False`，不抛。
+- **只记元数据**：没有正文、提交说明、文件名。`git` 这类效果记的是仓库名和提交号前 12 位。
+- 追加写、一次 `write`、在一把锁里；所以**一个进程只建一个 `Journal`**（`AppShell._runs()`）。读的人最多看到末尾半行，跳过。
+- 保留 90 天：整个月都在窗口之外的文件，下一次写的时候删掉。不重写文件。
+- 读：`journal.read(limit, job=…)`，新的在前，跨月。
+- 存储表里是 `run_journal`（日志、丢了不要紧）。它在文件查看的名单里——日志一般不给看，这一项例外：量小、全是元数据。
+- 现在唯一的写入者是配置全景的「现在核对」（任务 `vault_check`、触发 `manual`）：fetch 前后各问一次远端分支指向哪，
+  动了 = `ok`，没动 = `noop`，没连上 = `failed`。
+
 ### 数据目录与程序在系统里的名字
 
 | 东西 | 现在的名字 | 定义处 |

@@ -3488,6 +3488,16 @@ class AppShell:
         ``focus``：页面画完就直接翻到的那一组设置（设置窗口里「到配置全景里改」经指令通道传来）。"""
         self._panorama().open(focus=focus)
 
+    def _runs(self):
+        """运行记录（``run_journal.Journal``，第一次要用时才建）。**整个进程共用这一个**：它的追加在自己那把锁里，
+        各处各建一个就各有各的锁了。现在只有配置全景的「现在核对」往里写；同步器和各个定时服务以后也从这里拿。"""
+        journal = getattr(self, "_run_journal", None)
+        if journal is None:
+            from . import run_journal
+
+            journal = self._run_journal = run_journal.Journal(Path(self.config.dir) / run_journal.DIR_NAME)
+        return journal
+
     def _panorama(self):
         """配置全景的服务对象（第一次要用时才建）。页面、报告页、本机服务都挂在它上面。"""
         service = getattr(self, "_panorama_service", None)
@@ -3526,7 +3536,7 @@ class AppShell:
                          panorama_actions.CHECK_REMOTE_ACTION: panorama_actions.check_remote(
                              {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]},
                              lambda work: self._panorama_service.on_gui(work),
-                             lambda side: self._panorama_service.refresh(side)),
+                             lambda side: self._panorama_service.refresh(side), journal=self._runs()),
                          panorama_reports.INSPIRATION_ACTION: panorama_reports.add_inspiration(personal_service),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),

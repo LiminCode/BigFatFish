@@ -719,10 +719,10 @@ def test_a_check_that_did_not_happen_can_be_tried_again(engine, reply, state, te
 def test_lists_are_compact_by_default_with_a_fold_per_item_a_count_and_a_filter_when_long(engine):
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
-    long = _details(engine, graph, "st_fish_free", "undefined")           # 16 条：筛选框出现
-    assert long.count('<div class="item" data-row=') == 16 and long.count('<dl class="more" hidden>') == 16
-    assert long.count('<button class="fold" data-toggle=') == 16 and 'aria-expanded="false">▸</button>' in long
-    assert '<span class="lcount">16 条</span>' in long and 'class="lfilter" data-filter="st_fish_free"' in long
+    long = _details(engine, graph, "st_fish_free", "undefined")           # 17 条：筛选框出现
+    assert long.count('<div class="item" data-row=') == 17 and long.count('<dl class="more" hidden>') == 17
+    assert long.count('<button class="fold" data-toggle=') == 17 and 'aria-expanded="false">▸</button>' in long
+    assert '<span class="lcount">17 条</span>' in long and 'class="lfilter" data-filter="st_fish_free"' in long
     assert '<button class="peek" data-expand-all="1">全部展开</button>' in long
     short = _details(engine, graph, "st_cc_win_local", "undefined")       # 5 条：有折叠、没有筛选框
     assert '<span class="lcount">5 条</span>' in short and 'lfilter' not in short and 'data-expand-all' in short

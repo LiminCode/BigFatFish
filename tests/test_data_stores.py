@@ -131,7 +131,7 @@ def test_not_stores_entries_are_all_still_in_the_code_and_explained():
     ("memory-distill/proposals.json", "distill_proposals"), ("memory-distill/candidates/2026-01-02.jsonl", "distill_candidates"),
     ("sessions/abc123.json", "chat_sessions"), ("message-log.json", "message_log"),
     ("knowledge-base/current/notes/a.md", "knowledge_base_copy"), ("voice_chime_cache/ab/cd.mp3", "voice_cache"),
-    ("panorama/panorama.html", "panorama_snapshot"),
+    ("panorama/panorama.html", "panorama_snapshot"), ("run-journal/2026-11.jsonl", "run_journal"),
 ])
 def test_names_seen_in_a_real_data_directory_are_recognised(name, expected):
     store = ds.match("data", name)

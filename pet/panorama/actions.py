@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import weakref
@@ -28,6 +29,8 @@ log = logging.getLogger(__name__)
 HOOKED_SIDES = {"claude": "win", "claude_wsl": "wsl"}
 #: 待处理里「现在核对」走的动作名（``sources.repositories`` 写在那条待处理的 action 里）
 CHECK_REMOTE_ACTION = "check_remote"
+#: 「现在核对」在运行记录里的任务名
+CHECK_JOB = "vault_check"
 #: 设置表里 ``Setting.action`` 写的名字：一项音效设置旁边的「试听」
 PREVIEW_SOUND_ACTION = "preview_sound"
 
@@ -83,7 +86,8 @@ def generate_report(generators: dict) -> Callable[[object], dict]:
 
 def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], refresh: Callable[[str], object], *,
                  fetch: Callable[..., "tuple[bool, str]"] = personal_vault.fetch,
-                 token: Callable[[], str] = personal_vault.github_token) -> Callable[[object], dict]:
+                 token: Callable[[], str] = personal_vault.github_token, journal=None,
+                 state: Callable[[str], dict] = personal_vault.upstream_state) -> Callable[[object], dict]:
     """「现在核对」：让一个本地克隆去问一次远端（``git fetch``，不动工作区和本地分支），然后重探本机一侧，磁贴上的
     「领先 / 落后几个提交」才是此刻的。请求体 ``{repo}``；``repos``：名字 → 返回克隆目录的函数（读配置，所以经 ``on_gui`` 调）。
 
@@ -93,6 +97,10 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
     回 ``checked`` / ``failed``（没连上）/ ``missing``（目录不是克隆，不 fetch）/ ``busy``（上一次还没回来）。**没连上也重探**：
     git 已经把 ``FETCH_HEAD`` 清空了，磁贴要改口说「上次核对没连上」。重探没发起（界面线程正忙、还没有页面在看）不算核对
     失败，记一行日志。失败原因只进日志（末 200 个字符，是 git 的报错，不含仓库内容）。
+
+    给了 ``journal``（``run_journal.Journal``）就把这次核对记成运行记录里的一行（任务 ``vault_check``、触发 ``manual``）：
+    fetch 前后各问一次 ``state``（远端分支指向哪、差几个提交），远端分支动了 = ``ok``，没动 = ``noop``，没连上 = ``failed``。
+    真的 fetch 了才记；``busy`` / ``missing`` 什么都没跑，不记。没给 ``journal`` 时不多问那两次。
     """
     running = threading.Lock()
 
@@ -106,9 +114,17 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
             repo_dir = str(on_gui(repos[repo]))
             if not personal_vault.repo_ready(repo_dir):
                 return {"repo": repo, "state": "missing"}
-            ok, reason = fetch(repo_dir, token=token())
+            record = journal.start(CHECK_JOB, "manual") if journal is not None else None
+            before = state(repo_dir) if record else {}
+            with record.step("fetch") if record else contextlib.nullcontext():
+                ok, reason = fetch(repo_dir, token=token())
             if not ok:
                 log.warning("配置全景：核对 %s 没连上远端：%s", repo, reason[-200:])
+            if record:
+                after = state(repo_dir)
+                record.effect("git", op="fetch", repo=repo, before=before.get("head", ""), after=after.get("head", ""),
+                              behind=after.get("behind"), ahead=after.get("ahead"))
+                record.finish("failed" if not ok else "ok" if after.get("head") != before.get("head") else "noop", "" if ok else reason)
             try:
                 on_gui(lambda: refresh("win"))
             except Exception:  # noqa: BLE001 - 重探没发起：页面留着旧图，下次打开会是新的

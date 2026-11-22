@@ -203,6 +203,20 @@ def fetch(repo_dir: str | Path, *, run: GitRunner = run_git, token: str = "", ti
     return code == 0, "" if code == 0 else out.strip()[-300:]
 
 
+def upstream_state(repo_dir: str | Path, *, run: GitRunner = run_git) -> dict:
+    """本地记得的远端分支此刻指向哪（提交号前 12 位）、本地比它落后 / 领先几个提交。两条本地命令，不联网。
+
+    fetch 前后各问一次，就知道这次 fetch 带回了什么（运行记录里那条 ``git`` 效果）。问不出来（没有上游、不是克隆）
+    时 ``head`` 是空串、两个数是 ``None``——问不出来不等于没有差距。"""
+    code, out = run(repo_dir, ["rev-parse", "@{upstream}"])
+    head = out.strip()[:12] if code == 0 else ""
+    code, out = run(repo_dir, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+    counts = out.split() if code == 0 else []
+    if len(counts) == 2 and all(count.isdigit() for count in counts):
+        return {"head": head, "behind": int(counts[0]), "ahead": int(counts[1])}
+    return {"head": head, "behind": None, "ahead": None}
+
+
 def sync_inspiration(repo_dir: str | Path, now: dt.datetime, *, run: GitRunner = run_git,
                      token: str = "") -> tuple[bool, str]:
     """灵感文件：add → 有变化才 commit → pull --rebase → push。返回 (成功?, 失败原因尾巴)。"""

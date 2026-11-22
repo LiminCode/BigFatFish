@@ -46,6 +46,8 @@ VIEWABLE = (
     "chat_sessions", "todo_items", "message_log",
     # 簿记
     "session_history", "config_backup_state", "distill_state", "assistant_state", "work_state",
+    # 运行记录：种类是日志，但一次运行只有一行元数据（没有正文），量小；瀑布流页做出来之前在这里看
+    "run_journal",
     # WSL 里公司 Claude Code 的家目录（经 wsl.exe 读）
     "claude_settings_wsl", "claude_md_wsl", "claude_memory_wsl", "claude_skills_wsl",
 )
