@@ -2,7 +2,9 @@
 """配置全景的探针：读真的文件（临时目录里的假 Claude Code 家目录），子进程边界用假的。"""
 from __future__ import annotations
 
+import datetime as dt
 import json
+import os
 from pathlib import Path
 
 from pet.panorama import claude_home_probe, probes
@@ -92,23 +94,82 @@ def test_repo_info_strips_credentials_from_the_remote(tmp_path):
     def fake_git(folder, args, *, timeout):
         calls.append(args)
         answers = {"remote": "https://x-access-token:ghp_secret@github.com/acme/handbook.git\n", "rev-parse": "main\n", "log": "2026-01-02 03:04 · notes\n",
-                   "rev-list": "2\n", "status": " M note.md\n?? new.md\n"}
+                   "rev-list": "46\t2\n", "status": " M note.md\n?? new.md\n"}
         return 0, answers[args[0]]
 
     info = probes.repo_info(tmp_path, fake_git)
     assert info["exists"] and info["remote"] == "https://github.com/acme/handbook.git" and info["branch"] == "main"
-    assert info["unpushed"] == 2 and info["dirty"] is True
-    assert ["rev-list", "--count", "@{upstream}..HEAD"] in calls                # 按本地记得的上游算，不联网
+    assert info["unpushed"] == 2 and info["behind"] == 46 and info["dirty"] is True
+    assert ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"] in calls   # 领先和落后一次问完；按本地记得的上游算，不联网
+    assert not any(args[0] in ("fetch", "pull", "ls-remote") for args in calls)
     assert probes.repo_info(tmp_path / "missing", fake_git) == {
-        "path": str(tmp_path / "missing"), "exists": False, "remote": "", "branch": "", "last_commit": "", "unpushed": None, "dirty": None}
+        "path": str(tmp_path / "missing"), "exists": False, "remote": "", "branch": "", "last_commit": "", "unpushed": None, "behind": None,
+        "dirty": None, "checked_at": "", "checked_age_s": None, "check_failed": False}
     broken = probes.repo_info(tmp_path, lambda *a, **k: (128, "fatal: not a git repository"))
-    assert broken["remote"] == "" and broken["unpushed"] is None and broken["dirty"] is None      # 问不出来 ≠ 没有
+    assert broken["remote"] == "" and broken["unpushed"] is None and broken["behind"] is None and broken["dirty"] is None   # 问不出来 ≠ 没有
 
 
 def test_repo_info_says_a_clean_pushed_clone_has_nothing_left_behind(tmp_path):
-    answers = {"remote": "", "rev-parse": "main\n", "log": "x\n", "rev-list": "0\n", "status": ""}
+    answers = {"remote": "", "rev-parse": "main\n", "log": "x\n", "rev-list": "0\t0\n", "status": ""}
     info = probes.repo_info(tmp_path, lambda folder, args, *, timeout: (0, answers[args[0]]))
-    assert info["unpushed"] == 0 and info["dirty"] is False
+    assert info["unpushed"] == 0 and info["behind"] == 0 and info["dirty"] is False
+
+
+def _clone_with(tmp_path, *, fetch_head=None, reflog=None):
+    """一个假克隆：``fetch_head`` / ``reflog`` 是 (内容, 修改时间)；不给就是没有这个文件。"""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir(exist_ok=True)
+    for relative, spec in (("FETCH_HEAD", fetch_head), ("logs/refs/remotes/origin/main", reflog)):
+        if spec is None:
+            continue
+        path = git_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(spec[0], encoding="utf-8")
+        os.utime(path, (spec[1], spec[1]))
+    answers = {"remote": "", "rev-parse": "main\n", "log": "x\n", "rev-list": "0\t0\n", "status": ""}
+    return lambda folder, args, *, timeout: (0, answers[args[0]])
+
+
+NOW = 1_800_000_000.0
+
+
+def test_repo_info_dates_the_last_contact_with_the_remote_from_the_last_fetch_that_worked(tmp_path):
+    git = _clone_with(tmp_path, fetch_head=("abc\t\tbranch 'main' of x\n", NOW - 3600), reflog=("old\n", NOW - 90_000))
+    info = probes.repo_info(tmp_path, git, now=NOW)
+    assert info["checked_age_s"] == 3600 and info["check_failed"] is False
+    assert info["checked_at"] == dt.datetime.fromtimestamp(NOW - 3600).strftime("%Y-%m-%d %H:%M")
+
+
+def test_a_push_counts_as_contact_even_though_it_leaves_no_fetch_head(tmp_path):
+    git = _clone_with(tmp_path, reflog=("update by push\n", NOW - 120))
+    info = probes.repo_info(tmp_path, git, now=NOW)
+    assert info["checked_age_s"] == 120 and info["check_failed"] is False
+
+
+def test_a_failed_fetch_empties_fetch_head_and_must_not_pass_for_a_check(tmp_path):
+    """git 在 fetch 失败时把 FETCH_HEAD 清空并更新它的修改时间（本机 git 2.55 实测）：空文件 = 最近一次没连上。"""
+    git = _clone_with(tmp_path, fetch_head=("", NOW - 5), reflog=("update by push\n", NOW - 90_000))
+    info = probes.repo_info(tmp_path, git, now=NOW)
+    assert info["check_failed"] is True and info["checked_age_s"] == 90_000, "退回到上一次真的碰到远端的时间"
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    never = probes.repo_info(alone, _clone_with(alone, fetch_head=("", NOW - 5)), now=NOW)
+    assert never["check_failed"] is True and never["checked_age_s"] is None and never["checked_at"] == ""
+
+
+def test_a_clone_nobody_ever_fetched_has_no_check_time(tmp_path):
+    info = probes.repo_info(tmp_path, _clone_with(tmp_path), now=NOW)
+    assert info["checked_age_s"] is None and info["checked_at"] == "" and info["check_failed"] is False
+
+
+def test_a_fresh_clone_counts_from_the_moment_it_was_cloned(tmp_path):
+    """刚 ``git clone`` 下来：没有 FETCH_HEAD，分支的远端记录也还没有，只有 clone 写的 ``origin/HEAD``。"""
+    git = _clone_with(tmp_path)
+    head = tmp_path / ".git" / "logs" / "refs" / "remotes" / "origin" / "HEAD"
+    head.parent.mkdir(parents=True)
+    head.write_text("clone: from x\n", encoding="utf-8")
+    os.utime(head, (NOW - 30, NOW - 30))
+    assert probes.repo_info(tmp_path, git, now=NOW)["checked_age_s"] == 30
 
 
 def test_wsl_side_pipes_the_probe_source_into_python_inside_the_distro():

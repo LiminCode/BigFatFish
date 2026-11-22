@@ -75,7 +75,10 @@ class Graph:
         self.edges.append({"from": source, "to": target, "line": line, "state": state, "label": label})
 
     def quest(self, level: str, text: str, node: str, action: dict | None = None) -> None:
-        """``action``：页面上能点的动作 ``{"name", "agent", "side"}``（见 ``actions.py``）；没有就只是一条说明。"""
+        """``action``：页面上能点的动作（见 ``actions.py`` 和页面的 ``repair.js``）；没有就只是一条说明。
+
+        ``{"name", "agent", "side"}`` 是「修复」。别的动作再写明 ``words``（按钮那组字的前缀）、``ask``（``False`` = 不先问）、
+        ``body``（POST 的内容）——页面照着这几项画按钮，不认识具体是哪个动作。"""
         if level not in QUEST_LEVELS:
             raise ValueError(f"bad quest level {level}")
         self.quests.append({"sev": level, "text": text, "node": node, **({"action": action} if action else {})})

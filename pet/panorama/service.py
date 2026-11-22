@@ -290,7 +290,12 @@ class PanoramaService(QObject):
 
     def run_action(self, name: str, body) -> dict:
         """页面上的一个动作（``POST /api/actions/<名字>``）：在界面线程上跑登记好的处理器。不认识的名字 404；
-        处理器自己的拒绝（``ActionError``）原样回去；意料之外的异常记日志、回 500。"""
+        处理器自己的拒绝（``ActionError``）原样回去；意料之外的异常记日志、回 500。
+
+        处理器标了 ``off_gui`` 的（要联网、会等很久：「现在核对」的 fetch）就在这条请求线程上直接跑，不占界面线程；
+        它要碰 ``Config`` 的那几步自己经 ``on_gui`` 回去。``actions`` 这张表建好之后只读，请求线程查它不用锁。"""
+        if getattr(self.actions.get(str(name)), "off_gui", False):
+            return self._run_action(name, body)
         return self.on_gui(lambda: self._run_action(name, body))
 
     def _run_action(self, name: str, body) -> dict:

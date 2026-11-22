@@ -37,6 +37,8 @@ GIT_FALLBACK = r"C:\Program Files\Git\cmd\git.exe"
 GIT_TIMEOUT_S = 120.0
 #: 退到 Git Credential Manager 时它可能弹浏览器登录：给足时间
 FIRST_PUSH_TIMEOUT_S = 240.0
+#: 只问远端、不动工作区的 fetch：有人在页面上等结果
+FETCH_TIMEOUT_S = 30.0
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 #: 设置页模型下拉里的几个常用名；留空 = 跟「AI 对话」里的模型一致
 MODEL_CHOICES = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")
@@ -186,6 +188,18 @@ def pull(repo_dir: str | Path, *, run: GitRunner = run_git, token: str = "") -> 
     code, out = _remote(repo_dir, ["pull", "-q", "--rebase", "--autostash"], run=run, token=token)
     if code != 0:
         run(repo_dir, ["rebase", "--abort"])
+    return code == 0, "" if code == 0 else out.strip()[-300:]
+
+
+def fetch(repo_dir: str | Path, *, run: GitRunner = run_git, token: str = "", timeout: float = FETCH_TIMEOUT_S) -> tuple[bool, str]:
+    """只问一次远端、不动工作区和本地分支（配置全景的「现在核对」）：之后「领先 / 落后几个提交」才是此刻的。
+
+    每次尝试最多等 ``timeout`` 秒（Token 一次，被拒后凭据助手一次），比推送短得多：点的人在等按钮上的结果。
+    没连上时 git 会把 ``FETCH_HEAD`` 清空——探针靠这个认出「最近一次没连上」（``panorama.probes.remote_contact``）。"""
+    def capped(folder, args, **options):
+        return run(folder, args, **{**options, "timeout": min(options.get("timeout", timeout), timeout)})
+
+    code, out = _remote(repo_dir, ["fetch", "-q"], run=capped, token=token)
     return code == 0, "" if code == 0 else out.strip()[-300:]
 
 

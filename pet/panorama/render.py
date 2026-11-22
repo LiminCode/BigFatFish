@@ -60,6 +60,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
              "memory_truncated", "memory_empty", "settings_open", "settings_needs_service", "settings_failed", "settings_unsaved",
              "repair", "repair_confirm_win", "repair_confirm_wsl", "repair_working", "repair_installed", "repair_pending",
              "repair_failed", "repair_lost", "action_needs_service",
+             "check", "check_working", "check_checked", "check_failed", "check_busy", "check_missing",
              "list_count", "list_filter", "expand_all", "collapse_all", "ago_now", "ago_minutes", "ago_hours", "ago_days", "gutter_tip",
              *("form_" + key for key in (
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",

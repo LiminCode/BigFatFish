@@ -13,7 +13,7 @@
   文件，要令牌。能读哪些由 ``files.py`` 把关；这里只把它的拒绝翻成状态码（``not_viewable`` / ``not_found`` → 404，
   ``bad_path`` → 400，``unavailable`` → 503：要去 WSL 里读而那边没回话）。没给读取器（``files=None``）时这两个网址不存在。
 
-- ``POST /api/actions/<动作>``：页面上的一个动作（现在只有 ``repair_hooks``：给联动通道装 hooks），要令牌。处理器在
+- ``POST /api/actions/<动作>``：页面上的一个动作（``repair_hooks`` 给联动通道装 hooks、``check_remote`` 让克隆去问一次远端……），要令牌。处理器在
   ``actions.py``，由应用登记进服务；这里只把 ``ActionError`` 翻成状态码。没给设置入口时这个网址也不存在。
 
 - ``GET /report/<名字>``（公开的外壳，不含数据）和 ``GET /api/report/<名字>``（要令牌）：报告页——在浏览器里读一份生成

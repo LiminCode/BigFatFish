@@ -48,15 +48,47 @@ def providers(cfg: dict, secret_get: SecretGet) -> list[dict]:
     return rows
 
 
-def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git) -> dict:
-    """一个本地克隆：在不在、远端（去掉内嵌凭据）、分支、最近一次提交，还有多少东西没到远端。
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
-    ``unpushed``：比上游多出来的提交数（按本地记得的上游算，不联网）；``dirty``：有没有还没提交的改动。
-    问不出来（没有上游、git 失败）是 ``None``。
+
+def remote_contact(folder: Path, branch: str) -> tuple[float | None, bool]:
+    """这个克隆上一次真的碰到远端是什么时候（时间戳，不知道是 ``None``），以及最近一次 fetch 是不是没连上。只看文件，不起进程。
+
+    - ``.git/FETCH_HEAD``：每次 fetch / pull 都重写。**fetch 失败时 git 把它清空、修改时间照样更新**（本机 git 2.55 实测，
+      本地路径和 https 都一样），所以只有非空的才算数；空的 = 最近一次没连上。
+    - ``.git/logs/refs/remotes/origin/<分支>``：远端分支在本地的记录每动一次追加一行——push 成功也会动它，而 push 不写
+      FETCH_HEAD。旁边的 ``origin/HEAD`` 是 clone 时写的：刚克隆下来、还没 fetch 过的，就按克隆那一刻算。
+      几个里取最晚的。
+
+    ``.git`` 不是目录（工作树、子模块）时两个都找不到，如实答不知道。
+    """
+    git_dir = folder / ".git"
+    fetch_head = git_dir / "FETCH_HEAD"
+    try:
+        stat = fetch_head.stat()
+        fetched, failed = (stat.st_mtime, False) if stat.st_size else (None, True)
+    except OSError:
+        fetched, failed = None, False
+    remote_logs = git_dir / "logs" / "refs" / "remotes" / "origin"
+    moved = _mtime(remote_logs / branch) if branch else None
+    times = [stamp for stamp in (fetched, moved, _mtime(remote_logs / "HEAD")) if stamp is not None]
+    return (max(times) if times else None), failed
+
+
+def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git, *, now: float | None = None) -> dict:
+    """一个本地克隆：在不在、远端（去掉内嵌凭据）、分支、最近一次提交，和远端差多少、这个「差多少」有多旧。
+
+    ``unpushed`` / ``behind``：比上游多出来 / 少掉的提交数。**按本地记得的上游算，不联网**——所以它们只和上一次碰到远端时
+    一样新：``checked_at``（``YYYY-MM-DD HH:MM``，不知道是空串）、``checked_age_s``（距今秒数）、``check_failed``（最近一次
+    fetch 没连上），见 ``remote_contact``。``dirty``：有没有还没提交的改动。问不出来（没有上游、git 失败）是 ``None``。
     """
     folder = Path(os.path.expandvars(str(path or "")))
     info = {"path": str(folder) if path else "", "exists": bool(path) and folder.is_dir(), "remote": "", "branch": "", "last_commit": "",
-            "unpushed": None, "dirty": None}
+            "unpushed": None, "behind": None, "dirty": None, "checked_at": "", "checked_age_s": None, "check_failed": False}
     if not info["exists"]:
         return info
 
@@ -67,10 +99,15 @@ def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git) -> 
     info["remote"] = re.sub(r"(https?://)[^@/]+@", r"\1", git("remote", "get-url", "origin"))
     info["branch"] = git("rev-parse", "--abbrev-ref", "HEAD")
     info["last_commit"] = git("log", "-1", "--format=%cd · %s", "--date=format:%Y-%m-%d %H:%M")[:90]
-    ahead = git("rev-list", "--count", "@{upstream}..HEAD")
-    info["unpushed"] = int(ahead) if ahead.isdigit() else None
+    counts = git("rev-list", "--left-right", "--count", "@{upstream}...HEAD").split()      # 「落后 领先」，一次问完
+    if len(counts) == 2 and all(count.isdigit() for count in counts):
+        info["behind"], info["unpushed"] = int(counts[0]), int(counts[1])
     code, out = run_git(folder, ["status", "--porcelain"], timeout=GIT_TIMEOUT_S)
     info["dirty"] = bool(out.strip()) if code == 0 else None
+    checked, info["check_failed"] = remote_contact(folder, info["branch"])
+    if checked is not None:
+        info["checked_at"] = dt.datetime.fromtimestamp(checked).strftime("%Y-%m-%d %H:%M")
+        info["checked_age_s"] = max(0, int((time.time() if now is None else now) - checked))
     return info
 
 

@@ -677,6 +677,43 @@ def test_a_failed_or_lost_repair_lets_the_user_try_again(engine):
     assert out["out"] == "lost" and out["text"] == "连接断了" and out["disabled"] is False
 
 
+# ───────────────────────── 动作按钮不只会「修复」：字、要不要先问、发什么，都跟着动作走（2026-11-22）─────────────────────────
+
+def _stale_vault_graph():
+    facts = samples.facts()
+    facts["personal_vault"].update(checked_age_s=9 * 86400)
+    return sources.build(facts)
+
+
+def test_a_check_quest_gets_its_own_button_words_and_carries_its_body(engine):
+    i18n.set_language("zh")
+    data = json.dumps(render.page_data(_stale_vault_graph()), ensure_ascii=False)
+    served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
+    assert served["quests"].count('data-action="check_remote"') == 1 and ">现在核对<" in served["quests"]
+    assert 'data-words="check"' in served["quests"] and 'data-ask="0"' in served["quests"]
+    assert 'data-body="{&quot;repo&quot;:&quot;personal&quot;}"' in served["quests"]
+
+
+CHECK_STEPS = """
+el = {dataset: {action: 'check_remote', agent: '', side: '', words: 'check', ask: '0', body: '{"repo":"personal"}'}, disabled: false, textContent: '现在核对'};
+S.check = '现在核对'; S.check_working = '正在核对…'; S.check_checked = '核对过了'; S.check_failed = '没连上'; S.check_busy = '正在核对，稍等';
+"""
+
+
+def test_checking_does_not_ask_posts_the_body_and_uses_its_own_words(engine):
+    out = _repair(engine, CHECK_STEPS + "reply = {status: 200, body: {state: 'checked'}}; var out = null; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["confirms"] == [] and out["posted"] == [{"path": "/api/actions/check_remote", "body": {"repo": "personal"}}]
+    assert out["out"] == "checked" and out["text"] == "核对过了" and out["disabled"] is True
+
+
+@pytest.mark.parametrize(("reply", "state", "text"), [
+    ("{status: 200, body: {state: 'failed'}}", "failed", "没连上"), ("{status: 200, body: {state: 'busy'}}", "busy", "正在核对，稍等"),
+    ("{status: 500, body: {error: 'action_failed'}}", "failed", "没连上"), ("'gone'", "lost", "连接断了")])
+def test_a_check_that_did_not_happen_can_be_tried_again(engine, reply, state, text):
+    out = _repair(engine, CHECK_STEPS + f"reply = {reply}; var out = null; runAction(api, S, el).then(function (s) {{ out = s; }});")
+    assert out["out"] == state and out["text"] == text and out["disabled"] is False
+
+
 # ---------------------------------------------------------------- 详情栏：紧凑列表、逐条折叠、筛选、相对时间、把手（2026-11-20）
 
 def test_lists_are_compact_by_default_with_a_fold_per_item_a_count_and_a_filter_when_long(engine):
