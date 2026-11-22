@@ -302,6 +302,19 @@ def test_a_known_gap_outranks_a_stale_check_and_still_offers_the_check():
     graph = sources.build(facts)
     assert _node(graph, "vault_personal")["state"] == "warn"
     assert {q["sev"] for q in _vault_quests(graph)} == {"warn", "unknown"}
+    assert [q["sev"] for q in _vault_quests(graph) if "action" in q] == ["unknown"], "按钮只出一个，挂在「太久没核对」那条上"
+
+
+@pytest.mark.parametrize("gap", [{"behind": 46}, {"unpushed": 2}])
+def test_a_clone_with_a_known_gap_can_be_checked_again_even_though_the_last_check_is_fresh(gap):
+    """刚核对完、发现落后 46 个：那条「太久没核对」的待处理没了，按钮不能跟着没——远端可能又动了，要能再问一次。"""
+    facts = samples.facts()
+    facts["personal_vault"].update(gap)
+    graph = sources.build(facts)
+    quest, = _vault_quests(graph)
+    assert quest["sev"] == "warn" and quest["action"] == {"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}
+    facts["work_vault"].update(gap)
+    assert all("action" not in q for q in _vault_quests(sources.build(facts), "vault_work")), "公司侧仍然不能从页面核对"
 
 
 def test_the_work_clone_shows_the_same_truth_but_cannot_be_checked_from_the_page():
