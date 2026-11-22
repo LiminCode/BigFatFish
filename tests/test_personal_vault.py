@@ -138,6 +138,18 @@ def test_a_rejected_token_falls_back_to_plain_git_once_and_names_the_scopes(tmp_
     assert len(pushes) == 2 and pushes[0][1] and pushes[1][1] is None and pushes[1][2] == pv.FIRST_PUSH_TIMEOUT_S
 
 
+def test_fetch_only_asks_the_remote_and_does_not_wait_as_long_as_a_push(tmp_path):
+    git = _Git()
+    assert pv.fetch(tmp_path, run=git, token="ghp_example") == (True, "")
+    (args, env, timeout), = git.calls
+    assert args == ("fetch", "-q") and timeout == pv.FETCH_TIMEOUT_S, "不 pull、不 rebase：工作区和本地分支都不动"
+    assert env["GIT_CONFIG_VALUE_1"].startswith("Authorization: Basic ") and "ghp_example" not in str(args)
+    offline = _Git({"fetch": (128, "fatal: unable to access 'https://github.com/acme/handbook.git/': Could not resolve host")})
+    ok, reason = pv.fetch(tmp_path, run=offline)
+    assert not ok and "Could not resolve host" in reason
+    assert offline.calls[-1][2] == pv.FETCH_TIMEOUT_S, "没有 Token 时交给凭据管理器，也只等这么久（有人在页面上等）"
+
+
 def test_token_scopes_come_from_the_github_header(monkeypatch):
     class _Response:
         headers = {"X-OAuth-Scopes": "repo, read:user"}

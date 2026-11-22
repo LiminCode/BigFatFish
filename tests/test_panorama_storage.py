@@ -254,6 +254,66 @@ def test_a_clone_with_unpushed_commits_is_a_warning_and_uncommitted_edits_are_a_
     assert _node(clean, "vault_personal")["state"] == "ok" and not any(q["node"] == "vault_personal" for q in clean["quests"])
 
 
+def _vault_quests(graph: dict, node_id: str = "vault_personal") -> list[dict]:
+    return [q for q in graph["quests"] if q["node"] == node_id]
+
+
+def test_a_clone_behind_its_remote_is_a_warning_with_the_count_on_the_tile():
+    facts = samples.facts()
+    facts["personal_vault"].update(behind=46, dirty=True)
+    graph = sources.build(facts)
+    tile = _node(graph, "vault_personal")
+    assert tile["state"] == "warn" and _edge(graph, "vault_personal", "gh_personal")["state"] == "warn"
+    assert tile["sub"] == "↑0 ↓46 · 有改动"
+    assert ["落后远端的提交", "46 个"] in tile["facts"]
+    assert any(q["sev"] == "warn" and "46" in q["text"] for q in _vault_quests(graph))
+
+
+@pytest.mark.parametrize("change", [{"checked_age_s": 9 * 86400}, {"checked_age_s": None, "checked_at": ""},
+                                    {"check_failed": True}])
+def test_a_clone_nobody_compared_with_the_remote_lately_is_unknown_not_green(change):
+    """没联网核对过就不许显示绿色：领先 0、落后 0 只是按上次核对时远端的样子算出来的。"""
+    facts = samples.facts()
+    facts["personal_vault"].update(change)
+    graph = sources.build(facts)
+    assert _node(graph, "vault_personal")["state"] == "unknown"
+    assert _edge(graph, "vault_personal", "gh_personal")["state"] == "unknown"
+    quest, = _vault_quests(graph)
+    assert quest["sev"] == "unknown"
+    assert quest["action"] == {"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}
+    fresh = sources.build(samples.facts())
+    assert _node(fresh, "vault_personal")["state"] == "ok" and _vault_quests(fresh) == []
+
+
+def test_the_tile_says_when_the_clone_last_met_its_remote():
+    facts = samples.facts()
+    tile = _node(sources.build(facts), "vault_personal")
+    assert tile["sub"] == "↑0 ↓0" and tile["lines"] == ["核对于 01-02 03:04"]
+    assert ["上次和远端核对", "2026-01-02 03:04"] in tile["facts"]
+    facts["personal_vault"].update(check_failed=True)
+    assert _node(sources.build(facts), "vault_personal")["lines"] == ["上次核对没连上"]
+    facts["personal_vault"].update(check_failed=False, checked_at="", checked_age_s=None)
+    assert _node(sources.build(facts), "vault_personal")["lines"] == ["还没和远端核对过"]
+
+
+def test_a_known_gap_outranks_a_stale_check_and_still_offers_the_check():
+    facts = samples.facts()
+    facts["personal_vault"].update(behind=3, checked_age_s=9 * 86400)
+    graph = sources.build(facts)
+    assert _node(graph, "vault_personal")["state"] == "warn"
+    assert {q["sev"] for q in _vault_quests(graph)} == {"warn", "unknown"}
+
+
+def test_the_work_clone_shows_the_same_truth_but_cannot_be_checked_from_the_page():
+    """公司侧的 git 在 WSL 里（SSH 密钥只在那边）：第一期只给个人侧的克隆「现在核对」。"""
+    facts = samples.facts()
+    facts["work_vault"].update(checked_age_s=9 * 86400)
+    graph = sources.build(facts)
+    assert _node(graph, "vault_work")["state"] == "unknown" and _edge(graph, "vault_work", "gh_work")["state"] == "unknown"
+    quest, = _vault_quests(graph, "vault_work")
+    assert quest["sev"] == "unknown" and "action" not in quest
+
+
 @pytest.mark.parametrize("language", ["zh", "en"])
 def test_storage_text_exists_in_both_languages(language):
     """``t()`` 找不到键会把键名原样返回：图里出现键的样子就是字表缺了一条。"""
@@ -261,9 +321,13 @@ def test_storage_text_exists_in_both_languages(language):
     for backup in (None, {"auto": True, "repo": "acme/handbook", "backed_up_at": "2026-01-02 03:04", "error": "x"},
                    {"auto": True, "repo": "a/b", "backed_up_at": "", "paused": True}):
         facts = samples.facts(backup=backup, unknown=["leftover.md"])
-        facts["personal_vault"].update(unpushed=1, dirty=True)
+        facts["personal_vault"].update(unpushed=1, behind=2, dirty=True, checked_age_s=9 * 86400)
+        facts["work_vault"].update(check_failed=True)
         dumped = json.dumps(sources.build(facts), ensure_ascii=False)
         assert not _MISSING_KEY.search(dumped), _MISSING_KEY.search(dumped)
+        never = samples.facts()
+        never["personal_vault"].update(checked_at="", checked_age_s=None)
+        assert not _MISSING_KEY.search(json.dumps(sources.build(never), ensure_ascii=False))
     without = samples.facts()
     without.pop("storage")                                               # 老的事实（没有存储那一段）也画得出来
     assert not _MISSING_KEY.search(json.dumps(sources.build(without), ensure_ascii=False))

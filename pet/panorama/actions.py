@@ -3,6 +3,7 @@
 
 一个动作 = 一个处理器 ``handler(body) -> dict``，由应用构造 ``PanoramaService`` 时登记（``actions={"名字": handler}``），
 页面 ``POST /api/actions/<名字>`` 来调；服务把它转到界面线程上跑（和改设置同一条路，见 ``PanoramaService.on_gui``）。
+要联网、会等很久的动作给处理器标 ``off_gui = True``：服务就在请求线程上直接调它，由它自己在需要时回界面线程（``check_remote``）。
 处理器自己校验参数，拒绝就抛 ``ActionError``（状态码 + 代码），意料之外的异常由服务翻成 500 ``action_failed``。
 
 **装 hooks 每次都要用户同意（ADR 0006）。** 同意框在页面上（``repair.js`` 的 ``confirm()``，文案同右键菜单那条路的 Qt 弹框）；
@@ -11,15 +12,22 @@
 """
 from __future__ import annotations
 
+import logging
+import threading
 import weakref
 from pathlib import Path
 from typing import Callable
 
+from .. import personal_vault
 from .. import settings_table as st
 from ..click_sound import play_sound, resolve_builtin_sound
 
+log = logging.getLogger(__name__)
+
 #: 要靠 hooks 的两条通道 → 它们在图上的哪一侧（装完重探那一侧）
 HOOKED_SIDES = {"claude": "win", "claude_wsl": "wsl"}
+#: 待处理里「现在核对」走的动作名（``sources.repositories`` 写在那条待处理的 action 里）
+CHECK_REMOTE_ACTION = "check_remote"
 #: 设置表里 ``Setting.action`` 写的名字：一项音效设置旁边的「试听」
 PREVIEW_SOUND_ACTION = "preview_sound"
 
@@ -70,6 +78,46 @@ def generate_report(generators: dict) -> Callable[[object], dict]:
         if not isinstance(report, str) or report not in generators:
             raise ActionError(400, "bad_report")
         return {"report": report, "state": str(generators[report]())}
+    return run
+
+
+def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], refresh: Callable[[str], object], *,
+                 fetch: Callable[..., "tuple[bool, str]"] = personal_vault.fetch,
+                 token: Callable[[], str] = personal_vault.github_token) -> Callable[[object], dict]:
+    """「现在核对」：让一个本地克隆去问一次远端（``git fetch``，不动工作区和本地分支），然后重探本机一侧，磁贴上的
+    「领先 / 落后几个提交」才是此刻的。请求体 ``{repo}``；``repos``：名字 → 返回克隆目录的函数（读配置，所以经 ``on_gui`` 调）。
+
+    **不在界面线程上跑**（处理器标了 ``off_gui``，服务就在请求线程上直接调它）：fetch 要联网，可能等上几十秒。它只在两处
+    回界面线程——读克隆目录、让服务重探（``refresh`` 要碰 ``Config``）。
+
+    回 ``checked`` / ``failed``（没连上）/ ``missing``（目录不是克隆，不 fetch）/ ``busy``（上一次还没回来）。**没连上也重探**：
+    git 已经把 ``FETCH_HEAD`` 清空了，磁贴要改口说「上次核对没连上」。重探没发起（界面线程正忙、还没有页面在看）不算核对
+    失败，记一行日志。失败原因只进日志（末 200 个字符，是 git 的报错，不含仓库内容）。
+    """
+    running = threading.Lock()
+
+    def run(body) -> dict:
+        repo = body.get("repo") if isinstance(body, dict) else None
+        if not isinstance(repo, str) or repo not in repos:
+            raise ActionError(400, "bad_repo")
+        if not running.acquire(blocking=False):
+            return {"repo": repo, "state": "busy"}
+        try:
+            repo_dir = str(on_gui(repos[repo]))
+            if not personal_vault.repo_ready(repo_dir):
+                return {"repo": repo, "state": "missing"}
+            ok, reason = fetch(repo_dir, token=token())
+            if not ok:
+                log.warning("配置全景：核对 %s 没连上远端：%s", repo, reason[-200:])
+            try:
+                on_gui(lambda: refresh("win"))
+            except Exception:  # noqa: BLE001 - 重探没发起：页面留着旧图，下次打开会是新的
+                log.info("配置全景：核对 %s 之后没能重探本机一侧", repo, exc_info=True)
+            return {"repo": repo, "state": "checked" if ok else "failed"}
+        finally:
+            running.release()
+
+    run.off_gui = True
     return run
 
 

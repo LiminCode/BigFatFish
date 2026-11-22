@@ -130,3 +130,81 @@ def test_preview_without_a_config_is_a_503():
     with pytest.raises(actions.ActionError) as caught:
         run({"group": "link_sounds", "id": "sound_done_path"})
     assert (caught.value.status, caught.value.code) == (503, "no_config")
+
+
+# ───────────────────────── 「现在核对」：让克隆去问一次远端（2026-11-22）─────────────────────────
+
+class _Checker:
+    """``check_remote`` 的几个边界换成记账的假货：界面线程、fetch、重探。"""
+
+    def __init__(self, tmp_path, *, outcome=(True, ""), ready=True):
+        self.repo = tmp_path / "vault"
+        if ready:
+            (self.repo / ".git").mkdir(parents=True)
+        self.outcome, self.log = outcome, []
+
+    def on_gui(self, work):
+        self.log.append("gui")
+        return work()
+
+    def fetch(self, repo_dir, *, token):
+        self.log.append(("fetch", str(repo_dir), token))
+        return self.outcome
+
+    def handler(self, **overrides):
+        options = {"fetch": self.fetch, "token": lambda: "tok"}
+        options.update(overrides)
+        return actions.check_remote({"personal": lambda: str(self.repo)}, self.on_gui,
+                                    lambda side: self.log.append(("refresh", side)), **options)
+
+
+def test_checking_fetches_the_clone_off_the_gui_thread_then_reprobes_this_machine(tmp_path):
+    checker = _Checker(tmp_path)
+    run = checker.handler()
+    assert run.off_gui is True, "fetch 要联网：不许占着界面线程等"
+    assert run({"repo": "personal"}) == {"repo": "personal", "state": "checked"}
+    assert checker.log == ["gui", ("fetch", str(checker.repo), "tok"), "gui", ("refresh", "win")]
+
+
+def test_a_check_that_cannot_reach_the_remote_says_failed_and_still_reprobes(tmp_path):
+    """没连上也要重探：git 已经把 FETCH_HEAD 清空了，磁贴要改口说「上次核对没连上」。"""
+    checker = _Checker(tmp_path, outcome=(False, "fatal: unable to access"))
+    assert checker.handler()({"repo": "personal"}) == {"repo": "personal", "state": "failed"}
+    assert ("refresh", "win") in checker.log
+
+
+def test_a_missing_clone_is_not_fetched(tmp_path):
+    checker = _Checker(tmp_path, ready=False)
+    assert checker.handler()({"repo": "personal"}) == {"repo": "personal", "state": "missing"}
+    assert not any(isinstance(entry, tuple) for entry in checker.log)
+
+
+def test_a_second_check_while_one_is_running_is_turned_away(tmp_path):
+    checker = _Checker(tmp_path)
+    answers = []
+
+    def slow_fetch(repo_dir, *, token):
+        answers.append(run({"repo": "personal"}))            # 第一次还没回来，又点了一次
+        return True, ""
+
+    run = checker.handler(fetch=slow_fetch)
+    assert run({"repo": "personal"})["state"] == "checked" and answers == [{"repo": "personal", "state": "busy"}]
+    assert run({"repo": "personal"})["state"] == "checked", "上一次结束后可以再核对"
+
+
+def test_a_refresh_that_cannot_run_does_not_turn_a_good_check_into_an_error(tmp_path):
+    checker = _Checker(tmp_path)
+
+    def refresh(side):
+        raise RuntimeError("gui is busy")
+
+    run = actions.check_remote({"personal": lambda: str(checker.repo)}, checker.on_gui, refresh, fetch=checker.fetch, token=lambda: "")
+    assert run({"repo": "personal"}) == {"repo": "personal", "state": "checked"}
+
+
+@pytest.mark.parametrize("body", [{}, {"repo": "work"}, {"repo": 3}, "personal", None])
+def test_only_registered_clones_can_be_checked(tmp_path, body):
+    checker = _Checker(tmp_path)
+    with pytest.raises(actions.ActionError) as caught:
+        checker.handler()(body)
+    assert (caught.value.status, caught.value.code) == (400, "bad_repo") and checker.log == []

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -393,3 +394,30 @@ def test_refresh_does_nothing_before_the_first_round_or_while_one_is_running(tmp
     assert h.service.refresh("win") is False, "一轮正在路上：它回来时自带新状态"
     h.pending_runs.pop()()
     assert h.service.refresh("win") is True
+
+
+# ───────────────────────── 要联网的动作不占界面线程（「现在核对」要 fetch）─────────────────────────
+
+def test_an_action_that_asks_to_stay_off_the_gui_thread_runs_on_the_request_thread(tmp_path):
+    """界面线程这时正卡着（在等 join）：走界面线程的动作会等到超时；标了 ``off_gui`` 的就在请求线程上跑完。"""
+    h = _Harness(tmp_path)
+    h.service.GUI_TIMEOUT = 0.2
+    seen, box = {}, {}
+
+    def slow(body):
+        seen["thread"] = threading.current_thread()
+        return {"state": "done", "body": body}
+
+    slow.off_gui = True
+    h.service.actions["slow"] = slow
+
+    def request() -> None:
+        try:
+            box["out"] = h.service.run_action("slow", {"n": 1})
+        except Exception as exc:  # noqa: BLE001 - 断言里要看到它
+            box["error"] = exc
+
+    worker = threading.Thread(target=request)
+    worker.start()
+    worker.join(15)
+    assert not worker.is_alive() and box == {"out": {"state": "done", "body": {"n": 1}}} and seen["thread"] is worker

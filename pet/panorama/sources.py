@@ -20,6 +20,9 @@ from .model import KINDS, LINES, TIERS, ZONES, Graph
 
 FISH_NODE = "pet"
 WSL_ENTRY = "cc_wsl"
+#: 一个克隆和远端核对过之后，「领先 / 落后几个提交」还能信多久。现在没有定时同步，只有手点的「现在核对」和各功能顺带的
+#: pull / push 会碰远端，所以给一天；定时同步上线后改成它周期的两倍。
+REMOTE_CHECK_STALE_S = 24 * 3600
 SOURCES: list[Callable[[Graph, dict], None]] = []
 
 
@@ -396,25 +399,53 @@ def repositories(g: Graph, f: dict) -> None:
                   [L("fact.note"), L("github.no_probe")]])
     g.quest("unknown", L("quest.github_no_probe"), "gh_personal")
 
-    def vault(node_id: str, column_: int, title: str, info: dict, push: str) -> None:
-        unpushed, dirty = info.get("unpushed"), info.get("dirty")    # 没推送的提交 = 要处理；没提交的改动 = 提示
-        g.node(node_id, "win", column_, "repo", title, info["last_commit"][:16] if info["exists"] else L("missing_dir"),
-               "bad" if not info["exists"] else "warn" if unpushed else "ok", anchor="bottom",
+    def vault(node_id: str, column_: int, title: str, info: dict, push: str, check: dict | None = None) -> str:
+        """一个克隆的磁贴；返回它到 GitHub 那条线该是什么状态（``""`` = 没有特别要说的，按调用方的默认）。
+
+        领先 / 落后是按上一次碰到远端时的样子算的，所以**没核对过、核对得太久、或最近一次没连上，就不许显示绿色**：
+        磁贴和线都是「探测不到」，待处理里说一句；``check`` 是那一句旁边的动作（「现在核对」），只有肥鱼自己能 fetch 的克隆才给。
+        已经知道有差距（领先或落后）时照旧是「要处理」——知道的坏消息比不知道更该先看见。"""
+        if not info["exists"]:
+            g.node(node_id, "win", column_, "repo", title, L("missing_dir"), "bad", anchor="bottom",
+                   facts=[[L("fact.push_via"), push]], source=_src(info["path"]))
+            return ""
+        unpushed, behind, dirty = info.get("unpushed"), info.get("behind"), info.get("dirty")
+        checked, age, failed = info.get("checked_at") or "", info.get("checked_age_s"), bool(info.get("check_failed"))
+        stale = failed or age is None or age > REMOTE_CHECK_STALE_S
+        gap = bool(unpushed or behind)
+        count = lambda n: "" if n is None else L("count", n=n) if n else L("none")  # noqa: E731
+        short = lambda n: "?" if n is None else str(n)  # noqa: E731
+        g.node(node_id, "win", column_, "repo", title,
+               " · ".join(part for part in (L("vault.sub", ahead=short(unpushed), behind=short(behind)),
+                                            L("vault.sub_dirty") if dirty else "") if part),
+               "warn" if gap else "unknown" if stale else "ok", anchor="bottom",
+               lines=[L("vault.check_failed") if failed else L("vault.checked", when=checked[5:]) if checked else L("vault.never_checked")],
                facts=[[L("fact.remote"), info["remote"]], [L("fact.branch"), info["branch"]], [L("fact.last_commit"), info["last_commit"]],
-                      [L("fact.unpushed"), "" if unpushed is None else L("count", n=unpushed) if unpushed else L("none")],
+                      [L("fact.unpushed"), count(unpushed)], [L("fact.behind"), count(behind)],
                       [L("fact.dirty"), "" if dirty is None else L("has") if dirty else L("none")],
+                      [L("fact.checked"), checked or L("vault.never_checked")],
+                      [L("fact.check_failed"), L("has") if failed else ""],
+                      [L("fact.note"), L("vault.counts_note")],
                       [L("fact.push_via"), push]], source=_src(info["path"]))
         if unpushed:
             g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id)
+        if behind:
+            g.quest("warn", L("quest.behind", name=title, n=behind), node_id)
+        if stale:
+            text = L("quest.check_failed", name=title) if failed else L("quest.stale", name=title, when=checked) if checked \
+                else L("quest.never_checked", name=title)
+            g.quest("unknown", text, node_id, action=check)
         if dirty:
             g.quest("info", L("quest.dirty", name=title), node_id)
+        return "warn" if gap else "unknown" if stale else ""
 
-    vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"))
-    vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
+    personal_line = vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"),
+                          check={"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}})
+    work_line = vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
     token_line = "ok" if token["present"] else "unknown"
     g.edge(FISH_NODE, "gh_personal", "github", token_line)      # 知识库同步、GitHub 连接器；配置备份那条线见 storage
     if "github" in personal["remote"]:
-        g.edge("vault_personal", "gh_personal", "github", "warn" if personal.get("unpushed") else token_line)
+        g.edge("vault_personal", "gh_personal", "github", personal_line or token_line)
     if _wsl_ready(f):
         hosts = [h for h in f["wsl"]["ssh_hosts"] if "." in h and not h[0].isdigit()]
         g.node("gh_work", "cloud_work", 0, "repo", L("node.github", owner=_owner(work["remote"]) or L("zone.work")), " · ".join(hosts), "ok", "big",
@@ -423,7 +454,7 @@ def repositories(g: Graph, f: dict) -> None:
                       [L("fact.credentials"), L("github.work_credentials")]])
         g.edge(WSL_ENTRY, "gh_work", "github", "ok", "gh / ssh")
         if "github" in work["remote"]:
-            g.edge("vault_work", "gh_work", "github", "warn" if work.get("unpushed") else "ok")
+            g.edge("vault_work", "gh_work", "github", work_line or "ok")
 
 
 # ───────────────────────── 存储 ─────────────────────────
