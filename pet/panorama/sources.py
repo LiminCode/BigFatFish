@@ -403,7 +403,8 @@ def repositories(g: Graph, f: dict) -> None:
         """一个克隆的磁贴；返回它到 GitHub 那条线该是什么状态（``""`` = 没有特别要说的，按调用方的默认）。
 
         领先 / 落后是按上一次碰到远端时的样子算的，所以**没核对过、核对得太久、或最近一次没连上，就不许显示绿色**：
-        磁贴和线都是「探测不到」，待处理里说一句；``check`` 是那一句旁边的动作（「现在核对」），只有肥鱼自己能 fetch 的克隆才给。
+        磁贴和线都是「探测不到」，待处理里说一句；``check`` 是待处理旁边的动作（「现在核对」），只有肥鱼自己能 fetch 的克隆才给，
+        有差距或太久没核对时都给（挂在其中一条上）；又新又没有差距的克隆没有待处理，也就没有按钮。
         已经知道有差距（领先或落后）时照旧是「要处理」——知道的坏消息比不知道更该先看见。"""
         if not info["exists"]:
             g.node(node_id, "win", column_, "repo", title, L("missing_dir"), "bad", anchor="bottom",
@@ -427,10 +428,13 @@ def repositories(g: Graph, f: dict) -> None:
                       [L("fact.check_failed"), L("has") if failed else ""],
                       [L("fact.note"), L("vault.counts_note")],
                       [L("fact.push_via"), push]], source=_src(info["path"]))
+        # 「现在核对」只挂在一条待处理上（挂两条就是两个一样的按钮）：太久没核对的那条优先，其次落后、领先。
+        # 有差距时也要给：刚核对完发现落后，那条「太久没核对」就没了，而远端可能又动了，得能再问一次。
+        offer = "stale" if stale else "behind" if behind else "unpushed"
         if unpushed:
-            g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id)
+            g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id, action=check if offer == "unpushed" else None)
         if behind:
-            g.quest("warn", L("quest.behind", name=title, n=behind), node_id)
+            g.quest("warn", L("quest.behind", name=title, n=behind), node_id, action=check if offer == "behind" else None)
         if stale:
             text = L("quest.check_failed", name=title) if failed else L("quest.stale", name=title, when=checked) if checked \
                 else L("quest.never_checked", name=title)
