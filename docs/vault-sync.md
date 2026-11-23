@@ -5,14 +5,15 @@
 > 决定见 [ADR 0019](adr/0019-run-journal-and-git-are-the-timeline.md)（时间轴两本账）和
 > [ADR 0020](adr/0020-vault-sync-never-picks-a-side.md)（不自动选边、没人点头不提交大动作）。
 
-现在做到的：手动的「现在核对」和「现在同步」，和一张时间轴页，都从[配置全景](config-panorama.md)的知识库克隆磁贴进。
-定时同步还没做，进度看路线图 M4c。
+现在做到的：手动的「现在核对」和「现在同步」、一张时间轴页（都从[配置全景](config-panorama.md)的知识库克隆磁贴进），
+和默认关着的定时同步（「知识库定时同步」磁贴）。还没做的看路线图 M4c。
 
 ## 模块
 
 | 文件 | 职责 |
 |---|---|
-| `pet/vault_sync.py` | 同步器 `VaultSync`：一次同步的全过程、预检、守卫、读 `git status`。零 Qt |
+| `pet/vault_sync.py` | 同步器 `VaultSync`：一次同步的全过程、预检、守卫、读 `git status`；定时的设置（`normalize`）、什么时候该跑（`decide`）、看工作区（`probe`）。零 Qt |
+| `pet/vault_sync_service.py` | 定时同步的 Qt 侧：每分钟的定时器、后台线程、结果排回界面线程 |
 | `pet/personal_vault.py` | git 的执行器（Windows 的 git.exe + 钥匙串里的 GitHub Token）、`fetch`、`upstream_state` |
 | `pet/run_journal.py` | 运行记录：每次核对 / 同步记一行（见[配置与数据](config-and-data.md)） |
 | `pet/panorama/actions.py` | 页面的动作 `check_remote`、`sync_vault`、`open_report`（开时间轴页） |
@@ -67,7 +68,7 @@ flowchart TD
 |---|---|---|
 | `synced` | `ok` | 提交了、拉了或推了至少一样 |
 | `noop` | `noop` | 没事可做 |
-| `conflict` / `blocked` / `review` | `needs_you` | 停下来等用户；效果里分别带 `conflicts`（几个文件）/ `blocked`（原因）/ `review`（原因） |
+| `conflict` / `blocked` / `review` | `needs_you` | 停下来等用户；效果里分别带 `conflicts`（几个文件）/ `blocked`（原因）/ `review`（原因：`deletions`、`many_files`，或「提交前问我」模式的 `ask`） |
 | `failed` | `failed` | git 没办成；`error` 是报错的末 200 个字符 |
 | `missing` / `busy` | 不记 | 目录不是克隆 / 上一次还没回来：什么都没跑 |
 
@@ -83,6 +84,32 @@ flowchart TD
 - 磁贴详情里有「上次同步」一行（`probes.last_sync` 从运行记录读）。上次同步撞了冲突、而克隆仍然两边各多提交时，
   待处理里多一条说明该怎么办；用户解决并推上去之后自己消失。
 - 动作不占界面线程（`off_gui`）；跑过之后重探本机一侧，页面原地重画。
+
+### 定时同步
+
+`pet/vault_sync_service.py`（Qt 侧：时钟和线程）+ `vault_sync.decide` / `probe`（纯逻辑）。**默认关**：它会替用户提交和推送，
+开关在配置全景「知识库定时同步」磁贴的「设置」里（设置组 `vault_sync`，配置键 `vault_sync`）。
+
+- **每分钟看一眼该不该跑**（界面线程，开关关着时约 1.4 微秒）。该跑的四种情况，也是运行记录里的触发原因：
+  - `schedule`：距上一次运行满了一个周期（默认 60 分钟）。没有改动也去问一次远端，才知道云端有没有新提交；
+  - `idle`：有正文改动，而且最后一次改动已经过了「停笔多久」（默认 5 分钟，0 = 不看）。为了知道这个，开着时每分钟在后台线程上
+    跑一条本地 `git status`（实测 30 毫秒），再看改动文件的修改时间；只删了文件时看它所在目录的修改时间；
+  - `startup`：肥鱼启动后的第一次检查，而且上一次运行已经过期。刚跑过又重启的不再跑；
+  - `wake`：两次检查之间隔了 5 分钟以上 = 电脑中间睡过。醒来只补一次，不是每个错过的钟点各补一次。
+- 「上一次运行」启动时从运行记录里取（核对和同步都算，手点的也算），之后自己记；页面上手点一次，周期从那一刻重新算。
+- **同一批改动不每分钟重试**：带着某批改动跑过一次（撞了冲突、等审核、没连上），工作区没再变之前，`idle` 不再触发；
+  每个周期的那一次照常。判断靠一个指纹：`git status` 的输出加上最近一次改动的时间。
+- **三种模式**（`VaultSync.run_scheduled`），都不带 `approved`——没人点头：
+  - `auto` 自动提交：`sync()`，守卫拦大动作（有删除、超过 20 个文件 → `review`）；
+  - `ask` 提交前问我：`sync(commit=False)`，从不替用户提交；工作区干净时照常拉取、推送，有改动就只问一次远端然后停下
+    （`review`，原因 `ask`）；
+  - `watch` 只看不动：`check()`，只 fetch。它不提交，所以不看工作区、没有 `idle`。
+- 跑完之后（`AppShell._on_vault_sync_finished`）：配置全景开着就重探本机一侧，时间轴页开着就重画；结果是冲突 / 等审核 /
+  半截状态 / 没办成时肥鱼冒一句气泡——**同一种结果只说一次**，不每小时念一遍。
+- **磁贴**（`sources.vault_schedule`）：定时不是一种新东西，是功能磁贴的属性。副标题「每 N 分钟 · 模式」，下一行「上次 HH:MM」，
+  磁贴上一排色块是最近 12 次运行（核对和同步都算；绿 = 有变化、灰 = 没事、琥珀 = 等你、红 = 没办成），详情里是每一次的时间和做了什么。
+  **开着却超过两个周期没跑过 = 迟了**：磁贴和它到克隆的线变琥珀，待处理里多一条。该跑没跑要有人看得见。
+- 服务随主进程起，`stop()` 之后晚到的结果作废。配置每次检查都重新读，改了设置最迟一分钟生效。
 
 ### 时间轴页（`/report/activity`）
 

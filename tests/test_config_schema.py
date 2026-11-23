@@ -151,6 +151,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "slack_watch",
         "work_notes",
         "personal",
+        "vault_sync",
         "memory_distill",
         "config_backup",  # 2026-11-14 配置备份到 GitHub
         "festival_custom_quotes_cn",

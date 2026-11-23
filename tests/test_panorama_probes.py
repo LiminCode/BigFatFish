@@ -213,6 +213,24 @@ def test_windows_side_reports_the_last_sync_of_the_personal_clone_from_the_run_j
     assert last["result"] == "needs_you" and last["conflicts"] == 1 and last["at"] and "blocked" not in last
 
 
+def test_the_schedule_probe_gives_the_settings_in_force_and_the_recent_runs_of_both_vault_jobs(tmp_path):
+    from pet import run_journal
+
+    clock = [dt.datetime(2026, 11, 22, 9, 0, 0)]
+    journal = run_journal.Journal(tmp_path / run_journal.DIR_NAME, now=lambda: clock[0])
+    assert probes.vault_schedule({}, tmp_path) == {
+        "settings": {"enabled": False, "mode": "auto", "interval_minutes": 60, "idle_minutes": 5}, "runs": [], "last_age_s": None}
+    for hour, job, result in ((9, "vault_sync", "ok"), (10, "work_briefing", "ok"), (11, "vault_check", "noop"), (12, "vault_sync", "needs_you")):
+        clock[0] = dt.datetime(2026, 11, 22, hour, 0, 0)
+        journal.start(job, "schedule").finish(result)
+    now = dt.datetime(2026, 11, 22, 12, 30, 0).timestamp()
+    info = probes.vault_schedule({"vault_sync": {"enabled": True, "interval_minutes": 30}}, tmp_path, now=now)
+    assert info["settings"]["enabled"] is True and info["settings"]["interval_minutes"] == 30
+    assert [(run["job"], run["result"]) for run in info["runs"]] == [("vault_sync", "needs_you"), ("vault_check", "noop"), ("vault_sync", "ok")], \
+        "新的在前；别的任务的运行不算"
+    assert info["last_age_s"] == 1800
+
+
 def test_windows_side_collects_everything_without_touching_wsl(tmp_path):
     home = _fake_home(tmp_path / "home")
     cfg_path = tmp_path / "config.json"
@@ -225,5 +243,5 @@ def test_windows_side_collects_everything_without_touching_wsl(tmp_path):
     assert facts["github_token"] == {"present": True, "tail": SECRET[-4:]} and facts["chat"]["github_connector"] is True
     assert facts["personal_vault"]["exists"] is False and facts["win"]["memory_count"] == 1
     assert set(facts["features"]) == {"link_win", "session_fish", "session_history", "link_sounds", "chat", "distill_personal",
-                                      "assistant", "link_wsl", "briefing", "slack", "notes", "distill_work"}
+                                      "assistant", "vault_sync", "link_wsl", "briefing", "slack", "notes", "distill_work"}
     assert SECRET not in json.dumps(facts)
