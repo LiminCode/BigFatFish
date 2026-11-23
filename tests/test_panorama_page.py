@@ -700,7 +700,8 @@ def test_a_tile_with_its_own_actions_shows_every_one_of_them_in_its_details(engi
     served = _details(engine, sources.build(samples.facts()), "vault_personal", "fakeApi([])")       # 又新又没有差距
     assert served.count('data-action="check_remote"') == 1 and served.count('data-action="sync_vault"') == 1
     assert ">现在核对<" in served and ">现在同步<" in served and "disabled" not in served
-    assert served.index("check_remote") < served.index("sync_vault"), "只读的那个排在前面"
+    assert served.index("check_remote") < served.index("sync_vault") < served.index("open_report"), "只读的那个排在前面"
+    assert ">时间轴<" in served and 'data-body="{&quot;report&quot;:&quot;activity&quot;}"' in served
     assert 'data-words="sync"' in served and 'data-ask="0"' not in served.split('data-action="sync_vault"')[1].split(">")[0], \
         "同步要先问；核对不用"
     work = _details(engine, sources.build(samples.facts()), "vault_work", "fakeApi([])")
@@ -727,6 +728,17 @@ def test_the_sync_button_says_how_it_went(engine, state, text, again):
     out = _repair(engine, SYNC_STEPS + f"reply = {{status: 200, body: {{state: '{state}'}}}}; var out = null; runAction(api, S, el).then(function (s) {{ out = s; }});")
     assert out["confirms"] == ["SYNC?"] and out["posted"] == [{"path": "/api/actions/sync_vault", "body": {"repo": "personal"}}]
     assert out["out"] == state and out["text"] == text and out["disabled"] is (not again)
+
+
+def test_a_button_that_opened_a_page_can_be_pressed_again(engine):
+    """「时间轴」开的是另一张页：图不会重画，按钮不能就此灰掉。"""
+    steps = """
+el = {dataset: {action: 'open_report', agent: '', side: '', words: 'activity', ask: '0', body: '{"report":"activity"}'}, disabled: false, textContent: '时间轴'};
+S.activity = '时间轴'; S.activity_working = '正在打开…'; S.activity_opened = '已打开'; S.activity_failed = '打不开';
+reply = {status: 200, body: {state: 'opened'}}; var out = null; runAction(api, S, el).then(function (s) { out = s; });"""
+    out = _repair(engine, steps)
+    assert out["confirms"] == [] and out["posted"] == [{"path": "/api/actions/open_report", "body": {"report": "activity"}}]
+    assert out["out"] == "opened" and out["text"] == "已打开" and out["disabled"] is False
 
 
 CHECK_STEPS = """

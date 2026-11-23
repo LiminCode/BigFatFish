@@ -3514,6 +3514,7 @@ class AppShell:
         if service is None or not shiboken6.isValid(service):
             from . import personal_vault
             from .panorama import actions as panorama_actions
+            from .panorama import activity as panorama_activity
             from .panorama import notes as panorama_notes
             from .panorama import reports as panorama_reports
             from .panorama.service import PanoramaService
@@ -3526,6 +3527,9 @@ class AppShell:
             slack_watch_service = lambda: getattr(getattr(self, "_slack_watch", None), "service", None)  # noqa: E731
             # 页面上能核对 / 同步的克隆：名字 → 它此刻的目录（读配置，所以动作经 on_gui 来调）。现在只有个人知识库
             vault_repos = {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]}
+            # 时间轴页：运行记录 + 个人知识库远端分支的提交。它要起 git，所以 provider 不在界面线程上做，只回来读这两样
+            timeline_context = lambda: {"repo_dir": vault_repos["personal"](), "theme": panorama_reports.theme(self.config)}  # noqa: E731
+            timeline_changed = lambda: self._panorama_service.refresh_report(panorama_activity.REPORT)  # noqa: E731
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份；「试听」在界面线程上放一个提示音（会话提示音的设置页）；
@@ -3548,16 +3552,21 @@ class AppShell:
                          panorama_actions.PREVIEW_SOUND_ACTION: panorama_actions.preview_sound(lambda: self.config),
                          panorama_actions.CHECK_REMOTE_ACTION: panorama_actions.check_remote(
                              vault_repos, lambda work: self._panorama_service.on_gui(work),
-                             lambda side: self._panorama_service.refresh(side), journal=self._runs(), lock=self._vault_sync().lock),
+                             lambda side: self._panorama_service.refresh(side), journal=self._runs(), lock=self._vault_sync().lock,
+                             after=timeline_changed),
                          panorama_actions.SYNC_VAULT_ACTION: panorama_actions.sync_vault(
                              vault_repos, lambda work: self._panorama_service.on_gui(work),
-                             lambda side: self._panorama_service.refresh(side), self._vault_sync()),
+                             lambda side: self._panorama_service.refresh(side), self._vault_sync(), after=timeline_changed),
+                         panorama_actions.OPEN_REPORT_ACTION: panorama_actions.open_report(
+                             lambda name: self._panorama_service.open_report(name)),
                          panorama_reports.INSPIRATION_ACTION: panorama_reports.add_inspiration(personal_service),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),
                          panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,
                                                                                   panorama_notes.SLACK_WATCH: slack_notes_service})},
-                reports={panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
+                reports={panorama_activity.REPORT: panorama_activity.provider(
+                             self._runs(), timeline_context, lambda work: self._panorama_service.on_gui(work)),
+                         panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
                          panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config),
                          panorama_notes.WORK_NOTES: panorama_notes.work_notes(notes_service, self.config),
                          panorama_notes.SLACK_WATCH: panorama_notes.slack_watch(slack_notes_service, slack_watch_service, self.config)})

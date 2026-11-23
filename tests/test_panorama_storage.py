@@ -315,7 +315,8 @@ def test_a_clone_with_a_known_gap_offers_the_sync_and_can_still_be_checked_from_
     graph = sources.build(facts)
     quest, = _vault_quests(graph)
     assert quest["sev"] == "warn" and quest["action"] == {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}}
-    assert _node(graph, "vault_personal")["actions"] == [{"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}, {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}}]
+    assert _node(graph, "vault_personal")["actions"] == [{"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}, {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}},
+                                                         {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}]
     facts["work_vault"].update(gap)
     work = sources.build(facts)
     assert all("action" not in q for q in _vault_quests(work, "vault_work")) and "actions" not in _node(work, "vault_work"), "公司侧的 git 在 WSL 里：页面上既不能核对也不能同步"
@@ -347,9 +348,10 @@ def test_the_tile_says_how_the_last_sync_went(last, words):
     assert rows == ([words] if words else []), "没同步过：这一行是空的，页面不画空行"
 
 
-def test_the_two_buttons_are_on_the_tile_even_when_there_is_nothing_to_do():
+def test_the_buttons_are_on_the_tile_even_when_there_is_nothing_to_do():
     graph = sources.build(samples.facts())
-    assert [a["name"] for a in _node(graph, "vault_personal")["actions"]] == ["check_remote", "sync_vault"] and _vault_quests(graph) == []
+    assert [a["name"] for a in _node(graph, "vault_personal")["actions"]] == ["check_remote", "sync_vault", "open_report"]
+    assert _vault_quests(graph) == []
 
 
 def test_uncommitted_changes_say_how_many_files_and_deletions_and_offer_the_sync():

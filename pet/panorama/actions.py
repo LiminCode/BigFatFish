@@ -33,6 +33,8 @@ CHECK_REMOTE_ACTION = "check_remote"
 CHECK_JOB = "vault_check"
 #: 待处理和磁贴详情里「现在同步」走的动作名
 SYNC_VAULT_ACTION = "sync_vault"
+#: 磁贴上「时间轴」走的动作名：在浏览器里开一张报告页
+OPEN_REPORT_ACTION = "open_report"
 #: 设置表里 ``Setting.action`` 写的名字：一项音效设置旁边的「试听」
 PREVIEW_SOUND_ACTION = "preview_sound"
 
@@ -89,7 +91,8 @@ def generate_report(generators: dict) -> Callable[[object], dict]:
 def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], refresh: Callable[[str], object], *,
                  fetch: Callable[..., "tuple[bool, str]"] = personal_vault.fetch,
                  token: Callable[[], str] = personal_vault.github_token, journal=None,
-                 state: Callable[[str], dict] = personal_vault.upstream_state, lock=None) -> Callable[[object], dict]:
+                 state: Callable[[str], dict] = personal_vault.upstream_state, lock=None,
+                 after: Callable[[], object] | None = None) -> Callable[[object], dict]:
     """「现在核对」：让一个本地克隆去问一次远端（``git fetch``，不动工作区和本地分支），然后重探本机一侧，磁贴上的
     「领先 / 落后几个提交」才是此刻的。请求体 ``{repo}``；``repos``：名字 → 返回克隆目录的函数（读配置，所以经 ``on_gui`` 调）。
 
@@ -105,6 +108,7 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
     真的 fetch 了才记；``busy`` / ``missing`` 什么都没跑，不记。没给 ``journal`` 时不多问那两次。
 
     ``lock``：和同步器共用的那把锁（``VaultSync.lock``）——同一个克隆上核对和同步不同时跑；不给就自己一把。
+    ``after``：真的跑过之后在这条线程上叫一声（时间轴页开着的话要重画）；它出错不算核对失败。
     """
     running = lock if lock is not None else threading.Lock()
 
@@ -125,14 +129,15 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
             if not ok:
                 log.warning("配置全景：核对 %s 没连上远端：%s", repo, reason[-200:])
             if record:
-                after = state(repo_dir)
-                record.effect("git", op="fetch", repo=repo, before=before.get("head", ""), after=after.get("head", ""),
-                              behind=after.get("behind"), ahead=after.get("ahead"))
-                record.finish("failed" if not ok else "ok" if after.get("head") != before.get("head") else "noop", "" if ok else reason)
+                then = state(repo_dir)
+                record.effect("git", op="fetch", repo=repo, before=before.get("head", ""), after=then.get("head", ""),
+                              behind=then.get("behind"), ahead=then.get("ahead"))
+                record.finish("failed" if not ok else "ok" if then.get("head") != before.get("head") else "noop", "" if ok else reason)
             try:
                 on_gui(lambda: refresh("win"))
             except Exception:  # noqa: BLE001 - 重探没发起：页面留着旧图，下次打开会是新的
                 log.info("配置全景：核对 %s 之后没能重探本机一侧", repo, exc_info=True)
+            _notify(after)
             return {"repo": repo, "state": "checked" if ok else "failed"}
         finally:
             running.release()
@@ -141,8 +146,29 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
     return run
 
 
+def _notify(after: Callable[[], object] | None) -> None:
+    """动作跑完之后叫一声旁人（时间轴页要重画）。旁人出错不能把一次办成了的动作变成失败。"""
+    if after is None:
+        return
+    try:
+        after()
+    except Exception:  # noqa: BLE001
+        log.info("配置全景：动作之后的通知没发出去", exc_info=True)
+
+
+def open_report(open_of: Callable[[str], bool]) -> Callable[[object], dict]:
+    """在浏览器里开一张报告页（磁贴上的「时间轴」）。请求体 ``{report}``；``open_of(名字)`` 是 ``PanoramaService.open_report``
+    （界面线程上调，所以这个动作不标 ``off_gui``）。开了回 ``opened``，名字没登记或服务起不来回 ``failed``。"""
+    def run(body) -> dict:
+        report = body.get("report") if isinstance(body, dict) else None
+        if not isinstance(report, str) or not report:
+            raise ActionError(400, "bad_report")
+        return {"report": report, "state": "opened" if open_of(report) else "failed"}
+    return run
+
+
 def sync_vault(repos: dict, on_gui: Callable[[Callable[[], object]], object], refresh: Callable[[str], object],
-               syncer) -> Callable[[object], dict]:
+               syncer, after: Callable[[], object] | None = None) -> Callable[[object], dict]:
     """「现在同步」：把一个本地克隆和远端对齐一次——提交本地改动、拉取、推送（``vault_sync.VaultSync.sync``）。
 
     请求体 ``{repo}``。页面在发之前已经 ``confirm()`` 过，所以这里带 ``approved=True``：有删除、改动很多也照提交
@@ -164,6 +190,7 @@ def sync_vault(repos: dict, on_gui: Callable[[Callable[[], object]], object], re
                 on_gui(lambda: refresh("win"))
             except Exception:  # noqa: BLE001 - 重探没发起：页面留着旧图，下次打开会是新的
                 log.info("配置全景：同步 %s 之后没能重探本机一侧", repo, exc_info=True)
+            _notify(after)
         return {"repo": repo, "state": out.state, "files": out.files, "deletions": out.deletions, "pulled": out.pulled,
                 "pushed": out.pushed, "conflicts": out.conflicts}
 

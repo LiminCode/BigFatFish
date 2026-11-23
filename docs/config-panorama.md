@@ -325,8 +325,14 @@ sequenceDiagram
   默认 `repair`：按钮上是 `ui.<words>`，过程和结果是 `ui.<words>_working` / `ui.<words>_<结果>`）、`ask: false`（不先 `confirm()`；
   装 hooks 仍然每次都问）、`body`（POST 的内容，默认 `{agent}`）。结果是 `failed` / `busy` / `missing` 或连不上时按钮可以再点，
   别的结果保持灰着等页面重画。加一个新动作 = 来源里写这几项 + 文案库里加那组字 + `render.PAGE_KEYS` 登记，`repair.js` 不用动。
-- **要联网的动作不占界面线程**：处理器标 `off_gui = True`（现在只有 `check_remote`），`PanoramaService.run_action` 就在请求线程上
+- **要联网的动作不占界面线程**：处理器标 `off_gui = True`（`check_remote`、`sync_vault`），`PanoramaService.run_action` 就在请求线程上
   直接调它；它要碰 `Config` 的那几步（读克隆目录、让服务重探）自己经 `on_gui` 回界面线程。别的动作照旧整个在界面线程上跑。
+- **要起进程的报告也一样**（2026-11-22，时间轴页）：provider 标 `off_gui = True`，界面线程永远不调它（`publish_report` 直接跳过，
+  `open_report` 只起服务、开浏览器）。页面来要现成的那一份时（`GET /api/report/<名字>` 不带 `after`），服务在请求线程上重做并发布
+  ——所以这种页每次打开 / 刷新都是此刻的；`refresh_report(名字)` 给动作在跑完之后叫一声，有人开过那一页才重做。
+  发布台假定同一时刻只有一个发布者，这类发布在一把锁里排队。
+- **开一张报告页也是动作**：`open_report {report}`（界面线程上调 `PanoramaService.open_report`），回 `opened`。按钮对 `opened` 不灰掉
+  （开的是另一张页，图不会重画）。知识库克隆磁贴的「时间轴」用它。
 
 ### 动作：设置项旁边的「试听」
 

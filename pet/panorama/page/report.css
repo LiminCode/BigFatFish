@@ -138,3 +138,29 @@ article .note{color:var(--m-muted)}
   .tile{flex:0 0 auto;min-width:140px}
   .side-title{display:none}
 }
+
+/* 时间轴页（/report/activity）：整页内容是服务端渲染的 .waterfall（activity.py）。一行 = 时间 · 谁 · 做了什么 · 效果；
+   能展开的行是 <details>。结果的颜色：有变化 = 绿，没事可做 = 灰，等你 = 琥珀，没办成 = 红（和全景图上同一套意思）。 */
+.waterfall{font-size:14px}
+.waterfall h3{margin:18px 0 6px}
+.waterfall .wjobs{margin-bottom:8px}
+.wjob,.wrow,.wrow>summary{display:grid;grid-template-columns:96px 96px minmax(0,1fr) 120px;gap:12px;align-items:center}
+.wjob{grid-template-columns:140px 96px 96px minmax(0,1fr) 80px;padding:5px 0}
+.wrow{padding:7px 0;border-top:1px solid rgba(128,128,128,.18)}
+details.wrow{display:block}.wrow>summary{cursor:pointer;list-style:none}.wrow>summary::-webkit-details-marker{display:none}
+.wrow.quiet{color:var(--m-muted)}
+.wt{color:var(--m-muted);font:12.5px Consolas,"Cascadia Mono",monospace;white-space:nowrap}
+.who{font-size:12px;padding:1px 8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--m-tile-hover)}
+.who.fish{background:var(--src-jira);color:#fff}.who.other{background:var(--src-pr);color:#fff}
+.wm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.we{color:var(--m-muted);font-size:12.5px;text-align:right;white-space:nowrap}
+.r-ok{color:#3cb371}.r-noop{color:var(--m-muted)}.r-needs_you{color:var(--p2)}.r-failed{color:var(--p1)}.r-skipped{color:var(--m-muted)}
+.wstrip{display:flex;gap:3px;align-items:center}.wstrip i{width:8px;height:15px;display:block;background:var(--m-tile-hover)}
+.wstrip .s-ok{background:#3cb371}.wstrip .s-needs_you{background:var(--p2)}.wstrip .s-failed{background:var(--p1)}
+.wsteps{display:flex;gap:2px;margin:8px 0 6px 108px;height:20px}
+.wsteps span{background:var(--src-jira);color:#fff;font-size:11.5px;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;min-width:0;padding:0 4px}
+.waterfall ul.wcommits{list-style:none;margin:4px 0 6px 108px;padding:0}
+.wcommits li{display:grid;grid-template-columns:48px 72px minmax(0,1fr) 90px;gap:10px;align-items:baseline;margin:2px 0;font-size:13px}
+.wcommits code{font-size:12px;color:var(--m-muted)}.wcommits .ws{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wcommits .wn{color:var(--m-muted);font-size:12px;text-align:right}
+.werr{margin:6px 0 6px 108px;color:var(--p1);font-size:12.5px;word-break:break-word}

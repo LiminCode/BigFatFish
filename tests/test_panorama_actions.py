@@ -335,3 +335,38 @@ def test_a_check_and_a_sync_on_the_same_lock_do_not_overlap(tmp_path):
     with lock:                                                             # 同步器正拿着这把锁
         assert run({"repo": "personal"}) == {"repo": "personal", "state": "busy"}
     assert run({"repo": "personal"})["state"] == "checked"
+
+
+# ───────────────────────── 时间轴：开那张页；核对 / 同步跑完叫它重画 ─────────────────────────
+
+def test_open_report_opens_the_named_page_and_says_whether_it_could():
+    opened = []
+    run = actions.open_report(lambda name: opened.append(name) or name == "activity")
+    assert run({"report": "activity"}) == {"report": "activity", "state": "opened"}
+    assert run({"report": "nope"}) == {"report": "nope", "state": "failed"} and opened == ["activity", "nope"]
+    assert not getattr(run, "off_gui", False), "开页面要在界面线程上：服务是在那里起的"
+    for body in ({}, {"report": 3}, {"report": ""}, None):
+        with pytest.raises(actions.ActionError) as caught:
+            run(body)
+        assert (caught.value.status, caught.value.code) == (400, "bad_report")
+
+
+def test_a_check_or_a_sync_that_ran_tells_the_timeline_and_one_that_did_not_stays_quiet(tmp_path):
+    told = []
+    checker = _Checker(tmp_path)
+    assert checker.handler(after=lambda: told.append("check"))({"repo": "personal"})["state"] == "checked" and told == ["check"]
+    missing = _Checker(tmp_path / "other", ready=False)
+    assert missing.handler(after=lambda: told.append("x"))({"repo": "personal"})["state"] == "missing" and told == ["check"]
+    from pet import vault_sync
+
+    for state, expected in (("synced", ["check", "sync"]), ("busy", ["check", "sync"])):
+        syncer = _Syncer(vault_sync.Outcome(state=state))
+        run = actions.sync_vault({"personal": lambda: "C:/vault"}, lambda work: work(), lambda side: None, syncer, after=lambda: told.append("sync"))
+        assert run({"repo": "personal"})["state"] == state and told == expected
+
+
+def test_a_timeline_that_cannot_be_told_does_not_fail_the_check(tmp_path):
+    def broken():
+        raise RuntimeError("page is gone")
+
+    assert _Checker(tmp_path).handler(after=broken)({"repo": "personal"}) == {"repo": "personal", "state": "checked"}

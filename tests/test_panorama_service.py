@@ -421,3 +421,52 @@ def test_an_action_that_asks_to_stay_off_the_gui_thread_runs_on_the_request_thre
     worker.start()
     worker.join(15)
     assert not worker.is_alive() and box == {"out": {"state": "done", "body": {"n": 1}}} and seen["thread"] is worker
+
+
+# ───────────────────────── 要起进程的报告不在界面线程上做（时间轴页读 git）─────────────────────────
+
+def _off_gui_report(tmp_path, built):
+    def provider():
+        built.append(threading.current_thread())
+        return {"id": "slow", "title": f"build {len(built)}", "theme": "dark"}
+
+    provider.off_gui = True
+    service = PanoramaService(_config(tmp_path), health=lambda: ("ok", ""), secret_get=lambda ref: "", windows=_windows_facts,
+                              wsl=samples.wsl_home, write=lambda facts, out_dir: out_dir / render.PAGE_NAME,
+                              open_page=lambda target: None, spawn=lambda run: run(), server=_FakeServer([]), reports={"slow": provider})
+    service.GUI_TIMEOUT = 0.2
+    return service
+
+
+def test_an_off_gui_report_is_rebuilt_on_the_request_thread_every_time_the_page_asks(tmp_path):
+    built, box = [], {}
+    service = _off_gui_report(tmp_path, built)
+
+    def request() -> None:
+        try:
+            box["first"] = json.loads(service.report("slow", None, 0))["report"]["title"]
+            box["second"] = json.loads(service.report("slow", None, 0))["report"]["title"]
+        except Exception as exc:  # noqa: BLE001 - 断言里要看到它
+            box["error"] = exc
+
+    worker = threading.Thread(target=request)
+    worker.start()
+    worker.join(15)                                                       # 界面线程卡在这里：走界面线程的话会等到超时
+    assert box == {"first": "build 1", "second": "build 2"} and built == [worker, worker], "每次打开 / 刷新都是此刻的"
+
+
+def test_the_gui_thread_never_builds_an_off_gui_report(tmp_path):
+    built = []
+    service = _off_gui_report(tmp_path, built)
+    assert service.publish_report("slow", force=True) is False and built == []
+    assert service.open_report("slow") is True and built == [], "开页面只起服务、开浏览器；内容等页面来要的时候在请求线程上做"
+
+
+def test_refreshing_an_off_gui_report_republishes_only_once_someone_has_opened_it(tmp_path):
+    built = []
+    service = _off_gui_report(tmp_path, built)
+    assert service.refresh_report("slow") is False and built == [], "没人开过那一页：不白做"
+    first = json.loads(service.report("slow", None, 0))["revision"]
+    assert service.refresh_report("slow") is True and len(built) == 2
+    assert json.loads(service.report("slow", first, 0))["revision"] == first + 1, "挂着等更新的页面立刻拿到新的一份"
+    assert service.refresh_report("nope") is False
