@@ -147,6 +147,11 @@ def describe(run: dict) -> str:
         return t("activity.did.failed")
     if result == "noop":
         return t("activity.result.noop")
+    extra = next((e for e in run.get("effects") or [] if isinstance(e, dict) and e.get("kind") in ("model", "found")), None)
+    if extra and extra["kind"] == "model":                  # 调模型的功能（简报）：用了哪个模型、多少 token
+        return t("activity.did.generated", model=extra.get("model") or "?", tokens=int(extra.get("tokens_in") or 0) + int(extra.get("tokens_out") or 0))
+    if extra and extra["kind"] == "found":                  # 去看了一眼的功能（Slack 关注）：新的有几条
+        return t("activity.did.found", n=extra.get("new", 0))
     if effect.get("op") == "fetch":
         return t("activity.did.checked", behind=effect.get("behind", 0) or 0, ahead=effect.get("ahead", 0) or 0)
     if effect.get("op") == "sync":

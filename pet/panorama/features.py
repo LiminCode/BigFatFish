@@ -111,6 +111,13 @@ class Feature:
     note: str = ""                        # 额外一行说明：``panorama.note.<note>``
     follows_provider: bool = False        # 没有自己的模型，跟随使用中的模型服务
     settings_group: str = ""              # 设置表里的哪一组；空 = 按 config_key 找（一个键分了几组的才要写）
+    jobs: tuple = ()                      # 它在运行记录里的任务名：有了才有磁贴上的历史条和「上次运行」
+    late: str = ""                        # 该跑没跑怎么算（LATE_RULES）；空 = 不判断（Slack 关注只在人在的时候跑）
+
+
+#: ``Feature.late``：``interval`` = 超过两个周期没跑（周期是那项功能的「每 N 分钟」）；``daily`` = 每天一次的，超过四天没跑
+#: （工作日才跑的简报，周五到周一隔三天是正常的）
+LATE_RULES = ("interval", "daily")
 
 
 FEATURES: tuple[Feature, ...] = (
@@ -131,16 +138,16 @@ FEATURES: tuple[Feature, ...] = (
             writes=(("md_win", "memory", _always), ("mem_win", "memory", _always),
                     ("vault_personal", "memory", _distill_flag("mirror_to_vault")))),
     Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
-            writes=(("vault_personal", "memory", _always),)),
+            writes=(("vault_personal", "memory", _always),), jobs=("personal_briefing",), late="daily"),
     # 知识库定时同步：不调模型，肥鱼自己的 git 把个人知识库的克隆和远端对齐。磁贴上的节奏、上次 / 下次、运行历史条
     # 由 sources.vault_schedule 补上（它们来自运行记录，不是配置）。
     Feature("vault_sync", "link", "repo", "vault_sync", _vault_sync, note="vault_sync",
-            writes=(("vault_personal", "github", _always),)),
+            writes=(("vault_personal", "github", _always),), jobs=(vault_sync.JOB, vault_sync.CHECK_JOB), late="interval"),
     Feature("link_wsl", "link", "link", "agent_link.claude_wsl", _link("claude_wsl", sys.platform == "win32"),
             settings_group="link_wsl", writes=(("set_wsl", "config", _always),), note="link_wsl"),
     # 设置已经搬到配置全景（settings_table 里登记了这个键）：磁贴上是「设置」按钮，不再指向设置窗口的哪一页
-    Feature("briefing", "work", "news", "work_briefing", _briefing),
-    Feature("slack", "work", "hash", "slack_watch", _slack),
+    Feature("briefing", "work", "news", "work_briefing", _briefing, jobs=("work_briefing",), late="daily"),
+    Feature("slack", "work", "hash", "slack_watch", _slack, jobs=("slack_watch",)),
     Feature("notes", "work", "note", "work_notes", _notes,
             writes=(("vault_work", "memory", _always),)),
     Feature("distill_work", "work", "funnel", "memory_distill.work_*", _distill(md.SIDE_WORK), settings_group="distill_work",

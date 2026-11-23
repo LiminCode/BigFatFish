@@ -497,6 +497,8 @@ def repositories(g: Graph, f: dict) -> None:
 _RUN_STATES = {"ok": "ok", "noop": "unknown", "needs_you": "warn", "failed": "bad", "skipped": "off"}
 #: 开着、却超过这么多个周期没跑过：算「迟了」（电脑一直睡着、肥鱼没开，或服务出了问题）
 SCHEDULE_LATE_AFTER = 2
+#: 每天一次的功能，超过这么久没跑才算迟：工作日才跑的简报，周五到周一隔三天是正常的
+DAILY_LATE_S = 4 * 86400
 
 
 @source
@@ -517,16 +519,44 @@ def vault_schedule(g: Graph, f: dict) -> None:
                          [L("fact.schedule_idle"), idle],
                          [L("fact.schedule_last"), f"{runs[0].get('at', '')[:16]} · {activity.describe(runs[0])}" if runs else L("schedule.never")]):
         g.add_fact(node, label, value)
-    items = [{"name": str(run.get("at") or "")[5:16], "state": _RUN_STATES.get(run.get("result"), "unknown"),
-              "detail": f"{activity.trigger_name(run.get('trigger'))} · {activity.describe(run)}"} for run in runs]
-    if not settings["enabled"]:
-        g.mark(node, items=items)
-        return
-    late = age is not None and age > SCHEDULE_LATE_AFTER * interval * 60
-    last = L("schedule.late") if late else L("schedule.last", when=runs[0].get("at", "")[11:16]) if runs else L("schedule.never")
-    g.mark(node, items=items, size="tall", sub=f"{L('when.every', n=interval)} · {mode}", lines=[last], state="warn" if late else "ok")
+    late = _history(g, node, runs, age, settings["enabled"], SCHEDULE_LATE_AFTER * interval * 60)
+    if settings["enabled"]:
+        g.mark(node, sub=f"{L('when.every', n=interval)} · {mode}")
     if late:
         g.quest("warn", L("quest.schedule_late", when=runs[0].get("at", "")[:16], n=interval), node)
+
+
+def _history(g: Graph, node: str, runs: list, age, enabled: bool, late_after_s) -> bool:
+    """给一块功能磁贴补上运行历史：详情里每次一行（``items``），开着的还要磁贴上那排色块（改成 ``tall`` 才画得出）、
+    「上次 HH:MM」那一行。开着、而且最近一次已经超过 ``late_after_s`` 秒（``None`` = 这项功能不判断）= 迟了：磁贴变琥珀。
+    返回是不是迟了（待处理那一句由调用方说，各有各的说法）。关着的功能只留历史，不改样子。"""
+    items = [{"name": str(run.get("at") or "")[5:16], "state": _RUN_STATES.get(run.get("result"), "unknown"),
+              "detail": f"{activity.trigger_name(run.get('trigger'))} · {activity.describe(run)}"} for run in runs]
+    if not enabled:
+        g.mark(node, items=items)
+        return False
+    late = bool(late_after_s) and age is not None and age > late_after_s
+    last = L("schedule.late") if late else L("schedule.last", when=runs[0].get("at", "")[11:16]) if runs else L("schedule.never")
+    g.mark(node, items=items, size="tall", lines=[last], state="warn" if late else "ok")
+    return late
+
+
+@source
+def schedules(g: Graph, f: dict) -> None:
+    """功能表里登记了任务名的功能（工作简报、个人简报、Slack 关注……）：磁贴上补运行历史和「上次运行」，该判断的判断迟没迟。
+
+    加一项定时功能 = 功能表那一行写上 ``jobs``（它在运行记录里的任务名）和 ``late``（怎么算迟），再让它往运行记录里写
+    （``run_recording.Recorder`` 接它的信号）；这里和页面都不用动。知识库定时同步有自己的来源（上面那个）：它还要写模式。"""
+    info = f.get("schedules") or {}
+    for feature in features.FEATURES:
+        node, entry = f"f_{feature.id}", info.get(feature.id)
+        if not feature.jobs or feature.id == "vault_sync" or entry is None or not g.has(node):
+            continue
+        s, runs = f["features"][feature.id], entry.get("runs") or []
+        g.add_fact(node, L("fact.schedule_last"), f"{runs[0].get('at', '')[:16]} · {activity.describe(runs[0])}" if runs else L("schedule.never"))
+        late_after = DAILY_LATE_S if feature.late == "daily" else SCHEDULE_LATE_AFTER * s["every_minutes"] * 60 if feature.late == "interval" else None
+        if _history(g, node, runs, entry.get("last_age_s"), s["enabled"], late_after):
+            g.quest("warn", L("quest.job_late", name=L(f"feature.{feature.id}"), when=runs[0].get("at", "")[:16]), node)
 
 
 # ───────────────────────── 存储 ─────────────────────────

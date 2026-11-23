@@ -3059,6 +3059,7 @@ class AppShell:
             self._work_briefing.state_changed.connect(self._push_island_briefing_state)
             service.start()
             self._start_work_notes()
+            self._record_runs("work_briefing", service)           # 最后接运行记录：它是旁路，前面那些才是这个功能自己要的
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("工作简报接线失败")
 
@@ -3137,6 +3138,7 @@ class AppShell:
             service.finished.connect(lambda *_: self._publish_report("slack_watch"))
             self._overlay_shell.slack_watch = self._slack_watch
             service.start()
+            self._record_runs("slack_watch", service)           # 最后接运行记录：它是旁路，前面那些才是这个功能自己要的
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("Slack 关注接线失败")
 
@@ -3221,6 +3223,7 @@ class AppShell:
             self._personal.state_changed.connect(self._push_island_personal_state)
             service.start()
             self._push_island_personal_state()
+            self._record_runs("personal_briefing", service)           # 最后接运行记录：它是旁路，前面那些才是这个功能自己要的
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("个人助理接线失败")
 
@@ -3532,6 +3535,27 @@ class AppShell:
 
             journal = self._run_journal = run_journal.Journal(Path(self.config.dir) / run_journal.DIR_NAME)
         return journal
+
+    def _record_runs(self, job: str, service) -> None:
+        """把一个定时服务接进运行记录：听它的 ``started`` / ``finished``，每次运行记一行（``run_recording``）。
+        服务本身不用动。记完之后，时间轴页开着的话在后台线程上重画（那一页的内容要起 git，不能在界面线程上做）。
+        接不上只记日志：运行记录是旁路，不能挡住那个功能本身。"""
+        try:
+            from . import run_recording
+
+            outcome = {run_recording.SLACK_WATCH: run_recording.slack_outcome}.get(job, run_recording.briefing_outcome)
+
+            def timeline_changed() -> None:
+                panorama = getattr(self, "_panorama_service", None)
+                if panorama is not None:
+                    threading.Thread(target=lambda: panorama.refresh_report("activity"), daemon=True, name="pet-timeline").start()
+
+            recorder = run_recording.Recorder(self._runs(), job, outcome, after=timeline_changed)
+            service.started.connect(recorder.started)
+            service.finished.connect(recorder.finished)
+            self._run_recorders = [*getattr(self, "_run_recorders", []), recorder]      # 留一份引用，别让它被回收
+        except Exception:  # noqa: BLE001
+            logging.exception("运行记录：%s 没接上", job)
 
     def _vault_sync(self):
         """知识库同步器（``vault_sync.VaultSync``，第一次要用时才建）。整个进程一个：同一个克隆上的同步和核对靠它身上那把锁
