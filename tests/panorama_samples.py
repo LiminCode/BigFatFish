@@ -100,7 +100,7 @@ def provider(provider_id="api-1", *, active=True, key=True) -> dict:
 def repo(name: str, owner: str, exists=True) -> dict:
     return {"path": f"C:\\Users\\dev\\{name}", "exists": exists, "remote": f"https://github.com/{owner}/{name}.git" if exists else "",
             "branch": "main" if exists else "", "last_commit": "2026-01-02 03:04 · notes" if exists else "",
-            "unpushed": 0 if exists else None, "behind": 0 if exists else None, "dirty": False if exists else None,
+            "unpushed": 0 if exists else None, "behind": 0 if exists else None, "dirty": False if exists else None, "changes": 0 if exists else None, "deletions": 0 if exists else None,
             "checked_at": "2026-01-02 03:04" if exists else "", "checked_age_s": 600 if exists else None, "check_failed": False}
 
 
@@ -139,6 +139,7 @@ def facts(*, cfg=None, health="ok", wsl="ready", win=None, providers=None, backu
         "config_backup": {"auto": False, "repo": "", "path": ".big-fat-fish/config.json"},
         "features": features.read_all(cfg if cfg is not None else all_on_config()),
         "personal_vault": repo("handbook", "acme-home"), "work_vault": repo("field-notes", "acme-work"),
+        "vault_sync": {"personal": None},
         "win": win or home(), "wsl": wsl_value, "storage": storage(backup=backup, unknown=unknown),
         "timing": {"windows_s": 0.3, "wsl_s": 6.5},
     }

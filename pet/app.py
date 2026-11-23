@@ -3498,6 +3498,16 @@ class AppShell:
             journal = self._run_journal = run_journal.Journal(Path(self.config.dir) / run_journal.DIR_NAME)
         return journal
 
+    def _vault_sync(self):
+        """知识库同步器（``vault_sync.VaultSync``，第一次要用时才建）。整个进程一个：同一个克隆上的同步和核对靠它身上那把锁
+        排队。现在只有配置全景的「现在同步」会叫它；定时同步以后也用这一个。"""
+        syncer = getattr(self, "_vault_syncer", None)
+        if syncer is None:
+            from . import vault_sync
+
+            syncer = self._vault_syncer = vault_sync.VaultSync(journal=self._runs())
+        return syncer
+
     def _panorama(self):
         """配置全景的服务对象（第一次要用时才建）。页面、报告页、本机服务都挂在它上面。"""
         service = getattr(self, "_panorama_service", None)
@@ -3514,10 +3524,13 @@ class AppShell:
             notes_service = lambda: getattr(getattr(self, "_work_notes", None), "service", None)  # noqa: E731
             slack_notes_service = lambda: getattr(getattr(self, "_slack_notes", None), "service", None)  # noqa: E731
             slack_watch_service = lambda: getattr(getattr(self, "_slack_watch", None), "service", None)  # noqa: E731
+            # 页面上能核对 / 同步的克隆：名字 → 它此刻的目录（读配置，所以动作经 on_gui 来调）。现在只有个人知识库
+            vault_repos = {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]}
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份；「试听」在界面线程上放一个提示音（会话提示音的设置页）；
-            #          「现在核对」让 AI-Base 的克隆 fetch 一次再重探本机一侧（在请求线程上跑，只回界面线程读目录和重探）。
+            #          「现在核对」让 AI-Base 的克隆 fetch 一次再重探本机一侧（在请求线程上跑，只回界面线程读目录和重探）；
+            #          「现在同步」经同步器提交、拉取、推送一次（同一条线程规矩，和核对共用一把锁）。
             # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
             #          （没装聊天模块时同样只显示一句）；个人简报页顶部的输入区记灵感（add_inspiration），副按钮
             #          「在 Obsidian 打开 AI-Base」在肥鱼里开 Obsidian（open_obsidian）。
@@ -3534,9 +3547,11 @@ class AppShell:
                               panorama_notes.SLACK_WATCH: panorama_notes.check_slack(slack_watch_service)}),
                          panorama_actions.PREVIEW_SOUND_ACTION: panorama_actions.preview_sound(lambda: self.config),
                          panorama_actions.CHECK_REMOTE_ACTION: panorama_actions.check_remote(
-                             {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]},
-                             lambda work: self._panorama_service.on_gui(work),
-                             lambda side: self._panorama_service.refresh(side), journal=self._runs()),
+                             vault_repos, lambda work: self._panorama_service.on_gui(work),
+                             lambda side: self._panorama_service.refresh(side), journal=self._runs(), lock=self._vault_sync().lock),
+                         panorama_actions.SYNC_VAULT_ACTION: panorama_actions.sync_vault(
+                             vault_repos, lambda work: self._panorama_service.on_gui(work),
+                             lambda side: self._panorama_service.refresh(side), self._vault_sync()),
                          panorama_reports.INSPIRATION_ACTION: panorama_reports.add_inspiration(personal_service),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),

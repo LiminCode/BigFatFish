@@ -267,3 +267,71 @@ def test_checking_works_without_a_journal(tmp_path):
     checker = _Checker(tmp_path)
     assert checker.handler(state=_States({"head": "a", "behind": 0, "ahead": 0}, {"head": "a", "behind": 0, "ahead": 0}))(
         {"repo": "personal"})["state"] == "checked"
+
+
+# ───────────────────────── 「现在同步」：经同步器提交、拉取、推送一次 ─────────────────────────
+
+class _Syncer:
+    def __init__(self, outcome):
+        self.outcome, self.calls = outcome, []
+
+    def sync(self, repo_dir, **options):
+        self.calls.append((str(repo_dir), options))
+        return self.outcome
+
+
+def _sync_handler(outcome, log):
+    from pet import vault_sync
+
+    syncer = _Syncer(vault_sync.Outcome(**outcome))
+
+    def on_gui(work):
+        log.append("gui")
+        return work()
+
+    return syncer, actions.sync_vault({"personal": lambda: "C:/vault"}, on_gui, lambda side: log.append(("refresh", side)), syncer)
+
+
+def test_syncing_runs_the_syncer_as_an_approved_manual_run_and_reprobes(tmp_path):
+    log = []
+    syncer, run = _sync_handler({"state": "synced", "files": 2, "deletions": 1, "pulled": 46, "pushed": 1}, log)
+    assert run.off_gui is True, "同步要联网：不许占着界面线程等"
+    assert run({"repo": "personal"}) == {"repo": "personal", "state": "synced", "files": 2, "deletions": 1, "pulled": 46, "pushed": 1,
+                                         "conflicts": 0}
+    assert syncer.calls == [("C:/vault", {"repo": "personal", "trigger": "manual", "approved": True})], \
+        "页面在发之前已经确认过：这就是用户点了头"
+    assert log == ["gui", "gui", ("refresh", "win")]
+
+
+@pytest.mark.parametrize("state", ["noop", "conflict", "blocked", "failed"])
+def test_any_sync_that_actually_ran_reprobes_whatever_its_outcome(state):
+    log = []
+    _, run = _sync_handler({"state": state, "conflicts": 1 if state == "conflict" else 0}, log)
+    assert run({"repo": "personal"})["state"] == state and ("refresh", "win") in log
+
+
+@pytest.mark.parametrize("state", ["busy", "missing"])
+def test_a_sync_that_never_ran_reprobes_nothing(state):
+    log = []
+    _, run = _sync_handler({"state": state}, log)
+    assert run({"repo": "personal"})["state"] == state and log == ["gui"]
+
+
+@pytest.mark.parametrize("body", [{}, {"repo": "work"}, {"repo": 3}, "personal", None])
+def test_only_registered_clones_can_be_synced(body):
+    log = []
+    syncer, run = _sync_handler({"state": "synced"}, log)
+    with pytest.raises(actions.ActionError) as caught:
+        run(body)
+    assert (caught.value.status, caught.value.code) == (400, "bad_repo") and syncer.calls == [] and log == []
+
+
+def test_a_check_and_a_sync_on_the_same_lock_do_not_overlap(tmp_path):
+    import threading
+
+    lock = threading.Lock()
+    checker = _Checker(tmp_path)
+    run = checker.handler(lock=lock)
+    with lock:                                                             # 同步器正拿着这把锁
+        assert run({"repo": "personal"}) == {"repo": "personal", "state": "busy"}
+    assert run({"repo": "personal"})["state"] == "checked"

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
-from .. import claude_hooks, config_backup, data_stores, personal_vault, work_notes
+from .. import claude_hooks, config_backup, data_stores, personal_vault, run_journal, vault_sync, work_notes
 from . import claude_home_probe, features, storage_probe, store_walk
 
 SecretGet = Callable[[str], str]
@@ -84,11 +84,13 @@ def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git, *, 
 
     ``unpushed`` / ``behind``：比上游多出来 / 少掉的提交数。**按本地记得的上游算，不联网**——所以它们只和上一次碰到远端时
     一样新：``checked_at``（``YYYY-MM-DD HH:MM``，不知道是空串）、``checked_age_s``（距今秒数）、``check_failed``（最近一次
-    fetch 没连上），见 ``remote_contact``。``dirty``：有没有还没提交的改动。问不出来（没有上游、git 失败）是 ``None``。
+    fetch 没连上），见 ``remote_contact``。``dirty``：有没有还没提交的改动；``changes`` / ``deletions``：一共几个文件、其中删除几个
+    （「现在同步」会把它们提交掉，所以点之前要让人看到这两个数）。问不出来（没有上游、git 失败）是 ``None``。
     """
     folder = Path(os.path.expandvars(str(path or "")))
     info = {"path": str(folder) if path else "", "exists": bool(path) and folder.is_dir(), "remote": "", "branch": "", "last_commit": "",
-            "unpushed": None, "behind": None, "dirty": None, "checked_at": "", "checked_age_s": None, "check_failed": False}
+            "unpushed": None, "behind": None, "dirty": None, "changes": None, "deletions": None,
+            "checked_at": "", "checked_age_s": None, "check_failed": False}
     if not info["exists"]:
         return info
 
@@ -102,13 +104,27 @@ def repo_info(path: str | Path, run_git: GitRunner = personal_vault.run_git, *, 
     counts = git("rev-list", "--left-right", "--count", "@{upstream}...HEAD").split()      # 「落后 领先」，一次问完
     if len(counts) == 2 and all(count.isdigit() for count in counts):
         info["behind"], info["unpushed"] = int(counts[0]), int(counts[1])
-    code, out = run_git(folder, ["status", "--porcelain"], timeout=GIT_TIMEOUT_S)
-    info["dirty"] = bool(out.strip()) if code == 0 else None
+    code, out = run_git(folder, ["status", "--porcelain=v1", "-z"], timeout=GIT_TIMEOUT_S)
+    if code == 0:                                       # 和同步器用同一个读法：它要提交的就是这里数出来的这些
+        changes = vault_sync.read_status(out)
+        info["dirty"], info["changes"], info["deletions"] = changes.files > 0, changes.files, changes.deletions
     checked, info["check_failed"] = remote_contact(folder, info["branch"])
     if checked is not None:
         info["checked_at"] = dt.datetime.fromtimestamp(checked).strftime("%Y-%m-%d %H:%M")
         info["checked_age_s"] = max(0, int((time.time() if now is None else now) - checked))
     return info
+
+
+def last_sync(config_dir: str | Path, repo: str) -> dict | None:
+    """这个克隆上一次同步怎么样了：运行记录里最近一条 ``vault_sync``（它的 ``git`` 效果是这个仓库的）。没同步过是 ``None``。
+
+    只取页面要说的那几项：什么时候、结果、拉了几个推了几个、撞了几个冲突、预检为什么没过、守卫为什么拦。"""
+    for row in run_journal.Journal(Path(config_dir) / run_journal.DIR_NAME).read(20, job=vault_sync.JOB):
+        effect = next((e for e in row.get("effects") or [] if isinstance(e, dict) and e.get("kind") == "git" and e.get("repo") == repo), None)
+        if effect is not None:
+            return {"at": str(row.get("at") or ""), "result": str(row.get("result") or ""),
+                    **{key: effect[key] for key in ("pulled", "pushed", "conflicts", "blocked", "review") if effect.get(key)}}
+    return None
 
 
 def wsl_source() -> str:
@@ -161,6 +177,7 @@ def windows_side(cfg: dict, *, cfg_path: str | Path, secret_get: SecretGet, api_
         "features": features.read_all(cfg),
         "personal_vault": repo_info(personal_vault.normalize(cfg.get(personal_vault.CONFIG_KEY))["repo_dir"], run_git),
         "work_vault": repo_info(work_notes.normalize(cfg.get(work_notes.CONFIG_KEY))["repo_dir"], run_git),
+        "vault_sync": {"personal": last_sync(cfg_path.parent, "personal")},
         "win": claude_home_probe.probe(home or Path.home()),
     }
     storage_started = time.perf_counter()

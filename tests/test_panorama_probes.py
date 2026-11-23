@@ -94,17 +94,17 @@ def test_repo_info_strips_credentials_from_the_remote(tmp_path):
     def fake_git(folder, args, *, timeout):
         calls.append(args)
         answers = {"remote": "https://x-access-token:ghp_secret@github.com/acme/handbook.git\n", "rev-parse": "main\n", "log": "2026-01-02 03:04 · notes\n",
-                   "rev-list": "46\t2\n", "status": " M note.md\n?? new.md\n"}
+                   "rev-list": "46\t2\n", "status": " M note.md\0?? new.md\0 D gone.md\0"}
         return 0, answers[args[0]]
 
     info = probes.repo_info(tmp_path, fake_git)
     assert info["exists"] and info["remote"] == "https://github.com/acme/handbook.git" and info["branch"] == "main"
-    assert info["unpushed"] == 2 and info["behind"] == 46 and info["dirty"] is True
+    assert info["unpushed"] == 2 and info["behind"] == 46 and info["dirty"] is True and (info["changes"], info["deletions"]) == (3, 1)
     assert ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"] in calls   # 领先和落后一次问完；按本地记得的上游算，不联网
     assert not any(args[0] in ("fetch", "pull", "ls-remote") for args in calls)
     assert probes.repo_info(tmp_path / "missing", fake_git) == {
         "path": str(tmp_path / "missing"), "exists": False, "remote": "", "branch": "", "last_commit": "", "unpushed": None, "behind": None,
-        "dirty": None, "checked_at": "", "checked_age_s": None, "check_failed": False}
+        "dirty": None, "changes": None, "deletions": None, "checked_at": "", "checked_age_s": None, "check_failed": False}
     broken = probes.repo_info(tmp_path, lambda *a, **k: (128, "fatal: not a git repository"))
     assert broken["remote"] == "" and broken["unpushed"] is None and broken["behind"] is None and broken["dirty"] is None   # 问不出来 ≠ 没有
 
@@ -112,7 +112,7 @@ def test_repo_info_strips_credentials_from_the_remote(tmp_path):
 def test_repo_info_says_a_clean_pushed_clone_has_nothing_left_behind(tmp_path):
     answers = {"remote": "", "rev-parse": "main\n", "log": "x\n", "rev-list": "0\t0\n", "status": ""}
     info = probes.repo_info(tmp_path, lambda folder, args, *, timeout: (0, answers[args[0]]))
-    assert info["unpushed"] == 0 and info["behind"] == 0 and info["dirty"] is False
+    assert info["unpushed"] == 0 and info["behind"] == 0 and info["dirty"] is False and (info["changes"], info["deletions"]) == (0, 0)
 
 
 def _clone_with(tmp_path, *, fetch_head=None, reflog=None):
@@ -191,6 +191,26 @@ def test_wsl_side_tells_no_wsl_from_a_failed_run():
     assert probes.wsl_side(lambda *a, **k: (127, "")) == {"absent": True}
     assert probes.wsl_side(lambda *a, **k: (1, "")) == {"error": "exit 1"}
     assert probes.wsl_side(lambda *a, **k: (0, "python3: not found")) == {"error": "exit 0"}
+
+
+def test_windows_side_reports_the_last_sync_of_the_personal_clone_from_the_run_journal(tmp_path):
+    from pet import run_journal
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    cfg = {"personal": {"repo_dir": str(tmp_path / "no-vault")}, "work_notes": {"repo_dir": str(tmp_path / "no-notes")}}
+    home = _fake_home(tmp_path / "home")
+    probe = lambda: probes.windows_side(cfg, cfg_path=cfg_path, secret_get=lambda ref: "", home=home,  # noqa: E731
+                                        run_git=lambda *a, **k: (1, ""))["vault_sync"]
+    assert probe() == {"personal": None}, "还没同步过"
+    journal = run_journal.Journal(tmp_path / run_journal.DIR_NAME)             # 数据目录 = config.json 所在的目录
+    journal.start("vault_check", "manual").finish("ok")
+    first = journal.start("vault_sync", "manual")
+    first.effect("git", op="sync", repo="personal", conflicts=1, pulled=0, pushed=0)
+    first.finish("needs_you")
+    journal.start("vault_check", "manual").finish("noop")                      # 之后的核对不算同步
+    last = probe()["personal"]
+    assert last["result"] == "needs_you" and last["conflicts"] == 1 and last["at"] and "blocked" not in last
 
 
 def test_windows_side_collects_everything_without_touching_wsl(tmp_path):

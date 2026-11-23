@@ -694,6 +694,41 @@ def test_a_check_quest_gets_its_own_button_words_and_carries_its_body(engine):
     assert 'data-body="{&quot;repo&quot;:&quot;personal&quot;}"' in served["quests"]
 
 
+def test_a_tile_with_its_own_actions_shows_every_one_of_them_in_its_details(engine):
+    """知识库克隆的磁贴自带两个动作：详情里两个按钮一直都在，不靠有没有待处理。"""
+    i18n.set_language("zh")
+    served = _details(engine, sources.build(samples.facts()), "vault_personal", "fakeApi([])")       # 又新又没有差距
+    assert served.count('data-action="check_remote"') == 1 and served.count('data-action="sync_vault"') == 1
+    assert ">现在核对<" in served and ">现在同步<" in served and "disabled" not in served
+    assert served.index("check_remote") < served.index("sync_vault"), "只读的那个排在前面"
+    assert 'data-words="sync"' in served and 'data-ask="0"' not in served.split('data-action="sync_vault"')[1].split(">")[0], \
+        "同步要先问；核对不用"
+    work = _details(engine, sources.build(samples.facts()), "vault_work", "fakeApi([])")
+    assert "data-action=" not in work, "公司侧的克隆没有按钮"
+    hooks = _details(engine, _no_hooks_graph(), "set_win", "fakeApi([])")
+    assert hooks.count('data-action="repair_hooks"') == 1, "没有自带动作的磁贴照旧用它名下那条待处理的动作"
+
+
+SYNC_STEPS = """
+el = {dataset: {action: 'sync_vault', agent: '', side: '', words: 'sync', body: '{"repo":"personal"}'}, disabled: false, textContent: '现在同步'};
+S.sync = '现在同步'; S.sync_confirm_win = 'SYNC?'; S.sync_working = '正在同步…'; S.sync_synced = '同步好了'; S.sync_noop = '已经是最新的';
+S.sync_conflict = '有冲突'; S.sync_failed = '没办成'; S.sync_busy = '稍等';
+"""
+
+
+def test_syncing_asks_first_and_posts_nothing_when_declined(engine):
+    out = _repair(engine, SYNC_STEPS + "answer = false; var out = 'untouched'; runAction(api, S, el).then(function (s) { out = s; });")
+    assert out["confirms"] == ["SYNC?"] and out["posted"] == [] and out["out"] is None and out["text"] == "现在同步"
+
+
+@pytest.mark.parametrize(("state", "text", "again"), [("synced", "同步好了", False), ("noop", "已经是最新的", False),
+                                                    ("conflict", "有冲突", False), ("failed", "没办成", True), ("busy", "稍等", True)])
+def test_the_sync_button_says_how_it_went(engine, state, text, again):
+    out = _repair(engine, SYNC_STEPS + f"reply = {{status: 200, body: {{state: '{state}'}}}}; var out = null; runAction(api, S, el).then(function (s) {{ out = s; }});")
+    assert out["confirms"] == ["SYNC?"] and out["posted"] == [{"path": "/api/actions/sync_vault", "body": {"repo": "personal"}}]
+    assert out["out"] == state and out["text"] == text and out["disabled"] is (not again)
+
+
 CHECK_STEPS = """
 el = {dataset: {action: 'check_remote', agent: '', side: '', words: 'check', ask: '0', body: '{"repo":"personal"}'}, disabled: false, textContent: '现在核对'};
 S.check = '现在核对'; S.check_working = '正在核对…'; S.check_checked = '核对过了'; S.check_failed = '没连上'; S.check_busy = '正在核对，稍等';
