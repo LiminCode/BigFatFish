@@ -302,19 +302,67 @@ def test_a_known_gap_outranks_a_stale_check_and_still_offers_the_check():
     graph = sources.build(facts)
     assert _node(graph, "vault_personal")["state"] == "warn"
     assert {q["sev"] for q in _vault_quests(graph)} == {"warn", "unknown"}
-    assert [q["sev"] for q in _vault_quests(graph) if "action" in q] == ["unknown"], "按钮只出一个，挂在「太久没核对」那条上"
+    buttons = {q["sev"]: q["action"]["name"] for q in _vault_quests(graph) if "action" in q}
+    assert buttons == {"unknown": "check_remote", "warn": "sync_vault"}, "太久没核对的那条给核对，落后的那条给同步"
 
 
 @pytest.mark.parametrize("gap", [{"behind": 46}, {"unpushed": 2}])
-def test_a_clone_with_a_known_gap_can_be_checked_again_even_though_the_last_check_is_fresh(gap):
-    """刚核对完、发现落后 46 个：那条「太久没核对」的待处理没了，按钮不能跟着没——远端可能又动了，要能再问一次。"""
+def test_a_clone_with_a_known_gap_offers_the_sync_and_can_still_be_checked_from_its_tile(gap):
+    """刚核对完、发现落后 46 个：那条「太久没核对」的待处理没了。有差距的那条给「现在同步」；想只再看一眼，
+    磁贴详情里「现在核对」一直都在。"""
     facts = samples.facts()
     facts["personal_vault"].update(gap)
     graph = sources.build(facts)
     quest, = _vault_quests(graph)
-    assert quest["sev"] == "warn" and quest["action"] == {"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}
+    assert quest["sev"] == "warn" and quest["action"] == {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}}
+    assert _node(graph, "vault_personal")["actions"] == [{"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}, {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}}]
     facts["work_vault"].update(gap)
-    assert all("action" not in q for q in _vault_quests(sources.build(facts), "vault_work")), "公司侧仍然不能从页面核对"
+    work = sources.build(facts)
+    assert all("action" not in q for q in _vault_quests(work, "vault_work")) and "actions" not in _node(work, "vault_work"), "公司侧的 git 在 WSL 里：页面上既不能核对也不能同步"
+
+
+def test_a_sync_that_backed_out_of_a_conflict_is_explained_until_the_two_sides_are_reconciled():
+    """冲突之后克隆是「两边各多几个提交」。只看 ↑1 ↓47 不知道该怎么办：待处理里要说上次同步撞了冲突、已经撤回、下一步做什么。"""
+    facts = samples.facts()
+    facts["personal_vault"].update(unpushed=1, behind=47)
+    facts["vault_sync"] = {"personal": {"at": "2026-11-22 17:00:00", "result": "needs_you", "conflicts": 1}}
+    graph = sources.build(facts)
+    conflict = next(q for q in _vault_quests(graph) if "冲突" in q["text"])
+    assert conflict["sev"] == "warn" and "1 个文件" in conflict["text"] and "action" not in conflict
+    assert ["上次同步", "2026-11-22 17:00 · 有冲突，已撤回"] in _node(graph, "vault_personal")["facts"]
+    facts["personal_vault"].update(unpushed=0, behind=0)                    # 用户自己解决并推上去了：这条不再提
+    assert not any("冲突" in q["text"] for q in _vault_quests(sources.build(facts)))
+
+
+@pytest.mark.parametrize(("last", "words"), [
+    ({"at": "2026-11-22 17:00:00", "result": "ok", "pulled": 46, "pushed": 1}, "2026-11-22 17:00 · 拉 46 推 1"),
+    ({"at": "2026-11-22 17:00:00", "result": "noop"}, "2026-11-22 17:00 · 没有变化"),
+    ({"at": "2026-11-22 17:00:00", "result": "failed"}, "2026-11-22 17:00 · 没办成"),
+    ({"at": "2026-11-22 17:00:00", "result": "needs_you", "blocked": "in_progress"}, "2026-11-22 17:00 · 克隆在半截状态，没有动它"),
+    (None, "")])
+def test_the_tile_says_how_the_last_sync_went(last, words):
+    facts = samples.facts()
+    facts["vault_sync"] = {"personal": last}
+    rows = [value for label, value in _node(sources.build(facts), "vault_personal")["facts"] if label == "上次同步" and value]
+    assert rows == ([words] if words else []), "没同步过：这一行是空的，页面不画空行"
+
+
+def test_the_two_buttons_are_on_the_tile_even_when_there_is_nothing_to_do():
+    graph = sources.build(samples.facts())
+    assert [a["name"] for a in _node(graph, "vault_personal")["actions"]] == ["check_remote", "sync_vault"] and _vault_quests(graph) == []
+
+
+def test_uncommitted_changes_say_how_many_files_and_deletions_and_offer_the_sync():
+    """「现在同步」会把它们提交掉：点之前要看得到是几个文件、有没有删除。"""
+    facts = samples.facts()
+    facts["personal_vault"].update(dirty=True, changes=3, deletions=1)
+    quest, = _vault_quests(sources.build(facts))
+    assert quest["sev"] == "info" and quest["text"] == "handbook 克隆：3 个文件有没提交的改动，其中删除 1 个" and quest["action"]["name"] == "sync_vault"
+    facts["personal_vault"].update(deletions=0)
+    assert _vault_quests(sources.build(facts))[0]["text"] == "handbook 克隆：3 个文件有没提交的改动"
+    facts["personal_vault"].update(behind=2)
+    buttons = [q["sev"] for q in _vault_quests(sources.build(facts)) if "action" in q]
+    assert buttons == ["warn"], "同步的按钮只出一个，挂在落后那条上"
 
 
 def test_the_work_clone_shows_the_same_truth_but_cannot_be_checked_from_the_page():

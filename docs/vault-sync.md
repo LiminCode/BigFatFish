@@ -1,0 +1,99 @@
+# 知识库同步
+
+> 把个人知识库的本地克隆和它在 GitHub 上的远端对齐：提交本地改动、拉取远端的新提交、推送。知识库是「家」
+> （[路线图](roadmap.md) P3），所以同步器的每一步都以「不丢内容、不替人做决定」为先。
+> 决定见 [ADR 0019](adr/0019-run-journal-and-git-are-the-timeline.md)（时间轴两本账）和
+> [ADR 0020](adr/0020-vault-sync-never-picks-a-side.md)（不自动选边、没人点头不提交大动作）。
+
+现在做到的：手动的「现在核对」和「现在同步」，都在[配置全景](config-panorama.md)的知识库克隆磁贴上。定时同步、
+瀑布流页还没做，进度看路线图 M4c。
+
+## 模块
+
+| 文件 | 职责 |
+|---|---|
+| `pet/vault_sync.py` | 同步器 `VaultSync`：一次同步的全过程、预检、守卫、读 `git status`。零 Qt |
+| `pet/personal_vault.py` | git 的执行器（Windows 的 git.exe + 钥匙串里的 GitHub Token）、`fetch`、`upstream_state` |
+| `pet/run_journal.py` | 运行记录：每次核对 / 同步记一行（见[配置与数据](config-and-data.md)） |
+| `pet/panorama/actions.py` | 页面的两个动作 `check_remote`、`sync_vault` |
+| `pet/panorama/probes.py` | `repo_info`（差距、没提交的文件数、上次核对）、`last_sync`（运行记录里最近一次同步） |
+
+## 机制与不变量
+
+### 一次同步
+
+```mermaid
+flowchart TD
+    A[预检：克隆在半截状态？分支有上游？] -->|没过| B[blocked：什么都不做]
+    A --> C[读工作区：几个文件、几个删除、是不是只有设备状态]
+    C -->|有正文改动| D{守卫：有删除或超过 20 个文件，而且没人点头？}
+    D -->|是| E[review：不提交]
+    D -->|否| F[提交成一个本地提交]
+    C -->|没有正文改动| G
+    F --> G[fetch]
+    G -->|连不上| H[failed：本地提交留着]
+    G --> I{落后？}
+    I -->|是| J[rebase 到远端上]
+    J -->|有冲突| K[rebase --abort → conflict：本地提交留着，远端没动]
+    J --> L
+    I -->|否| L{领先？}
+    L -->|是| M[推送]
+    M -->|被拒：远端又多了提交| G
+    L -->|否| N[synced 或 noop]
+    M --> N
+```
+
+- **先提交再 fetch**：提交是本地操作，断网也做得成——停笔的内容先存下来，推不推得上去是后一步的事。
+- **预检**（`_HALFWAY`）：`.git` 下有 `rebase-merge` / `rebase-apply` / `MERGE_HEAD` / `CHERRY_PICK_HEAD` / `REVERT_HEAD` = 半截状态；
+  有 `index.lock` = 别的 git 正在动它；工作区有没解决的冲突；`@{upstream}` 解不出来（游离的 HEAD、分支没有上游）。
+  任何一条都是 `blocked`，一个 git 写命令都不跑。
+- **冲突**：`git rebase @{upstream}` 失败且有冲突文件 → `rebase --abort`。之后的样子：工作区是用户的版本、干净；那次改动是一个
+  本地提交；克隆「领先 1、落后 N」；远端一个字没动。**同步器永远不传 `-X ours` / `-X theirs`。** 用户在 VS Code 里
+  `git pull --rebase` 解决后再同步。再点一次同步会再撞一次同样的冲突、再撤回，不会更糟。
+- **守卫**：调用方没带 `approved`、而要提交的改动里有删除或超过 `REVIEW_ABOVE_FILES`（20）个文件 → `review`，不提交。
+  页面上的「现在同步」发之前已经 `confirm()` 过，所以带 `approved=True`；以后的定时同步不带。
+- **设备状态**（`NOISE`，现在是 `.obsidian/*`）：只有它变了不提交（`noop`）；有正文改动时随车提交；远端有新提交要 rebase 时
+  也提交掉，让 rebase 从干净的工作区开始。
+- **推送输了**（被拒且报错里有 `rejected` / `fetch first` / `non-fast-forward`）：再 fetch、rebase、推一轮，最多 `MAX_ROUNDS`（2）轮。
+- **提交说明**只有时间和文件数：`vault: 2026-11-22 16:05 · 2 files`。
+- **一次只跑一个**：`VaultSync.lock`，拿不到就是 `busy`。「现在核对」用同一把锁。整个进程只有一个同步器（`AppShell._vault_sync()`）。
+  灵感记录和蒸馏镜像的 git 还没走这把锁（路线图 M4c 最后一项）。
+- 现在只接得了个人侧的克隆：公司侧的 git 在 WSL 里。
+
+### 结果与运行记录
+
+| `Outcome.state` | 运行记录的 `result` | 意思 |
+|---|---|---|
+| `synced` | `ok` | 提交了、拉了或推了至少一样 |
+| `noop` | `noop` | 没事可做 |
+| `conflict` / `blocked` / `review` | `needs_you` | 停下来等用户；效果里分别带 `conflicts`（几个文件）/ `blocked`（原因）/ `review`（原因） |
+| `failed` | `failed` | git 没办成；`error` 是报错的末 200 个字符 |
+| `missing` / `busy` | 不记 | 目录不是克隆 / 上一次还没回来：什么都没跑 |
+
+每次真的跑了记一行（任务 `vault_sync`），`git` 效果里是：同步前后远端分支的提交号、`files` / `deletions`、`committed`
+（这次新建的本地提交号）、`pulled`、`pushed`。**没有文件名，没有提交说明**（ADR 0019）。
+
+### 页面
+
+- 知识库克隆的磁贴自带两个动作（`node.actions`）：「现在核对」（只 fetch，不问）和「现在同步」（先 `confirm()`）。
+  详情里两个按钮一直都在。待处理里：「太久没核对」那条挂核对；落后 / 领先 / 没提交的改动里最要紧的一条挂同步。
+- 没提交的改动那条待处理写明几个文件、其中删除几个——「现在同步」会把它们提交掉，点之前得看得到。
+- 磁贴详情里有「上次同步」一行（`probes.last_sync` 从运行记录读）。上次同步撞了冲突、而克隆仍然两边各多提交时，
+  待处理里多一条说明该怎么办；用户解决并推上去之后自己消失。
+- 动作不占界面线程（`off_gui`）；跑过之后重探本机一侧，页面原地重画。
+
+## 设计取舍
+
+- **冲突时留下本地提交，而不是退回成没提交的改动**：提交是一份快照，之后怎么折腾都找得回来；代价是克隆会停在
+  「两边各多提交」的状态，要用户出手。
+- **不留冲突副本、不自动合并**：见 ADR 0020。
+- **`git add -A`**：新写的笔记是没跟踪的文件，必须算进去；不想进仓库的东西靠知识库自己的 `.gitignore`。
+- **演练优先于真跑**：验证同步器时，用真实克隆的副本对一个本地镜像远端跑，不对真的远端推（路线图里「恢复命令：先演练
+  再执行」是同一个想法）。
+
+## 排障
+
+- **按钮说「和远端有冲突」**：照待处理里那句做。想放弃本地那次改动：在克隆里 `git reset --hard @{upstream}`（会丢掉那个本地提交）。
+- **按钮说「克隆正处在半截状态」**：克隆里有没做完的 rebase / merge（`git status` 会说），或 `.git/index.lock` 是别的 git
+  进程崩溃留下的（确认没有 git 在跑之后删掉它）。
+- **「没办成」**：看肥鱼日志里「同步 personal 没办成」那一行，或运行记录里那次的 `error`。Token 被拒时 git 会退到凭据管理器再试一次。

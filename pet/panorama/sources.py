@@ -70,6 +70,26 @@ def _folder(path: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _last_sync_words(last: dict | None) -> str:
+    """一个克隆上一次同步怎么样了，一句话；没同步过是空串（那一行事实就不出现）。"""
+    if not last:
+        return ""
+    result = last.get("result")
+    if result == "ok":
+        how = L("sync_last.ok", pulled=last.get("pulled", 0), pushed=last.get("pushed", 0))
+    elif result == "noop":
+        how = L("sync_last.noop")
+    elif last.get("conflicts"):
+        how = L("sync_last.conflicts")
+    elif last.get("blocked"):
+        how = L("sync_last.blocked")
+    elif last.get("review"):
+        how = L("sync_last.review")
+    else:
+        how = L("sync_last.failed")
+    return f"{str(last.get('at') or '')[:16]} · {how}"
+
+
 def _join(items) -> str:
     return L("list_sep").join(str(item) for item in items if item)
 
@@ -399,12 +419,13 @@ def repositories(g: Graph, f: dict) -> None:
                   [L("fact.note"), L("github.no_probe")]])
     g.quest("unknown", L("quest.github_no_probe"), "gh_personal")
 
-    def vault(node_id: str, column_: int, title: str, info: dict, push: str, check: dict | None = None) -> str:
+    def vault(node_id: str, column_: int, title: str, info: dict, push: str, check: dict | None = None,
+              sync: dict | None = None, last: dict | None = None) -> str:
         """一个克隆的磁贴；返回它到 GitHub 那条线该是什么状态（``""`` = 没有特别要说的，按调用方的默认）。
 
         领先 / 落后是按上一次碰到远端时的样子算的，所以**没核对过、核对得太久、或最近一次没连上，就不许显示绿色**：
-        磁贴和线都是「探测不到」，待处理里说一句；``check`` 是待处理旁边的动作（「现在核对」），只有肥鱼自己能 fetch 的克隆才给，
-        有差距或太久没核对时都给（挂在其中一条上）；又新又没有差距的克隆没有待处理，也就没有按钮。
+        磁贴和线都是「探测不到」，待处理里说一句。``check``（「现在核对」，只 fetch）和 ``sync``（「现在同步」，提交、拉取、推送）
+        是两个动作，只有肥鱼自己的 git 够得着的克隆才给：磁贴详情里两个一直都在，待处理里各挂在最相关的那一条上。
         已经知道有差距（领先或落后）时照旧是「要处理」——知道的坏消息比不知道更该先看见。"""
         if not info["exists"]:
             g.node(node_id, "win", column_, "repo", title, L("missing_dir"), "bad", anchor="bottom",
@@ -421,30 +442,40 @@ def repositories(g: Graph, f: dict) -> None:
                                             L("vault.sub_dirty") if dirty else "") if part),
                "warn" if gap else "unknown" if stale else "ok", anchor="bottom",
                lines=[L("vault.check_failed") if failed else L("vault.checked", when=checked[5:]) if checked else L("vault.never_checked")],
+               actions=[action for action in (check, sync) if action],
                facts=[[L("fact.remote"), info["remote"]], [L("fact.branch"), info["branch"]], [L("fact.last_commit"), info["last_commit"]],
                       [L("fact.unpushed"), count(unpushed)], [L("fact.behind"), count(behind)],
                       [L("fact.dirty"), "" if dirty is None else L("has") if dirty else L("none")],
                       [L("fact.checked"), checked or L("vault.never_checked")],
                       [L("fact.check_failed"), L("has") if failed else ""],
+                      [L("fact.last_sync"), _last_sync_words(last)],
                       [L("fact.note"), L("vault.counts_note")],
                       [L("fact.push_via"), push]], source=_src(info["path"]))
-        # 「现在核对」只挂在一条待处理上（挂两条就是两个一样的按钮）：太久没核对的那条优先，其次落后、领先。
-        # 有差距时也要给：刚核对完发现落后，那条「太久没核对」就没了，而远端可能又动了，得能再问一次。
-        offer = "stale" if stale else "behind" if behind else "unpushed"
+        # 待处理旁边的按钮：「太久没核对」那条给「现在核对」（先弄清真相，只读）；有东西要对齐的——落后、领先、没提交的
+        # 改动——给「现在同步」，挂在其中最要紧的一条上（挂几条就是几个一样的按钮）。两个按钮在磁贴详情里一直都有。
+        carrier = "behind" if behind else "unpushed" if unpushed else "dirty"
         if unpushed:
-            g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id, action=check if offer == "unpushed" else None)
+            g.quest("warn", L("quest.unpushed", name=title, n=unpushed), node_id, action=sync if carrier == "unpushed" else None)
         if behind:
-            g.quest("warn", L("quest.behind", name=title, n=behind), node_id, action=check if offer == "behind" else None)
+            g.quest("warn", L("quest.behind", name=title, n=behind), node_id, action=sync if carrier == "behind" else None)
         if stale:
             text = L("quest.check_failed", name=title) if failed else L("quest.stale", name=title, when=checked) if checked \
                 else L("quest.never_checked", name=title)
             g.quest("unknown", text, node_id, action=check)
+        if last and last.get("conflicts") and unpushed and behind:
+            # 上次同步撞了冲突、已经撤回：现在是两边各多几个提交。等用户自己解决并推上去（领先或落后归零）这条才消失
+            g.quest("warn", L("quest.sync_conflict", name=title, n=last["conflicts"]), node_id)
         if dirty:
-            g.quest("info", L("quest.dirty", name=title), node_id)
+            changes, deletions = info.get("changes"), info.get("deletions")
+            text = L("quest.dirty", name=title) if not changes else L("quest.changes_deleted", name=title, n=changes, d=deletions) \
+                if deletions else L("quest.changes", name=title, n=changes)
+            g.quest("info", text, node_id, action=sync if carrier == "dirty" else None)
         return "warn" if gap else "unknown" if stale else ""
 
     personal_line = vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"),
-                          check={"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}})
+                          check={"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}},
+                          sync={"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}},
+                          last=(f.get("vault_sync") or {}).get("personal"))
     work_line = vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
     token_line = "ok" if token["present"] else "unknown"
     g.edge(FISH_NODE, "gh_personal", "github", token_line)      # 知识库同步、GitHub 连接器；配置备份那条线见 storage

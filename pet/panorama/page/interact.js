@@ -52,7 +52,7 @@ function detail(id) { const box = document.getElementById('detail');
   /* 要处理的（坏了、待授权、警告）在前，这台机器上没有的垫底；探测不到的和正常的不分先后，保持数据给的顺序 */
   const rank = r => r.state === 'off' ? 2 : r.state === 'ok' || r.state === 'unknown' || r.state === 'live' ? 1 : 0;
   const rows = (n.items || []).slice().sort((a, b) => rank(a) - rank(b));
-  const todo = G.quests.find(q => q.node === id && q.action);     /* 这块磁贴有能点的动作（装 hooks）：详情里也给一个按钮 */
+  const todo = G.quests.find(q => q.node === id && q.action);     /* 这块磁贴名下有带动作的待处理（装 hooks）：详情里也给一个按钮；磁贴自己带 actions 的（知识库克隆）用它的，一直都在 */
   /* 时间值后面补「· N 小时前」；列表默认紧凑：带 more 的条目折着，点 ▸ 展开；超过 5 条给一个筛选框 */
   const when = v => { const a = ago(v, S); return esc(v) + (a ? `<span class="ago"> · ${esc(a)}</span>` : ''); };
   const keyOf = r => id + '\u0000' + r.name, open = r => expandAll || expanded.has(keyOf(r)), q = filters.get(id) || '';
@@ -69,7 +69,7 @@ function detail(id) { const box = document.getElementById('detail');
       `<i class="dot ${r.state === 'auth' ? 'warn' : r.state}"></i>${esc(r.name)}<small>${esc(r.detail || '')}</small>${r.view ? viewBtn(r.view, r.name, 'peek') : ''}</div>` +
       (r.more ? `<dl class="more"${open(r) ? '' : ' hidden'}>${r.more.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${when(b)}</dd>`).join('')}</dl>` : '') + '</div>').join('')}</div>` : ''}
     ${src.path ? `<div class="path">${esc(src.path)}${src.key ? '<br>→ ' + esc(src.key) : ''}</div>` : ''}
-    <div class="btns">${actionButton(S, todo, api).replace(' mini', '')}${n.settings ? `<button class="btn" data-settings="${esc(n.settings)}" data-title="${esc(n.title)}"${api ? '' : ` disabled title="${esc(S.settings_needs_service)}"`}>${esc(S.settings_open)}</button>` : ''}${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
+    <div class="btns">${(n.actions ? n.actions.map(a => ({action: a})) : todo ? [todo] : []).map(q => actionButton(S, q, api).replace(' mini', '')).join('')}${n.settings ? `<button class="btn" data-settings="${esc(n.settings)}" data-title="${esc(n.title)}"${api ? '' : ` disabled title="${esc(S.settings_needs_service)}"`}>${esc(S.settings_open)}</button>` : ''}${n.view ? viewBtn(n.view, n.title, 'btn') : ''}${n.memory ? `<button class="btn" data-memory="1">${esc(S.memory_button)}</button>` : ''}${link ? `<a class="btn" href="${esc(link)}">${esc(S.open_vscode)}</a>` : ''}${src.path ? `<button class="btn" data-copy="${esc(src.path)}">${esc(S.copy_path)}</button>` : ''}
       ${n.page ? `<span class="btn ghost" title="${esc(S.settings_hint)}">${esc(S.settings_at.replace('{page}', n.page))}</span>` : ''}</div>
     ${out.length ? `<h2 style="margin-top:14px">${esc(S.uses)}</h2><div class="nb">${nb(out, 'to')}</div>` : ''}
     ${inn.length ? `<h2 style="margin-top:14px">${esc(S.used_by)}</h2><div class="nb">${nb(inn, 'from')}</div>` : ''}`; }

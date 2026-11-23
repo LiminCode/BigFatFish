@@ -58,7 +58,9 @@ class Graph:
 
     def node(self, node_id: str, region: str, col: int, kind: str, title: str, sub: str = "", state: str = "ok",
              size: str = "std", **extra) -> str:
-        """``extra``：icon lines badge facts items source page settings group head anchor gap view memory（空值不写进去）。
+        """``extra``：icon lines badge facts items source page settings group head anchor gap view memory actions（空值不写进去）。
+
+        ``actions``：这块磁贴详情里一直都有的动作按钮（和待处理的 ``action`` 同一种字典）；没有就退回它名下第一条带动作的待处理。
 
         ``page`` 是「去设置窗口哪一页改」的一句话；``settings`` 是已经搬到页面上的那一组设置的 id（页面出「设置」按钮）。"""
         if state not in NODE_STATES or size not in SIZES or kind not in KINDS:

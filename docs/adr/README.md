@@ -67,3 +67,4 @@ PR 满足下面**任意一条**才新增一份 ADR：
 | [0017](0017-drop-quick-launch-and-tools-help.md) | 右键菜单的「快捷启动」和「工具与帮助」整个删掉 |
 | [0018](0018-content-pages-move-to-the-browser.md) | 生成出来的内容也在浏览器里读，从工作简报开始；Qt 的简报窗口等别的页搬完再删 |
 | [0019](0019-run-journal-and-git-are-the-timeline.md) | 时间轴有两本账：肥鱼做的事记运行记录，仓库里的事问 git，靠提交号对上 |
+| [0020](0020-vault-sync-never-picks-a-side.md) | 知识库同步不自动选边，没人点头不提交大动作 |
