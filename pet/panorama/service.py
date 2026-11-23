@@ -111,6 +111,7 @@ class PanoramaService(QObject):
         self._report_feeds = {name: Feed() for name in self._reports}   # 每份报告自己的发布台（页面挂在上面等更新）
         # 每份报告用哪种外壳 / 哪套界面文字：provider 函数的 page 属性（report = 简报那张页，notes = 笔记页）
         self._report_pages = {name: str(getattr(provider, "page", "") or "report") for name, provider in self._reports.items()}
+        self._off_gui_publish = threading.Lock()            # off_gui 的报告在请求线程上发布：排队，一次一个
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
@@ -395,10 +396,29 @@ class PanoramaService(QObject):
         if feed is None:
             raise ActionError(404, "unknown_report")
         if after is None:
-            if feed.latest() is None:
+            if getattr(self._reports.get(name), "off_gui", False):
+                self._publish_off_gui(name)             # 每次打开 / 刷新都重做：它读的是 git 和文件，没有「生成结束」的信号可等
+            elif feed.latest() is None:
                 self.on_gui(lambda: self.publish_report(name, force=True))
             return feed.latest()
         return feed.wait_newer(after, wait_seconds)
+
+    def _publish_off_gui(self, name: str) -> None:
+        """（不在界面线程）重做一份 ``off_gui`` 报告并发布。provider 要起进程（时间轴页读 git），所以不许在界面线程上调它；
+        它自己在需要时经 ``on_gui`` 回去读配置。发布台假定同一时刻只有一个发布者，所以这里排队。"""
+        feed, provider = self._report_feeds[name], self._reports[name]
+        with self._off_gui_publish:
+            data = provider()
+            feed.publish(lambda revision: render.report_payload(data, revision=revision, page=self.report_page(name)))
+
+    def refresh_report(self, name: str) -> bool:
+        """（任何线程，但不该是界面线程）一份 ``off_gui`` 报告的内容变了（刚核对 / 同步完）：有人开过那一页就重做一份，
+        页面挂着的「等更新的」请求立刻拿到。没人开过、或不是 ``off_gui`` 的报告，什么都不做。"""
+        feed, provider = self._report_feeds.get(name), self._reports.get(name)
+        if feed is None or feed.latest() is None or not getattr(provider, "off_gui", False):
+            return False
+        self._publish_off_gui(name)
+        return True
 
     def publish_report(self, name: str, *, force: bool = False) -> bool:
         """（界面线程）重做一份报告的数据并发布，页面挂着的「等更新的」请求立刻拿到。
@@ -406,6 +426,8 @@ class PanoramaService(QObject):
         ``force`` 为假时只在这份报告发布过（有人打开过页面）时才做：生成结束的信号每次都来，没有页面在看就不白做。"""
         feed, provider = self._report_feeds.get(name), self._reports.get(name)
         if feed is None or provider is None or (not force and feed.latest() is None):
+            return False
+        if getattr(provider, "off_gui", False):             # 这种报告不在界面线程上做：页面来要的时候在请求线程上做
             return False
         data = provider()
         feed.publish(lambda revision: render.report_payload(data, revision=revision, page=self.report_page(name)))

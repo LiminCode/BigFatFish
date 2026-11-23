@@ -11,7 +11,7 @@
    离线快照没有服务，按钮是灰的（interact.js 画的时候就决定了）。 */
 import {esc} from './util.js';
 
-const RETRY = ['failed', 'busy', 'missing'];
+const RETRY = ['failed', 'busy', 'missing', 'opened'];   /* opened：开了一张页，图不会变，按钮得能再点 */
 
 /* 一条待处理项（或它指的那块磁贴）的动作按钮；没有动作就是空串 */
 export const actionButton = (S, quest, api) => { if (!quest || !quest.action) return '';

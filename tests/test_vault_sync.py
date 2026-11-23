@@ -89,6 +89,7 @@ def test_a_hand_edit_and_a_new_note_are_committed_and_pushed(world):
     assert effect["kind"] == "git" and effect["op"] == "sync" and effect["repo"] == "personal"
     assert effect["files"] == 2 and effect["pushed"] == 1 and effect["pulled"] == 0 and effect["committed"] == [out.committed]
     assert effect["before"] != effect["after"] and len(effect["after"]) == 12
+    assert effect["pushed_ids"] == [_git(world.remote, "rev-parse", "main")[:12]], "记的是到了远端的那个提交号"
     assert "new note" not in str(row) and "Notes" not in str(row), "运行记录里没有文件名"
     assert [step["name"] for step in row["steps"]] == ["commit", "fetch", "push"]
 
@@ -112,6 +113,8 @@ def test_edits_on_both_sides_that_do_not_collide_end_up_on_both(world):
     _git(world.cloud, "pull", "-q")
     assert (world.cloud / "Notes" / "a.md").read_text(encoding="utf-8") == merged
     assert world.remote_log()[0] == "vault: 2026-11-22 16:05 · 1 files", "本地那个提交排在远端的后面：线性历史"
+    effect = world.last_row()["effects"][0]
+    assert effect["pushed_ids"] == [_git(world.remote, "rev-parse", "main")[:12]] and effect["committed"] != effect["pushed_ids"], "rebase 换了提交号：对账要用到了远端的那个"
 
 
 def test_nothing_to_do_is_a_noop_and_is_still_recorded(world):

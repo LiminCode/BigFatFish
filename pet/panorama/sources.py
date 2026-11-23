@@ -420,7 +420,7 @@ def repositories(g: Graph, f: dict) -> None:
     g.quest("unknown", L("quest.github_no_probe"), "gh_personal")
 
     def vault(node_id: str, column_: int, title: str, info: dict, push: str, check: dict | None = None,
-              sync: dict | None = None, last: dict | None = None) -> str:
+              sync: dict | None = None, last: dict | None = None, more: list | None = None) -> str:
         """一个克隆的磁贴；返回它到 GitHub 那条线该是什么状态（``""`` = 没有特别要说的，按调用方的默认）。
 
         领先 / 落后是按上一次碰到远端时的样子算的，所以**没核对过、核对得太久、或最近一次没连上，就不许显示绿色**：
@@ -442,7 +442,7 @@ def repositories(g: Graph, f: dict) -> None:
                                             L("vault.sub_dirty") if dirty else "") if part),
                "warn" if gap else "unknown" if stale else "ok", anchor="bottom",
                lines=[L("vault.check_failed") if failed else L("vault.checked", when=checked[5:]) if checked else L("vault.never_checked")],
-               actions=[action for action in (check, sync) if action],
+               actions=[action for action in (check, sync, *(more or [])) if action],   # more：详情里再多放的动作（「时间轴」）
                facts=[[L("fact.remote"), info["remote"]], [L("fact.branch"), info["branch"]], [L("fact.last_commit"), info["last_commit"]],
                       [L("fact.unpushed"), count(unpushed)], [L("fact.behind"), count(behind)],
                       [L("fact.dirty"), "" if dirty is None else L("has") if dirty else L("none")],
@@ -475,6 +475,7 @@ def repositories(g: Graph, f: dict) -> None:
     personal_line = vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"),
                           check={"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}},
                           sync={"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}},
+                          more=[{"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}],
                           last=(f.get("vault_sync") or {}).get("personal"))
     work_line = vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
     token_line = "ok" if token["present"] else "unknown"

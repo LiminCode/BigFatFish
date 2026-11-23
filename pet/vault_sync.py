@@ -17,7 +17,8 @@
 **设备状态不单独触发**：只有 ``NOISE`` 里的路径（Obsidian 的界面状态）变了，不提交；有正文改动时随车一起提交；
 远端有新提交要 rebase 时也提交掉，好让 rebase 从干净的工作区开始。
 
-每次真的跑了都在运行记录里记一行（任务 ``vault_sync``）。**记录里只有数：文件几个、删除几个、提交号**，没有文件名
+每次真的跑了都在运行记录里记一行（任务 ``vault_sync``）。**记录里只有数：文件几个、删除几个、提交号**（``committed`` 是
+本地刚建的那个，``pushed_ids`` 是真正到了远端的那几个——rebase 会换提交号），没有文件名
 （ADR 0019）。提交说明也只有时间和文件数。
 
 git 经 ``personal_vault`` 跑：Windows 的 git.exe，碰远端时用钥匙串里的 GitHub Token。所以现在只接得了个人侧的克隆；
@@ -41,6 +42,8 @@ NOISE = (".obsidian/*",)
 #: 没人点头时，一次改动超过这么多个文件就不自动提交
 REVIEW_ABOVE_FILES = 20
 MAX_ROUNDS = 2
+#: 一次推送最多在运行记录里记这么多个提交号
+PUSHED_IDS = 50
 _UNMERGED = ("DD", "AU", "UD", "UA", "DU", "AA", "UU")
 #: ``.git`` 下面的这些东西在，说明克隆正处在某个操作的半截
 _HALFWAY = (("rebase-merge", "in_progress"), ("rebase-apply", "in_progress"), ("MERGE_HEAD", "in_progress"),
@@ -220,10 +223,13 @@ class VaultSync:
                 ahead = pv.upstream_state(folder, run=self._run)["ahead"] or 0
             if not ahead:
                 break
+            # 推上去的是哪几个提交（rebase 之后的提交号：远端的历史里看到的就是这些）。时间轴页靠它认出「这是肥鱼推的」
+            outgoing = [line[:12] for line in self._git(folder, "rev-list", f"-n{PUSHED_IDS}", "@{upstream}..HEAD")[1].split()]
             with record.step("push"):
                 code, out = self._remote(folder, "push", "-q")
             if code == 0:
                 effect["pushed"] = ahead
+                effect["pushed_ids"] = outgoing
                 break
             if attempt + 1 < MAX_ROUNDS and any(mark in out.lower() for mark in _REJECTED):
                 continue                                    # 输给了别人：远端又多了提交，再拉一轮
