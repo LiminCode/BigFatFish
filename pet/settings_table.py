@@ -45,6 +45,7 @@ from .click_sound import BUILTIN_AGENT_SOUNDS      # 导入时不碰 Qt（QtMult
 from . import session_card_themes as sct
 from . import personal_vault as pv
 from . import slack_watch as sw
+from . import vault_sync as vs
 from . import work_briefing as wb
 from . import work_notes as wn
 
@@ -453,6 +454,15 @@ GROUPS: tuple[Group, ...] = (
                 labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS)),
                 text="personal.settings.effort"),
     ), title_key="personal.settings.section"),
+    # 知识库定时同步：每隔一阵、停笔后，把个人知识库的克隆和远端对齐。不调模型、不靠 WSL。默认关：它会替用户提交和推送。
+    # 克隆在哪是个人助理那一组的「仓库副本目录」，这里不重复放。两个分钟数由 vault_sync.normalize 夹在范围里。
+    Group("vault_sync", "automation", vs.CONFIG_KEY, "personal", vs.normalize, (
+        Setting("enabled", "toggle"),
+        Setting("mode", "choice", choices=vs.MODES, depends_on="enabled",
+                labels=tuple((mode, f"settings.vault_sync.mode.{mode}") for mode in vs.MODES)),
+        Setting("interval_minutes", "number", bounds=vs.INTERVAL_RANGE, unit="settings.unit.minutes", depends_on="enabled"),
+        Setting("idle_minutes", "number", bounds=vs.IDLE_RANGE, unit="settings.unit.minutes", depends_on="enabled"),
+    ), title_key="settings.vault_sync.section"),
     # 会话记忆蒸馏：一个配置键（memory_distill）分两组，和配置全景上的两块磁贴一一对应。
     # 个人侧这组还管抽取（总开关、扫不扫 WSL、保留几天、哪些目录算公司）：抽取在 Windows 这边跑，不靠 WSL。
     # 个人侧的模型存空串 = 跟 AI 对话一致；公司侧的模型名拼进 shell 命令（claude -p --model），过 normalize 的白名单。

@@ -20,6 +20,7 @@ from typing import Callable
 from .. import memory_distill as md
 from .. import personal_vault as pv
 from .. import slack_watch
+from .. import vault_sync
 from .. import work_briefing as wb
 from .. import work_notes
 
@@ -55,6 +56,11 @@ def _distill(side):
 def _personal(cfg):
     s = pv.normalize(cfg.get(pv.CONFIG_KEY))
     return _settings(s["enabled"], s["model"], s["effort"], s["time"])
+
+
+def _vault_sync(cfg):
+    s = vault_sync.normalize(cfg.get(vault_sync.CONFIG_KEY))
+    return _settings(s["enabled"], every_minutes=s["interval_minutes"])
 
 
 def _briefing(cfg):
@@ -126,6 +132,10 @@ FEATURES: tuple[Feature, ...] = (
                     ("vault_personal", "memory", _distill_flag("mirror_to_vault")))),
     Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
             writes=(("vault_personal", "memory", _always),)),
+    # 知识库定时同步：不调模型，肥鱼自己的 git 把个人知识库的克隆和远端对齐。磁贴上的节奏、上次 / 下次、运行历史条
+    # 由 sources.vault_schedule 补上（它们来自运行记录，不是配置）。
+    Feature("vault_sync", "link", "repo", "vault_sync", _vault_sync, note="vault_sync",
+            writes=(("vault_personal", "github", _always),)),
     Feature("link_wsl", "link", "link", "agent_link.claude_wsl", _link("claude_wsl", sys.platform == "win32"),
             settings_group="link_wsl", writes=(("set_wsl", "config", _always),), note="link_wsl"),
     # 设置已经搬到配置全景（settings_table 里登记了这个键）：磁贴上是「设置」按钮，不再指向设置窗口的哪一页

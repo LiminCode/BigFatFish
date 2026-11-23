@@ -12,14 +12,13 @@
 """
 from __future__ import annotations
 
-import contextlib
 import logging
 import threading
 import weakref
 from pathlib import Path
 from typing import Callable
 
-from .. import personal_vault
+from .. import personal_vault, vault_sync
 from .. import settings_table as st
 from ..click_sound import play_sound, resolve_builtin_sound
 
@@ -29,8 +28,8 @@ log = logging.getLogger(__name__)
 HOOKED_SIDES = {"claude": "win", "claude_wsl": "wsl"}
 #: 待处理里「现在核对」走的动作名（``sources.repositories`` 写在那条待处理的 action 里）
 CHECK_REMOTE_ACTION = "check_remote"
-#: 「现在核对」在运行记录里的任务名
-CHECK_JOB = "vault_check"
+#: 「现在核对」在运行记录里的任务名（和「只看不动」模式的定时运行是同一个任务，只是触发原因不同）
+CHECK_JOB = vault_sync.CHECK_JOB
 #: 待处理和磁贴详情里「现在同步」走的动作名
 SYNC_VAULT_ACTION = "sync_vault"
 #: 磁贴上「时间轴」走的动作名：在浏览器里开一张报告页
@@ -122,17 +121,9 @@ def check_remote(repos: dict, on_gui: Callable[[Callable[[], object]], object], 
             repo_dir = str(on_gui(repos[repo]))
             if not personal_vault.repo_ready(repo_dir):
                 return {"repo": repo, "state": "missing"}
-            record = journal.start(CHECK_JOB, "manual") if journal is not None else None
-            before = state(repo_dir) if record else {}
-            with record.step("fetch") if record else contextlib.nullcontext():
-                ok, reason = fetch(repo_dir, token=token())
+            ok, reason = vault_sync.check_once(repo_dir, repo=repo, trigger="manual", journal=journal, token=token(), fetch=fetch, state=state)
             if not ok:
                 log.warning("配置全景：核对 %s 没连上远端：%s", repo, reason[-200:])
-            if record:
-                then = state(repo_dir)
-                record.effect("git", op="fetch", repo=repo, before=before.get("head", ""), after=then.get("head", ""),
-                              behind=then.get("behind"), ahead=then.get("ahead"))
-                record.finish("failed" if not ok else "ok" if then.get("head") != before.get("head") else "noop", "" if ok else reason)
             try:
                 on_gui(lambda: refresh("win"))
             except Exception:  # noqa: BLE001 - 重探没发起：页面留着旧图，下次打开会是新的

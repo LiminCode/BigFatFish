@@ -24,6 +24,7 @@ from .memory_distill import normalize as normalize_memory_distill
 from .notification_center import normalize as normalize_notifications
 from .personal_vault import normalize as normalize_personal
 from .slack_watch import normalize as normalize_slack_watch
+from .vault_sync import normalize as normalize_vault_sync
 from .work_briefing import normalize as normalize_work_briefing
 from .work_notes import normalize as normalize_work_notes
 
@@ -887,6 +888,8 @@ class Config:
             "work_notes": normalize_work_notes(None),
             # 个人助理（肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报；灵感记录推到 GitHub），见 pet/personal_vault.py
             "personal": normalize_personal(None),
+            # 知识库定时同步（每隔一阵、停笔后把个人知识库的克隆和远端对齐；默认关），见 pet/vault_sync.py
+            "vault_sync": normalize_vault_sync(None),
             # 会话记忆蒸馏（把我在 Claude Code 里说过的决定 / 偏好抽进本地候选库，定期总结），见 pet/memory_distill.py
             "memory_distill": normalize_memory_distill(None),
             # 配置备份到 GitHub（用户自己的私有仓库；坏了能拉回来），见 pet/config_backup.py
@@ -1182,6 +1185,7 @@ class Config:
             "slack_watch",
             "work_notes",
             "personal",
+            "vault_sync",
             "memory_distill",
             "config_backup",
             "no_move",
@@ -1575,6 +1579,7 @@ class Config:
         self.data["slack_watch"] = normalize_slack_watch(self.data.get("slack_watch"))
         self.data["work_notes"] = normalize_work_notes(self.data.get("work_notes"))
         self.data["personal"] = normalize_personal(self.data.get("personal"))
+        self.data["vault_sync"] = normalize_vault_sync(self.data.get("vault_sync"))
         self.data["memory_distill"] = normalize_memory_distill(self.data.get("memory_distill"))
         self.data["config_backup"] = config_backup.normalize(self.data.get("config_backup"))
         # 音乐关联 / 消费统计（#129 新增的 5 键）：此前只在默认值与 reload 白名单
@@ -1757,6 +1762,7 @@ class Config:
             "slack_watch",
             "work_notes",
             "personal",
+            "vault_sync",
             "memory_distill",
             "config_backup",
         }:

@@ -23,6 +23,8 @@ GitRunner = Callable[..., "tuple[int, str]"]
 WSL_TIMEOUT_S = 150.0      # 发行版冷启动 + ``claude mcp list`` 逐个体检（实测 6-9 秒），留足余量
 GIT_TIMEOUT_S = 10.0
 TAIL_MIN_LENGTH = 12       # 比这短的秘密不露末位：露 4 位就是露了三分之一
+SCHEDULE_RUNS = 12         # 定时同步磁贴的历史条留最近几次
+SCHEDULE_LOOKBACK = 200    # 为了凑出那几次，最多往回看这么多条运行记录（以后别的任务也往里写）
 
 
 def secret_tail(value: str) -> dict:
@@ -127,6 +129,16 @@ def last_sync(config_dir: str | Path, repo: str) -> dict | None:
     return None
 
 
+def vault_schedule(cfg: dict, config_dir: str | Path, *, now: float | None = None) -> dict:
+    """知识库定时同步此刻的样子：生效的设置、最近几次运行（核对和同步都算，新的在前，原样的运行记录行）、
+    最近一次距今多少秒（没跑过是 ``None``）。磁贴上的节奏、上次 / 下次、历史条都从这里来。"""
+    rows = [row for row in run_journal.Journal(Path(config_dir) / run_journal.DIR_NAME).read(SCHEDULE_LOOKBACK)
+            if row.get("job") in (vault_sync.JOB, vault_sync.CHECK_JOB)][:SCHEDULE_RUNS]
+    last = vault_sync.parse_at(rows[0].get("at")) if rows else None
+    return {"settings": vault_sync.normalize(cfg.get(vault_sync.CONFIG_KEY)), "runs": rows,
+            "last_age_s": None if last is None else max(0, int((time.time() if now is None else now) - last))}
+
+
 def wsl_source() -> str:
     """喂给 WSL 的那一份源码：存储表、走目录的代码、家目录探针，三个文件按这个顺序拼成一个。
 
@@ -178,6 +190,7 @@ def windows_side(cfg: dict, *, cfg_path: str | Path, secret_get: SecretGet, api_
         "personal_vault": repo_info(personal_vault.normalize(cfg.get(personal_vault.CONFIG_KEY))["repo_dir"], run_git),
         "work_vault": repo_info(work_notes.normalize(cfg.get(work_notes.CONFIG_KEY))["repo_dir"], run_git),
         "vault_sync": {"personal": last_sync(cfg_path.parent, "personal")},
+        "vault_schedule": vault_schedule(cfg, cfg_path.parent),
         "win": claude_home_probe.probe(home or Path.home()),
     }
     storage_started = time.perf_counter()

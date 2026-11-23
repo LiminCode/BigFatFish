@@ -129,7 +129,12 @@ def _name(prefix: str, key: str) -> str:
     return key if text == full else text
 
 
-def _what(run: dict) -> str:
+def trigger_name(trigger) -> str:
+    """触发原因的字（「定时」「你点的」……）；没登记的原样显示。"""
+    return _name("trigger", str(trigger or ""))
+
+
+def describe(run: dict) -> str:
     """一次运行做了什么，一句话。"""
     effect, result = _git_effect(run), run.get("result")
     if effect.get("conflicts"):
@@ -140,6 +145,8 @@ def _what(run: dict) -> str:
         return t("activity.did.review", n=effect.get("files", 0), d=effect.get("deletions", 0))
     if result == "failed":
         return t("activity.did.failed")
+    if result == "noop":
+        return t("activity.result.noop")
     if effect.get("op") == "fetch":
         return t("activity.did.checked", behind=effect.get("behind", 0) or 0, ahead=effect.get("ahead", 0) or 0)
     if effect.get("op") == "sync":
@@ -179,7 +186,7 @@ def _row(row: dict) -> str:
     run = row["run"]
     result = str(run.get("result") or "")
     head = (f'<span class="wt">{time}</span><span class="who fish">{html.escape(_name("trigger", str(run.get("trigger"))))}</span>'
-            f'<span class="wm">{html.escape(_name("job", str(run.get("job"))))} · <span class="r-{html.escape(result)}">{html.escape(_what(run))}</span></span>'
+            f'<span class="wm">{html.escape(_name("job", str(run.get("job"))))} · <span class="r-{html.escape(result)}">{html.escape(describe(run))}</span></span>'
             f'<span class="we">{html.escape(t("activity.seconds", n=run.get("seconds", 0)))}</span>')
     error = f'<p class="werr">{html.escape(str(run["error"]))}</p>' if run.get("error") else ""
     body = _steps(run) + (_commit_list(row["commits"]) if row["commits"] else "") + error

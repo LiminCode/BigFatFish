@@ -1951,6 +1951,7 @@ class AppShell:
             self._start_slack_watch()
             self._start_personal()
             self._start_memory_distill()
+            self._start_vault_sync()
         else:
             self._create_ui_with_character_fallback(character_id)
         # 批5.2a：进程级共享全屏 watcher 在主窗就绪后启动（自省任一窗是否需要，
@@ -3223,6 +3224,40 @@ class AppShell:
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("个人助理接线失败")
 
+    def _start_vault_sync(self) -> None:
+        """知识库定时同步（可选服务，2026-11-22）：每分钟看一眼该不该跑，开关默认关。不需要 WSL、不调模型。
+        跑完之后：时间轴页开着就重画（后台线程上）；配置全景开着就重探本机一侧；要用户出手的结果冒一句气泡。"""
+        if getattr(self, "_vault_schedule", None) is not None:
+            return
+        try:
+            from . import vault_sync
+            from .vault_sync_service import VaultSyncService
+
+            def timeline_changed() -> None:             # 后台线程上叫：时间轴页的内容要起 git，不能在界面线程上重做
+                panorama = getattr(self, "_panorama_service", None)
+                if panorama is not None:
+                    panorama.refresh_report("activity")
+
+            service = self._vault_schedule = VaultSyncService(
+                self.config, self._vault_sync(), last_run=lambda: vault_sync.last_run_time(self._runs()),
+                after=timeline_changed, parent=self.app)
+            service.finished.connect(self._on_vault_sync_finished)
+            service.start()
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("知识库定时同步接线失败")
+
+    def _on_vault_sync_finished(self, outcome, trigger: str) -> None:
+        """（界面线程）一次定时同步跑完了。结果在运行记录和时间轴页上；这里只管两件事：让开着的配置全景跟上，
+        以及要用户出手时说一声——同一种状况只说一次，不每小时念一遍。"""
+        panorama = getattr(self, "_panorama_service", None)
+        if panorama is not None and shiboken6.isValid(panorama):
+            panorama.refresh("win")
+        said, self._vault_sync_said = getattr(self, "_vault_sync_said", ""), outcome.state
+        key = {"conflict": "vault_sync.bubble.conflict", "review": "vault_sync.bubble.review", "blocked": "vault_sync.bubble.blocked",
+               "failed": "vault_sync.bubble.failed"}.get(outcome.state)
+        if key and outcome.state != said and self._overlay_shell is not None:
+            self._overlay_shell.show_bubble(t(key), 6000)
+
     def _start_memory_distill(self) -> None:
         """会话记忆蒸馏（可选服务，2026-10-30）：增量抽 Claude Code 的会话记录进本地候选库；独立流程页。不需要 WSL。"""
         if self._overlay_shell is None or getattr(self, "_memory_distill", None) is not None:
@@ -3529,7 +3564,12 @@ class AppShell:
             vault_repos = {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]}
             # 时间轴页：运行记录 + 个人知识库远端分支的提交。它要起 git，所以 provider 不在界面线程上做，只回来读这两样
             timeline_context = lambda: {"repo_dir": vault_repos["personal"](), "theme": panorama_reports.theme(self.config)}  # noqa: E731
-            timeline_changed = lambda: self._panorama_service.refresh_report(panorama_activity.REPORT)  # noqa: E731
+
+            def timeline_changed() -> None:             # 页面上手点的核对 / 同步跑完了（后台线程上叫）
+                schedule = getattr(self, "_vault_schedule", None)
+                if schedule is not None:
+                    schedule.note_run()                 # 定时那边的周期从现在重新算：刚手动跑过，不用十分钟后再自动跑一遍
+                self._panorama_service.refresh_report(panorama_activity.REPORT)
             # apply：页面改了设置之后跑的应用链，和设置进程存盘后主进程走的是同一条。
             # actions：页面上的动作——「修复」给联动通道装 hooks（同意框在页面上，ADR 0006），装完只重探那一侧；
             #          「重新生成」让简报服务现在生成一份；「试听」在界面线程上放一个提示音（会话提示音的设置页）；

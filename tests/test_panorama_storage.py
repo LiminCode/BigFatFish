@@ -348,6 +348,66 @@ def test_the_tile_says_how_the_last_sync_went(last, words):
     assert rows == ([words] if words else []), "没同步过：这一行是空的，页面不画空行"
 
 
+# ───────────────────────── 定时同步的磁贴：节奏、上次、历史条、迟了 ─────────────────────────
+
+def _scheduled(*, enabled=True, mode="auto", age=600, runs=None, **settings) -> dict:
+    facts = samples.facts()
+    facts["features"]["vault_sync"] = {"enabled": enabled, "model": "", "effort": "", "when": "", "every_minutes": 60, "prompt_chars": 0,
+                                       "writes": [["vault_personal", "github"]]}
+    row = lambda at, result, trigger="schedule", **effect: {  # noqa: E731
+        "at": f"2026-11-22 {at}", "job": "vault_sync", "trigger": trigger, "result": result,
+        "effects": [{"kind": "git", "op": "sync", "repo": "personal", **effect}]}
+    default = [row("13:00:00", "ok", pulled=3, pushed=1), row("12:00:00", "noop"), row("11:00:00", "needs_you", conflicts=1),
+               row("10:05:00", "failed", "idle")]
+    facts["vault_schedule"] = {"settings": {"enabled": enabled, "mode": mode, "interval_minutes": 60, "idle_minutes": 5, **settings},
+                               "runs": default if runs is None else runs, "last_age_s": age}
+    return sources.build(facts)
+
+
+def test_the_schedule_tile_shows_its_rhythm_its_last_run_and_a_strip_of_recent_runs():
+    tile = _node(_scheduled(), "f_vault_sync")
+    assert tile["title"] == "知识库定时同步" and tile["state"] == "ok" and tile["size"] == "tall"
+    assert tile["sub"] == "每 60 分钟 · 自动提交" and tile["lines"] == ["上次 13:00"]
+    assert [(item["name"], item["state"]) for item in tile["items"]] == [
+        ("11-22 13:00", "ok"), ("11-22 12:00", "unknown"), ("11-22 11:00", "warn"), ("11-22 10:05", "bad")], "新的在前：有变化绿、没事灰、等你琥珀、失败红"
+    assert tile["items"][0]["detail"] == "定时 · 拉 3 · 推 1" and tile["items"][3]["detail"].startswith("停笔后 · ")
+    assert ["做到哪一步", "自动提交"] in tile["facts"] and ["每隔多久", "每 60 分钟"] in tile["facts"] and ["停笔后同步", "停笔 5 分钟后"] in tile["facts"]
+    assert any(label == "上次运行" and value.startswith("2026-11-22 13:00 · ") for label, value in tile["facts"])
+    assert tile["settings"] == "vault_sync", "磁贴上有「设置」按钮，翻到这一组"
+
+
+def test_the_line_from_the_schedule_to_the_clone_follows_the_schedule_not_the_hooks():
+    """实机上见过这条线被画成断开：联动那几块磁贴的线看的是 hooks 在不在，定时同步不靠 hooks。"""
+    assert _edge(_scheduled(), "f_vault_sync", "vault_personal")["state"] == "ok"
+    assert _edge(_scheduled(enabled=False), "f_vault_sync", "vault_personal")["state"] == "off"
+    assert _edge(_scheduled(age=3 * 3600), "f_vault_sync", "vault_personal")["state"] == "warn", "迟了：线跟着琥珀"
+    hooks = sources.build(samples.facts(win=samples.home(hooks={"Stop": {"total": 1, "fish": 0}})))
+    assert _edge(hooks, "f_link_win", "set_win")["state"] == "broken", "联动的线照旧看 hooks"
+
+
+def test_a_schedule_that_has_missed_two_rounds_is_late_and_says_so():
+    """该跑没跑要有人看得见：个人简报曾经停了九天没人知道。"""
+    graph = _scheduled(age=2 * 3600 + 1)
+    tile = _node(graph, "f_vault_sync")
+    assert tile["state"] == "warn" and tile["lines"] == ["迟了"]
+    quest, = [q for q in graph["quests"] if q["node"] == "f_vault_sync"]
+    assert quest["sev"] == "warn" and "2026-11-22 13:00" in quest["text"]
+    on_time = _scheduled(age=2 * 3600)
+    assert _node(on_time, "f_vault_sync")["state"] == "ok" and not any(q["node"] == "f_vault_sync" for q in on_time["quests"])
+
+
+def test_a_schedule_that_is_switched_off_is_never_late_but_keeps_its_history():
+    graph = _scheduled(enabled=False, age=9 * 86400)
+    tile = _node(graph, "f_vault_sync")
+    assert tile["state"] == "off" and len(tile["items"]) == 4 and not any(q["node"] == "f_vault_sync" and q["sev"] == "warn" for q in graph["quests"])
+
+
+def test_a_schedule_that_never_ran_says_so_and_watch_mode_does_not_claim_to_follow_edits():
+    tile = _node(_scheduled(runs=[], age=None, mode="watch"), "f_vault_sync")
+    assert tile["lines"] == ["还没跑过"] and tile["sub"] == "每 60 分钟 · 只看不动" and "items" not in tile
+    assert ["停笔后同步", "不看停笔"] in tile["facts"] and ["上次运行", "还没跑过"] in tile["facts"]
+
+
 def test_the_buttons_are_on_the_tile_even_when_there_is_nothing_to_do():
     graph = sources.build(samples.facts())
     assert [a["name"] for a in _node(graph, "vault_personal")["actions"]] == ["check_remote", "sync_vault", "open_report"]

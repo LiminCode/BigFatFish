@@ -15,7 +15,7 @@ from typing import Callable
 from .. import data_stores as ds
 from .. import settings_table
 from ..i18n import t
-from . import features, files, memory_scope, places
+from . import activity, features, files, memory_scope, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
 
 FISH_NODE = "pet"
@@ -493,6 +493,42 @@ def repositories(g: Graph, f: dict) -> None:
             g.edge("vault_work", "gh_work", "github", work_line or "ok")
 
 
+#: 一次运行的结果 → 历史条上那一格的颜色（节点状态那一套）
+_RUN_STATES = {"ok": "ok", "noop": "unknown", "needs_you": "warn", "failed": "bad", "skipped": "off"}
+#: 开着、却超过这么多个周期没跑过：算「迟了」（电脑一直睡着、肥鱼没开，或服务出了问题）
+SCHEDULE_LATE_AFTER = 2
+
+
+@source
+def vault_schedule(g: Graph, f: dict) -> None:
+    """「知识库定时同步」那块磁贴上和时间有关的部分：节奏、上次 / 下次、最近几次的历史条。
+
+    定时不是一种新东西，是这块功能磁贴的属性（它本身由 ``fish_features`` 按功能表建好了）；这里只往上补。
+    数据来自运行记录（``probes.vault_schedule``），不是配置——配置只说「该多久跑一次」，这里说「实际跑了没有」。
+    开着却超过两个周期没跑过，磁贴变琥珀、待处理里多一条「迟了」：该跑没跑要有人看得见。"""
+    node, info = "f_vault_sync", f.get("vault_schedule") or {}
+    settings = info.get("settings")
+    if not settings or not g.has(node):
+        return
+    runs, age, interval = info.get("runs") or [], info.get("last_age_s"), settings["interval_minutes"]
+    idle = L("schedule.idle", n=settings["idle_minutes"]) if settings["idle_minutes"] and settings["mode"] != "watch" else L("schedule.idle_off")
+    mode = L(f"schedule.mode.{settings['mode']}") if settings["mode"] in ("auto", "ask", "watch") else settings["mode"]
+    for label, value in ([L("fact.schedule_mode"), mode], [L("fact.schedule_every"), L("when.every", n=interval)],
+                         [L("fact.schedule_idle"), idle],
+                         [L("fact.schedule_last"), f"{runs[0].get('at', '')[:16]} · {activity.describe(runs[0])}" if runs else L("schedule.never")]):
+        g.add_fact(node, label, value)
+    items = [{"name": str(run.get("at") or "")[5:16], "state": _RUN_STATES.get(run.get("result"), "unknown"),
+              "detail": f"{activity.trigger_name(run.get('trigger'))} · {activity.describe(run)}"} for run in runs]
+    if not settings["enabled"]:
+        g.mark(node, items=items)
+        return
+    late = age is not None and age > SCHEDULE_LATE_AFTER * interval * 60
+    last = L("schedule.late") if late else L("schedule.last", when=runs[0].get("at", "")[11:16]) if runs else L("schedule.never")
+    g.mark(node, items=items, size="tall", sub=f"{L('when.every', n=interval)} · {mode}", lines=[last], state="warn" if late else "ok")
+    if late:
+        g.quest("warn", L("quest.schedule_late", when=runs[0].get("at", "")[:16], n=interval), node)
+
+
 # ───────────────────────── 存储 ─────────────────────────
 
 _WRITER_NAMES = {"claude_code": "Claude Code"}
@@ -655,8 +691,10 @@ def feature_writes(g: Graph, f: dict) -> None:
         for target, line in s["writes"]:
             if not s["enabled"]:
                 state = "off"
-            elif feature.route == "link":   # 联动的线通不通，看那边的 hooks 在不在
+            elif feature.route == "link" and line == "config":   # 联动写的是那边的设置文件：线通不通，看 hooks 在不在
                 state = "live" if g.state_of(target) == "live" else "broken"
+            elif g.state_of(f"f_{feature.id}") == "warn":        # 这项功能自己有事要说（定时同步迟了）：线跟着琥珀
+                state = "warn"
             else:
                 state = "ok"
             g.edge(f"f_{feature.id}", target, line, state)
