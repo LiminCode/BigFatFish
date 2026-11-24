@@ -228,7 +228,7 @@ def test_the_missing_hooks_quest_carries_the_repair_action_for_its_side():
 
 # ───────────────────────── 工作知识库：WSL 克隆、镜像进个人克隆的 4-Work、磁贴上的「时间轴」（2026-11-24）────────────
 
-TIMELINE = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}
+TIMELINE = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}, "show": "panel"}
 
 
 def test_every_vault_tile_carries_the_timeline_on_its_face():

@@ -316,7 +316,8 @@ def test_a_clone_with_a_known_gap_offers_the_sync_and_can_still_be_checked_from_
     quest, = _vault_quests(graph)
     assert quest["sev"] == "warn" and quest["action"] == {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}}
     assert _node(graph, "vault_personal")["actions"] == [{"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}}, {"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}},
-                                                         {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}]
+                                                         {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"},
+                                                          "show": "panel"}]
     facts["work_vault"].update(gap)
     work = sources.build(facts)
     assert all("action" not in q for q in _vault_quests(work, "vault_work")), "公司侧的 git 在 WSL 里：页面上既不能核对也不能同步"

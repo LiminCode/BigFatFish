@@ -4,7 +4,8 @@
    - words：这组字在界面文字里的前缀，默认 repair。按钮上是 S[words]，过程和结果是 S[words + '_working' / '_<结果>']；
    - ask：false = 不先问。默认先 confirm()——装 hooks 每次都要用户同意（ADR 0006），文案和右键菜单那条路的 Qt 弹框一样，
      点「取消」什么都不发；只读远端的「现在核对」不问；
-   - body：POST 的内容，默认 {agent}。
+   - body：POST 的内容，默认 {agent}；
+   - show：panel = 不发，在右栏里看 body.report 那份报告（timeline.js；interact.js 分流）。
 
    同意了（或不用问）才 POST /api/actions/<动作>，结果写在按钮上。办成了按钮保持灰着：服务随后重探、页面原地重画，
    那条线自己变回来。RETRY 里的几种结果（没办成、正忙、东西不在）和连不上，可以再点。
@@ -18,7 +19,7 @@ export const actionButton = (S, quest, api) => { if (!quest || !quest.action) re
   const a = quest.action, words = a.words || 'repair';
   return `<button class="btn mini" data-action="${esc(a.name)}" data-agent="${esc(a.agent)}" data-side="${esc(a.side)}"` +
     (a.words ? ` data-words="${esc(a.words)}"` : '') + (a.ask === false ? ' data-ask="0"' : '') +
-    (a.body ? ` data-body="${esc(JSON.stringify(a.body))}"` : '') +
+    (a.body ? ` data-body="${esc(JSON.stringify(a.body))}"` : '') + (a.show ? ` data-show="${esc(a.show)}"` : '') +
     `${api ? '' : ` disabled title="${esc(S.action_needs_service)}"`}>${esc(S[words])}</button>`; };
 
 /* 点了按钮：（问 →）发 → 把结果写在按钮上。结果是服务回的 state，或 failed / lost；取消是 null */
