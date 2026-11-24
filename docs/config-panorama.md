@@ -163,7 +163,10 @@
 - **Obsidian 副本**（`vault_work`，Windows 第 4 列底部）：工作笔记往里写，git 经 WSL 跑；没变。
 
 三块克隆磁贴（个人、Windows 工作、WSL 工作）**正面右下角都有「时间轴」**（节点的 `face`，页面 `draw.js` 画成按钮），详情里也有
-同一个按钮；离线快照里是灰的。
+同一个按钮；离线快照里是灰的。功能磁贴也有（2026-11-24）：功能表 `Feature.report` 写了它在浏览器里那张页的报告名，
+`sources.page_action` 就给磁贴正面和详情各放一个——工作简报、个人助理、工作笔记、Slack 关注是「查看」（眼睛图标，另开浏览器页），
+知识库定时同步是「时间轴」（在右栏里看）。`Feature.report` 必须是应用登记给服务的报告名（测试守着）。
+正面的按钮很小：动作的结果只换按钮里那格字（超长省略，全句在悬停提示上），开了页的 2.5 秒后换回原来的字（`repair.js`）。
 
 **时间轴在右栏里看**（2026-11-24，`timeline.js`）：动作字典带 `show: "panel"` 的按钮不发动作，而是在右栏占详情那张卡的位置，
 显示和时间轴页同一份数据（`GET /api/report/activity`，再挂着 `?after=编号` 等更新的：刚同步 / 核对完会自己刷新）。
@@ -416,6 +419,7 @@ flowchart LR
 
 本机服务的第二类页面（2026-11-19，[ADR 0018](adr/0018-content-pages-move-to-the-browser.md)）：`/report/<名字>` 是公开的外壳
 （无数据），`/api/report/<名字>` 要令牌，和 `/api/graph` 一样认 `?after=<编号>` 等更新的。
+在配置全景里，对应功能磁贴正面的「查看」开它（见上面「工作知识库的三处副本」最后一段）。
 
 - **登记**：应用构造 `PanoramaService` 时传 `reports={"work_briefing": …, "personal_briefing": …}`（`reports.py`）。provider 在**界面线程**上被调
   （它读 Qt 对象），返回固定字段的字典：`title / theme / summary / generated / usage[] / html / busy / busy_text / empty_text /

@@ -239,6 +239,32 @@ def test_every_vault_tile_carries_the_timeline_on_its_face():
     assert _node(graph, "vault_work")["actions"] == [TIMELINE], "公司侧的克隆没有核对 / 同步，但详情里也能开时间轴"
 
 
+def _page(report: str) -> dict:
+    return {"name": "open_report", "words": "open_page", "ask": False, "body": {"report": report}, "icon": "eye"}
+
+
+FEATURE_PAGES = {"f_briefing": "work_briefing", "f_assistant": "personal_briefing", "f_notes": "work_notes", "f_slack": "slack_watch"}
+
+
+def test_features_with_a_page_of_their_own_open_it_from_their_face():
+    """工作简报、个人助理、工作笔记、Slack 关注各有一张浏览器页：磁贴正面一个「查看」，详情里也有；知识库同步的页就是时间轴。"""
+    graph = sources.build(samples.facts())
+    for node_id, report in FEATURE_PAGES.items():
+        tile = _node(graph, node_id)
+        assert tile["face"] == _page(report) and tile["actions"] == [_page(report)], node_id
+    sync = _node(graph, "f_vault_sync")
+    assert sync["face"] == TIMELINE and sync["actions"] == [TIMELINE], "同步的运行记录就在时间轴上：在右栏里看"
+    with_face = {n["id"] for n in graph["nodes"] if n["id"].startswith("f_") and n.get("face")}
+    assert with_face == set(FEATURE_PAGES) | {"f_vault_sync"}, "没有页面的功能磁贴不放按钮"
+
+
+def test_every_feature_page_is_a_report_the_service_serves():
+    from pet.panorama import activity, notes, reports
+    served = {activity.REPORT, reports.WORK_BRIEFING, reports.PERSONAL_BRIEFING, notes.WORK_NOTES, notes.SLACK_WATCH}
+    pages = {feature.report for feature in features.FEATURES if feature.report}
+    assert pages == served, "功能表里登记的页面名，必须是应用登记给服务的报告名（app.py 里 reports=）"
+
+
 def test_the_wsl_clone_of_the_work_vault_is_a_tile_of_its_own():
     graph = sources.build(samples.facts())
     tile = _node(graph, "vault_wsl")
