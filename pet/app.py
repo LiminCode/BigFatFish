@@ -3571,7 +3571,7 @@ class AppShell:
         """配置全景的服务对象（第一次要用时才建）。页面、报告页、本机服务都挂在它上面。"""
         service = getattr(self, "_panorama_service", None)
         if service is None or not shiboken6.isValid(service):
-            from . import personal_vault
+            from . import personal_vault, work_notes
             from .panorama import actions as panorama_actions
             from .panorama import activity as panorama_activity
             from .panorama import notes as panorama_notes
@@ -3586,8 +3586,9 @@ class AppShell:
             slack_watch_service = lambda: getattr(getattr(self, "_slack_watch", None), "service", None)  # noqa: E731
             # 页面上能核对 / 同步的克隆：名字 → 它此刻的目录（读配置，所以动作经 on_gui 来调）。现在只有个人知识库
             vault_repos = {"personal": lambda: personal_vault.normalize(self.config.get(personal_vault.CONFIG_KEY))["repo_dir"]}
-            # 时间轴页：运行记录 + 个人知识库远端分支的提交。它要起 git，所以 provider 不在界面线程上做，只回来读这两样
-            timeline_context = lambda: {"repo_dir": vault_repos["personal"](), "theme": panorama_reports.theme(self.config)}  # noqa: E731
+            # 时间轴页：运行记录 + 个人知识库和工作知识库远端分支的提交。它要起 git，所以 provider 不在界面线程上做，只回来读目录和主题
+            timeline_context = lambda: {"repo_dir": vault_repos["personal"](), "theme": panorama_reports.theme(self.config),  # noqa: E731
+                                        "work_repo_dir": work_notes.normalize(self.config.get(work_notes.CONFIG_KEY))["repo_dir"]}
 
             def timeline_changed() -> None:             # 页面上手点的核对 / 同步跑完了（后台线程上叫）
                 schedule = getattr(self, "_vault_schedule", None)

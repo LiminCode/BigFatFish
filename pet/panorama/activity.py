@@ -4,7 +4,8 @@
 配置全景是某一刻的截面；这一页是时间轴。它有两个来源（ADR 0019），在这里按**提交号**对上：
 
 - **运行记录**（``run_journal``）：肥鱼自己跑的每一件事——哪个任务、被什么触发、每步多久、结果；
-- **git**：个人知识库克隆里「远端分支」的提交（``git log @{upstream}``，一条本地命令，不联网）。
+- **git**：知识库克隆里「远端分支」的提交（``git log @{upstream}``，本地命令，不联网）。两个仓库：个人知识库，和工作知识库
+  （AI-Base-Memory，读它的 WSL 克隆和 Obsidian 副本，按提交号合并）。每个提交带正文和改动的文件：推送了什么，展开就看得清。
 
 一次同步在运行记录里写下它推上去的提交号（``pushed_ids``）。对得上的提交挂在那次运行下面；对不上的是别处写的
 （云端的会话、别的机器、肥鱼里还没接入运行记录的功能），单独成行。**远端的提交只和上一次核对时一样新**，页面顶上写明是哪一刻。
@@ -31,17 +32,25 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from .. import claude_hooks
 from .. import personal_vault as pv
 from ..i18n import t
 from . import probes
 
 REPORT = "activity"
 RUNS = 300          # 最多看最近这么多条运行记录
-COMMITS = 200       # 最多看远端分支上最近这么多个提交
+COMMITS = 200       # 每个仓库最多看远端分支上最近这么多个提交
 STRIP = 12          # 每个任务的色块条留最近几次
+BODY_LINES = 40     # 一个提交的正文最多留这么多行
+PATHS = 50          # 一个提交最多列这么多个文件
 GIT_TIMEOUT_S = 20.0
+#: 仓库：个人知识库 / 工作知识库（AI-Base-Memory）
+VAULT, WORK = "vault", "work"
+#: 工作知识库在 WSL 里的克隆：公司侧 Claude 的主目录，固定在这里（公司侧 ``~/.claude/CLAUDE.md`` 里写的就是它）
+WORK_CLONE = "~/Github/AI-Base-Memory"
 _RECORD, _FIELD = "\x1e", "\x1f"
-_FILES = re.compile(r"(\d+) files? changed")
+_TRAILER = re.compile(r"^\s*Co-Authored-By:", re.IGNORECASE)
+_WSL_GIT = 'd=$1; shift; case $d in "~/"*) d=$HOME/${d#"~/"};; esac; exec git -C "$d" "$@"'
 
 
 def _git_effect(run: dict) -> dict:
@@ -50,23 +59,54 @@ def _git_effect(run: dict) -> dict:
 
 # ───────────────────────── 读 git ─────────────────────────
 
-def read_commits(repo_dir: str | Path, *, run: pv.GitRunner = pv.run_git, limit: int = COMMITS) -> list[dict]:
-    """远端分支上最近的提交，新的在前：``{id（前 12 位）, at（本地时间）, author, subject, files}``。问不出来是空列表。
+def read_commits(repo_dir: str | Path, *, run: pv.GitRunner = pv.run_git, limit: int = COMMITS, repo: str = VAULT) -> list[dict]:
+    """远端分支上最近的提交，新的在前：``{id（前 12 位）, at（本地时间）, author, subject, body（正文各行）, paths（[(状态, 路径)]）,
+    files, repo}``。问不出来是空列表。
 
-    ``at`` 用提交时间而不是写作时间：rebase 过的提交，落到远端的那一刻才是它在时间轴上的位置。"""
-    code, out = run(repo_dir, ["log", "@{upstream}", f"-n{limit}", "--shortstat", "--date=format-local:%Y-%m-%d %H:%M:%S",
-                               f"--format={_RECORD}%H{_FIELD}%cd{_FIELD}%an{_FIELD}%s"], timeout=GIT_TIMEOUT_S)
+    ``at`` 用提交时间而不是写作时间：rebase 过的提交，落到远端的那一刻才是它在时间轴上的位置。分隔符写成 git 的
+    ``%x1e`` / ``%x1f``，参数全是 ASCII——经 ``wsl.exe`` 传参也原样到达。"""
+    code, out = run(repo_dir, ["log", "@{upstream}", f"-n{limit}", "--name-status", "--date=format-local:%Y-%m-%d %H:%M:%S",
+                               "--format=%x1e%H%x1f%cd%x1f%an%x1f%s%x1f%b%x1f"], timeout=GIT_TIMEOUT_S)
     if code != 0:
         return []
     commits = []
     for record in out.split(_RECORD)[1:]:
-        head, _, rest = record.partition("\n")
-        fields = head.split(_FIELD)
-        if len(fields) != 4:
+        fields = record.split(_FIELD)
+        if len(fields) != 6:
             continue
-        files = _FILES.search(rest)
-        commits.append({"id": fields[0][:12], "at": fields[1], "author": fields[2], "subject": fields[3], "files": int(files.group(1)) if files else 0})
+        body = [line.rstrip() for line in fields[4].strip().splitlines() if not _TRAILER.match(line)]
+        while body and not body[-1]:
+            body.pop()
+        paths = []
+        for line in fields[5].splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[0][:1].isalpha():
+                paths.append((parts[0][:1], parts[-1]))
+        commits.append({"id": fields[0][:12], "at": fields[1], "author": fields[2], "subject": fields[3], "body": body[:BODY_LINES],
+                        "paths": paths[:PATHS], "files": len(paths), "repo": repo})
     return commits
+
+
+def wsl_git(wsl: Callable[..., tuple[int, str]]) -> pv.GitRunner:
+    """在 WSL 里跑 git 的执行器，签名和 ``pv.run_git`` 一样。目录可以写 ``~/...``（在 WSL 里展开）；目录和参数都作为 ``sh`` 的参数传，
+    不拼进命令行。"""
+    def run(repo_dir, args, *, timeout: float = GIT_TIMEOUT_S, **_options) -> tuple[int, str]:
+        return wsl(["-e", "sh", "-c", _WSL_GIT, "sh", str(repo_dir), *args], timeout=timeout)
+    return run
+
+
+def read_work_commits(windows_copy: str, wsl_clone: str, *, run: pv.GitRunner = pv.run_git,
+                      wsl: Callable[..., tuple[int, str]] | None = None) -> list[dict]:
+    """工作知识库远端分支上的提交，新的在前。它有两个副本推到同一个远端：WSL 克隆（公司侧 Claude 在那里推）和 Windows 上的
+    Obsidian 副本（肥鱼推笔记）。各自的远端分支只和各自上次拉取时一样新，所以两边都读、按提交号合并。"""
+    found: dict[str, dict] = {}
+    if wsl_clone:
+        for commit in read_commits(wsl_clone, run=wsl_git(wsl or claude_hooks.run_wsl), repo=WORK):
+            found.setdefault(commit["id"], commit)
+    if windows_copy and pv.repo_ready(windows_copy):
+        for commit in read_commits(windows_copy, run=run, repo=WORK):
+            found.setdefault(commit["id"], commit)
+    return sorted(found.values(), key=lambda commit: commit["at"], reverse=True)[:COMMITS]
 
 
 # ───────────────────────── 合并成一条时间轴 ─────────────────────────
@@ -84,13 +124,14 @@ def timeline(runs: list[dict], commits: list[dict]) -> list[dict]:
     for commit in commits:
         if commit["id"] not in pushed_by_fish:
             items.append((commit["at"], 1, {"kind": "outside", "at": commit["at"], "since": commit["at"], "author": commit["author"],
-                                            "commits": [commit]}))
+                                            "repo": commit.get("repo", VAULT), "commits": [commit]}))
     items.sort(key=lambda item: (item[0], -item[1]), reverse=True)
     rows: list[dict] = []
     for _at, _order, row in items:
         last = rows[-1] if rows else None
         if row["kind"] == "outside":
-            if last and last["kind"] == "outside" and last["author"] == row["author"] and last["since"][:10] == row["at"][:10]:
+            if (last and last["kind"] == "outside" and last["author"] == row["author"] and last["repo"] == row["repo"]
+                    and last["since"][:10] == row["at"][:10]):
                 last["commits"].extend(row["commits"])
                 last["since"] = row["at"]
             else:
@@ -160,9 +201,23 @@ def describe(run: dict) -> str:
     return _name("result", str(result or ""))
 
 
+def _commit_detail(commit: dict) -> str:
+    """提交的正文和改动的文件：推送了什么，展开就看得到。"""
+    body = "\n".join(commit.get("body") or [])
+    paths = commit.get("paths") or []
+    more = commit.get("files", 0) - len(paths)
+    parts = f'<pre class="wbody">{html.escape(body)}</pre>' if body else ""
+    if paths:
+        items = "".join(f'<li><i class="p-{html.escape(status)}">{html.escape(status)}</i>{html.escape(path)}</li>' for status, path in paths)
+        items += f'<li class="wmore">{html.escape(t("activity.more_files", n=more))}</li>' if more > 0 else ""
+        parts += f'<ul class="wpaths">{items}</ul>'
+    return parts
+
+
 def _commit_list(commits: list[dict]) -> str:
     rows = "".join(f'<li><span class="wt">{html.escape(c["at"][11:16])}</span><code>{html.escape(c["id"][:7])}</code>'
-                   f'<span class="ws">{html.escape(c["subject"])}</span><span class="wn">{html.escape(t("activity.files", n=c["files"]))}</span></li>'
+                   f'<span class="ws">{html.escape(c["subject"])}</span><span class="wn">{html.escape(t("activity.files", n=c["files"]))}</span>'
+                   f'{_commit_detail(c)}</li>'
                    for c in commits)
     return f'<ul class="wcommits">{rows}</ul>'
 
@@ -185,8 +240,9 @@ def _row(row: dict) -> str:
     if row["kind"] == "outside":
         count = len(row["commits"])
         files = sum(c["files"] for c in row["commits"])
+        what = row["commits"][0]["subject"] if count == 1 else t("activity.outside", n=count)
         return (f'<details class="wrow outside"><summary><span class="wt">{time}</span><span class="who other">{html.escape(row["author"])}</span>'
-                f'<span class="wm">{html.escape(t("activity.outside", n=count))}</span>'
+                f'<span class="wm"><span class="wrepo repo-{html.escape(row["repo"])}">{html.escape(_name("repo", row["repo"]))}</span> {html.escape(what)}</span>'
                 f'<span class="we">{html.escape(t("activity.files", n=files))}</span></summary>{_commit_list(row["commits"])}</details>')
     run = row["run"]
     result = str(run.get("result") or "")
@@ -227,15 +283,16 @@ def render(rows: list[dict], jobs: list[dict]) -> str:
 # ───────────────────────── provider ─────────────────────────
 
 def provider(journal, context: Callable[[], dict], on_gui: Callable[[Callable[[], object]], object], *,
-             run: pv.GitRunner = pv.run_git) -> Callable[[], dict]:
-    """时间轴页的 provider。``context()`` 在界面线程上跑（经 ``on_gui``），给 ``{repo_dir, theme}``；其余都在调用它的那条线程上
-    （请求线程）：读运行记录、起一次 ``git log``。读不到 git（目录不是克隆）就只画运行记录。"""
+             run: pv.GitRunner = pv.run_git, wsl: Callable[..., tuple[int, str]] | None = None) -> Callable[[], dict]:
+    """时间轴页的 provider。``context()`` 在界面线程上跑（经 ``on_gui``），给 ``{repo_dir, work_repo_dir, theme}``；其余都在调用它的
+    那条线程上（请求线程）：读运行记录、个人知识库一次 ``git log``、工作知识库两次（WSL 克隆 + Obsidian 副本）。读不到的仓库就不画它的提交。"""
     def build() -> dict:
         ctx = on_gui(context)
         repo_dir = str(ctx.get("repo_dir") or "")
         runs = journal.read(RUNS)
         commits = read_commits(repo_dir, run=run) if repo_dir and pv.repo_ready(repo_dir) else []
-        rows = timeline(runs, commits)
+        work = read_work_commits(str(ctx.get("work_repo_dir") or ""), str(ctx.get("work_clone", WORK_CLONE) or ""), run=run, wsl=wsl)
+        rows = timeline(runs, sorted(commits + work, key=lambda commit: commit["at"], reverse=True))
         outside = sum(len(row["commits"]) for row in rows if row["kind"] == "outside")
         checked = ""
         if commits:
