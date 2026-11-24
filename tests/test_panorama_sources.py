@@ -224,3 +224,72 @@ def test_the_missing_hooks_quest_carries_the_repair_action_for_its_side():
     assert quests["set_win"]["action"] == {"name": "repair_hooks", "agent": "claude", "side": "win"}
     assert quests["set_wsl"]["action"] == {"name": "repair_hooks", "agent": "claude_wsl", "side": "wsl"}
     assert all("action" not in q for q in graph["quests"] if q["node"] not in ("set_win", "set_wsl")), "别的待处理项没有动作"
+
+
+# ───────────────────────── 工作知识库：WSL 克隆、镜像进个人克隆的 4-Work、磁贴上的「时间轴」（2026-11-24）────────────
+
+TIMELINE = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}
+
+
+def test_every_vault_tile_carries_the_timeline_on_its_face():
+    """三个克隆的提交都在时间轴上：磁贴正面就有入口，不用先点开详情。"""
+    graph = sources.build(samples.facts())
+    for node_id in ("vault_personal", "vault_work", "vault_wsl"):
+        assert _node(graph, node_id)["face"] == TIMELINE, node_id
+    assert _node(graph, "vault_work")["actions"] == [TIMELINE], "公司侧的克隆没有核对 / 同步，但详情里也能开时间轴"
+
+
+def test_the_wsl_clone_of_the_work_vault_is_a_tile_of_its_own():
+    graph = sources.build(samples.facts())
+    tile = _node(graph, "vault_wsl")
+    assert tile["region"] == "wsl" and tile["kind"] == "repo" and tile["title"] == "field-notes 克隆" and tile["state"] == "ok"
+    assert tile["source"]["env"] == "wsl" and tile["source"]["path"] == "/home/dev/Github/field-notes"
+    assert [sources.L("fact.hooks_path"), ".githooks"] in tile["facts"]
+    assert _edge(graph, "cc_wsl", "vault_wsl")["line"] == "memory"
+    assert _edge(graph, "vault_wsl", "gh_work")["line"] == "github"
+
+
+def test_the_mirror_sits_right_under_the_personal_clone_and_the_wsl_clone_feeds_it():
+    graph = sources.build(samples.facts())
+    order = [n["id"] for n in graph["nodes"]]
+    assert order.index("mirror_work") == order.index("vault_personal") + 1
+    mirror, personal = _node(graph, "mirror_work"), _node(graph, "vault_personal")
+    assert (mirror["region"], mirror["col"]) == (personal["region"], personal["col"])
+    assert mirror["state"] == "ok" and "abc1234" in mirror["sub"]
+    feed = _edge(graph, "vault_wsl", "mirror_work")
+    assert feed["line"] == "storage" and feed["state"] == "ok" and feed["label"] == sources.L("edge.mirror")
+    assert _edge(graph, "mirror_work", "vault_personal")["line"] == "storage"
+    assert not [q for q in graph["quests"] if q["node"] == "mirror_work"]
+
+
+@pytest.mark.parametrize(("change", "state", "line", "words"), [
+    ({"clone": samples.clone(head="def5678")}, "warn", "warn", "def5678"),            # 源头有了新提交，镜像还停在旧的
+    ({"clone": samples.clone(hooks="")}, "bad", "broken", "core.hooksPath"),          # 钩子没装：以后的提交都不会镜像
+    ({"mirror_log": {"state": "error", "at": "", "commit": "", "text": "rsync: permission denied"}}, "bad", "broken", "rsync: permission denied"),
+])
+def test_the_mirror_says_when_it_lags_or_cannot_run(change, state, line, words):
+    wsl = samples.wsl_home()
+    wsl.update(change)
+    graph = sources.build(samples.facts(wsl=wsl))
+    assert _node(graph, "mirror_work")["state"] == state
+    assert _edge(graph, "vault_wsl", "mirror_work")["state"] == line
+    assert any(q["node"] == "mirror_work" and words in q["text"] for q in graph["quests"])
+
+
+def test_without_the_wsl_half_the_mirror_cannot_be_compared_and_is_not_green():
+    graph = sources.build(samples.facts(wsl="pending"))
+    assert "vault_wsl" not in _ids(graph)
+    assert _node(graph, "mirror_work")["state"] == "unknown" and "abc1234" in _node(graph, "mirror_work")["sub"]
+
+
+def test_no_mirror_tile_when_the_personal_clone_has_no_mirror():
+    facts = samples.facts()
+    facts["work_mirror"] = samples.mirror(exists=False)
+    assert "mirror_work" not in _ids(sources.build(facts))
+
+
+def test_a_missing_wsl_clone_is_shown_as_missing():
+    wsl = samples.wsl_home()
+    wsl["clone"] = samples.clone(exists=False)
+    graph = sources.build(samples.facts(wsl=wsl))
+    assert _node(graph, "vault_wsl")["state"] == "bad" and _node(graph, "mirror_work")["state"] == "unknown"

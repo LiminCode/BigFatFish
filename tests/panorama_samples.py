@@ -78,7 +78,22 @@ def wsl_home(**kwargs) -> dict:
     ])
     out = home(wsl=True, connectors=connectors, **kwargs)
     out["storage"] = wsl_storage()
+    out["clone"] = clone()
+    out["mirror_log"] = {"state": "ok", "at": "2026-01-02T03:04:05-08:00", "commit": "abc1234", "text": ""}
     return out
+
+
+def clone(*, head="abc1234", hooks=".githooks", exists=True) -> dict:
+    """WSL 探针在那边读到的工作知识库克隆（``claude_home_probe.clone_summary``）：和 ``repo`` 同样的几项，加上提交号和钩子目录。"""
+    out = repo("field-notes", "acme-work", exists=exists)
+    out.update(path="/home/dev/Github/field-notes", head=head if exists else "", hooks_path=hooks if exists else "")
+    return out
+
+
+def mirror(*, commit="abc1234", exists=True) -> dict:
+    """个人克隆里的工作知识库镜像（``probes.mirror_info``）：镜像说明里记的源提交。"""
+    return {"path": "C:\\Users\\dev\\handbook\\4-Work", "exists": exists, "commit": commit if exists else "",
+            "at": "2026-01-02T03:04:05-08:00" if exists else ""}
 
 
 def wsl_storage() -> dict:
@@ -138,7 +153,7 @@ def facts(*, cfg=None, health="ok", wsl="ready", win=None, providers=None, backu
         "chat": {"github_connector": True, "knowledge_base_enabled": True, "knowledge_base_repo": "acme/handbook"},
         "config_backup": {"auto": False, "repo": "", "path": ".big-fat-fish/config.json"},
         "features": features.read_all(cfg if cfg is not None else all_on_config()),
-        "personal_vault": repo("handbook", "acme-home"), "work_vault": repo("field-notes", "acme-work"),
+        "personal_vault": repo("handbook", "acme-home"), "work_vault": repo("field-notes", "acme-work"), "work_mirror": mirror(),
         "vault_sync": {"personal": None},
         "win": win or home(), "wsl": wsl_value, "storage": storage(backup=backup, unknown=unknown),
         "timing": {"windows_s": 0.3, "wsl_s": 6.5},

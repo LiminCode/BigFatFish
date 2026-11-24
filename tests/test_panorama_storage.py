@@ -319,7 +319,8 @@ def test_a_clone_with_a_known_gap_offers_the_sync_and_can_still_be_checked_from_
                                                          {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}]
     facts["work_vault"].update(gap)
     work = sources.build(facts)
-    assert all("action" not in q for q in _vault_quests(work, "vault_work")) and "actions" not in _node(work, "vault_work"), "公司侧的 git 在 WSL 里：页面上既不能核对也不能同步"
+    assert all("action" not in q for q in _vault_quests(work, "vault_work")), "公司侧的 git 在 WSL 里：页面上既不能核对也不能同步"
+    assert [a["name"] for a in _node(work, "vault_work")["actions"]] == ["open_report"], "只能开时间轴"
 
 
 def test_a_sync_that_backed_out_of_a_conflict_is_explained_until_the_two_sides_are_reconciled():

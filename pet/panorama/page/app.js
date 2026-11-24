@@ -14,6 +14,6 @@ import {interact} from './interact.js';
 export function start(G, kept, api) {
 const M = layout(G);
 const E = roads(M);
-const view = interact(M, E, draw(M, E, !!kept), kept, api);
+const view = interact(M, E, draw(M, E, !!kept, !!api), kept, api);
 return {width: M.W, height: M.H, select: view.select, openSettings: view.openSettings, capture: view.capture, dispose: view.dispose};
 }

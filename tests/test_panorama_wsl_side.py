@@ -275,3 +275,50 @@ def test_the_request_is_embedded_as_a_literal_not_passed_on_a_command_line(reade
         read.read("claude_memory_wsl", "projects/a b'c\"d/memory/x.md")
     assert run.calls[0]["args"] == ["-e", "python3", "-"]
     assert re.search(r"\nagent_main\('.*'\)\n$", run.calls[0]["source"], re.S) or 'agent_main("' in run.calls[0]["source"]
+
+
+# ───────────────────────── 工作知识库的 WSL 克隆和镜像日志（2026-11-24）─────────────────────────
+
+def _git(cwd: Path, *args: str) -> str:
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@example.invalid", GIT_CONFIG_NOSYSTEM="1")
+    return subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=cwd, env=env, capture_output=True, text=True, check=True).stdout
+
+
+def test_the_probe_reads_the_clone_it_is_pointed_at_with_its_hooks_and_the_mirror_log(wsl_home, tmp_path):
+    remote, clone = tmp_path / "remote.git", wsl_home / "Github" / "notes"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(remote))
+    _git(tmp_path, "clone", "-q", str(remote), str(clone))
+    _write(clone / "a.md", "a\n")
+    _git(clone, "add", "a.md")
+    _git(clone, "commit", "-q", "-m", "first")
+    _git(clone, "push", "-q", "-u", "origin", "main")
+    _git(clone, "config", "core.hooksPath", ".githooks")
+    _write(clone / "b.md", "b\n")
+    _write(wsl_home / ".cache" / "mirror.log", "2026-01-02T03:04:05-08:00 ok abc1234 deleted/transferred: 0 1\n")
+    run = _fake_wsl(wsl_home)
+    out = probes.wsl_side(run, with_mcp=False, clone="~/Github/notes", mirror_log="~/.cache/mirror.log")
+    assert "--clone=~/Github/notes" in run.calls[0]["args"] and "--mirror-log=~/.cache/mirror.log" in run.calls[0]["args"]
+    info = out["clone"]
+    assert info["exists"] is True and info["branch"] == "main" and info["hooks_path"] == ".githooks"
+    assert info["head"] == _git(clone, "rev-parse", "--short=7", "HEAD").strip()
+    assert (info["unpushed"], info["behind"], info["dirty"], info["changes"], info["deletions"]) == (0, 0, True, 1, 0)
+    assert info["remote"].endswith("remote.git") and "first" in info["last_commit"] and info["checked_at"]
+    assert out["mirror_log"] == {"state": "ok", "at": "2026-01-02T03:04:05-08:00", "commit": "abc1234", "text": ""}
+
+
+def test_a_clone_that_is_not_there_is_reported_as_missing(wsl_home):
+    out = probes.wsl_side(_fake_wsl(wsl_home), with_mcp=False, clone="~/Github/nothing", mirror_log="~/.cache/none.log")
+    assert out["clone"]["exists"] is False and out["clone"]["head"] == "" and out["clone"]["unpushed"] is None
+    assert out["mirror_log"]["state"] == "none"
+
+
+@pytest.mark.parametrize(("lines", "state", "text"), [
+    ("x ok abc1234 deleted/transferred: 0 1\n2026-01-03T00:00:00Z skip: /mnt/c/x is not a git clone\n", "skip", "skip: /mnt/c/x is not a git clone"),
+    ("2026-01-02T03:04:05Z ok abc1234 deleted/transferred: 0 1\nrsync: permission denied\n", "error", "rsync: permission denied"),
+    ("\n\n", "none", ""),
+])
+def test_the_last_line_of_the_mirror_log_says_how_the_last_run_went(tmp_path, lines, state, text):
+    log = _write(tmp_path / "m.log", lines)
+    out = claude_home_probe.mirror_log_summary(str(log))
+    assert out["state"] == state and out["text"] == text
