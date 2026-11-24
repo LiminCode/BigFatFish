@@ -705,7 +705,7 @@ def test_a_tile_with_its_own_actions_shows_every_one_of_them_in_its_details(engi
     assert 'data-words="sync"' in served and 'data-ask="0"' not in served.split('data-action="sync_vault"')[1].split(">")[0], \
         "同步要先问；核对不用"
     work = _details(engine, sources.build(samples.facts()), "vault_work", "fakeApi([])")
-    assert "data-action=" not in work, "公司侧的克隆没有按钮"
+    assert re.findall(r'data-action="(\w+)"', work) == ["open_report"], "公司侧的克隆没有核对 / 同步，只有时间轴"
     hooks = _details(engine, _no_hooks_graph(), "set_win", "fakeApi([])")
     assert hooks.count('data-action="repair_hooks"') == 1, "没有自带动作的磁贴照旧用它名下那条待处理的动作"
 
@@ -805,3 +805,19 @@ def test_the_shell_has_the_resize_handle_between_map_and_panel():
     assert shell.index('id="stage"') < shell.index('class="gutter" id="gutter"') < shell.index("<aside>")
     css = render.PAGE_DIR.joinpath("app.css").read_text(encoding="utf-8")
     assert "var(--aside-w,380px)" in css and ".gutter{display:none}" in css
+
+
+def test_vault_tiles_open_the_timeline_straight_from_their_face(engine):
+    """磁贴正面的「时间轴」：三个克隆各一个；离线快照里是灰的（没有服务能开报告页）。"""
+    i18n.set_language("zh")
+    graph = sources.build(samples.facts())
+    data = json.dumps(render.page_data(graph), ensure_ascii=False)
+    served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
+    faces = re.findall(r'<button class="face"[^>]*>', served["map"])
+    assert len(faces) == 3 and all('data-action="open_report"' in f and 'data-ask="0"' in f and "disabled" not in f for f in faces)
+    assert served["map"].count(">时间轴</span>") == 3
+    tiles = {re.match(r'[^"]*" data-id="([^"]+)"', chunk).group(1): chunk for chunk in served["map"].split('<div class="tile ')[1:]}
+    assert {tile for tile, body in tiles.items() if 'class="face"' in body} == {"vault_personal", "vault_work", "vault_wsl"}
+    assert all("has-face" in tiles[tile][:80] for tile in ("vault_personal", "vault_work", "vault_wsl"))
+    snapshot = re.findall(r'<button class="face"[^>]*>', _run(engine, graph)["map"])
+    assert len(snapshot) == 3 and all("disabled" in f for f in snapshot)

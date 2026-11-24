@@ -25,6 +25,15 @@ GIT_TIMEOUT_S = 10.0
 TAIL_MIN_LENGTH = 12       # 比这短的秘密不露末位：露 4 位就是露了三分之一
 SCHEDULE_RUNS = 12         # 定时同步磁贴的历史条留最近几次
 SCHEDULE_LOOKBACK = 600    # 为了给每项功能凑出那几次，最多往回看这么多条运行记录（Slack 关注一天就上百条）
+#: 公司侧 Claude 的工作知识库克隆（WSL 里，公司侧全局规矩写定的家）。``~/`` 在 WSL 那边展开
+WORK_CLONE = "~/Github/AI-Base-Memory"
+#: 那个克隆的 git 钩子跑镜像脚本，每次一行写在这里（AI-Base-Memory 的 ``Workstation/mirror-to-personal.sh``）
+MIRROR_LOG = "~/.cache/ai-base-mirror.log"
+#: 镜像落在个人克隆里的哪个文件夹，和它的说明文件（镜像脚本每次重写，记着源提交）
+MIRROR_DIR, MIRROR_NOTE = "4-Work", "MIRROR.md"
+#: 那个克隆的 ``core.hooksPath`` 得是它：仓库自带的钩子放在这里，没设就不会镜像（新机器上重建时要手动设一次）
+MIRROR_HOOKS = ".githooks"
+_MIRROR_SOURCE_RE = re.compile(r"`([0-9a-f]{4,40})`\s*\(([^)]*)\)")
 
 
 def secret_tail(value: str) -> dict:
@@ -164,13 +173,16 @@ def wsl_source() -> str:
     return marker + "\n\n".join(part.replace(marker, "") for part in parts)
 
 
-def wsl_side(run_wsl: Callable[..., "tuple[int, str]"] = claude_hooks.run_wsl, *, with_mcp: bool = True) -> dict:
+def wsl_side(run_wsl: Callable[..., "tuple[int, str]"] = claude_hooks.run_wsl, *, with_mcp: bool = True,
+             clone: str = WORK_CLONE, mirror_log: str = MIRROR_LOG) -> dict:
     """WSL 默认发行版里的 Claude Code。把 ``wsl_source()`` 从标准输入喂给那边的 ``python3``。
 
+    同一趟顺手读工作知识库的克隆（结果里的 ``clone``）和镜像日志的最后一行（``mirror_log``）：不多起一次 wsl.exe。
     返回探针结果；没有 WSL 是 ``{"absent": True}``；跑不起来是 ``{"error": 说明}``。
     """
     source = wsl_source()
-    code, out = run_wsl(["-e", "python3", "-", *(["--mcp"] if with_mcp else [])], input_text=source, timeout=WSL_TIMEOUT_S)
+    args = ["-e", "python3", "-", f"--clone={clone}", f"--mirror-log={mirror_log}", *(["--mcp"] if with_mcp else [])]
+    code, out = run_wsl(args, input_text=source, timeout=WSL_TIMEOUT_S)
     if code == 127:
         return {"absent": True}
     start = out.find("{")
@@ -179,6 +191,21 @@ def wsl_side(run_wsl: Callable[..., "tuple[int, str]"] = claude_hooks.run_wsl, *
     except ValueError:
         data = None
     return data if isinstance(data, dict) else {"error": f"exit {code}"}
+
+
+def mirror_info(vault_dir: str | Path) -> dict:
+    """个人克隆里的工作知识库镜像：镜像说明（``4-Work/MIRROR.md``）里记的源提交和它的时间。只读这一个小文件。
+    没有说明文件就不算镜像（``exists`` 为假）——一个同名文件夹可能只是旧的手抄笔记。"""
+    folder = Path(os.path.expandvars(str(vault_dir))) / MIRROR_DIR if vault_dir else Path()
+    info = {"path": str(folder) if vault_dir else "", "exists": False, "commit": "", "at": ""}
+    if not vault_dir:
+        return info
+    try:
+        text = (folder / MIRROR_NOTE).read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return info
+    found = _MIRROR_SOURCE_RE.search(text)
+    return {**info, "exists": True, "commit": found.group(1) if found else "", "at": found.group(2).strip() if found else ""}
 
 
 def windows_side(cfg: dict, *, cfg_path: str | Path, secret_get: SecretGet, api_health: tuple[str, str] = ("unknown", ""),
@@ -202,6 +229,7 @@ def windows_side(cfg: dict, *, cfg_path: str | Path, secret_get: SecretGet, api_
         "features": features.read_all(cfg),
         "personal_vault": repo_info(personal_vault.normalize(cfg.get(personal_vault.CONFIG_KEY))["repo_dir"], run_git),
         "work_vault": repo_info(work_notes.normalize(cfg.get(work_notes.CONFIG_KEY))["repo_dir"], run_git),
+        "work_mirror": mirror_info(personal_vault.normalize(cfg.get(personal_vault.CONFIG_KEY))["repo_dir"]),
         "vault_sync": {"personal": last_sync(cfg_path.parent, "personal")},
         "vault_schedule": vault_schedule(cfg, cfg_path.parent),
         "schedules": schedules(cfg_path.parent),

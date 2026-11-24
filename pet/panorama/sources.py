@@ -17,12 +17,17 @@ from .. import settings_table
 from ..i18n import t
 from . import activity, features, files, memory_scope, places
 from .model import KINDS, LINES, TIERS, ZONES, Graph
+from .probes import MIRROR_HOOKS
 
 FISH_NODE = "pet"
 WSL_ENTRY = "cc_wsl"
 #: 一个克隆和远端核对过之后，「领先 / 落后几个提交」还能信多久。现在没有定时同步，只有手点的「现在核对」和各功能顺带的
 #: pull / push 会碰远端，所以给一天；定时同步上线后改成它周期的两倍。
 REMOTE_CHECK_STALE_S = 24 * 3600
+#: 磁贴上的「时间轴」：开时间轴页。三个克隆的提交都在那一页上，所以三块克隆磁贴正面都有它，详情里也有
+TIMELINE_ACTION = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}
+#: 镜像磁贴的状态 → 喂它的那条线的状态
+_MIRROR_LINE = {"ok": "ok", "warn": "warn", "bad": "broken", "unknown": "unknown"}
 SOURCES: list[Callable[[Graph, dict], None]] = []
 
 
@@ -420,16 +425,21 @@ def repositories(g: Graph, f: dict) -> None:
     g.quest("unknown", L("quest.github_no_probe"), "gh_personal")
 
     def vault(node_id: str, column_: int, title: str, info: dict, push: str, check: dict | None = None,
-              sync: dict | None = None, last: dict | None = None, more: list | None = None) -> str:
+              sync: dict | None = None, last: dict | None = None, more: list | None = None, region: str = "win",
+              src: dict | None = None, extra: list | None = None) -> str:
         """一个克隆的磁贴；返回它到 GitHub 那条线该是什么状态（``""`` = 没有特别要说的，按调用方的默认）。
 
         领先 / 落后是按上一次碰到远端时的样子算的，所以**没核对过、核对得太久、或最近一次没连上，就不许显示绿色**：
         磁贴和线都是「探测不到」，待处理里说一句。``check``（「现在核对」，只 fetch）和 ``sync``（「现在同步」，提交、拉取、推送）
         是两个动作，只有肥鱼自己的 git 够得着的克隆才给：磁贴详情里两个一直都在，待处理里各挂在最相关的那一条上。
-        已经知道有差距（领先或落后）时照旧是「要处理」——知道的坏消息比不知道更该先看见。"""
+        已经知道有差距（领先或落后）时照旧是「要处理」——知道的坏消息比不知道更该先看见。
+
+        正面的 ``face`` 是「时间轴」：每个克隆的提交都在那一页上。``region`` / ``src``：WSL 里的克隆落在 WSL 那一格，
+        指向 WSL 里的路径；``extra`` 是再补的几行事实。"""
+        source_ = src or _src(info["path"])
         if not info["exists"]:
-            g.node(node_id, "win", column_, "repo", title, L("missing_dir"), "bad", anchor="bottom",
-                   facts=[[L("fact.push_via"), push]], source=_src(info["path"]))
+            g.node(node_id, region, column_, "repo", title, L("missing_dir"), "bad", anchor="bottom",
+                   facts=[[L("fact.push_via"), push]], source=source_)
             return ""
         unpushed, behind, dirty = info.get("unpushed"), info.get("behind"), info.get("dirty")
         checked, age, failed = info.get("checked_at") or "", info.get("checked_age_s"), bool(info.get("check_failed"))
@@ -437,12 +447,13 @@ def repositories(g: Graph, f: dict) -> None:
         gap = bool(unpushed or behind)
         count = lambda n: "" if n is None else L("count", n=n) if n else L("none")  # noqa: E731
         short = lambda n: "?" if n is None else str(n)  # noqa: E731
-        g.node(node_id, "win", column_, "repo", title,
+        g.node(node_id, region, column_, "repo", title,
                " · ".join(part for part in (L("vault.sub", ahead=short(unpushed), behind=short(behind)),
                                             L("vault.sub_dirty") if dirty else "") if part),
                "warn" if gap else "unknown" if stale else "ok", anchor="bottom",
                lines=[L("vault.check_failed") if failed else L("vault.checked", when=checked[5:]) if checked else L("vault.never_checked")],
                actions=[action for action in (check, sync, *(more or [])) if action],   # more：详情里再多放的动作（「时间轴」）
+               face=TIMELINE_ACTION,
                facts=[[L("fact.remote"), info["remote"]], [L("fact.branch"), info["branch"]], [L("fact.last_commit"), info["last_commit"]],
                       [L("fact.unpushed"), count(unpushed)], [L("fact.behind"), count(behind)],
                       [L("fact.dirty"), "" if dirty is None else L("has") if dirty else L("none")],
@@ -450,7 +461,7 @@ def repositories(g: Graph, f: dict) -> None:
                       [L("fact.check_failed"), L("has") if failed else ""],
                       [L("fact.last_sync"), _last_sync_words(last)],
                       [L("fact.note"), L("vault.counts_note")],
-                      [L("fact.push_via"), push]], source=_src(info["path"]))
+                      [L("fact.push_via"), push], *(extra or [])], source=source_)
         # 待处理旁边的按钮：「太久没核对」那条给「现在核对」（先弄清真相，只读）；有东西要对齐的——落后、领先、没提交的
         # 改动——给「现在同步」，挂在其中最要紧的一条上（挂几条就是几个一样的按钮）。两个按钮在磁贴详情里一直都有。
         carrier = "behind" if behind else "unpushed" if unpushed else "dirty"
@@ -475,9 +486,10 @@ def repositories(g: Graph, f: dict) -> None:
     personal_line = vault("vault_personal", 1, L("node.vault", name=_folder(personal["path"])), personal, L("vault.push_windows"),
                           check={"name": "check_remote", "words": "check", "ask": False, "body": {"repo": "personal"}},
                           sync={"name": "sync_vault", "words": "sync", "body": {"repo": "personal"}},
-                          more=[{"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}],
-                          last=(f.get("vault_sync") or {}).get("personal"))
-    work_line = vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"))
+                          more=[TIMELINE_ACTION], last=(f.get("vault_sync") or {}).get("personal"))
+    clone = (f.get("wsl") or {}).get("clone") if _wsl_ready(f) else None       # 老的 WSL 探针结果没有这一项
+    mirror_state = _work_mirror(g, f, clone)                                   # 紧贴在个人克隆下面：它就在那个克隆里
+    work_line = vault("vault_work", 3, L("node.vault", name=_folder(work["path"])), work, L("vault.push_wsl"), more=[TIMELINE_ACTION])
     token_line = "ok" if token["present"] else "unknown"
     g.edge(FISH_NODE, "gh_personal", "github", token_line)      # 知识库同步、GitHub 连接器；配置备份那条线见 storage
     if "github" in personal["remote"]:
@@ -491,6 +503,55 @@ def repositories(g: Graph, f: dict) -> None:
         g.edge(WSL_ENTRY, "gh_work", "github", "ok", "gh / ssh")
         if "github" in work["remote"]:
             g.edge("vault_work", "gh_work", "github", work_line or "ok")
+        if clone:
+            # 公司侧 Claude 在 WSL 克隆里随时提交、推送；那个克隆的 git 钩子把每次提交单向镜像进个人克隆的 4-Work
+            distro = f["wsl"].get("distro", "")
+            clone_line = vault("vault_wsl", 1, L("node.vault", name=_folder(clone["path"])), clone, L("vault.push_self"),
+                               more=[TIMELINE_ACTION], region="wsl", src=_src(clone["path"], "", "wsl", distro, folder=True),
+                               extra=[[L("fact.hooks_path"), clone.get("hooks_path") or L("mirror.no_hooks")]])
+            g.edge(WSL_ENTRY, "vault_wsl", "memory")
+            if "github" in (clone.get("remote") or ""):
+                g.edge("vault_wsl", "gh_work", "github", clone_line or "ok")
+            if mirror_state:
+                g.edge("vault_wsl", "mirror_work", "storage", _MIRROR_LINE[mirror_state], L("edge.mirror"))
+
+
+def _work_mirror(g: Graph, f: dict, clone: dict | None) -> str:
+    """个人克隆里的工作知识库镜像（``4-Work``）：一块磁贴，返回它的状态（没有镜像是 ``""``，不出磁贴）。
+
+    镜像说明里记着源提交；和 WSL 克隆此刻的提交号一比就知道跟上没有。比不了（WSL 那一半还没到、克隆不在）就不许绿。
+    钩子没装（``core.hooksPath`` 不是 ``.githooks``）或镜像日志最后一行是报错 = 断了：以后的提交都不会过来。"""
+    mirror = f.get("work_mirror") or {}
+    if not mirror.get("exists"):
+        return ""
+    commit, title = mirror.get("commit") or "", L("node.mirror", name=_folder(mirror.get("path", "")))
+    present = bool(clone and clone.get("exists"))
+    log = ((f.get("wsl") or {}).get("mirror_log") or {}) if present else {}
+    state, quest = "unknown", None
+    if present:
+        head = clone.get("head") or ""
+        if clone.get("hooks_path") != MIRROR_HOOKS:
+            state, quest = "bad", L("quest.mirror_no_hooks", name=title)
+        elif log.get("state") == "error":
+            state, quest = "bad", L("quest.mirror_failed", name=title, text=log.get("text", ""))
+        elif head and commit and (head.startswith(commit) or commit.startswith(head)):
+            state = "ok"
+        elif log.get("state") == "skip":
+            state, quest = "warn", L("quest.mirror_skipped", name=title, text=log.get("text", ""))
+        else:
+            state, quest = "warn", L("quest.mirror_behind", name=title, source=head or "?", mirror=commit or "?")
+    stamp = lambda text: (text or "")[5:16].replace("T", " ")  # noqa: E731
+    run = (L("mirror.run_ok", when=stamp(log.get("at")), commit=log.get("commit", "")) if log.get("state") == "ok"
+           else log.get("text", "") or L("mirror.run_none")) if present else ""
+    g.node("mirror_work", "win", 1, "repo", title, L("mirror.sub", commit=commit or "?", when=stamp(mirror.get("at"))),
+           state, anchor="bottom", icon="stack", lines=[L("mirror.read_only")],
+           facts=[[L("fact.mirror_source"), commit], [L("fact.mirror_source_at"), mirror.get("at", "")], [L("fact.mirror_run"), run],
+                  [L("fact.hooks_path"), (clone.get("hooks_path") or L("mirror.no_hooks")) if present else ""],
+                  [L("fact.note"), L("mirror.note")]], source=_src(mirror.get("path", ""), folder=True))
+    if quest:
+        g.quest("bad" if state == "bad" else "warn", quest, "mirror_work")
+    g.edge("mirror_work", "vault_personal", "storage", "ok", L("edge.mirror_inside"))
+    return state
 
 
 #: 一次运行的结果 → 历史条上那一格的颜色（节点状态那一套）

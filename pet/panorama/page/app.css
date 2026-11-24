@@ -73,6 +73,13 @@ svg.roads{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .tile span{font-size:11px;color:rgba(255,255,255,.84);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .dot{position:absolute;right:8px;top:8px;outline:2px solid rgba(8,12,16,.42)}
 .tile .badge{position:absolute;right:8px;bottom:7px;font-size:10px;background:rgba(0,0,0,.3);padding:1px 6px}
+/* 磁贴正面的动作（知识库克隆的「时间轴」）：右下角一枚实色小块，点它只开那一页、不选中磁贴 */
+.tile .face{position:absolute;right:6px;bottom:6px;display:flex;align-items:center;gap:4px;border:0;padding:2px 7px 2px 5px;
+  font:inherit;color:#fff;background:rgba(0,0,0,.3);cursor:pointer;transition:background .12s}
+.tile .face:hover:not(:disabled){background:rgba(0,0,0,.52)}.tile .face:disabled{opacity:.55;cursor:default}
+.tile .face svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
+.tile .face span{font-size:10.5px;color:#fff}
+.tile.has-face .txt span:last-child{padding-right:62px}
 .tile.st-off{filter:saturate(.2) brightness(.62)}
 .tile.st-live::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 42%,rgba(255,255,255,.2) 50%,transparent 58%);transform:translateX(-110%);animation:sheen 5s ease-in-out infinite}
 .tile.st-bad{box-shadow:0 0 0 1.5px var(--bad),0 6px 16px rgba(0,0,0,.38)}

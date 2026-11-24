@@ -314,6 +314,102 @@ def _ssh_hosts(home):
     return hosts
 
 
+CLONE_GIT_TIMEOUT = 10
+_MIRROR_OK_RE = re.compile(r"^(\S+) ok ([0-9a-f]{4,40})\b")
+_MIRROR_SKIP_RE = re.compile(r"^\S+ (skip: .*)$")
+
+
+def _git_out(folder, *args):
+    try:
+        done = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=CLONE_GIT_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _stamp(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _clone_contact(folder, branch):
+    """上一次碰到远端是什么时候、最近一次 fetch 是不是没连上：和 ``probes.remote_contact`` 同一个读法（这边不能 import 它）。"""
+    git_dir = os.path.join(folder, ".git")
+    try:
+        stat = os.stat(os.path.join(git_dir, "FETCH_HEAD"))
+        fetched, failed = (stat.st_mtime, False) if stat.st_size else (None, True)
+    except OSError:
+        fetched, failed = None, False
+    logs = os.path.join(git_dir, "logs", "refs", "remotes", "origin")
+    times = [stamp for stamp in (fetched, _stamp(os.path.join(logs, branch)) if branch else None, _stamp(os.path.join(logs, "HEAD")))
+             if stamp is not None]
+    return (max(times) if times else None), failed
+
+
+def clone_summary(path):
+    """一个 git 克隆：和 Windows 那边 ``probes.repo_info`` 同样的几项（领先 / 落后按本地记得的上游算，不联网），
+    再加 ``head``（短提交号，和镜像说明里记的对得上）和 ``hooks_path``（``core.hooksPath``：仓库自带的钩子装没装）。
+    WSL 那边的克隆在 Windows 上够不着 ``.git``，所以在这边读完带回去。"""
+    folder = os.path.expanduser(str(path or ""))
+    info = {"path": folder, "exists": bool(path) and os.path.isdir(folder), "remote": "", "branch": "", "head": "", "last_commit": "",
+            "hooks_path": "", "unpushed": None, "behind": None, "dirty": None, "changes": None, "deletions": None,
+            "checked_at": "", "checked_age_s": None, "check_failed": False}
+    if not info["exists"]:
+        return info
+
+    def git(*args):
+        return (_git_out(folder, *args) or "").strip()
+
+    info["remote"] = re.sub(r"(https?://)[^@/]+@", r"\1", git("remote", "get-url", "origin"))
+    info["branch"] = git("rev-parse", "--abbrev-ref", "HEAD")
+    info["head"] = git("rev-parse", "--short=7", "HEAD")
+    info["last_commit"] = git("log", "-1", "--format=%cd · %s", "--date=format:%Y-%m-%d %H:%M")[:90]
+    info["hooks_path"] = git("config", "core.hooksPath")
+    counts = git("rev-list", "--left-right", "--count", "@{upstream}...HEAD").split()
+    if len(counts) == 2 and all(count.isdigit() for count in counts):
+        info["behind"], info["unpushed"] = int(counts[0]), int(counts[1])
+    status = _git_out(folder, "status", "--porcelain=v1", "-z")
+    if status is not None:
+        entries, skip = [], False
+        for entry in status.split("\0"):
+            if skip or not entry:                       # 改名那条后面跟着原名，不另算
+                skip = False
+                continue
+            entries.append(entry)
+            skip = entry[:1] in ("R", "C")
+        info["dirty"], info["changes"] = bool(entries), len(entries)
+        info["deletions"] = sum(1 for entry in entries if "D" in entry[:2])
+    checked, info["check_failed"] = _clone_contact(folder, info["branch"])
+    if checked is not None:
+        info["checked_at"] = _dt.datetime.fromtimestamp(checked).strftime("%Y-%m-%d %H:%M")
+        info["checked_age_s"] = max(0, int(time.time() - checked))
+    return info
+
+
+def mirror_log_summary(path):
+    """镜像脚本的日志（一次运行一行，不含文件内容）最后一行说明上一次怎么样：
+    ``ok``（``<时间> ok <提交号> …``）、``skip``（``<时间> skip: …``）、``error``（别的——钩子把脚本的报错也追加在这里）、
+    ``none``（没有日志或是空的）。"""
+    out = {"state": "none", "at": "", "commit": "", "text": ""}
+    try:
+        with open(os.path.expanduser(str(path or "")), encoding="utf-8", errors="replace") as fh:
+            lines = [line.strip() for line in fh.readlines()[-50:] if line.strip()]
+    except OSError:
+        return out
+    if not lines:
+        return out
+    last = lines[-1]
+    ok, skip = _MIRROR_OK_RE.match(last), _MIRROR_SKIP_RE.match(last)
+    if ok:
+        return {**out, "state": "ok", "at": ok.group(1), "commit": ok.group(2)}
+    if skip:
+        return {**out, "state": "skip", "text": skip.group(1)[:200]}
+    return {**out, "state": "error", "text": last[:200]}
+
+
 def probe(home, with_mcp=False, mcp_timeout=90):
     """地图上关于这一个家目录的全部事实。``with_mcp`` 会去跑 ``claude mcp list``（逐个体检，要几秒）。"""
     home = str(home)
@@ -359,6 +455,12 @@ def probe(home, with_mcp=False, mcp_timeout=90):
 
 if __name__ == "__main__":
     _result = probe(os.path.expanduser("~"), with_mcp="--mcp" in sys.argv)
+    # ``--clone=<路径>`` / ``--mirror-log=<路径>``：顺手读一个克隆和镜像日志（probes.wsl_side 给的是工作知识库那一份）
+    for _arg in sys.argv[1:]:
+        if _arg.startswith("--clone="):
+            _result["clone"] = clone_summary(_arg.split("=", 1)[1])
+        elif _arg.startswith("--mirror-log="):
+            _result["mirror_log"] = mirror_log_summary(_arg.split("=", 1)[1])
     # 被和存储表、走目录的代码拼在一起喂进来时（probes.wsl_source），那两样就在同一个作用域里：顺手数一遍存储
     _walk, _belongs = globals().get("survey_tree"), globals().get("match")
     if _walk and _belongs:

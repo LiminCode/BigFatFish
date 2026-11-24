@@ -78,7 +78,9 @@ function pickLine(k) { select(null); lineOn = k;
   const ns = new Set(), es = new Set(); E.forEach((e, i) => { if (e.line === k) { es.add(i); ns.add(e.from); ns.add(e.to); } }); paint(ns, es); }
 function search(text) { const q = text.trim().toLowerCase(); if (!q) return paint(null, null);
   paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), ...(n.items || []).reduce((all, p) => all.concat((p.more || []).map(m => m[1])), []), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
-map.addEventListener('click', ev => { const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
+map.addEventListener('click', ev => { const act = ev.target.closest('[data-action]');      /* 磁贴正面的按钮：只发动作，不选中磁贴 */
+  if (act) { if (!act.disabled) runAction(api, S, act); return; }
+  const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
 /* 列表内筛选：不重画（重画会丢掉输入焦点），只改每条的 hidden */
 function applyFilter(id) { const q = filters.get(id) || '';
   document.getElementById('detail').querySelectorAll('.list .item').forEach(it => { const r = lastRows.get(it.dataset.row); it.hidden = !!r && !rowMatches(r, q); }); }

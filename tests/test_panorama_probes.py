@@ -180,11 +180,12 @@ def test_wsl_side_pipes_the_probe_source_into_python_inside_the_distro():
         return 0, 'warning: noise before json\n{"home": "/home/dev", "hooks": {}}\n'
 
     assert probes.wsl_side(fake_wsl) == {"home": "/home/dev", "hooks": {}}
-    assert seen["args"] == ["-e", "python3", "-", "--mcp"] and seen["timeout"] >= 60
+    assert seen["args"] == ["-e", "python3", "-", "--clone=~/Github/AI-Base-Memory", "--mirror-log=~/.cache/ai-base-mirror.log", "--mcp"]
+    assert seen["timeout"] >= 60
     assert seen["source"] == probes.wsl_source()
     assert Path(claude_home_probe.__file__).read_text(encoding="utf-8").split("\n", 1)[1][:200] in seen["source"]
     probes.wsl_side(fake_wsl, with_mcp=False)
-    assert seen["args"] == ["-e", "python3", "-"]
+    assert seen["args"] == ["-e", "python3", "-", "--clone=~/Github/AI-Base-Memory", "--mirror-log=~/.cache/ai-base-mirror.log"]
 
 
 def test_wsl_side_tells_no_wsl_from_a_failed_run():
@@ -242,6 +243,18 @@ def test_windows_side_collects_everything_without_touching_wsl(tmp_path):
     assert "wsl" not in facts and facts["api_health"] == {"state": "ok", "detail": "fine"}
     assert facts["github_token"] == {"present": True, "tail": SECRET[-4:]} and facts["chat"]["github_connector"] is True
     assert facts["personal_vault"]["exists"] is False and facts["win"]["memory_count"] == 1
+    assert facts["work_mirror"]["exists"] is False
     assert set(facts["features"]) == {"link_win", "session_fish", "session_history", "link_sounds", "chat", "distill_personal",
                                       "assistant", "vault_sync", "link_wsl", "briefing", "slack", "notes", "distill_work"}
     assert SECRET not in json.dumps(facts)
+
+
+def test_windows_side_reads_which_commit_the_work_mirror_inside_the_personal_clone_came_from(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "4-Work").mkdir(parents=True)
+    (vault / "4-Work" / "MIRROR.md").write_text("# 4-Work is a mirror\n\n- Source commit / 源提交: `ed00c3b` (2026-11-23T22:06:07-08:00)\n",
+                                               encoding="utf-8")
+    assert probes.mirror_info(vault) == {"path": str(vault / "4-Work"), "exists": True, "commit": "ed00c3b", "at": "2026-11-23T22:06:07-08:00"}
+    (vault / "4-Work" / "MIRROR.md").unlink()
+    assert probes.mirror_info(vault)["exists"] is False, "只有一个 4-Work 文件夹、没有镜像说明的，不算镜像"
+    assert probes.mirror_info("")["exists"] is False

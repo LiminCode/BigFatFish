@@ -3,8 +3,13 @@
 import {esc, soften, tint, ICONS} from './util.js';
 import {PADT, BRIDGE} from './layout.js';
 
-export function draw(M, E, redraw) {
-const {G, Z, W, H} = M;
+export function draw(M, E, redraw, served) {
+const {G, Z, W, H} = M, S = G.strings || {};
+/* 磁贴正面的动作（知识库克隆上的「时间轴」）：和详情里的按钮同一种 data-*，点了由 interact.js 的 runAction 发出去。
+   离线快照没有服务（served 为假）：按钮灰着，悬停说为什么 */
+const face = a => `<button class="face" data-action="${esc(a.name)}" data-words="${esc(a.words || '')}"` + (a.ask === false ? ' data-ask="0"' : '') +
+  (a.body ? ` data-body="${esc(JSON.stringify(a.body))}"` : '') + (served ? '' : ` disabled title="${esc(S.action_needs_service)}"`) +
+  `><svg viewBox="0 0 24 24">${ICONS.clock}</svg><span>${esc(S[a.words] || a.name)}</span></button>`;
 const map = document.getElementById('map');
 map.classList.toggle('redraw', !!redraw);     /* 原地重画时磁贴不再重放入场动画（样式里 .map.redraw） */
 map.style.width = W + 'px'; map.style.height = H + 'px';
@@ -20,11 +25,11 @@ if (G.zones.length > 1 && G.meta.bridge) { const z = G.zones[0], t = G.tiers[G.t
 html += `<svg class="roads" width="${W}" height="${H}">` + E.map((e, i) => { const p = e.pts, d = e.d, end = p[p.length - 1];
   return `<g class="edge st-${e.state}" data-e="${i}" style="--lc:${G.lines[e.line].color}"><path class="rail" d="${d}"/><path class="flow" d="${d}"/><circle class="end" cx="${end[0]}" cy="${end[1]}" r="3.6"/></g>`; }).join('') + `</svg>`;
 html += G.nodes.map((n, i) => { const k = G.kinds[n.kind] || {accent: '#647687', icon: 'dot'}, pips = n.size === 'tall' && n.items;
-  return `<div class="tile sz-${n.size} st-${n.state}" data-id="${n.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--tc:${soften(k.accent)};animation-delay:${i * 16}ms">` +
+  return `<div class="tile sz-${n.size} st-${n.state}${n.face ? ' has-face' : ''}" data-id="${n.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--tc:${soften(k.accent)};animation-delay:${i * 16}ms">` +
     `<div class="plate"><svg viewBox="0 0 24 24">${ICONS[n.icon || k.icon] || ICONS.dot}</svg></div><div class="txt"><b>${esc(n.title)}</b>` +
     (n.sub ? `<span>${esc(n.sub)}</span>` : '') + (n.lines || []).map(l => `<span>${esc(l)}</span>`).join('') +
     (pips ? `<div class="pips">${n.items.slice(0, 22).map(p => `<i class="${p.state}" title="${esc(p.name)}"></i>`).join('')}${n.items.length > 22 ? `<em>+${n.items.length - 22}</em>` : ''}</div>` : '') +
-    `</div><i class="dot ${n.state}"></i>` + (n.badge ? `<em class="badge" style="font-style:normal">${esc(n.badge)}</em>` : '') + `</div>`; }).join('');
+    `</div><i class="dot ${n.state}"></i>` + (n.badge ? `<em class="badge" style="font-style:normal">${esc(n.badge)}</em>` : '') + (n.face ? face(n.face) : '') + `</div>`; }).join('');
 map.innerHTML = html;
 /* 断开的线：中间留一个缺口，放一个叉 */
 map.querySelectorAll('.edge.st-broken').forEach(g => { const rail = g.querySelector('.rail'), len = rail.getTotalLength(), m = rail.getPointAtLength(len / 2), gap = 22;

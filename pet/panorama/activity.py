@@ -47,7 +47,7 @@ GIT_TIMEOUT_S = 20.0
 #: 仓库：个人知识库 / 工作知识库（AI-Base-Memory）
 VAULT, WORK = "vault", "work"
 #: 工作知识库在 WSL 里的克隆：公司侧 Claude 的主目录，固定在这里（公司侧 ``~/.claude/CLAUDE.md`` 里写的就是它）
-WORK_CLONE = "~/Github/AI-Base-Memory"
+WORK_CLONE = probes.WORK_CLONE
 _RECORD, _FIELD = "\x1e", "\x1f"
 _TRAILER = re.compile(r"^\s*Co-Authored-By:", re.IGNORECASE)
 _WSL_GIT = 'd=$1; shift; case $d in "~/"*) d=$HOME/${d#"~/"};; esac; exec git -C "$d" "$@"'
