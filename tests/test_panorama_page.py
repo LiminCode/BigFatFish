@@ -815,13 +815,48 @@ def test_vault_tiles_open_the_timeline_straight_from_their_face(engine):
     data = json.dumps(render.page_data(graph), ensure_ascii=False)
     served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
     faces = re.findall(r'<button class="face"[^>]*>', served["map"])
-    assert len(faces) == 3 and all('data-action="open_report"' in f and 'data-ask="0"' in f and "disabled" not in f for f in faces)
-    assert served["map"].count(">时间轴</span>") == 3
+    assert len(faces) == 8 and all('data-action="open_report"' in f and 'data-ask="0"' in f and "disabled" not in f for f in faces)
+    assert served["map"].count(">时间轴</span>") == 4 and served["map"].count(">查看</span>") == 4
     tiles = {re.match(r'[^"]*" data-id="([^"]+)"', chunk).group(1): chunk for chunk in served["map"].split('<div class="tile ')[1:]}
-    assert {tile for tile, body in tiles.items() if 'class="face"' in body} == {"vault_personal", "vault_work", "vault_wsl"}
-    assert all("has-face" in tiles[tile][:80] for tile in ("vault_personal", "vault_work", "vault_wsl"))
+    timeline = {"vault_personal", "vault_work", "vault_wsl", "f_vault_sync"}
+    assert {tile for tile, body in tiles.items() if 'class="face"' in body and ">时间轴</span>" in body} == timeline
+    assert all("has-face" in tiles[tile][:80] for tile in timeline)
     snapshot = re.findall(r'<button class="face"[^>]*>', _run(engine, graph)["map"])
-    assert len(snapshot) == 3 and all("disabled" in f for f in snapshot)
+    assert len(snapshot) == 8 and all("disabled" in f for f in snapshot)
+
+
+def test_feature_tiles_open_their_own_page_from_the_face(engine):
+    """工作简报 / 个人助理 / 工作笔记 / Slack 关注：正面「查看」开浏览器里那张页（不进右栏），图标是眼睛不是时钟。"""
+    i18n.set_language("zh")
+    data = json.dumps(render.page_data(sources.build(samples.facts())), ensure_ascii=False)
+    served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
+    faces = re.findall(r'<button class="face".*?</button>', served["map"])
+    pages = [f for f in faces if ">查看</span>" in f]
+    assert sorted(re.search(r'&quot;report&quot;:&quot;(\w+)&quot;', f).group(1) for f in pages) == \
+        ["personal_briefing", "slack_watch", "work_briefing", "work_notes"]
+    assert all("data-show" not in f and 'data-words="open_page"' in f for f in pages)
+    clock = next(f for f in faces if ">时间轴</span>" in f)
+    assert all(re.search(r"<svg.*?</svg>", f).group(0) != re.search(r"<svg.*?</svg>", clock).group(0) for f in pages)
+
+
+def test_a_face_button_keeps_its_icon_and_puts_its_label_back(engine):
+    """磁贴正面的按钮很小：结果只写进字那一格（图标留着）、挂在悬停提示上，开了页的过一会儿换回原来的字——不再撑出磁贴。"""
+    steps = """
+var label = {textContent: '查看'}, later = null, delays = [];
+var setTimeout = function (fn, ms) { later = fn; delays.push(ms); };
+el = {dataset: {action: 'open_report', words: 'open_page', ask: '0', body: '{"report":"work_briefing"}'}, disabled: false,
+      textContent: 'ICON查看', title: '', querySelector: function (sel) { return sel === 'span' ? label : null; }};
+S.open_page = '查看'; S.open_page_working = '正在打开…'; S.open_page_opened = '已打开'; S.open_page_failed = '打不开';
+reply = {status: 200, body: {state: 'opened'}}; var out = null; runAction(api, S, el).then(function (s) { out = s; });
+var shown = label.textContent, tip = el.title; if (later) later();
+"""
+    out = _evaluate(engine, FAKE_DOM + REPAIR_HARNESS + render.bundle(("util.js", "repair.js")) + steps +
+                    "\nreturn JSON.stringify({posted: posted, text: el.textContent, shown: shown, tip: tip, after: label.textContent,"
+                    " disabled: el.disabled, delays: delays, out: out});")
+    assert out["posted"] == [{"path": "/api/actions/open_report", "body": {"report": "work_briefing"}}] and out["out"] == "opened"
+    assert out["text"] == "ICON查看", "按钮本身的内容（图标）没被整个换掉"
+    assert out["shown"] == "已打开" and out["tip"] == "已打开" and out["after"] == "查看" and out["disabled"] is False
+    assert len(out["delays"]) == 1
 
 
 # ───────────────────────── 时间轴在右栏里看（2026-11-24）─────────────────────────
@@ -855,8 +890,8 @@ def test_the_face_button_says_its_report_opens_in_the_side_panel(engine):
     i18n.set_language("zh")
     data = json.dumps(render.page_data(sources.build(samples.facts())), ensure_ascii=False)
     served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
-    faces = re.findall(r'<button class="face"[^>]*>', served["map"])
-    assert len(faces) == 3 and all('data-show="panel"' in face for face in faces)
+    faces = [f for f in re.findall(r'<button class="face"[^>]*>', served["map"]) if "&quot;activity&quot;" in f]
+    assert len(faces) == 4 and all('data-show="panel"' in face for face in faces)
 
 
 def test_the_timeline_opens_in_the_side_panel_in_place_of_the_tile_details(engine):

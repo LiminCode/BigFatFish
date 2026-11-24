@@ -27,6 +27,14 @@ REMOTE_CHECK_STALE_S = 24 * 3600
 #: 磁贴上的「时间轴」：三个克隆的提交都在时间轴上，所以三块克隆磁贴正面都有它，详情里也有。``show: panel`` = 页面在右栏里
 #: 显示那份报告（``timeline.js``），面板头上的「在新页面打开」才真的发这个动作、另开浏览器页
 TIMELINE_ACTION = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}, "show": "panel"}
+
+
+def page_action(report: str) -> dict:
+    """功能磁贴正面的「查看」：在浏览器里开那项功能自己的页（工作简报、个人简报、工作笔记、Slack 关注）。
+    时间轴例外，在右栏里看（``TIMELINE_ACTION``）。"""
+    if report == "activity":
+        return TIMELINE_ACTION
+    return {"name": "open_report", "words": "open_page", "ask": False, "body": {"report": report}, "icon": "eye"}
 #: 镜像磁贴的状态 → 喂它的那条线的状态
 _MIRROR_LINE = {"ok": "ok", "warn": "warn", "bad": "broken", "unknown": "unknown"}
 SOURCES: list[Callable[[Graph, dict], None]] = []
@@ -320,10 +328,11 @@ def fish_features(g: Graph, f: dict) -> None:
             facts.append([L("fact.note"), L(f"note.{feature.note}")])
         kind = {"personal": "feature_personal", "work": "feature_work", "link": "link"}[feature.route]
         column = 3 if feature.route == "work" or feature.id == "link_wsl" else 2
+        view = {"face": page_action(feature.report), "actions": [page_action(feature.report)]} if feature.report else {}
         g.node(node_id, "win", column, kind, L(f"feature.{feature.id}"), sub, "ok" if s["enabled"] else "off", "row",
                icon=feature.icon, group=FISH_NODE, facts=facts, source=_src(f["cfg_path"], feature.config_key),
                page=L(f"page.{feature.page}") if feature.page else "",
-               settings=feature.settings_group or settings_table.group_for_config_key(feature.config_key))
+               settings=feature.settings_group or settings_table.group_for_config_key(feature.config_key), **view)
         if not s["enabled"]:
             off.append(L(f"feature.{feature.id}"))
         if feature.route == "personal" and active:

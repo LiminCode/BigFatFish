@@ -64,6 +64,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
              "check", "check_working", "check_checked", "check_failed", "check_busy", "check_missing",
              "sync", "sync_confirm_win", "sync_working", "sync_synced", "sync_noop", "sync_conflict", "sync_blocked", "sync_failed",
              "sync_busy", "sync_missing", "activity", "activity_working", "activity_opened", "activity_failed",
+               "open_page", "open_page_working", "open_page_opened", "open_page_failed",
              "list_count", "list_filter", "expand_all", "collapse_all", "ago_now", "ago_minutes", "ago_hours", "ago_days", "gutter_tip",
              *("form_" + key for key in (
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",

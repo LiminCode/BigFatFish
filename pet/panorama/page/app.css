@@ -78,7 +78,7 @@ svg.roads{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
   font:inherit;color:#fff;background:rgba(0,0,0,.3);cursor:pointer;transition:background .12s}
 .tile .face:hover:not(:disabled){background:rgba(0,0,0,.52)}.tile .face:disabled{opacity:.55;cursor:default}
 .tile .face svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
-.tile .face span{font-size:10.5px;color:#fff}
+.tile .face span{font-size:10.5px;color:#fff;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile.has-face .txt span:last-child{padding-right:62px}
 .tile.st-off{filter:saturate(.2) brightness(.62)}
 .tile.st-live::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 42%,rgba(255,255,255,.2) 50%,transparent 58%);transform:translateX(-110%);animation:sheen 5s ease-in-out infinite}
