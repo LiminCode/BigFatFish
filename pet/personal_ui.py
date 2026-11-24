@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """个人助理的界面。个人简报在浏览器里读（配置全景的 ``/report/personal_briefing``，ADR 0018）：岛上的人形、提醒的
-「查看」都开那张页；记灵感也在那张页上（顶部的输入区，``panorama.reports.add_inspiration``）；「在 Obsidian 打开 AI-Base」
+「查看」都开那张页；随手记也在那张页上（顶部的输入区，``panorama.reports.add_capture``）；「在 Obsidian 打开 AI-Base」
 是页上的副按钮，经 ``panorama.reports.open_obsidian`` 落到这里的 ``open_obsidian``。这里只剩：提醒、岛状态、推送失败的气泡。
 
 Qt 窗口（简报 + 灵感两页，复用简报窗口壳）2026-11-21 随简报窗口一起下线。文案全部走 ``i18n.t``。
@@ -92,7 +92,7 @@ class PersonalController(QObject):
 
     def _on_synced(self, ok: bool, error: str) -> None:
         if not ok and not self._watched():
-            self._host.show_bubble(t("personal.inspiration.push_failed", error=" ".join(error.split())[-120:]), 8000)
+            self._host.show_bubble(t("personal.capture.push_failed", error=" ".join(error.split())[-120:]), 8000)
 
     def _on_view(self) -> None:
         self._host.resolve_alert(ALERT_ID)

@@ -3203,7 +3203,7 @@ class AppShell:
 
     # ------------------------------------------------------------------ 个人助理
     def _start_personal(self) -> None:
-        """个人助理（可选服务）：肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报，灵感推到 GitHub。不需要 WSL；
+        """个人助理（可选服务）：肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报，随手记推到 GitHub。不需要 WSL；
         没装聊天模块（没有 Anthropic SDK）时不接。"""
         if self._overlay_shell is None or getattr(self, "_personal", None) is not None:
             return
@@ -3216,7 +3216,7 @@ class AppShell:
             self._personal = PersonalController(
                 self._overlay_shell, service, open_report=lambda: self._open_report("personal_briefing"),
                 report_watched=lambda: self._report_watched("personal_briefing"))
-            # 灵感记在页面顶部的输入区：记下 / 推送结果（changed / synced）也让页面重画，输入区下面那行跟着变
+            # 随手记在页面顶部的输入区：记下 / 推送结果（changed / synced）也让页面重画，输入区下面那行跟着变
             for signal in (service.started, service.finished, service.changed, service.synced):
                 signal.connect(lambda *_: self._publish_report("personal_briefing"))
             self._overlay_shell.personal = self._personal
@@ -3601,7 +3601,7 @@ class AppShell:
             #          「现在核对」让 AI-Base 的克隆 fetch 一次再重探本机一侧（在请求线程上跑，只回界面线程读目录和重探）；
             #          「现在同步」经同步器提交、拉取、推送一次（同一条线程规矩，和核对共用一把锁）。
             # reports：浏览器里读的报告页——工作简报（没接简报服务 = 没有 WSL 时页面只显示一句说明）和个人简报
-            #          （没装聊天模块时同样只显示一句）；个人简报页顶部的输入区记灵感（add_inspiration），副按钮
+            #          （没装聊天模块时同样只显示一句）；个人简报页顶部的输入区随手记（add_capture），副按钮
             #          「在 Obsidian 打开 AI-Base」在肥鱼里开 Obsidian（open_obsidian）。
             #          笔记页（notes.py）：工作笔记的列表 / 详情 / 记一条 / 完成 / 稍后 / 删除，动作走 note；
             #          Slack 关注页：检查状态条 + 「现在检查」（generate_report 的分发表里多一项）+ 存档列表（同一个 note 动作）。
@@ -3624,7 +3624,7 @@ class AppShell:
                              lambda side: self._panorama_service.refresh(side), self._vault_sync(), after=timeline_changed),
                          panorama_actions.OPEN_REPORT_ACTION: panorama_actions.open_report(
                              lambda name: self._panorama_service.open_report(name)),
-                         panorama_reports.INSPIRATION_ACTION: panorama_reports.add_inspiration(personal_service),
+                         panorama_reports.CAPTURE_ACTION: panorama_reports.add_capture(personal_service),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),
                          panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,

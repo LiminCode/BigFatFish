@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""个人简报在报告页上（2026-11-20，M4b 第二项；11-21 收尾）：同一张报告页多登记一项——provider、顶部的灵感输入区
-（``composer`` + ``add_inspiration`` 动作）、副按钮「在 Obsidian 打开 AI-Base」（``open_obsidian`` 动作）、
+"""个人简报在报告页上（2026-11-20，M4b 第二项；11-21 收尾）：同一张报告页多登记一项——provider、顶部的随手记输入区
+（``composer`` + ``add_capture`` 动作）、副按钮「在 Obsidian 打开 AI-Base」（``open_obsidian`` 动作）、
 ``PersonalController`` 走浏览器（Qt 窗口删了）。
 """
 from __future__ import annotations
@@ -59,18 +59,21 @@ class _Service:
         self.asked += 1
         return True
 
-    def add_inspiration(self, text):
-        self.ideas.append(text)
-        self.sync_state, self.pushed_at = "pushed", "09:00"
-        return Path("x")
+    last_capture = ""
+
+    def add_capture(self, text, images=()):
+        self.ideas.append((text, list(images)))
+        self.sync_state, self.pushed_at, self.last_capture = "pushed", "09:00", "0-Inbox/x.md"
+        return "0-Inbox/x.md"
 
 
 BRIEFING = pb.PersonalBriefing(ok=True, summary="先补周五的扫描。", markdown="## 待复习\n- ★★ 风险观察（到期 09-20）\n\n## 今天\n无\n",
                                generated_at="2026-11-20T08:30:00", seconds=63.4, turns=6, model="claude-sonnet-5", effort="medium",
                                tokens_in=48210, tokens_out=1130, files_read=["INDEX.md", "5-Daily/2026-11-20.md"], pull_note="")
-COMPOSER = {"placeholder": "一句灵感、一个念头……Ctrl+Enter 记下，直接推到 GitHub", "label": "记下",
-            "hint": "每条记进 AI-Base 的 User/灵感 Inspiration.md，按日期分节；不经 AI，只 commit + push。", "status": "", "failed": False,
-            "action": {"name": "add_inspiration", "report": "personal_briefing"}}
+COMPOSER = {"placeholder": "随手记：一句想法、一段摘抄、一个链接，也可以粘贴或拖进截图……Ctrl+Enter 记下", "label": "记下",
+            "hint": "每条一个文件写进 AI-Base 的 0-Inbox/，不经 AI，立刻推送；AI 整理随后接上。", "status": "", "failed": False,
+            "images": {"label": "添加图片", "remove": "移除", "max": 4, "full": "一次最多 4 张图"},
+            "action": {"name": "add_capture", "report": "personal_briefing"}}
 
 
 # ---------------------------------------------------------------- provider
@@ -85,7 +88,7 @@ def test_the_personal_briefing_is_a_second_report_on_the_same_page():
                               "hint": "让你自己的 Claude 重新读一遍 AI-Base 并写一份，一两分钟"}
     assert data["actions"] == [{"name": "open_obsidian", "report": "personal_briefing", "label": "在 Obsidian 打开 AI-Base",
                                 "hint": "克隆目录已登记成 Obsidian 库就直接打开；没登记就打开文件夹"}]
-    assert data["composer"] == COMPOSER, "记灵感在页面顶部的输入区（Qt 的灵感页 11-21 删了）"
+    assert data["composer"] == COMPOSER, "随手记在页面顶部的输入区（11-24 起替代记灵感）"
     assert data["settings_focus"] == "personal" and data["busy"] is False and data["error"] == ""
     (detail,) = data["details"]
     assert detail["title"] == "这次是怎么生成的（11-20 08:30）"
@@ -109,18 +112,18 @@ def test_busy_error_pull_note_and_no_service():
 
 def test_the_composer_status_follows_the_push_state():
     service = _Service()
-    assert reports.inspiration_status(service) == ""
-    service.sync_state = "pushing"
-    assert reports.inspiration_status(service) == "已写进 灵感 Inspiration.md，正在提交并推送…"
+    assert reports.capture_status(service) == ""
+    service.sync_state, service.last_capture = "pushing", "0-Inbox/2026-11-24 2105 一句.md"
+    assert reports.capture_status(service) == "已写进 0-Inbox/2026-11-24 2105 一句.md，正在提交并推送…"
     service.sync_state, service.pushed_at = "pushed", "09:00"
-    assert reports.inspiration_status(service) == "已推送到 GitHub（09:00）"
+    assert reports.capture_status(service) == "已推送到 GitHub（09:00）"
     service.sync_state, service.sync_error = "failed", "remote:  Permission\ndenied"
-    assert reports.inspiration_status(service) == "已写进本地文件，但没推上去：remote: Permission denied"
+    assert reports.capture_status(service) == "已写进本地文件，但没推上去：remote: Permission denied"
     composer = reports.personal_briefing(lambda: service, _config())()["composer"]
     assert composer["failed"] is True and composer["status"].startswith("已写进本地文件")
 
 
-def test_the_actions_dispatch_regenerate_and_open_obsidian_by_report_name_and_add_inspiration_posts_text():
+def test_the_actions_dispatch_regenerate_and_open_obsidian_by_report_name_and_add_capture_posts_text():
     service, opened = _Service(), []
     controller = type("Ctl", (), {"open_obsidian": lambda self: opened.append(1)})()
     generate = actions.generate_report({"work_briefing": lambda: "busy", "personal_briefing": reports.generate_briefing(lambda: service)})
@@ -134,28 +137,35 @@ def test_the_actions_dispatch_regenerate_and_open_obsidian_by_report_name_and_ad
         open_it({"report": "work_briefing"})
     assert reports.generate_work_briefing is reports.generate_briefing
 
-    add = reports.add_inspiration(lambda: service)
+    add = reports.add_capture(lambda: service)
     assert add({"report": "personal_briefing", "text": "  周末整理旧书 "}) == {"report": "personal_briefing", "state": "saved",
                                                                               "status": "已推送到 GitHub（09:00）"}
-    assert service.ideas == ["  周末整理旧书 "], "原样交给服务（它自己 strip）"
+    assert service.ideas == [("  周末整理旧书 ", [])], "原样交给服务（它自己 strip）"
+    png = "iVBORw0KGgoAAAAAAAA="
+    assert add({"report": "personal_briefing", "text": "", "images": [{"type": "image/png", "data": png}]})["state"] == "saved"
+    assert service.ideas[-1] == ("", [(".png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\x00\x00\x00")]), "只有图也记"
     assert add({"report": "personal_briefing", "text": "   "}) == {"report": "personal_briefing", "state": "empty", "status": ""}
     assert add({"report": "personal_briefing"})["state"] == "empty" and add({"report": "personal_briefing", "text": 3})["state"] == "empty"
-    with pytest.raises(actions.ActionError) as bad:
+    bad = add({"report": "personal_briefing", "text": "x", "images": [{"type": "image/svg+xml", "data": "PHN2Zy8+"}]})
+    assert bad == {"report": "personal_briefing", "state": "failed", "status": "图片读不出来，只收 PNG / JPEG / WebP / GIF。"}
+    assert len(service.ideas) == 2, "图片不对：什么都不记"
+    with pytest.raises(actions.ActionError) as wrong:
         add({"report": "work_briefing", "text": "x"})
-    assert (bad.value.status, bad.value.code) == (400, "bad_report")
+    assert (wrong.value.status, wrong.value.code) == (400, "bad_report")
     with pytest.raises(actions.ActionError) as gone:
-        reports.add_inspiration(lambda: None)({"report": "personal_briefing", "text": "x"})
+        reports.add_capture(lambda: None)({"report": "personal_briefing", "text": "x"})
     assert (gone.value.status, gone.value.code) == (503, "unavailable")
 
 
 # ---------------------------------------------------------------- 真实服务：记下 → 推送 → 状态
 
-def test_the_composer_saves_an_idea_and_the_status_follows_the_push(tmp_path, vault):
+def test_the_composer_saves_a_capture_and_the_status_follows_the_push(tmp_path, vault):
     fakes = _Fakes()
     service = _service(tmp_path, vault, fakes)
-    add = reports.add_inspiration(lambda: service)
+    add = reports.add_capture(lambda: service)
     out = add({"report": "personal_briefing", "text": "周末把旧书整理出来"})
-    assert out["state"] == "saved" and fakes.syncs and "周末把旧书整理出来" in pv.inspiration_path(vault).read_text(encoding="utf-8")
+    (note,) = (vault / "0-Inbox").glob("*.md")
+    assert out["state"] == "saved" and fakes.syncs and "周末把旧书整理出来" in note.read_text(encoding="utf-8")
     assert out["status"] == "已推送到 GitHub（09:00）", "sync 是同步的假函数：记下即推完"
     assert reports.personal_briefing(lambda: service, _config())()["composer"]["status"] == "已推送到 GitHub（09:00）"
     service._sync = _Fakes(sync_ok=False).sync
@@ -163,9 +173,8 @@ def test_the_composer_saves_an_idea_and_the_status_follows_the_push(tmp_path, va
     assert out["state"] == "saved" and out["status"].startswith("已写进本地文件，但没推上去：")
     assert reports.personal_briefing(lambda: service, _config())()["composer"]["failed"] is True
     missing = _service(tmp_path / "b", tmp_path / "missing", _Fakes())
-    out = reports.add_inspiration(lambda: missing)({"report": "personal_briefing", "text": "x"})
+    out = reports.add_capture(lambda: missing)({"report": "personal_briefing", "text": "x"})
     assert out["state"] == "failed" and "missing" in out["status"], "仓库副本不在：没记下，原因在状态里"
-    assert Path(pv.INSPIRATION_FILE).name == "灵感 Inspiration.md"
 
 
 # ---------------------------------------------------------------- 控制器走浏览器
@@ -212,12 +221,12 @@ def test_a_page_that_cannot_open_says_so_and_no_alert_while_the_page_is_watched(
 
 def test_a_failed_push_is_a_bubble_only_while_nobody_has_the_page_open(tmp_path, vault):
     controller, host, service, _opens = _controller(tmp_path, vault, fakes=_Fakes(sync_ok=False))
-    service.add_inspiration("x")
+    service.add_capture("x")
     app.processEvents()
     assert host.bubbles and host.bubbles[-1].startswith("已写进本地文件，但没推上去：")
 
     controller, host, service, _opens = _controller(tmp_path / "w", vault, watched=True, fakes=_Fakes(sync_ok=False))
-    service.add_inspiration("x")
+    service.add_capture("x")
     app.processEvents()
     assert host.bubbles == [], "页面开着：输入区下面那行已经写着原因"
     assert controller.island_state == "idle"

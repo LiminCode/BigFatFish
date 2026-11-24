@@ -38,7 +38,8 @@ log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 TOKEN_HEADER = "X-Panorama-Token"
-MAX_BODY = 1 << 20                  # 写请求正文上限 1 MiB：设置和记忆文件都远小于它
+MAX_BODY = 17 << 20                 # 写请求正文上限 17 MiB：随手记一次最多 4 张图、每张 3 MB（base64 胀 4/3）；
+                                    # 设置和记忆文件都远小于它。只认本机回环、要令牌，正文读进内存一次就丢
 IDLE_SECONDS = 15 * 60.0            # 这么久没有一次有效请求就自己停
 POLL_SECONDS = 0.5                  # 服务线程多久醒一次看「该不该停」
 REQUEST_TIMEOUT = 10.0              # 一条连接最多占一个线程这么久（挡只连不发的慢连接）

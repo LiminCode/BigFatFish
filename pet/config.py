@@ -886,7 +886,7 @@ class Config:
             "slack_watch": normalize_slack_watch(None),
             # 工作笔记（随手记的 Slack / Jira 链接，由 WSL 里的 Claude Code 总结、定提醒），见 pet/work_notes.py
             "work_notes": normalize_work_notes(None),
-            # 个人助理（肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报；灵感记录推到 GitHub），见 pet/personal_vault.py
+            # 个人助理（肥鱼自己的 Claude 读本地 AI-Base 克隆写个人简报；随手记推到 GitHub），见 pet/personal_vault.py
             "personal": normalize_personal(None),
             # 知识库定时同步（每隔一阵、停笔后把个人知识库的克隆和远端对齐；默认关），见 pet/vault_sync.py
             "vault_sync": normalize_vault_sync(None),

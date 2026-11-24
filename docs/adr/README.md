@@ -68,3 +68,4 @@ PR 满足下面**任意一条**才新增一份 ADR：
 | [0018](0018-content-pages-move-to-the-browser.md) | 生成出来的内容也在浏览器里读，从工作简报开始；Qt 的简报窗口等别的页搬完再删 |
 | [0019](0019-run-journal-and-git-are-the-timeline.md) | 时间轴有两本账：肥鱼做的事记运行记录，仓库里的事问 git，靠提交号对上 |
 | [0020](0020-vault-sync-never-picks-a-side.md) | 知识库同步不自动选边，没人点头不提交大动作 |
+| [0021](0021-captures-land-one-file-each.md) | 随手记一条一个文件；整理的规矩只有一份，在私有库里 |

@@ -35,7 +35,7 @@ main{padding-top:18px;padding-bottom:48px}
 .summary{font-size:19px;font-weight:600;margin:0 0 18px;color:var(--m-title);line-height:1.45}
 .summary[hidden]{display:none}
 
-/* 顶部的输入区（个人简报的「记灵感」）：这页的主动作之一，大而显眼；下面一行说明、一行推送到哪一步了 */
+/* 顶部的输入区（个人简报的「随手记」）：这页的主动作之一，大而显眼；下面一行说明、一行推送到哪一步了 */
 .compose{margin:0 0 20px;background:var(--m-tile);padding:10px;box-shadow:var(--glass)}
 .compose[hidden]{display:none}
 .compose .row{display:flex;gap:10px;align-items:stretch}
@@ -45,6 +45,15 @@ main{padding-top:18px;padding-bottom:48px}
 .compose .hint,.compose .cstatus{margin:8px 2px 0;font-size:12.5px;color:var(--m-muted)}
 .compose .hint:empty,.compose .cstatus:empty{display:none}
 .compose .cstatus.bad{color:var(--p1)}
+/* 随手记排着的图：一行缩略图，右上角 × 去掉 */
+.compose .tray{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}.compose .tray[hidden]{display:none}
+.compose .thumb{position:relative;width:84px;height:84px;background:var(--m-page);box-shadow:var(--glass)}
+.compose .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.compose .thumb .drop{position:absolute;top:2px;right:2px;width:22px;height:22px;border:0;padding:0;cursor:pointer;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:22px}
+.compose .thumb .drop:hover{background:rgba(0,0,0,.75)}
+.compose .tools{margin:8px 0 0}.compose .tools .btn[hidden]{display:none}
+.compose .tools .btn{background:var(--m-page);color:var(--m-text);box-shadow:none;padding:5px 12px;font-size:13px}
+.compose .tools .btn:hover{background:var(--m-tile-hover)}
 
 /* 两栏：左栏 240 贴着滚，右栏卡片。窄屏单栏，左栏变成顶部一行可横滚的磁贴。 */
 .grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:0 26px;align-items:start}

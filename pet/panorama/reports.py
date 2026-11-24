@@ -10,7 +10,7 @@ provider 在**界面线程**上被调（它读 Qt 对象），返回页面要摆
 - ``busy`` / ``busy_text`` / ``empty_text`` / ``error``（上一次失败的原因，已翻成整句）；
 - ``action``：底部那个按钮——``{name, report, label, hint}``，页面 ``POST /api/actions/<name>`` 时把 ``report`` 带回来；
   ``actions``：旁边再放几个按钮（同一种字典；个人简报的「在 Obsidian 打开 AI-Base」在肥鱼里开 Obsidian，动作回 ``opened``）；
-- ``composer``：顶部的输入区（个人简报的「记灵感」，2026-11-21 起；工作简报是 None）——``{placeholder, label, hint, status,
+- ``composer``：顶部的输入区（个人简报的「随手记」，2026-11-24 起替代 11-21 的「记灵感」；工作简报是 None）——``{placeholder, label, hint, status,
   failed, action{name, report}}``，页面 ``POST /api/actions/<name>`` 时带 ``{report, text}``，``status`` 是推送到哪一步了；
 - ``available``：这台机器上有没有这项功能（工作简报要 WSL；没有就只显示一句说明）；
 - ``sections``：全文按 ``<h3>`` 切成的几区 ``{id, source, title, html, count, p3, p2, p1, bugs, updated}``（``split_sections``）：
@@ -25,11 +25,10 @@ from __future__ import annotations
 
 import datetime as dt
 import html
-import os
 import re
 from typing import Callable
 
-from .. import personal_vault as pv
+from .. import capture_inbox as ci
 from .. import work_briefing as wb
 from ..i18n import t
 from . import markdown
@@ -37,7 +36,7 @@ from .actions import ActionError
 
 WORK_BRIEFING = "work_briefing"
 PERSONAL_BRIEFING = "personal_briefing"
-INSPIRATION_ACTION = "add_inspiration"              # 个人简报页顶部输入区的「记下」：追加进 AI-Base 并推送（add_inspiration）
+CAPTURE_ACTION = "add_capture"                     # 个人简报页顶部输入区的「记下」：写进 AI-Base 的收件箱并推送（add_capture）
 OBSIDIAN_ACTION = "open_obsidian"                   # 个人简报页「在 Obsidian 打开 AI-Base」：在肥鱼里开 Obsidian（open_obsidian）
 GENERATE_ACTION = "generate_report"                 # 页面上「重新生成」走的动作名（actions.generate_report）
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
@@ -91,7 +90,7 @@ def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], 
                        "label": t("personal.button.regenerate"), "hint": t("personal.button.regenerate_hint")},
             "actions": [{"name": OBSIDIAN_ACTION, "report": PERSONAL_BRIEFING,
                          "label": t("personal.button.obsidian"), "hint": t("personal.button.obsidian_hint")}],
-            "composer": inspiration_composer(service), "details": [], "settings_focus": "personal",
+            "composer": capture_composer(service), "details": [], "settings_focus": "personal",
         }
         if service is None:
             return data
@@ -139,32 +138,35 @@ def generate_briefing(service_of: Callable[[], object]) -> Callable[[], str]:
 generate_work_briefing = generate_briefing      # 老名字
 
 
-def inspiration_composer(service) -> dict:
-    """个人简报页顶部的输入区：占位、「记下」、一行说明、一行推送状态；``service`` 为 None（没接个人助理）时状态为空
-    （页面那时整页只显示一句说明，输入区也藏着）。"""
-    return {"placeholder": t("personal.inspiration.placeholder"), "label": t("personal.button.save"),
-            "hint": t("personal.inspiration.hint"), "status": inspiration_status(service) if service is not None else "",
+def capture_composer(service) -> dict:
+    """个人简报页顶部的随手记输入区：占位、「记下」、一行说明、一行推送状态、收图的几句话（``images``：页面有它才收粘贴 /
+    拖进 / 选择的图片）；``service`` 为 None（没接个人助理）时状态为空（页面那时整页只显示一句说明，输入区也藏着）。"""
+    return {"placeholder": t("personal.capture.placeholder"), "label": t("personal.button.save"),
+            "hint": t("personal.capture.hint"), "status": capture_status(service) if service is not None else "",
             "failed": service is not None and service.sync_state == "failed",
-            "action": {"name": INSPIRATION_ACTION, "report": PERSONAL_BRIEFING}}
+            "images": {"label": t("personal.capture.add_image"), "remove": t("personal.capture.remove_image"),
+                       "max": ci.MAX_IMAGES, "full": t("personal.capture.images_full", n=ci.MAX_IMAGES)},
+            "action": {"name": CAPTURE_ACTION, "report": PERSONAL_BRIEFING}}
 
 
-def inspiration_status(service) -> str:
-    """输入区下面那行：灵感记下之后推送到哪一步了（正在推 / 已推送几点 / 没推上去为什么）；还没记过是空串。"""
+def capture_status(service) -> str:
+    """输入区下面那行：随手记下之后推送到哪一步了（正在推 / 已推送几点 / 没推上去为什么）；还没记过是空串。"""
     state = service.sync_state
     if state == "pushing":
-        return t("personal.inspiration.saved", file=os.path.basename(pv.INSPIRATION_FILE))
+        return t("personal.capture.saved", file=service.last_capture)
     if state == "pushed":
-        return t("personal.inspiration.pushed", when=service.pushed_at)
+        return t("personal.capture.pushed", when=service.pushed_at)
     if state == "failed":
-        return t("personal.inspiration.push_failed", error=" ".join(service.sync_error.split())[-160:])
+        return t("personal.capture.push_failed", error=" ".join(service.sync_error.split())[-160:])
     return ""
 
 
-def add_inspiration(service_of: Callable[[], object]) -> Callable[[object], dict]:
-    """个人简报页输入区的「记下」：``POST /api/actions/add_inspiration {report, text}``，在界面线程上跑。
-    回 ``{report, state, status}``：``saved`` / ``empty`` / ``failed``（没记下，``status`` 写着原因：仓库副本不在、写不进文件）。
-    没接个人助理 503 ``unavailable``；报告名不对 400 ``bad_report``。记下之后服务自己后台 commit + push，推送结果经
-    ``changed / synced`` → ``publish_report`` 让页面重画，输入区下面那行跟着变。"""
+def add_capture(service_of: Callable[[], object]) -> Callable[[object], dict]:
+    """个人简报页输入区的「记下」：``POST /api/actions/add_capture {report, text, images?}``，在界面线程上跑。
+    ``images`` 是 ``[{type, data(base64)}]``（``capture_inbox.decode_images`` 检查类型、文件头、大小、张数）。
+    回 ``{report, state, status}``：``saved`` / ``empty``（没字也没图）/ ``failed``（没记下，``status`` 写着原因：图片不收、
+    仓库副本不在、写不进文件）。没接个人助理 503 ``unavailable``；报告名不对 400 ``bad_report``。记下之后服务自己后台
+    commit + push，推送结果经 ``changed / synced`` → ``publish_report`` 让页面重画，输入区下面那行跟着变。"""
     def run(body) -> dict:
         report = body.get("report") if isinstance(body, dict) else None
         if report != PERSONAL_BRIEFING:
@@ -173,10 +175,15 @@ def add_inspiration(service_of: Callable[[], object]) -> Callable[[object], dict
         if service is None:
             raise ActionError(503, "unavailable")
         text = body.get("text")
-        if not isinstance(text, str) or not text.strip():
+        text = text if isinstance(text, str) else ""
+        try:
+            images = ci.decode_images(body.get("images"))
+        except ci.CaptureError as exc:
+            return {"report": report, "state": "failed", "status": t(f"personal.capture.{exc.code}", n=ci.MAX_IMAGES)}
+        if not text.strip() and not images:
             return {"report": report, "state": "empty", "status": ""}
-        saved = service.add_inspiration(text)
-        return {"report": report, "state": "saved" if saved is not None else "failed", "status": inspiration_status(service)}
+        saved = service.add_capture(text, images)
+        return {"report": report, "state": "saved" if saved is not None else "failed", "status": capture_status(service)}
     return run
 
 
