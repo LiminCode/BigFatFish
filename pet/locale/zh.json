@@ -2562,6 +2562,8 @@
   "panorama.ui.activity_working": "正在打开…",
   "panorama.ui.activity_opened": "已在浏览器里打开",
   "panorama.ui.activity_failed": "打不开，看肥鱼日志",
+  "panorama.ui.timeline_newtab": "在新页面打开",
+  "panorama.ui.timeline_failed": "时间轴读不出来，看肥鱼日志",
   "panorama.ui.sync": "现在同步",
   "panorama.ui.sync_confirm_win": "要把这个克隆和 GitHub 对齐一次吗？\n\n会做三件事：把还没提交的改动（包括删除）提交成一个提交；拉取远端的新提交；推送本地的提交。\n\n有冲突时不会自动合并：会撤回、停下来告诉你，两边的内容都不丢。",
   "panorama.ui.sync_working": "正在同步…",

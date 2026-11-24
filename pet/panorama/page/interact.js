@@ -7,6 +7,7 @@ import {viewer} from './viewer.js';
 import {memory} from './memory.js';
 import {settingsPanel} from './settings.js';
 import {actionButton, runAction} from './repair.js';
+import {timelinePanel} from './timeline.js';
 
 /* 详情里列表的状态放在模块里（不随重画丢）：哪些条目展开着（磁贴 id + 条目名）、每块磁贴的筛选词、「全部展开」。
    「全部展开」和右栏宽度还存 localStorage——只是这个浏览器的便利，不进配置。 */
@@ -22,6 +23,10 @@ const off = new AbortController(), on = {signal: off.signal};
 const files = viewer(api, S, on);
 const memo = memory(G, S, on, api ? files.open : null);
 const panel = settingsPanel(api, S);      /* 整页只有一个，重画时拿到的还是它（见 settings.js） */
+const tl = timelinePanel(api, S);        /* 右栏里的时间轴：同样整页一个，跨重画开着（见 timeline.js） */
+/* 动作按钮：show=panel 的在右栏里看，不发；别的照旧发。用户自己点了磁贴 / 跳到某块磁贴（pick）就把详情放回来 */
+const press = act => act.disabled ? undefined : act.dataset.show === 'panel' ? tl.openFrom(act) : runAction(api, S, act);
+const pick = id => { if (id) tl.close(); select(id); };
 /* 「查看」按钮：从肥鱼打开的页面才有服务可问；离线快照里按钮是灰的，悬停说明为什么 */
 const viewBtn = (store, title, cls) => `<button class="${cls}" data-view="${esc(store)}" data-title="${esc(title)}"${api ? '' : ` disabled title="${esc(S.view_needs_service)}"`}>${esc(S.view)}</button>`;
 let selected = null, lineOn = null, lastRows = new Map();
@@ -79,26 +84,26 @@ function pickLine(k) { select(null); lineOn = k;
 function search(text) { const q = text.trim().toLowerCase(); if (!q) return paint(null, null);
   paint(new Set(G.nodes.filter(n => [n.title, n.sub, ...(n.lines || []), (G.kinds[n.kind] || {}).name, ...(n.facts || []).reduce((all, f) => all.concat(f), []), ...(n.items || []).map(p => p.name), ...(n.items || []).reduce((all, p) => all.concat((p.more || []).map(m => m[1])), []), (n.source || {}).path, (n.source || {}).key].join(' ').toLowerCase().includes(q)).map(n => n.id)), new Set()); }
 map.addEventListener('click', ev => { const act = ev.target.closest('[data-action]');      /* 磁贴正面的按钮：只发动作，不选中磁贴 */
-  if (act) { if (!act.disabled) runAction(api, S, act); return; }
-  const t = ev.target.closest('.tile'); select(t ? (t.dataset.id === selected ? null : t.dataset.id) : null); }, on);
+  if (act) { press(act); return; }
+  const t = ev.target.closest('.tile'); pick(t ? (t.dataset.id === selected && !tl.isOpen() ? null : t.dataset.id) : null); }, on);
 /* 列表内筛选：不重画（重画会丢掉输入焦点），只改每条的 hidden */
 function applyFilter(id) { const q = filters.get(id) || '';
   document.getElementById('detail').querySelectorAll('.list .item').forEach(it => { const r = lastRows.get(it.dataset.row); it.hidden = !!r && !rowMatches(r, q); }); }
 document.getElementById('detail').addEventListener('input', ev => { const f = ev.target.closest('[data-filter]'); if (!f) return;
   filters.set(f.dataset.filter, f.value); applyFilter(f.dataset.filter); }, on);
 document.getElementById('detail').addEventListener('click', ev => {
-  const act = ev.target.closest('[data-action]'); if (act) return act.disabled || runAction(api, S, act);
+  const act = ev.target.closest('[data-action]'); if (act) return press(act);
   const tog = ev.target.closest('[data-toggle]'); if (tog) { const k = selected + '\u0000' + tog.dataset.toggle; if (expanded.has(k)) expanded.delete(k); else expanded.add(k); return detail(selected); }
   if (ev.target.closest('[data-expand-all]')) { expandAll = !expandAll; store.set('panorama-rows', expandAll ? 'all' : 'compact'); return detail(selected); }
-  const go = ev.target.closest('[data-go]'); if (go) return select(go.dataset.go);
+  const go = ev.target.closest('[data-go]'); if (go) return pick(go.dataset.go);
   const see = ev.target.closest('[data-view]'); if (see) return files.open(see.dataset.view, see.dataset.title);
   const set = ev.target.closest('[data-settings]'); if (set) return panel.open(set.dataset.settings, set.dataset.title);
   if (ev.target.closest('[data-memory]')) return memo.open();
   const cp = ev.target.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); cp.textContent = S.copied; } }, on);
 document.getElementById('quests').innerHTML = !G.quests.length ? `<p class="hint">${esc(S.no_quests)}</p>` : G.quests.map(q => `<div class="quest" data-go="${q.node}"><i class="dot ${q.sev}"></i><span>${esc(q.text)}</span>${actionButton(S, q, api)}</div>`).join('');
 document.getElementById('quests').addEventListener('click', ev => {
-  const act = ev.target.closest('[data-action]'); if (act) return act.disabled || runAction(api, S, act);
-  const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) select(q.dataset.go); }, on);
+  const act = ev.target.closest('[data-action]'); if (act) return press(act);
+  const q = ev.target.closest('[data-go]'); if (q && N[q.dataset.go]) pick(q.dataset.go); }, on);
 document.getElementById('lines').innerHTML = Object.entries(G.lines).map(([k, l]) => `<button class="chip" data-line="${k}" title="${esc(l.tip)}"><i style="background:${l.color}"></i>${esc(l.name)}</button>`).join('');
 document.getElementById('lines').addEventListener('click', ev => { const c = ev.target.closest('[data-line]'); if (!c) return;
   pickLine(c.dataset.line === lineOn ? null : c.dataset.line); }, on);

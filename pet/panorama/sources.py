@@ -24,8 +24,9 @@ WSL_ENTRY = "cc_wsl"
 #: 一个克隆和远端核对过之后，「领先 / 落后几个提交」还能信多久。现在没有定时同步，只有手点的「现在核对」和各功能顺带的
 #: pull / push 会碰远端，所以给一天；定时同步上线后改成它周期的两倍。
 REMOTE_CHECK_STALE_S = 24 * 3600
-#: 磁贴上的「时间轴」：开时间轴页。三个克隆的提交都在那一页上，所以三块克隆磁贴正面都有它，详情里也有
-TIMELINE_ACTION = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}}
+#: 磁贴上的「时间轴」：三个克隆的提交都在时间轴上，所以三块克隆磁贴正面都有它，详情里也有。``show: panel`` = 页面在右栏里
+#: 显示那份报告（``timeline.js``），面板头上的「在新页面打开」才真的发这个动作、另开浏览器页
+TIMELINE_ACTION = {"name": "open_report", "words": "activity", "ask": False, "body": {"report": "activity"}, "show": "panel"}
 #: 镜像磁贴的状态 → 喂它的那条线的状态
 _MIRROR_LINE = {"ok": "ok", "warn": "warn", "bad": "broken", "unknown": "unknown"}
 SOURCES: list[Callable[[Graph, dict], None]] = []

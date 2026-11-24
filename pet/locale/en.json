@@ -2570,6 +2570,8 @@
   "panorama.ui.activity_working": "Opening…",
   "panorama.ui.activity_opened": "Opened in the browser",
   "panorama.ui.activity_failed": "Could not open it; see the fish log",
+  "panorama.ui.timeline_newtab": "Open in a new tab",
+  "panorama.ui.timeline_failed": "Could not read the timeline; see the pet's log",
   "panorama.ui.sync": "Sync now",
   "panorama.ui.sync_confirm_win": "Bring this clone and GitHub in line once?\n\nThree things happen: uncommitted changes (deletions included) become one commit; new commits on the remote are pulled in; local commits are pushed.\n\nA conflict is never merged automatically: the sync backs out and tells you, and nothing is lost on either side.",
   "panorama.ui.sync_working": "Syncing…",

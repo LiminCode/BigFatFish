@@ -22,7 +22,7 @@
 | `pet/panorama/places.py` | 存储画在图上哪里：`PLACES`（一个地方 = 几个根 + 分区 + 列 + 谁往这里写）、`OWN_TILE`、`ALSO_ON` |
 | `pet/panorama/model.py` | 图模型 `Graph`：账号带 `ZONES`、层 `TIERS`、分区、列、节点、连线、待处理；状态取值校验。没有坐标 |
 | `pet/panorama/sources.py` | 来源：若干 `@source` 纯函数，把事实翻译成节点 / 连线 / 待处理；`build(facts)` |
-| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单）、`settings.js`（设置面板：开、关、跨重画存活）、`repair.js`（待处理里的「修复」）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`client.js`（取令牌、带令牌的 fetch，两张页共用）、`boot.js`（入口：数据从哪来、等新数据、连接断了）；报告页自己的 `report.html` / `report.css` / `report.js` |
+| `pet/panorama/page/` | 页面代码，两种交付方式共用：`shell.html`（外壳）、`app.css`，和一组原生模块——`util.js`（转义、图标、颜色）、`layout.js`（版面）、`roads.js`（走线）、`draw.js`（画）、`viewer.js`（文件查看面板）、`memory.js`（记忆一览面板）、`form.js`（设置表单）、`settings.js`（设置面板：开、关、跨重画存活）、`repair.js`（待处理里的「修复」）、`timeline.js`（右栏里的时间轴）、`interact.js`（追踪、详情、搜索、筛选）、`app.js`（`start(G)` 把四步串起来）、`client.js`（取令牌、带令牌的 fetch，两张页共用）、`boot.js`（入口：数据从哪来、等新数据、连接断了）；报告页自己的 `report.html` / `report.css` / `report.js`；`activity.css`（时间轴的样式，两张页共用） |
 | `pet/panorama/render.py` | 把图变成页面要的那份数据（`page_data` / `payload`）；`shell()` / `asset()` 给本机服务；`render()` / `write()` 出离线快照 |
 | `pet/panorama/service.py` | `PanoramaService`：应用里的后台两段采集与发布；持有本机服务 |
 | `pet/panorama/server.py` | 本机回环服务 `PanoramaServer` + 路由表 `Router`：生命周期、守门检查、分发。**只用标准库、不碰 Qt** |
@@ -162,8 +162,18 @@
   从 WSL 克隆连过来，另一条连到个人克隆（它在那个克隆里，随同步推送到个人 GitHub）。没有 `MIRROR.md` 就不出这块磁贴。
 - **Obsidian 副本**（`vault_work`，Windows 第 4 列底部）：工作笔记往里写，git 经 WSL 跑；没变。
 
-三块克隆磁贴（个人、Windows 工作、WSL 工作）**正面右下角都有「时间轴」**（节点的 `face`，页面 `draw.js` 画成按钮）：点它直接开
-时间轴页，不选中磁贴；离线快照里是灰的。详情里也有同一个按钮。
+三块克隆磁贴（个人、Windows 工作、WSL 工作）**正面右下角都有「时间轴」**（节点的 `face`，页面 `draw.js` 画成按钮），详情里也有
+同一个按钮；离线快照里是灰的。
+
+**时间轴在右栏里看**（2026-11-24，`timeline.js`）：动作字典带 `show: "panel"` 的按钮不发动作，而是在右栏占详情那张卡的位置，
+显示和时间轴页同一份数据（`GET /api/report/activity`，再挂着 `?after=编号` 等更新的：刚同步 / 核对完会自己刷新）。
+- 打开时右栏不到 640px 就临时放宽到 640，关掉还原，不存；用户拖过的宽度照旧。
+- 面板头上「在新页面打开」才真的发 `open_report`、另开浏览器页（按钮上的「已在浏览器里打开」也只出现在这里，不再盖住磁贴）。
+- 「关闭」或点任一块磁贴、点待处理 / 「用到 / 被谁用」里的跳转，都把详情放回来；服务重发图、页面原地重画时它不关
+  （和设置面板一样，整页只有一个、跨重画存活）。
+- 关掉时还挂着的那个「等更新的」请求不能撤回，等服务那边超时自己结束，晚到的回答按编号丢掉。
+- 样式：`.waterfall` 那一段在 `activity.css`，时间轴页和全景页都链它（全景的离线快照内联进去）；右栏的紧凑版（列窄一档）
+  在 `app.css` 的 `.tl` 下面。
 
 ### 连接器详情
 

@@ -97,6 +97,16 @@ svg.roads{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .map.focus .frame,.map.focus .cap{opacity:.5}
 aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:60px}
 .card{background:var(--panel);padding:14px 16px}
+/* 右栏里的时间轴（timeline.js）：占详情那张卡的位置，自己滚动；表格列比整页窄一档 */
+.card.tl{display:flex;flex-direction:column;max-height:calc(100vh - 90px)}.card.tl[hidden]{display:none}
+.tlhead{display:flex;align-items:center;gap:8px}.tlhead h2{margin:0 auto 0 0}
+.tl .tlmeta{margin:6px 0 4px;font-size:12px;color:var(--muted)}
+.tl .tlbody{flex:1;min-height:0;overflow:auto;margin-right:-8px;padding-right:8px}
+.tl .waterfall{font-size:13px}.tl .waterfall h3{margin:10px 0 4px;font-size:13px}
+.tl .wrow,.tl .wrow>summary{grid-template-columns:78px 72px minmax(0,1fr) 92px;gap:8px}
+.tl .wjob{grid-template-columns:104px 72px 72px minmax(0,1fr) 56px;gap:8px}
+.tl .wsteps,.tl .waterfall ul.wcommits,.tl .werr{margin-left:0}
+.tl .wcommits li{grid-template-columns:44px 60px minmax(0,1fr) 64px;gap:8px}
 .card h2{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--muted);letter-spacing:.04em}
 .card h3{font-size:16px;font-weight:600;margin:0 0 2px}
 .kv{display:grid;grid-template-columns:92px minmax(0,1fr);gap:4px 10px;font-size:12.5px;margin:10px 0}

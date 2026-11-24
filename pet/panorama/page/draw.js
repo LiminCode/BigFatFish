@@ -8,7 +8,7 @@ const {G, Z, W, H} = M, S = G.strings || {};
 /* 磁贴正面的动作（知识库克隆上的「时间轴」）：和详情里的按钮同一种 data-*，点了由 interact.js 的 runAction 发出去。
    离线快照没有服务（served 为假）：按钮灰着，悬停说为什么 */
 const face = a => `<button class="face" data-action="${esc(a.name)}" data-words="${esc(a.words || '')}"` + (a.ask === false ? ' data-ask="0"' : '') +
-  (a.body ? ` data-body="${esc(JSON.stringify(a.body))}"` : '') + (served ? '' : ` disabled title="${esc(S.action_needs_service)}"`) +
+  (a.body ? ` data-body="${esc(JSON.stringify(a.body))}"` : '') + (a.show ? ` data-show="${esc(a.show)}"` : '') + (served ? '' : ` disabled title="${esc(S.action_needs_service)}"`) +
   `><svg viewBox="0 0 24 24">${ICONS.clock}</svg><span>${esc(S[a.words] || a.name)}</span></button>`;
 const map = document.getElementById('map');
 map.classList.toggle('redraw', !!redraw);     /* 原地重画时磁贴不再重放入场动画（样式里 .map.redraw） */

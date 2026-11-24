@@ -224,11 +224,12 @@ def test_a_storage_tile_lists_each_store_with_what_where_who_and_restore_source(
 def test_redraw_removes_the_old_listeners_and_attaches_the_same_number_again(engine):
     """重画十次也只有一套监听：每次先把上一套整个摘掉。
 
-    唯一的例外是设置面板：它整页只有一个、跨重画存活（不然重画会冲掉没保存的字），第一次画的时候挂上一个，之后不再挂。"""
+    例外是设置面板和右栏里的时间轴：它们整页只有一个、跨重画存活（不然重画会冲掉没保存的字、关掉正看着的时间轴），
+    第一次画的时候各挂上一个，之后不再挂。"""
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
     out = _redraw(engine, graph, graph, "")
-    assert out["aborted"] == 1 and out["firstListeners"] == out["secondListeners"] + 1 and out["secondListeners"] > 0
+    assert out["aborted"] == 1 and out["firstListeners"] == out["secondListeners"] + 2 and out["secondListeners"] > 0
 
 
 def test_first_draw_and_redraw_produce_the_same_map(engine):
@@ -821,3 +822,93 @@ def test_vault_tiles_open_the_timeline_straight_from_their_face(engine):
     assert all("has-face" in tiles[tile][:80] for tile in ("vault_personal", "vault_work", "vault_wsl"))
     snapshot = re.findall(r'<button class="face"[^>]*>', _run(engine, graph)["map"])
     assert len(snapshot) == 3 and all("disabled" in f for f in snapshot)
+
+
+# ───────────────────────── 时间轴在右栏里看（2026-11-24）─────────────────────────
+
+TIMELINE_HARNESS = """
+var requests = [], posted = [], replies = [], timers = [];
+var setTimeout = function (fn) { timers.push(fn); };
+function done(value, failed) {
+  return {then: function (ok, err) { var h = failed ? err : ok; if (!h) return done(value, failed);
+    try { return done(h(value), false); } catch (e) { return done(e, true); } }};
+}
+var api = function (path) { requests.push(path); var r = replies.shift();
+  if (r === undefined) return {then: function () { return this; }};          // 服务把「等更新的」挂着：谁也不会被调到
+  return r === 'gone' ? done(new Error('gone'), true) : done(r, false); };
+api.post = function (path, body) { posted.push({path: path, body: body}); return done({status: 200, body: {state: 'opened'}}, false); };
+var S = {viewer_close: '关闭', viewer_loading: '正在读取…', timeline_newtab: '在新页面打开', timeline_failed: '时间轴读不出来',
+         activity: '时间轴', activity_working: '正在打开…', activity_opened: '已在浏览器里打开'};
+var faceButton = {dataset: {action: 'open_report', words: 'activity', ask: '0', body: '{"report":"activity"}', show: 'panel'}};
+function payload(rev, html) { return {revision: rev, report: {title: '时间轴', summary: '最近 ' + rev + ' 次运行', generated: '核对于 11-24 08:00', html: html}}; }
+"""
+
+
+def _timeline(engine, steps: str) -> dict:
+    return _evaluate(engine, FAKE_DOM + TIMELINE_HARNESS + render.bundle(("util.js", "repair.js", "timeline.js")) + steps +
+                     "\nvar box = document.getElementById('timeline'), det = document.getElementById('detail');"
+                     "return JSON.stringify({requests: requests, posted: posted, html: box.innerHTML, shown: box.hidden === false,"
+                     " detailHidden: det.hidden === true, timers: timers.length});")
+
+
+def test_the_face_button_says_its_report_opens_in_the_side_panel(engine):
+    i18n.set_language("zh")
+    data = json.dumps(render.page_data(sources.build(samples.facts())), ensure_ascii=False)
+    served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
+    faces = re.findall(r'<button class="face"[^>]*>', served["map"])
+    assert len(faces) == 3 and all('data-show="panel"' in face for face in faces)
+
+
+def test_the_timeline_opens_in_the_side_panel_in_place_of_the_tile_details(engine):
+    out = _timeline(engine, "replies = [payload(3, '<div class=\"waterfall\">ROWS</div>')];"
+                            "var tl = timelinePanel(api, S); tl.openFrom(faceButton);")
+    assert out["requests"] == ["/api/report/activity", "/api/report/activity?after=3"], "先要现成的，再挂着等更新的"
+    assert out["shown"] and out["detailHidden"], "时间轴占了详情那张卡的位置"
+    assert '<div class="waterfall">ROWS</div>' in out["html"] and "最近 3 次运行" in out["html"] and "核对于 11-24 08:00" in out["html"]
+    assert 'data-tl-close="1"' in out["html"] and ">关闭<" in out["html"]
+    assert 'data-action="open_report"' in out["html"] and ">在新页面打开<" in out["html"] and "data-show" not in out["html"], \
+        "「在新页面打开」走原来的动作，不再进右栏"
+    assert out["posted"] == [], "在右栏看不发 open_report"
+
+
+def test_newer_timeline_data_redraws_the_panel_and_waits_again(engine):
+    out = _timeline(engine, "replies = [payload(3, 'OLD'), payload(4, 'NEW')];"
+                            "var tl = timelinePanel(api, S); tl.openFrom(faceButton);")
+    assert out["requests"] == ["/api/report/activity", "/api/report/activity?after=3", "/api/report/activity?after=4"]
+    assert "NEW" in out["html"] and "OLD" not in out["html"]
+    nothing_new = _timeline(engine, "replies = [payload(3, 'OLD'), null];"
+                                    "var tl = timelinePanel(api, S); tl.openFrom(faceButton);")
+    assert nothing_new["timers"] == 1 and "OLD" in nothing_new["html"], "这段时间没有新的：隔一会儿再去等"
+
+
+def test_closing_the_timeline_brings_the_details_back_and_ignores_late_answers(engine):
+    out = _timeline(engine, "var tl = timelinePanel(api, S); tl.openFrom(faceButton); tl.close();"
+                            "replies = [payload(9, 'LATE')];")
+    assert not out["shown"] and not out["detailHidden"] and out["html"] == ""
+    late = _timeline(engine, "var tl = timelinePanel(api, S); var first = api; replies = [];"
+                             "tl.openFrom(faceButton); tl.close(); tl.isOpen() && (box.innerHTML = 'still');")
+    assert late["html"] == ""
+
+
+def test_a_timeline_that_cannot_be_read_says_so_and_stops_asking(engine):
+    out = _timeline(engine, "replies = ['gone']; var tl = timelinePanel(api, S); tl.openFrom(faceButton);")
+    assert out["shown"] and "时间轴读不出来" in out["html"] and out["requests"] == ["/api/report/activity"]
+
+
+def test_without_a_service_the_timeline_panel_never_opens(engine):
+    out = _timeline(engine, "var tl = timelinePanel(null, S); tl.openFrom(faceButton);")
+    assert not out["shown"] and out["requests"] == []
+
+
+def test_the_new_tab_button_inside_the_panel_still_opens_the_page(engine):
+    out = _timeline(engine, "replies = [payload(3, 'ROWS')]; var tl = timelinePanel(api, S); tl.openFrom(faceButton);"
+                            "var btn = {dataset: {action: 'open_report', words: 'activity', ask: '0', body: '{\"report\":\"activity\"}'},"
+                            " disabled: false, textContent: ''}; runAction(api, S, btn);")
+    assert out["posted"] == [{"path": "/api/actions/open_report", "body": {"report": "activity"}}]
+
+
+def test_both_pages_carry_the_timeline_styles():
+    assert "activity.css" in render.STYLES and "activity.css" in render.REPORT_STYLES
+    assert ".waterfall{" in render.render(sources.build(samples.facts())), "离线快照也带着（样式内联进页面）"
+    assert 'href="/activity.css"' in render.shell() and 'href="/activity.css"' in render.report_shell()
+    assert ".waterfall{" not in render.asset("report.css").decode("utf-8"), "只在一处定义"
