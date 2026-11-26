@@ -211,12 +211,20 @@ def upstream_state(repo_dir: str | Path, *, run: GitRunner = run_git) -> dict:
 
 
 def sync_path(repo_dir: str | Path, rel_path: str | list[str], message: str, *, run: GitRunner = run_git,
-              token: str = "") -> tuple[bool, str]:
-    """仓库里的一个或几个文件：add → 有变化才 commit → pull --rebase → push（随手记、会话记忆镜像共用）。"""
+              token: str = "", removed: list[str] | tuple = ()) -> tuple[bool, str]:
+    """仓库里的一个或几个文件：add → 有变化才 commit → pull --rebase → push（随手记、随手记的整理、会话记忆镜像共用）。
+
+    ``removed``：这次删掉的文件（随手记整理完，收件箱那条和它的图）。用 ``rm --cached --ignore-unmatch`` 记下删除：
+    git 从没见过的路径（还没提交过就被整理掉的）不算错。"""
     paths = [rel_path] if isinstance(rel_path, str) else list(rel_path)
-    code, out = run(repo_dir, ["add", "--", *paths])
-    if code != 0:
-        return False, out.strip()[-300:]
+    if paths:
+        code, out = run(repo_dir, ["add", "--", *paths])
+        if code != 0:
+            return False, out.strip()[-300:]
+    if removed:
+        code, out = run(repo_dir, ["rm", "--cached", "-q", "--ignore-unmatch", "--", *removed])
+        if code != 0:
+            return False, out.strip()[-300:]
     code, out = run(repo_dir, ["diff", "--cached", "--quiet"])
     if code == 1:
         code, out = run(repo_dir, ["commit", "-q", "-m", message])

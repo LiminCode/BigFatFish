@@ -188,7 +188,18 @@ def describe(run: dict) -> str:
         return t("activity.did.failed")
     if result == "noop":
         return t("activity.result.noop")
-    extra = next((e for e in run.get("effects") or [] if isinstance(e, dict) and e.get("kind") in ("model", "found")), None)
+    effects = [e for e in run.get("effects") or [] if isinstance(e, dict)]
+    notes = next((e for e in effects if e.get("kind") == "notes"), None)
+    extra = next((e for e in effects if e.get("kind") in ("model", "found")), None)
+    if notes is not None:                                   # 随手记的整理：整理了几条、还剩几条、用的模型
+        model = extra or {}
+        text = t("activity.did.organized", n=notes.get("organized", 0))
+        if notes.get("left"):
+            text += " · " + t("activity.did.inbox_left", n=notes["left"])
+        if notes.get("skipped") or notes.get("failed"):
+            text += " · " + t("activity.did.held", n=int(notes.get("skipped") or 0) + int(notes.get("failed") or 0))
+        return text + " · " + t("activity.did.model_cost", model=model.get("model") or "?",
+                                tokens=int(model.get("tokens_in") or 0) + int(model.get("tokens_out") or 0))
     if extra and extra["kind"] == "model":                  # 调模型的功能（简报）：用了哪个模型、多少 token
         return t("activity.did.generated", model=extra.get("model") or "?", tokens=int(extra.get("tokens_in") or 0) + int(extra.get("tokens_out") or 0))
     if extra and extra["kind"] == "found":                  # 去看了一眼的功能（Slack 关注）：新的有几条

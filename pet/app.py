@@ -3226,6 +3226,44 @@ class AppShell:
             self._record_runs("personal_briefing", service)           # 最后接运行记录：它是旁路，前面那些才是这个功能自己要的
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("个人助理接线失败")
+            return
+        self._start_capture_organizer(service)
+
+    def _start_capture_organizer(self, personal_service) -> None:
+        """随手记的整理任务（可选服务，2026-11-25，ADR 0021）：记下后等几分钟、启动后、每小时兜底，个人 key 照知识库里的规矩
+        把 0-Inbox 整理成笔记。和随手记推送共用个人助理那把 git 锁。跑完：全景重探（磁贴的历史条）、个人简报页重画、冒一句气泡。"""
+        if getattr(self, "_capture_organizer", None) is not None:
+            return
+        try:
+            from . import capture_organize
+            from .capture_service import CaptureOrganizer
+
+            organizer = self._capture_organizer = CaptureOrganizer(self.config, lock=personal_service.git_lock, parent=self.app)
+            personal_service.capture_saved.connect(organizer.note_capture)
+            organizer.finished.connect(self._on_captures_organized)
+            organizer.start()
+            self._record_runs(capture_organize.JOB, organizer)
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("随手记整理接线失败")
+
+    def _on_captures_organized(self, result, manual: bool) -> None:
+        """（界面线程）一次整理跑完了。整理了就说一声几条；有整理不了的，说第一条的原因（它们之后不会自动重试，只说这一次）；
+        失败只说一次（同样的失败不每小时念一遍），手点的每次都说。"""
+        panorama = getattr(self, "_panorama_service", None)
+        if panorama is not None and shiboken6.isValid(panorama):
+            panorama.refresh("win")
+        self._publish_report("personal_briefing")
+        said, self._capture_organize_said = getattr(self, "_capture_organize_said", ""), result.state
+        if self._overlay_shell is None:
+            return
+        held = t("capture.bubble.held", n=len(result.held), reason=str(result.held[0][1])[:120]) if result.held else ""
+        if result.state == "ok":
+            text = t("capture.bubble.organized", n=result.organized)
+            self._overlay_shell.show_bubble(f"{text}。{held}" if held else text, 8000 if held else 5000)
+        elif result.state == "needs_you":
+            self._overlay_shell.show_bubble(held, 8000)
+        elif result.state == "failed" and (manual or said != "failed"):
+            self._overlay_shell.show_bubble(t("capture.bubble.failed"), 6000)
 
     def _start_vault_sync(self) -> None:
         """知识库定时同步（可选服务，2026-11-22）：每分钟看一眼该不该跑，开关默认关。不需要 WSL、不调模型。
@@ -3543,7 +3581,8 @@ class AppShell:
         try:
             from . import run_recording
 
-            outcome = {run_recording.SLACK_WATCH: run_recording.slack_outcome}.get(job, run_recording.briefing_outcome)
+            outcome = {run_recording.SLACK_WATCH: run_recording.slack_outcome,
+                       run_recording.CAPTURE_ORGANIZE: run_recording.organize_outcome}.get(job, run_recording.briefing_outcome)
 
             def timeline_changed() -> None:
                 panorama = getattr(self, "_panorama_service", None)
@@ -3625,6 +3664,8 @@ class AppShell:
                          panorama_actions.OPEN_REPORT_ACTION: panorama_actions.open_report(
                              lambda name: self._panorama_service.open_report(name)),
                          panorama_reports.CAPTURE_ACTION: panorama_reports.add_capture(personal_service),
+                         panorama_reports.ORGANIZE_ACTION: panorama_reports.organize_captures(
+                             lambda: getattr(self, "_capture_organizer", None)),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),
                          panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,

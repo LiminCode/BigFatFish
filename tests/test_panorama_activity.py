@@ -191,6 +191,20 @@ def test_the_page_says_what_each_row_did_in_plain_words():
     assert "2026-11-22" in html, "按天分组的小标题"
 
 
+def test_an_organize_run_says_how_many_captures_it_turned_into_notes_and_carries_its_commit():
+    run = {"id": "1", "job": "capture_organize", "trigger": "schedule", "at": "2026-11-22 16:00:00", "seconds": 40.0, "result": "ok",
+           "steps": [], "effects": [{"kind": "model", "model": "claude-sonnet-5-5", "effort": "", "tokens_in": 2000, "tokens_out": 400, "turns": 3},
+                                    {"kind": "notes", "organized": 2, "skipped": 1, "failed": 0, "left": 1},
+                                    {"kind": "git", "op": "commit", "repo": "personal", "pushed_ids": ["bbbbbbbbbbbb"]}]}
+    assert activity.describe(run) == "整理 2 条 · 收件箱还剩 1 条 · 1 条整理不了，等你 · claude-sonnet-5-5 · 2400 tokens"
+    rows = activity.timeline([run], [_commit("bbbbbbbbbbbb", "16:00:05", "Dev", "Notes: 2 captures", 3)])
+    assert len(rows) == 1 and rows[0]["commits"][0]["id"] == "bbbbbbbbbbbb", "整理推上去的提交挂在那次运行下面"
+    html = activity.render(rows, activity.job_status([run]))
+    assert "整理随手记" in html
+    held = {**run, "result": "needs_you", "effects": [run["effects"][0], {"kind": "notes", "organized": 0, "skipped": 1, "failed": 0, "left": 1}]}
+    assert activity.describe(held) == "整理 0 条 · 收件箱还剩 1 条 · 1 条整理不了，等你 · claude-sonnet-5-5 · 2400 tokens"
+
+
 def test_a_pushed_commit_says_which_repo_what_it_is_and_which_files_it_touched():
     """「推送了什么要在瀑布流里写清楚」：一个提交的行直接写标题；展开看正文和改动的文件。外面来的字照样转义。"""
     work = {**_commit("bbbbbbbbbbbb", "22:04:00", "Limin", "workstation: mirror <x> / 镜像", 2), "repo": "work",
@@ -282,5 +296,5 @@ def test_every_trigger_result_and_known_job_has_a_name_in_both_languages(languag
 
     table = i18n.table(language)
     wanted = [f"activity.trigger.{name}" for name in run_journal.TRIGGERS] + [f"activity.result.{name}" for name in run_journal.RESULTS]
-    wanted += [f"activity.job.{name}" for name in (vault_sync.JOB, actions.CHECK_JOB)]
+    wanted += [f"activity.job.{name}" for name in (vault_sync.JOB, actions.CHECK_JOB, "capture_organize")]
     assert [key for key in wanted if not str(table.get(key) or "").strip()] == []

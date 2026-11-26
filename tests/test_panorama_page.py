@@ -815,14 +815,14 @@ def test_vault_tiles_open_the_timeline_straight_from_their_face(engine):
     data = json.dumps(render.page_data(graph), ensure_ascii=False)
     served = _evaluate(engine, FAKE_DOM + render.bundle(render.MODULES[:-1]) + f"\nvar size = start({data}, undefined, function () {{}});" + REPORT)
     faces = re.findall(r'<button class="face"[^>]*>', served["map"])
-    assert len(faces) == 8 and all('data-action="open_report"' in f and 'data-ask="0"' in f and "disabled" not in f for f in faces)
-    assert served["map"].count(">时间轴</span>") == 4 and served["map"].count(">查看</span>") == 4
+    assert len(faces) == 9 and all('data-action="open_report"' in f and 'data-ask="0"' in f and "disabled" not in f for f in faces)
+    assert served["map"].count(">时间轴</span>") == 4 and served["map"].count(">查看</span>") == 5
     tiles = {re.match(r'[^"]*" data-id="([^"]+)"', chunk).group(1): chunk for chunk in served["map"].split('<div class="tile ')[1:]}
     timeline = {"vault_personal", "vault_work", "vault_wsl", "f_vault_sync"}
     assert {tile for tile, body in tiles.items() if 'class="face"' in body and ">时间轴</span>" in body} == timeline
     assert all("has-face" in tiles[tile][:80] for tile in timeline)
     snapshot = re.findall(r'<button class="face"[^>]*>', _run(engine, graph)["map"])
-    assert len(snapshot) == 8 and all("disabled" in f for f in snapshot)
+    assert len(snapshot) == 9 and all("disabled" in f for f in snapshot)
 
 
 def test_feature_tiles_open_their_own_page_from_the_face(engine):
@@ -833,7 +833,7 @@ def test_feature_tiles_open_their_own_page_from_the_face(engine):
     faces = re.findall(r'<button class="face".*?</button>', served["map"])
     pages = [f for f in faces if ">查看</span>" in f]
     assert sorted(re.search(r'&quot;report&quot;:&quot;(\w+)&quot;', f).group(1) for f in pages) == \
-        ["personal_briefing", "slack_watch", "work_briefing", "work_notes"]
+        ["personal_briefing", "personal_briefing", "slack_watch", "work_briefing", "work_notes"]   # 个人助理和随手记开同一张页
     assert all("data-show" not in f and 'data-words="open_page"' in f for f in pages)
     clock = next(f for f in faces if ">时间轴</span>" in f)
     assert all(re.search(r"<svg.*?</svg>", f).group(0) != re.search(r"<svg.*?</svg>", clock).group(0) for f in pages)

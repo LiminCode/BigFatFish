@@ -39,6 +39,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from . import capture_organize as co
 from . import claude_hooks
 from . import memory_distill as md
 from .click_sound import BUILTIN_AGENT_SOUNDS      # 导入时不碰 Qt（QtMultimedia 在它里面是惰性的）
@@ -454,6 +455,17 @@ GROUPS: tuple[Group, ...] = (
                 labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS)),
                 text="personal.settings.effort"),
     ), title_key="personal.settings.section"),
+    # 随手记的整理：个人 key 照知识库里那份规矩把 0-Inbox 整理成 9-Learning/Notes 下的笔记（ADR 0021）。生来就在页面上。
+    # 开关只管自动的几种（记下后、启动后、每小时），「现在整理」不看它。仓库在哪是个人助理那一组的「仓库副本目录」。
+    Group("capture", "briefing", co.CONFIG_KEY, "personal", co.normalize, (
+        Setting("enabled", "toggle"),
+        Setting("delay_minutes", "number", bounds=co.DELAY_RANGE, unit="settings.unit.minutes", depends_on="enabled"),
+        Setting("max_per_run", "number", bounds=co.BATCH_RANGE),
+        Setting("model", "choice_or_text", choices=("", *pv.MODEL_CHOICES), labels=(("", _FOLLOW_CHAT),)),
+        Setting("effort", "choice", choices=("", *pv.EFFORT_LEVELS),
+                labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS))),
+        Setting("prompt", "long_text", disclosure="advanced", builtin=lambda _effective: co.default_prompt_template()),
+    ), title_key="settings.capture.section"),
     # 知识库定时同步：每隔一阵、停笔后，把个人知识库的克隆和远端对齐。不调模型、不靠 WSL。默认关：它会替用户提交和推送。
     # 克隆在哪是个人助理那一组的「仓库副本目录」，这里不重复放。两个分钟数由 vault_sync.normalize 夹在范围里。
     Group("vault_sync", "automation", vs.CONFIG_KEY, "personal", vs.normalize, (

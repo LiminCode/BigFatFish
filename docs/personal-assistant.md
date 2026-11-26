@@ -10,6 +10,8 @@
 |---|---|
 | `pet/personal_vault.py` | 零 Qt、不导入 `pet.chat`。配置键 `personal`、Windows 的 git（`run_git` / `token_env` / `sync_path`）、`obsidian_vault_uri` |
 | `pet/capture_inbox.py` | 零 Qt、不调 AI、不碰 git。随手记写进收件箱：`write_capture`（一条一个文件 + 图片）、`decode_images`（页面发来的图）、`commit_message` |
+| `pet/capture_organize.py` | 零 Qt。随手记的整理：配置键 `capture`、`pending`、`build_request`、`shape`（收模型的输出）/ `apply`（落盘）、`run`（一次运行）、整理不了的记录 `capture-organize.json` |
+| `pet/capture_service.py` | `CaptureOrganizer`：记下后 / 启动后 / 每小时 / 「现在整理」，后台线程，结果排回界面线程 |
 | `pet/personal_briefing.py` | 提示词、`GuardedKnowledgeBase`（拒绝名单）/ `RecordingToolset`（记读过的文件）、`generate`、状态文件 `personal-briefing.json` |
 | `pet/personal_service.py` | `PersonalService`：每分钟 `check()`，线程里先 `pull` 再 `generate`；随手记落盘后后台推送（一把 git 锁） |
 | `pet/personal_ui.py` / `pet/settings_personal.py` | `PersonalController`（「查看」开浏览器里的简报页；岛状态、提醒、推送失败的气泡、`open_obsidian`）；设置节 |
@@ -87,7 +89,7 @@ sequenceDiagram
 - **用 Windows 的 `git.exe`，不经 WSL**（那边登录的是公司账号）：`sync_path(repo, [笔记, 图片…], message)`——`add` 这几个路径
   → 有变化才 `commit` → `pull --rebase --autostash` → `push`。pull 失败就 `rebase --abort` 并报告，本地文件保留；永远不 force。
   提交说明只有时间（`capture: YYYY-MM-DD HH:MM`），日志也不记正文。
-- 还没做：AI 整理（读收件箱、照规矩写进 `9-Learning/Notes/`）和复习提醒，见路线图；在那之前，手机上的 Claude Code 会话照规矩整理。
+- 复习提醒还没做，见路线图；在那之前，复习在手机上的 Claude Code 会话里照规矩问。
 - **Token 不进命令行**：钥匙串里的 GitHub Token 经 `GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n` 环境变量注入
   （清空 `credential.helper` + 给 `http.https://github.com/.extraheader` 加认证头），不进 argv、不进 `.git/config`；只有碰
   远端的 pull / push 带它。
@@ -95,6 +97,49 @@ sequenceDiagram
   超时放宽到 240 秒）再试一次；还失败就在原因后面附上 Token 的权限范围（classic PAT 的 `X-OAuth-Scopes`；细粒度 Token 没有
   这个头）。
 - `personal_vault.py` 不能在导入时依赖 `pet.chat`：`config.py` 导入期就要用它的 `normalize`，Token 的读取是惰性导入。
+
+### 随手记的整理（2026-11-25 起）
+
+收件箱里的每一条，让肥鱼自己的 Claude（个人 key）照库里 `9-Learning/Notes/README.md` 的规矩整理成 `9-Learning/Notes/` 下的
+一条笔记。手机上的 Claude 读的是同一份规矩：**改怎么整理就改那份 README**，提示词设置只管怎么问。
+
+```mermaid
+sequenceDiagram
+    participant S as CaptureOrganizer（界面线程）
+    participant W as 后台线程 capture_organize.run
+    participant M as Claude（个人 key，只读 kb_* 工具）
+    participant R as AI-Base 克隆
+    S->>W: 记下后 N 分钟 / 启动后 1 分钟 / 每小时 / 「现在整理」
+    W->>R: 锁里 git pull
+    loop 每条（最多 max_per_run 条）
+        W->>M: 规矩全文 + 这一条原文 + 图片块
+        M->>R: kb_read / kb_search 找关联（只读）
+        M-->>W: 一条完整笔记，或 SKIP: 原因
+    end
+    W->>R: 锁里：挪图、写笔记、删收件 → 一个提交 Notes: … → pull --rebase → push
+    W-->>S: Result（排队信号）→ 记下整理不了的、运行记录、气泡、全景重探
+```
+
+- **模型只读，写盘全在代码里**（`capture_organize.shape` / `apply`）：frontmatter 里的 `captured` / `via` / `review` 三行按收件和
+  规矩重写（复习从记下的第二天开始、档位从头算）；文件名 `<记下的日期> <标题>.md`，同名加「 2」，**只新建、从不覆盖**；图片挪到
+  `9-Learning/Notes/assets/<笔记名>-N.ext`、正文引用跟着改，模型漏掉的嵌入补在「要点」前面；缺署名补一行。规矩读不到时用
+  `FALLBACK_RULES`（只有四段格式）。
+- **一次运行一个提交**：`Notes: <标题>`，几条一起是 `Notes: N captures`，正文 `from 0-Inbox/<文件名>`。删掉的收件经
+  `sync_path(..., removed=[…])` 的 `git rm --cached --ignore-unmatch` 记下（还没提交过的不算错）。推上去的提交号进运行记录，
+  时间轴把那个提交挂在这次运行下面。
+- **出错怎么办**：模型调用失败（key、网络、额度）就停在那一条，后面的不再试；回的不是笔记（没有 frontmatter 或标题）的那条跳过；
+  推送失败时笔记已经在本地提交了，下一次推送会带上。
+- **整理不了的不白花钱**：模型回 `SKIP: 原因`、或回的不是笔记，那一条留在收件箱，路径、当时的修改时间和大小、原因记进本机的
+  `capture-organize.json`。自动的几种（记下后、启动后、每小时）跳过没改过的；改过那条、或点「现在整理」才重试。这种运行在运行
+  记录里是「等你」，气泡说出第一条的原因。
+- **什么时候跑**：记下后等 `delay_minutes`（默认 2，连着记攒成一次；0 = 立刻）；启动后 1 分钟、每小时一次，收件箱里有（没被记成
+  整理不了的）东西才跑，空的连运行记录都不写；配置全景随手记磁贴上的「现在整理」开关关着也跑。git 和随手记推送共用
+  `PersonalService.git_lock`（改走同步器的那把锁是路线图另一项）。
+- **设置在配置全景上**（`capture` 组，生来就在页面上）：开关（默认开）、等几分钟、一次最多几条、模型 / 思考强度（空 = 跟 AI 对话）、
+  提示词模板（`{rules}` `{capture}` `{file}` `{now}`，留空用内置）。仓库在哪仍是个人助理那一组的「仓库副本目录」。
+- **量级**（2026-11-25 实测，claude-opus-5-5 · medium）：一条带一张截图约 20 秒、3 轮工具、输入约 1.7 万 token、输出约 950。
+  每小时兜底那一下只列目录（5 条时 0.17 毫秒），收件箱空或全是整理不了的就不调模型。
+- 日志和运行记录只记条数、用时、token、提交号；标题和正文只在提交说明和笔记里（都在私有库）。
 
 ### 在 Obsidian 打开
 
@@ -200,7 +245,8 @@ sequenceDiagram
 - **git**：`GIT_CONFIG_COUNT` 系列环境变量、`GIT_TERMINAL_PROMPT=0`；认证失败靠输出里的字样判断（`_AUTH_FAILED_MARKS`）。
 - **Obsidian**：`%APPDATA%\obsidian\obsidian.json` 的 `vaults.<id>.path`；`obsidian://open?path=`。
 - **系统钥匙串**：服务名 `big-fat-fish`（读不到时回退旧服务名），条目 `connector/github`——连接器、知识库同步、随手记推送共用。
-- 本机数据：`%APPDATA%/big-fat-fish/knowledge-base/{current,state.json}`、`personal-briefing.json`。
+- 本机数据：`%APPDATA%/big-fat-fish/knowledge-base/{current,state.json}`、`personal-briefing.json`、`capture-organize.json`
+  （整理不了的那几条；丢了最多再问一次模型）。
 
 ## 排障
 

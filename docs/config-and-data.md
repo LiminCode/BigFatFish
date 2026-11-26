@@ -152,6 +152,8 @@ Token 与知识库同步 / GitHub 连接器共用（钥匙串 `connector/github`
   - 知识库的核对和同步（任务 `vault_check` / `vault_sync`，手点的和定时的，见[知识库同步](vault-sync.md)）：效果是 `git`；
   - 工作简报、个人简报（`work_briefing` / `personal_briefing`）：效果是 `model`（模型名、effort、token 数、轮数）；
   - Slack 关注（`slack_watch`）：效果是 `found`（看到几条、新的几条、轮数）；有新的 = `ok`，没有 = `noop`。
+  - 随手记的整理（`capture_organize`，2026-11-25，`organize_outcome`）：效果是 `model`、`notes`（整理 / 跳过 / 失败 / 剩下几条），
+    推上去了再加一条 `git`（`op: commit`、`pushed_ids`）；全都整理不了 = `needs_you`。笔记标题不进运行记录。
 - **后三个服务一行都没改**：`pet/run_recording.py` 的 `Recorder` 接在它们的 `started(手动?)` / `finished(结果, 手动?, …)` 信号上，
   开始时开一条、结束时落盘（`AppShell._record_runs`）。每个功能一个「怎么读结果」的函数（`briefing_outcome` / `slack_outcome`），
   只取数——概要、正文、标题不进运行记录。记录器绝不往外抛：它和界面收结果是同一批槽，出错只记日志。它是最后才接上的：

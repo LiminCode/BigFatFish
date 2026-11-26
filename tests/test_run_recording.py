@@ -82,6 +82,35 @@ def test_a_slack_check_is_ok_only_when_it_found_something_new(tmp_path, result, 
     assert (row["result"], row["effects"][0]) == expected and "title" not in str(row)
 
 
+def test_organizing_captures_records_counts_cost_and_the_commit_but_no_titles(tmp_path):
+    from pet import capture_organize as co
+
+    recorder, journal, _ = _recorder(tmp_path, rr.CAPTURE_ORGANIZE, rr.organize_outcome)
+    recorder.started(False)
+    recorder.finished(co.Result(ok=True, state="ok", organized=2, skipped=1, left=1, notes=["9-Learning/Notes/2026-11-24 Secret title.md"],
+                                model="claude-sonnet-5-5", effort="medium", tokens_in=2400, tokens_out=600, turns=4,
+                                commit="0123456789ab"), False)
+    row, = journal.read()
+    assert (row["job"], row["result"]) == ("capture_organize", "ok")
+    assert row["effects"] == [
+        {"kind": "model", "model": "claude-sonnet-5-5", "effort": "medium", "tokens_in": 2400, "tokens_out": 600, "turns": 4},
+        {"kind": "notes", "organized": 2, "skipped": 1, "failed": 0, "left": 1},
+        {"kind": "git", "op": "commit", "repo": "personal", "pushed_ids": ["0123456789ab"]}]
+    assert "Secret" not in str(row), "运行记录里没有笔记标题"
+
+
+@pytest.mark.parametrize(("state", "expected"), [("noop", "noop"), ("failed", "failed")])
+def test_an_organize_run_with_nothing_done_has_no_git_effect(tmp_path, state, expected):
+    from pet import capture_organize as co
+
+    recorder, journal, _ = _recorder(tmp_path, rr.CAPTURE_ORGANIZE, rr.organize_outcome)
+    recorder.started(True)
+    recorder.finished(co.Result(ok=state != "failed", state=state, error="认证失败" if state == "failed" else ""), True)
+    row, = journal.read()
+    assert (row["trigger"], row["result"]) == ("manual", expected)
+    assert [effect["kind"] for effect in row["effects"]] == ["model", "notes"]
+
+
 def test_someone_is_told_after_each_row_and_their_failure_changes_nothing(tmp_path):
     told = []
     recorder, journal, _ = _recorder(tmp_path, rr.WORK_BRIEFING, rr.briefing_outcome, after=lambda: told.append(1))

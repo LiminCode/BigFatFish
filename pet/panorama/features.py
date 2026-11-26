@@ -17,6 +17,7 @@ import sys
 from dataclasses import dataclass
 from typing import Callable
 
+from .. import capture_organize as co
 from .. import memory_distill as md
 from .. import personal_vault as pv
 from .. import slack_watch
@@ -56,6 +57,15 @@ def _distill(side):
 def _personal(cfg):
     s = pv.normalize(cfg.get(pv.CONFIG_KEY))
     return _settings(s["enabled"], s["model"], s["effort"], s["time"])
+
+
+def _capture(cfg):
+    s = co.normalize(cfg.get(co.CONFIG_KEY))
+    return _settings(s["enabled"], s["model"], s["effort"], prompt_chars=_chars(s, "prompt"))
+
+
+#: 随手记磁贴详情里的「现在整理」：不先问（只整理收件箱、照私有库里的规矩），结果写在按钮上
+ORGANIZE_ACTION = {"name": "organize_captures", "words": "organize", "ask": False, "body": {}}
 
 
 def _vault_sync(cfg):
@@ -115,6 +125,7 @@ class Feature:
     late: str = ""                        # 该跑没跑怎么算（LATE_RULES）；空 = 不判断（Slack 关注只在人在的时候跑）
     report: str = ""                      # 它在浏览器里那张页（PanoramaService 登记的报告名）：有了磁贴正面就有「查看」；
                                           # activity = 时间轴，在右栏里看
+    more: tuple = ()                      # 详情里「查看」后面的动作按钮（页面上的动作 dict，见 repair.js）
 
 
 #: ``Feature.late``：``interval`` = 超过两个周期没跑（周期是那项功能的「每 N 分钟」）；``daily`` = 每天一次的，超过四天没跑
@@ -142,6 +153,9 @@ FEATURES: tuple[Feature, ...] = (
     Feature("assistant", "personal", "user", "personal", _personal, note="assistant",
             writes=(("vault_personal", "memory", _always),), jobs=("personal_briefing",), late="daily",
             report="personal_briefing"),
+    # 随手记的整理（ADR 0021）：个人 key 把知识库的收件箱整理成笔记。「查看」开个人简报页——随手记的输入框在那一页顶上
+    Feature("capture", "personal", "book", co.CONFIG_KEY, _capture, note="capture",
+            writes=(("vault_personal", "memory", _always),), jobs=(co.JOB,), report="personal_briefing", more=(ORGANIZE_ACTION,)),
     # 知识库定时同步：不调模型，肥鱼自己的 git 把个人知识库的克隆和远端对齐。磁贴上的节奏、上次 / 下次、运行历史条
     # 由 sources.vault_schedule 补上（它们来自运行记录，不是配置）。
     Feature("vault_sync", "link", "repo", "vault_sync", _vault_sync, note="vault_sync",
