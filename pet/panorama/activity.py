@@ -189,6 +189,9 @@ def describe(run: dict) -> str:
     if result == "noop":
         return t("activity.result.noop")
     effects = [e for e in run.get("effects") or [] if isinstance(e, dict)]
+    reviewed = next((e for e in effects if e.get("kind") == "reviewed"), None)
+    if reviewed is not None:                                # 复习打完分之后的推送：推了几条
+        return t("activity.did.reviewed", n=reviewed.get("notes", 0))
     notes = next((e for e in effects if e.get("kind") == "notes"), None)
     extra = next((e for e in effects if e.get("kind") in ("model", "found")), None)
     if notes is not None:                                   # 随手记的整理：整理了几条、还剩几条、用的模型

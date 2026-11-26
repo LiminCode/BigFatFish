@@ -66,6 +66,8 @@ def _capture(cfg):
 
 #: 随手记磁贴详情里的「现在整理」：不先问（只整理收件箱、照私有库里的规矩），结果写在按钮上
 ORGANIZE_ACTION = {"name": "organize_captures", "words": "organize", "ask": False, "body": {}}
+#: 随手记磁贴详情里的「复习」：开复习页（今天到期的笔记，一次一张卡）
+REVIEW_ACTION = {"name": "open_report", "words": "review_open", "ask": False, "body": {"report": "review"}, "icon": "eye"}
 
 
 def _vault_sync(cfg):
@@ -155,7 +157,7 @@ FEATURES: tuple[Feature, ...] = (
             report="personal_briefing"),
     # 随手记的整理（ADR 0021）：个人 key 把知识库的收件箱整理成笔记。「查看」开个人简报页——随手记的输入框在那一页顶上
     Feature("capture", "personal", "book", co.CONFIG_KEY, _capture, note="capture",
-            writes=(("vault_personal", "memory", _always),), jobs=(co.JOB,), report="personal_briefing", more=(ORGANIZE_ACTION,)),
+            writes=(("vault_personal", "memory", _always),), jobs=(co.JOB,), report="personal_briefing", more=(ORGANIZE_ACTION, REVIEW_ACTION)),
     # 知识库定时同步：不调模型，肥鱼自己的 git 把个人知识库的克隆和远端对齐。磁贴上的节奏、上次 / 下次、运行历史条
     # 由 sources.vault_schedule 补上（它们来自运行记录，不是配置）。
     Feature("vault_sync", "link", "repo", "vault_sync", _vault_sync, note="vault_sync",

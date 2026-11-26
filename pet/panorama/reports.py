@@ -78,9 +78,10 @@ def work_briefing(service_of: Callable[[], object], config) -> Callable[[], dict
     return build
 
 
-def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], dict]:
+def personal_briefing(service_of: Callable[[], object], config, review_of: Callable[[], object] | None = None) -> Callable[[], dict]:
     """个人简报的 provider。``service_of()`` 给 ``PersonalService``（没装聊天模块时是 None）。
-    和工作简报同一张页；没有运行记录那套事件流，「这次是怎么生成的」只有一段：怎么连的、读了哪些文件、pull 成没成。"""
+    和工作简报同一张页；没有运行记录那套事件流，「这次是怎么生成的」只有一段：怎么连的、读了哪些文件、pull 成没成。
+    ``review_of()`` 给 ``ReviewService``：今天有到期的笔记，副按钮里多一个「复习 N 条」，开复习页。"""
     def build() -> dict:
         service = service_of()
         data = {
@@ -93,6 +94,15 @@ def personal_briefing(service_of: Callable[[], object], config) -> Callable[[], 
                          "label": t("personal.button.obsidian"), "hint": t("personal.button.obsidian_hint")}],
             "composer": capture_composer(service), "details": [], "settings_focus": "personal",
         }
+        review = review_of() if review_of is not None else None
+        if review is not None and service is not None:
+            try:
+                count = review.due_count()
+            except OSError:
+                count = 0
+            if count:
+                data["actions"].insert(0, {"name": "open_report", "report": REVIEW, "label": t("review.button.open", n=count),
+                                           "hint": t("review.button.open_hint")})
         if service is None:
             return data
         data["busy"] = bool(service.busy)
@@ -197,6 +207,94 @@ def organize_captures(organizer_of: Callable[[], object]) -> Callable[[object], 
         if organizer is None:
             raise ActionError(503, "unavailable")
         return {"state": organizer.organize_now()}
+    return run
+
+
+# ───────────────────────── 复习页 ─────────────────────────
+
+REVIEW = "review"                                  # 复习页的报告名（/report/review）
+REVIEW_ACTION = "review"                           # 复习页上的动作：打分 / 现在推送
+REVIEW_PAGE = "review"
+_KINDS = ("post", "book", "screenshot", "thought", "article")
+
+
+def review_card(note, today: dt.date) -> dict:
+    """一条到期的笔记 → 复习页的一张卡。要点和「我的话」渲染成 HTML（转义过）；每个回答带「下次几天后」。"""
+    from .. import capture_review as cr
+
+    state = {"interval": note.interval, "count": note.count, "lapses": note.lapses}
+    choices = []
+    for answer in cr.ANSWERS:
+        days = cr.grade(state, answer, today)["interval"]
+        choices.append({"answer": answer, "label": t(f"review.answer.{answer}"), "hint": t("review.answer.hint", n=days)})
+    source = str(note.source or "")
+    return {"path": note.path, "title": note.title, "kind": note.kind,
+            "kind_text": t(f"review.kind.{note.kind}") if note.kind in _KINDS else note.kind,
+            "captured": note.captured[:10], "source": source, "source_link": source.startswith(("http://", "https://")),
+            "points_html": markdown.render(note.points) if note.points else "",
+            "words_html": markdown.render(note.words) if note.words else "",
+            "interval": note.interval, "count": note.count, "lapses": note.lapses, "choices": choices}
+
+
+def review_sync_text(service) -> str:
+    """推送那一行：正在推 / 几点推上去了 / 没推上去为什么 / 有几条打了分还没推（等这一轮打完，或停手两分钟）。"""
+    state, pending = service.sync_state, len(service.pending())
+    if state == "pushing":
+        return t("review.sync.pushing")
+    if state == "failed":
+        return t("review.sync.failed", error=" ".join(str(service.sync_error).split())[-160:])
+    if pending:
+        return t("review.sync.waiting", n=pending)
+    if state == "pushed":
+        return t("review.sync.pushed", time=service.pushed_at)
+    return ""
+
+
+def review_page(service_of: Callable[[], object], config, *, now: Callable[[], dt.datetime] | None = None) -> Callable[[], dict]:
+    """复习页的 provider。``service_of()`` 给 ``ReviewService``（没接个人助理时是 None）。数据只在打分 / 推送之后变，
+    服务的 ``changed`` 让开着的页面重画。笔记内容只经带令牌的接口给本机浏览器，不进日志。"""
+    def build() -> dict:
+        service = service_of()
+        data = {"id": REVIEW, "page": REVIEW_PAGE, "title": t("review.title"), "theme": theme(config), "available": False,
+                "unavailable_text": t("review.unavailable"), "empty_text": "", "cards": [], "counts": {"due": 0, "done": 0},
+                "sync": {"text": "", "failed": False, "pending": 0}}
+        if service is None:
+            return data
+        if not service.repo_ready():
+            data["unavailable_text"] = t("review.no_repo", path=service.repo_dir())
+            return data
+        today = (now() if now else dt.datetime.now()).date()
+        state = service.round()
+        data["available"] = True
+        data["cards"] = [review_card(note, today) for note in state["cards"]]
+        data["counts"] = {"due": state["due"], "done": state["done"]}
+        data["empty_text"] = (t("review.empty_next", when=f"{state['next']:%m-%d}") if state["next"] else t("review.empty_none"))
+        data["sync"] = {"text": review_sync_text(service), "failed": service.sync_state == "failed", "pending": len(service.pending())}
+        return data
+    build.page = REVIEW_PAGE  # type: ignore[attr-defined]
+    return build
+
+
+def review_action(service_of: Callable[[], object]) -> Callable[[object], dict]:
+    """``POST /api/actions/review``，在界面线程上跑。``{op: grade, path, answer}`` → ``ReviewService.grade`` 的回答
+    （``graded`` 带 ``next`` / ``busy`` / ``missing`` / ``failed``）；``{op: flush}`` → ``started`` / ``busy`` / ``empty`` / ``missing``。
+    回答不认识 400 ``bad_answer``，动作不认识 400 ``bad_op``，没接复习 503 ``unavailable``。"""
+    from .. import capture_review as cr
+
+    def run(body) -> dict:
+        body = body if isinstance(body, dict) else {}
+        op = body.get("op")
+        if op not in ("grade", "flush"):
+            raise ActionError(400, "bad_op")
+        service = service_of()
+        if service is None:
+            raise ActionError(503, "unavailable")
+        if op == "flush":
+            return {"op": op, "state": service.flush(manual=True)}
+        path, answer = body.get("path"), body.get("answer")
+        if not isinstance(path, str) or not path or answer not in cr.ANSWERS:
+            raise ActionError(400, "bad_answer")
+        return {"op": op, **service.grade(path, answer)}
     return run
 
 

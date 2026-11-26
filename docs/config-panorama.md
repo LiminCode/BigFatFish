@@ -167,7 +167,9 @@
 `sources.page_action` 就给磁贴正面和详情各放一个——工作简报、个人助理、工作笔记、Slack 关注是「查看」（眼睛图标，另开浏览器页），
 知识库定时同步是「时间轴」（在右栏里看）。`Feature.report` 必须是应用登记给服务的报告名（测试守着）。
 `Feature.more` 是详情里「查看」后面的动作按钮（2026-11-25）：随手记磁贴的「现在整理」（`organize_captures`，不先问，
-回 started / busy / empty / missing / failed）。随手记的「查看」开个人简报页，因为输入框在那一页顶上。
+回 started / busy / empty / missing / failed）和「复习」（开复习页）。随手记的「查看」开个人简报页，因为输入框在那一页顶上。
+复习页（`/report/review`，2026-11-26）是第三种报告类页面：provider 带 `page = "review"`，外壳 `review.html`、模块 `review.js`
+（一次一张卡、空格看答案、1 / 2 / 3 打分），动作 `POST /api/actions/review {op: grade | flush}`。机制见[个人助理](personal-assistant.md)「随手记的复习」。
 正面的按钮很小：动作的结果只换按钮里那格字（超长省略，全句在悬停提示上），开了页的 2.5 秒后换回原来的字（`repair.js`）。
 
 **时间轴在右栏里看**（2026-11-24，`timeline.js`）：动作字典带 `show: "panel"` 的按钮不发动作，而是在右栏占详情那张卡的位置，

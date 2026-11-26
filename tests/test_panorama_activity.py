@@ -202,7 +202,9 @@ def test_an_organize_run_says_how_many_captures_it_turned_into_notes_and_carries
     html = activity.render(rows, activity.job_status([run]))
     assert "整理随手记" in html
     held = {**run, "result": "needs_you", "effects": [run["effects"][0], {"kind": "notes", "organized": 0, "skipped": 1, "failed": 0, "left": 1}]}
-    assert activity.describe(held) == "整理 0 条 · 收件箱还剩 1 条 · 1 条整理不了，等你 · claude-sonnet-5-5 · 2400 tokens"
+    pushed = {**run, "job": "capture_review", "effects": [{"kind": "reviewed", "notes": 3}, run["effects"][2]]}
+    assert activity.describe(pushed) == "推送 3 条的复习结果"
+    assert activity.describe(held) =="整理 0 条 · 收件箱还剩 1 条 · 1 条整理不了，等你 · claude-sonnet-5-5 · 2400 tokens"
 
 
 def test_a_pushed_commit_says_which_repo_what_it_is_and_which_files_it_touched():
@@ -296,5 +298,5 @@ def test_every_trigger_result_and_known_job_has_a_name_in_both_languages(languag
 
     table = i18n.table(language)
     wanted = [f"activity.trigger.{name}" for name in run_journal.TRIGGERS] + [f"activity.result.{name}" for name in run_journal.RESULTS]
-    wanted += [f"activity.job.{name}" for name in (vault_sync.JOB, actions.CHECK_JOB, "capture_organize")]
+    wanted += [f"activity.job.{name}" for name in (vault_sync.JOB, actions.CHECK_JOB, "capture_organize", "capture_review")]
     assert [key for key in wanted if not str(table.get(key) or "").strip()] == []
