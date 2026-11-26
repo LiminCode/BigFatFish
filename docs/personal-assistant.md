@@ -12,7 +12,8 @@
 | `pet/capture_inbox.py` | 零 Qt、不调 AI、不碰 git。随手记写进收件箱：`write_capture`（一条一个文件 + 图片）、`decode_images`（页面发来的图）、`commit_message` |
 | `pet/capture_organize.py` | 零 Qt。随手记的整理：配置键 `capture`、`pending`、`build_request`、`shape`（收模型的输出）/ `apply`（落盘）、`run`（一次运行）、整理不了的记录 `capture-organize.json` |
 | `pet/capture_review.py` | 零 Qt。复习：读笔记的 `review`、`due`、`grade`（换档表）、`write_grade`（只改那一行）、本机 `capture-review.json` |
-| `pet/review_service.py` | `ReviewService`：今天的一轮、打分、一轮一起推送（`Review: N notes`） |
+| `pet/review_service.py` | `ReviewService`：今天的一轮、打分、一轮一起推送（`Review: N notes`）、每分钟看一眼该不该提醒 |
+| `pet/review_ui.py` | `ReviewController`：每天定点 / 白天随机的提醒摆到岛上，「开始复习」「看看」开复习页 |
 | `pet/capture_service.py` | `CaptureOrganizer`：记下后 / 启动后 / 每小时 / 「现在整理」，后台线程，结果排回界面线程 |
 | `pet/personal_briefing.py` | 提示词、`GuardedKnowledgeBase`（拒绝名单）/ `RecordingToolset`（记读过的文件）、`generate`、状态文件 `personal-briefing.json` |
 | `pet/personal_service.py` | `PersonalService`：每分钟 `check()`，线程里先 `pull` 再 `generate`；随手记落盘后后台推送（一把 git 锁） |
@@ -91,7 +92,7 @@ sequenceDiagram
 - **用 Windows 的 `git.exe`，不经 WSL**（那边登录的是公司账号）：`sync_path(repo, [笔记, 图片…], message)`——`add` 这几个路径
   → 有变化才 `commit` → `pull --rebase --autostash` → `push`。pull 失败就 `rebase --abort` 并报告，本地文件保留；永远不 force。
   提交说明只有时间（`capture: YYYY-MM-DD HH:MM`），日志也不记正文。
-- 复习见下面「随手记的复习」；定点 / 随机提醒还没做，见路线图。
+- 复习和提醒见下面「随手记的复习」。
 - **Token 不进命令行**：钥匙串里的 GitHub Token 经 `GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n` 环境变量注入
   （清空 `credential.helper` + 给 `http.https://github.com/.extraheader` 加认证头），不进 argv、不进 `.git/config`；只有碰
   远端的 pull / push 带它。
@@ -158,7 +159,17 @@ sequenceDiagram
 - **一轮一个提交**（`ReviewService`）：`Review: N notes`，正文列出改了哪几条。这一轮打完了立刻推；没打完就在最后一次打分 2 分钟后推；
   页面上也有「现在推送」。还没推的几条和今天复习了几条记在本机 `capture-review.json`，关掉肥鱼下次启动 30 秒后接着推。git 和随手记
   推送、整理任务共用 `PersonalService.git_lock`。推送进运行记录（任务 `capture_review`），提交挂在时间轴那一行下面。
-- **入口**：个人简报页的副按钮在今天有到期的笔记时多一个「复习 N 条」；配置全景随手记磁贴的详情里有「复习」。
+- **入口**：个人简报页的副按钮在今天有到期的笔记时多一个「复习 N 条」；配置全景随手记磁贴的详情里有「复习」；还有下面两种提醒。
+- **提醒**（2026-11-26，`ReviewService.check_reminders` 每分钟一次，判断在 `capture_review.decide`，摆到岛上在 `pet/review_ui.py`）：
+  - **每天定点**：过了 `review_time`（默认 09:00）、今天有到期的、今天没提醒过 → 提醒「今天有 N 条笔记该复习了」，按钮「开始复习」开复习页 /「稍后」。
+    不看人在不在（提醒挂在岛上等人回来）；晚上 11 点以后当天不补。
+  - **白天随机**：每天第一次看的时候在 10:00–20:00 里随机定一个时刻；过了那一刻、**今天到期的都复习完了**、人在电脑前（5 分钟内动过键鼠，
+    `slack_watch.session_active`）、今天没冒过 → 「还记得「标题」讲了什么吗？」，先挑不在今天这一轮里的笔记。点「看看」，这条记成本机的
+    `spotlight`，复习页把它排第一张（不管到没到期），打完分就清掉。晚上 9 点以后不冒。
+  - 两种共用一个提醒 id，所以随机那条要等到期的复习完才冒——2026-11-25 实机时它在启动一分钟后把定点那条顶掉过。复习页开着时都不弹。
+  - 标记（今天提醒过没有、随机定在几点、冒过没有、`spotlight`）都在 `capture-review.json` 里。
+- **设置**和整理在同一组（`capture` 键，配置全景随手记磁贴的「设置」）：每天定点提醒开关（默认开）、几点、一轮几条（默认 5，复习页也用）、
+  白天随机一条开关（默认开）。
 - 量级：200 条笔记挑一轮 15 毫秒（读文件头），打一次分 5 毫秒；页面开着时每次打分重画一次。
 
 ### 在 Obsidian 打开

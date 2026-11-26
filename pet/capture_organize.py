@@ -45,6 +45,11 @@ DELAY_RANGE = (0, 120)                    # 记下后等几分钟再整理（攒
 BATCH_RANGE = (1, 20)                     # 一次运行最多整理几条：一条一次模型调用
 DEFAULT_DELAY = 2
 DEFAULT_BATCH = 5
+#: 复习那几项也存在这个键下（一个磁贴、一组设置）：每天定点提醒的开关和时刻、一轮几条、白天随机冒一条
+DEFAULT_REVIEW_TIME = "09:00"
+REVIEW_TIME_CHOICES = ("07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "12:30", "18:00", "20:00", "21:00")
+REVIEW_BATCH_RANGE = (1, 20)
+DEFAULT_REVIEW_BATCH = 5
 TITLE_CHARS = 60                          # 文件名里标题最多几个字
 MAX_TOOL_ROUNDS = 8
 TIMEOUT_S = 300.0
@@ -103,8 +108,17 @@ def _clamp(value, bounds: tuple[int, int], default: int) -> int:
     return int(min(max(int(value), bounds[0]), bounds[1]))
 
 
+def _review_time(value) -> str:
+    match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*", str(value if value is not None else ""))
+    if not match:
+        return DEFAULT_REVIEW_TIME
+    hour, minute = int(match.group(1)), int(match.group(2) or 0)
+    return f"{hour:02d}:{minute:02d}" if hour < 24 and minute < 60 else DEFAULT_REVIEW_TIME
+
+
 def normalize(value) -> dict:
-    """``capture`` 这个配置键：整理开关（默认开）、记下后等几分钟、一次最多几条、模型 / effort（空 = 跟 AI 对话）、提示词模板（空 = 内置）。"""
+    """``capture`` 这个配置键。整理：开关（默认开）、记下后等几分钟、一次最多几条、模型 / effort（空 = 跟 AI 对话）、提示词模板（空 = 内置）。
+    复习（``review_*``）：每天定点提醒（默认开）、几点（默认 09:00）、一轮几条（默认 5）、白天随机冒一条（默认开）。"""
     data = value if isinstance(value, dict) else {}
     return {
         "enabled": data.get("enabled", True) is not False,
@@ -113,6 +127,10 @@ def normalize(value) -> dict:
         "model": pv.normalize_model(data.get("model")),
         "effort": pv.normalize_effort(data.get("effort")),
         "prompt": str(data.get("prompt") or "").strip(),
+        "review_enabled": data.get("review_enabled", True) is not False,
+        "review_time": _review_time(data.get("review_time")),
+        "review_batch": _clamp(data.get("review_batch"), REVIEW_BATCH_RANGE, DEFAULT_REVIEW_BATCH),
+        "review_random": data.get("review_random", True) is not False,
     }
 
 

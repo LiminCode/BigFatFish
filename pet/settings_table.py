@@ -465,6 +465,11 @@ GROUPS: tuple[Group, ...] = (
         Setting("effort", "choice", choices=("", *pv.EFFORT_LEVELS),
                 labels=(("", _FOLLOW_CHAT), *((level, f"personal.settings.effort.{level}") for level in pv.EFFORT_LEVELS))),
         Setting("prompt", "long_text", disclosure="advanced", builtin=lambda _effective: co.default_prompt_template()),
+        # 复习：每天定点提醒（时刻挂在它的开关下）、一轮几条（复习页也用）、白天随机冒一条
+        Setting("review_enabled", "toggle"),
+        Setting("review_time", "choice_or_text", choices=co.REVIEW_TIME_CHOICES, depends_on="review_enabled"),
+        Setting("review_batch", "number", bounds=co.REVIEW_BATCH_RANGE),
+        Setting("review_random", "toggle"),
     ), title_key="settings.capture.section"),
     # 知识库定时同步：每隔一阵、停笔后，把个人知识库的克隆和远端对齐。不调模型、不靠 WSL。默认关：它会替用户提交和推送。
     # 克隆在哪是个人助理那一组的「仓库副本目录」，这里不重复放。两个分钟数由 vault_sync.normalize 夹在范围里。

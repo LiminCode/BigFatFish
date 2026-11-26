@@ -75,13 +75,21 @@ def _capture(root: Path, text: str = "Habit stacking\nhttps://example.com/post/4
 
 # ───────────────────────── 设置 ─────────────────────────
 
+REVIEW_DEFAULTS = {"review_enabled": True, "review_time": "09:00", "review_batch": 5, "review_random": True}
+
+
 def test_settings_default_on_follow_chat_and_clamp_numbers():
-    assert co.normalize(None) == {"enabled": True, "delay_minutes": 2, "max_per_run": 5, "model": "", "effort": "", "prompt": ""}
+    assert co.normalize(None) == {"enabled": True, "delay_minutes": 2, "max_per_run": 5, "model": "", "effort": "", "prompt": "",
+                                  **REVIEW_DEFAULTS}
     clamped = co.normalize({"enabled": False, "delay_minutes": 999, "max_per_run": 0, "model": "bad model", "effort": "huge",
                             "prompt": "  mine {capture}  "})
     assert clamped == {"enabled": False, "delay_minutes": co.DELAY_RANGE[1], "max_per_run": co.BATCH_RANGE[0], "model": "",
-                       "effort": "", "prompt": "mine {capture}"}
+                       "effort": "", "prompt": "mine {capture}", **REVIEW_DEFAULTS}
     assert co.normalize({"model": "claude-opus-5-5", "effort": "high"})["model"] == "claude-opus-5-5"
+    review = co.normalize({"review_enabled": False, "review_time": "7:05", "review_batch": 99, "review_random": "yes"})
+    assert (review["review_enabled"], review["review_time"], review["review_batch"], review["review_random"]) == (False, "07:05", 20, True)
+    assert co.normalize({"review_time": "25:00"})["review_time"] == "09:00"
+    assert co.normalize({"review_random": False})["review_random"] is False
 
 
 # ───────────────────────── 收件 ─────────────────────────

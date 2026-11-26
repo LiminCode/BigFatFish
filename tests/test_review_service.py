@@ -132,3 +132,60 @@ def test_stop_drops_a_late_push_result(setup):
     jobs[0]()
     _wait(lambda: False, budget=0.2)
     assert finished == [] and service.pending() == ["9-Learning/Notes/a.md"]
+
+
+# ───────────────────────── 提醒 ─────────────────────────
+
+def _reminding(config, now, *, active=True, seed=3):
+    import random
+
+    service = ReviewService(config, spawn=lambda job: job(), now=lambda: now, sync=_Sync(), head=lambda _r: "x",
+                            active=lambda: active, rng=random.Random(seed))
+    said = []
+    service.remind.connect(lambda kind, payload: said.append((kind, payload)))
+    return service, said
+
+
+def test_the_daily_reminder_fires_once_with_the_count(setup):
+    repo, config, _sync, _service, _pushes = setup
+    _note(repo, "a")
+    _note(repo, "b")
+    early, said = _reminding(config, dt.datetime(2026, 11, 26, 8, 0))
+    assert early.check_reminders() == "" and said == []
+    service, said = _reminding(config, dt.datetime(2026, 11, 26, 9, 30))
+    assert service.check_reminders() == "daily" and said == [("daily", {"count": 2})]
+    assert service.check_reminders() in ("", "random") and [kind for kind, _ in said].count("daily") == 1, "一天一次"
+    for one in (early, service):
+        one.stop()
+
+
+def test_the_random_reminder_puts_its_note_first_on_the_page_until_it_is_graded(setup):
+    repo, config, _sync, _service, _pushes = setup
+    import pet.capture_organize as co
+    config.set(co.CONFIG_KEY, {"review_enabled": False})
+    later = _note(repo, "later", review="{next: 2026-12-20, interval: 30, count: 3, lapses: 0}", title="Later idea")
+    service, said = _reminding(config, dt.datetime(2026, 11, 26, 20, 59))
+    assert service.check_reminders() == "random", "今天的时刻在 10–20 点之间，20:59 一定过了"
+    slot = cr.load_state(config.dir)["random_at"]
+    assert "10:00" <= slot < "20:00"
+    assert said == [("random", {"path": later, "title": "Later idea"})] and service.check_reminders() == ""
+    assert service.round()["cards"] == [], "没点「看看」之前不插队"
+    service.spotlight(later)
+    first = service.round()["cards"][0]
+    assert first.path == later and service.round()["due"] == 0
+    service.grade(later, "remember")
+    assert service.round()["cards"] == [] and cr.load_state(config.dir)["spotlight"] == ""
+    away, said_away = _reminding(config, dt.datetime(2026, 11, 27, 20, 59), active=False)
+    assert away.check_reminders() == "" and said_away == [], "人不在电脑前：不冒"
+    for one in (service, away):
+        one.stop()
+
+
+def test_the_round_size_follows_the_setting(setup):
+    repo, config, _sync, service, _pushes = setup
+    import pet.capture_organize as co
+    for name in "abcdefg":
+        _note(repo, name)
+    assert len(service.round()["cards"]) == 5
+    config.set(co.CONFIG_KEY, {"review_batch": 2})
+    assert len(service.round()["cards"]) == 2 and service.round()["due"] == 7

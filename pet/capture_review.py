@@ -199,6 +199,11 @@ def write_grade(repo_dir: str | Path, rel_path: str, answer: str, today: dt.date
 
 # ───────────────────────── 本机：还没推的几条、今天复习了几条 ─────────────────────────
 
+#: 提醒的标记：今天定点提醒过没有（``daily``）、今天随机那一下定在几点（``random_date`` / ``random_at``）、冒过没有
+#: （``random_done``）、随机冒出来、用户点了「看看」的那条（``spotlight``：复习页把它排在第一张，打完分就清掉）
+EMPTY_MARKS = {"daily": "", "random_date": "", "random_at": "", "random_done": "", "spotlight": ""}
+
+
 def load_state(config_dir: str | Path) -> dict:
     try:
         data = json.loads((Path(config_dir) / STATE_FILE).read_text(encoding="utf-8"))
@@ -207,7 +212,15 @@ def load_state(config_dir: str | Path) -> dict:
     data = data if isinstance(data, dict) else {}
     pending = data.get("pending")
     return {"date": str(data.get("date") or ""), "done": _int(data.get("done")),
-            "pending": [str(p) for p in pending] if isinstance(pending, list) else []}
+            "pending": [str(p) for p in pending] if isinstance(pending, list) else [],
+            **{key: str(data.get(key) or "") for key in EMPTY_MARKS}}
+
+
+def mark(config_dir: str | Path, **marks: str) -> dict:
+    """改提醒的标记（只认 ``EMPTY_MARKS`` 里的键），别的状态不动。"""
+    state = load_state(config_dir)
+    state.update({key: str(value) for key, value in marks.items() if key in EMPTY_MARKS})
+    return _save(config_dir, state)
 
 
 def _save(config_dir: str | Path, state: dict) -> dict:
@@ -236,6 +249,48 @@ def note_pushed(config_dir: str | Path, paths: list[str]) -> dict:
 def done_today(config_dir: str | Path, today: dt.date) -> int:
     state = load_state(config_dir)
     return state["done"] if state["date"] == today.isoformat() else 0
+
+
+# ───────────────────────── 提醒：每天定点一批、白天随机一条 ─────────────────────────
+
+RANDOM_WINDOW = (10, 20)          # 随机那一下定在几点到几点之间（小时，含头不含尾）
+RANDOM_UNTIL = 21                 # 过了这个钟点就不冒了（人可能在，但不该在晚上冒复习）
+DAILY_UNTIL = 23                  # 定点提醒过了这个钟点当天就不补了
+
+
+def _clock(value: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"(\d{2}):(\d{2})", str(value or ""))
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def decide(settings: dict, state: dict, now: dt.datetime, *, due_count: int, active: bool, notes: int = 0) -> str:
+    """该不该提醒：``daily``（到点、今天没提醒过、有到期的）/ ``random``（今天的时刻过了、到期的都复习完了、人在电脑前、
+    今天没冒过）/ 空。定点提醒不看人在不在：它挂在岛上等人回来。随机那一下只在没有到期的时候冒——还有到期的，定点提醒在管，
+    再冒一条会把它顶掉（两种共用一个提醒 id）；也只在人在的时候冒，当天没赶上就算了。"""
+    today = now.date().isoformat()
+    at = _clock(settings.get("review_time", ""))
+    if (settings.get("review_enabled") and due_count > 0 and state.get("daily") != today and at is not None
+            and (now.hour, now.minute) >= at and now.hour < DAILY_UNTIL):
+        return "daily"
+    slot = _clock(state.get("random_at", ""))
+    if (settings.get("review_random") and notes > 0 and due_count == 0 and active and state.get("random_date") == today and slot is not None
+            and state.get("random_done") != today and (now.hour, now.minute) >= slot and now.hour < RANDOM_UNTIL):
+        return "random"
+    return ""
+
+
+def pick_slot(rng) -> str:
+    """今天随机那一下定在几点：``RANDOM_WINDOW`` 里均匀取一个分钟。"""
+    minute = rng.randrange(RANDOM_WINDOW[0] * 60, RANDOM_WINDOW[1] * 60)
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def random_pick(items: list[ReviewNote], today: dt.date, skip: set[str], rng) -> ReviewNote | None:
+    """随机冒哪一条：先从不在今天这一轮里的挑（这一轮的反正要复习），都在就随便一条；没有笔记是 ``None``。"""
+    if not items:
+        return None
+    outside = [note for note in items if note.path not in skip]
+    return rng.choice(outside or items)
 
 
 def commit_message(paths: list[str]) -> str:
