@@ -661,6 +661,73 @@ def test_live_sessions_outrank_frozen_ones_when_the_cap_is_full(shell, persisten
     assert "live" in keys and len(keys) == 2 and "old-1-aaaaaaaa" not in keys, "活的进来，最旧的冻结鱼让位"
 
 
+def _cap(shell, n):
+    data = dict(shell._config.get("agent_link"))
+    data["session_pets_max"] = n
+    shell._config.set("agent_link", data)
+
+
+def _fish_keys(shell, ctl):
+    return sorted(ctl.key_of(s)[1] for s in _session_pets(shell))
+
+
+def test_a_working_session_displaces_the_longest_resting_fish_when_the_cap_is_full(shell, persistent):
+    """User 2026-11-25: 20 open conversations, cap 12, every slot held by an idle (adopted) VS Code panel.
+    The one they were typing into started working and never got a fish — only frozen fish ever made room.
+    A session that is working / waiting outranks one that is just sitting there."""
+    _cap(shell, 2)
+    persistent.on_session_update("claude_wsl", _adopted("idle-old"))
+    persistent.clock["now"] = NOW + 600
+    persistent.on_session_update("claude_wsl", _adopted("idle-new"))
+    persistent.clock["now"] = NOW + 1200
+    persistent.on_session_update("claude_wsl", _adopted("busy"))
+    assert _fish_keys(shell, persistent) == ["idle-new", "idle-old"], "认领来的休息中不挤休息中的活鱼"
+
+    persistent.on_session_update("claude_wsl", _update("busy", phase="working", project="p"))
+    assert _fish_keys(shell, persistent) == ["busy", "idle-new"], "干活的进来，休息最久的那只让位"
+    assert ("claude_wsl", "idle-old") in {(s["agent"], s["sessionId"]) for s in persistent.sessions()}, \
+        "让位的会话仍在用（灵动岛照记），只是没鱼"
+
+    persistent.clock["now"] = NOW + 1800
+    persistent.on_session_update("claude_wsl", _update("idle-old", phase="working", project="p"))
+    assert _fish_keys(shell, persistent) == ["busy", "idle-old"], "它再干活时同样挤回来"
+
+
+def test_a_displaced_live_session_gets_its_seat_back_before_any_frozen_fish(shell, persistent):
+    """Real run 2026-11-25: a short `claude -p` displaced a resting fish, finished, and its frozen fish took the
+    freed slot while the displaced (still open) conversation stayed fishless. Live outranks frozen here too."""
+    _cap(shell, 2)
+    persistent.on_session_update("claude_wsl", _adopted("idle-old"))
+    persistent.clock["now"] = NOW + 600
+    persistent.on_session_update("claude_wsl", _adopted("idle-new"))
+    persistent.clock["now"] = NOW + 1200
+    persistent.on_session_update("claude", _update("probe", phase="working", project="p"))
+    assert _fish_keys(shell, persistent) == ["idle-new", "probe"]
+
+    persistent.history_store.record("claude", "probe", seen=NOW + 1200, cwd=r"C:\tmp\probe")
+    persistent.on_session_update("claude", _update("probe", phase="gone"))
+    persistent.reconcile()
+    assert _fish_keys(shell, persistent) == ["idle-new", "idle-old"], "空出来的位置先给开着的对话，不给冻结鱼"
+
+
+def test_reseating_never_brings_back_a_fish_the_user_exited(shell, persistent):
+    persistent.on_session_update("claude", _update("A", phase="working", project="p"))
+    shell.exit_pet(_session_pets(shell)[0])             # 用户「退出这只」
+    persistent.on_session_update("claude", _update("A", phase="resting", project="p"))
+    persistent.reconcile()
+    assert _session_pets(shell) == [], "补位只补满员时没拿到 / 被挤掉的，不补用户退掉的"
+
+
+def test_busy_and_unseen_fish_are_never_displaced(shell, persistent):
+    """Only plain 休息中 yields: a fish that is working, waiting for approval, or holding an unread answer stays."""
+    _cap(shell, 2)
+    persistent.on_session_update("claude", _update("A", phase="working", project="p"))
+    persistent.on_session_update("claude", _update("A", phase="resting", project="p"))   # 回合结束 → 等你回复
+    persistent.on_session_update("claude", _update("B", phase="waiting", project="p"))
+    persistent.on_session_update("claude", _update("C", phase="working", project="p"))
+    assert _fish_keys(shell, persistent) == ["A", "B"]
+
+
 def test_frozen_fish_menu_offers_resume_instead_of_jump(shell, persistent, monkeypatch):
     from pet.session_pet_ui import SessionPetActions, build_session_pet_menu
 

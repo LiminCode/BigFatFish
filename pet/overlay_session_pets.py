@@ -83,6 +83,9 @@ class SessionPetController(QObject):
         self._extras: dict[tuple[str, str], dict] = {}
         # 回合结束了、用户还没去看的会话：显示成「等你回复」而不是「休息中」
         self._unseen: set[tuple[str, str]] = set()
+        # 该有鱼、却因为满员没拿到或被挤掉的活会话：有位置时先补它们（``_seat_fishless_live``）。
+        # 只记这两种——第一次见到就在休息的、用户手动退掉的都不在这里，不会被补回来。
+        self._unseated: set[tuple[str, str]] = set()
 
     # ------------------------------------------------------------ sprite ↔ 会话
     def key_of(self, sprite) -> tuple[str, str] | None:
@@ -333,6 +336,7 @@ class SessionPetController(QObject):
                 self._retire_frozen(key)
         if not self._enabled():
             return
+        self._seat_fishless_live()
         shell = self._shell
         for entry in rows:
             key = entry.key
@@ -360,6 +364,25 @@ class SessionPetController(QObject):
                     pause(sprite, True)              # 没有「冻结」素材：停在休息的姿势上不动
             log.info("冻结的会话小鱼出场 agent=%s session=%s", key[0], key[1][:8])
 
+    def _seat_fishless_live(self) -> None:
+        """开着却没鱼的会话（超上限排在外面的、给干活的让过位的，见 ``_unseated``）：有空位或有冻结鱼可挤时
+        先补上——活的优先于冻结的。把登记表里的内容按认领回放（休息中的也能出场；按休息中回放只挤冻结鱼），
+        回放途中不再进名册核对（``_syncing``）。"""
+        self._unseated &= set(self._sessions)
+        waiting = [key for key in self._sessions if key in self._unseated and key not in self._pets]
+        if not waiting:
+            return
+        syncing, self._syncing = self._syncing, True
+        try:
+            for key in waiting:
+                if key not in self._sessions or key in self._pets:
+                    continue
+                self._apply_update(key[0], {**self._sessions[key], "adopted": "1"})
+                if key not in self._pets:
+                    break                            # 没位置了：更晚的也排不进来
+        finally:
+            self._syncing = syncing
+
     def _hold(self, sprite, clips: tuple[str, ...]) -> bool:
         """保持一组动画；素材库不认这些段名（换了角色 / 测试替身）就当没有，不让异常传出去。"""
         try:
@@ -376,11 +399,23 @@ class SessionPetController(QObject):
             log.info("冻结的会话小鱼离场 agent=%s session=%s", key[0], key[1][:8])
         self.session_gone.emit(key)
 
-    def _make_room(self) -> bool:
-        """活的会话要出场、上限满了：最旧的那只冻结鱼让位。"""
-        if not self._frozen:
+    def _make_room(self, phase: str) -> bool:
+        """活的会话要出场、上限满了：最旧的那只冻结鱼让位；没有冻结鱼、而进来的会话在干活
+        （工作中 / 等批准）时，休息最久的那只「休息中」活鱼让位（会话照记，再干活时同样挤回来）。
+
+        「等你回复」和在干活的鱼不让；认领来的休息中会话只挤冻结鱼——否则每轮认领互相挤来挤去。"""
+        if self._frozen:
+            self._retire_frozen(next(reversed(self._frozen)))
+            return True
+        if phase not in ("working", "waiting"):
             return False
-        self._retire_frozen(next(reversed(self._frozen)))
+        resting = [key for key in self._pets if (self._sessions.get(key) or {}).get("phase") == "resting"]
+        if not resting:
+            return False
+        victim = min(resting, key=lambda key: float(self.since(key) or 0.0))
+        log.info("会话小鱼给干活的会话让位 agent=%s session=%s", victim[0], victim[1][:8])
+        self._retire(victim)
+        self._unseated.add(victim)
         return True
 
     def _retire(self, key: tuple[str, str]) -> None:
@@ -439,7 +474,7 @@ class SessionPetController(QObject):
                     extras[name] = str(update[name])
             seen_now = previous_phase == "review" and phase == "resting"
             if previous_phase != phase and not seen_now:
-                extras["since"] = time.time()
+                extras["since"] = self._clock()
             if phase in ("working", "waiting") and self._decisions.revive(key):
                 log.info("会话又活跃了，关闭决定作废 agent=%s session=%s", key[0], key[1][:8])
         if changed:
@@ -454,6 +489,7 @@ class SessionPetController(QObject):
             self._phases.pop(key, None)
             sprite = None
         if phase == "gone" or not self._enabled() or self._decisions.is_dismissed(key):
+            self._unseated.discard(key)
             self._retire(key)
             self._after_update()
             return
@@ -462,11 +498,13 @@ class SessionPetController(QObject):
                 self._after_update()
                 return  # 没赶上它干活（或刚被退掉）：不凭空生一只，等它下次提问（从清单认领来的例外：它确实开着）
             sprite = shell.spawn_session_pet()
-            if sprite is None and self._make_room():
+            if sprite is None and self._make_room(phase):
                 sprite = shell.spawn_session_pet()
             if sprite is None:
+                self._unseated.add(key)
                 self._after_update()
-                return  # 到上限：这个会话只体现在主肥鱼的汇总状态里
+                return  # 到上限：这个会话只体现在主肥鱼的汇总状态里，有位置时补上
+            self._unseated.discard(key)
             self._pets[key] = sprite
             log.info("会话小鱼出场 agent=%s session=%s（在场 %d 只）", key[0], key[1][:8], len(self._pets))
         shell.set_session_pet_caption(
