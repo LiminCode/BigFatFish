@@ -13,6 +13,9 @@ def test_modern_default_v1_has_compact_root_and_safety_actions():
     assert [node["id"] for node in layout["nodes"]] == [
         "ojingjing",
         "default.separator-profile",
+        "rally_pets",
+        "lineup_pets",
+        "default.separator-fleet",
         "work_briefing",
         "personal_briefing",
         "work_notes",
@@ -350,6 +353,8 @@ def test_missing_user_layout_resolves_versioned_default():
     assert result.diagnostics == ()
     assert [node["id"] for node in result.nodes if node["type"] != "separator"] == [
         "ojingjing",
+        "rally_pets",
+        "lineup_pets",
         "work_briefing",
         "personal_briefing",
         "work_notes",
@@ -512,6 +517,8 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     # 浏览器里的四张页 + 会话记忆蒸馏：这个假宠没挂控制器，整项不出现；配置全景（第五张页）在第一组
     expected_root = [
         "厉害了我的鲸",
+        "护驾",
+        "列队",
         "配置全景",
         "AI 对话",
         "待办提醒",
@@ -529,6 +536,7 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     rendered = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
     expected_rendered = [
         "厉害了我的鲸", "|",
+        "护驾", "列队", "|",
         "配置全景", "|",
         "AI 对话", "待办提醒", "|",
         "VS Code 工作区", "YouTube Music",
@@ -541,8 +549,6 @@ def test_default_layout_populates_real_qmenu_hierarchy(monkeypatch):
     assert rendered == expected_rendered
     pet_controls = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     assert [action.text() for action in pet_controls.actions() if not action.isSeparator()] == [
-        "护驾",
-        "列队",
         "播放动画",
         "切换角色",
         "播放速率",
@@ -2461,7 +2467,8 @@ def test_system_font_stack_matches_platform():
 
 def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
     """2026-11-18：播放动画 / 切换角色 / 播放速率 / 大小都是控制角色动画的、不常用，收进「肥鱼控制」最上面一组，
-    用分隔线和原来的控制项隔开。编排只许一层子菜单，所以是并进去，不是再套一层。"""
+    用分隔线和原来的控制项隔开。编排只许一层子菜单，所以是并进去，不是再套一层。
+    护驾 / 列队 2026-11-21 收进来过，2026-11-25 用户说天天用，又搬回根菜单，紧跟彩蛋自成一组（排在五张页前面）。"""
     from PySide6.QtWidgets import QApplication, QMenu
 
     from pet.context_menu import populate_context_menu
@@ -2470,11 +2477,13 @@ def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
     layout = load_default_menu_layout("modern-default-v1")
     root_ids = [node["id"] for node in layout["nodes"]]
     assert not set(grouped) & set(root_ids)
+    assert root_ids[:5] == ["ojingjing", "default.separator-profile", "rally_pets", "lineup_pets", "default.separator-fleet"], (
+        "护驾 / 列队在根菜单紧跟彩蛋、自成一组")
     controls = next(node for node in layout["nodes"] if node["id"] == "pet_controls")
     child_ids = [child["id"] for child in controls["children"]]
-    assert child_ids[:2] == ["rally_pets", "lineup_pets"] and controls["children"][2]["type"] == "separator", "2026-11-21 起护驾 / 列队也收进来，排最前"
-    assert child_ids[3:7] == grouped and controls["children"][7]["type"] == "separator"
-    assert child_ids[8:] == ["drag_physics", "no_move", "on_top", "autostart", "return_corner", "hide_pet",
+    assert not {"rally_pets", "lineup_pets"} & set(child_ids), "不在子菜单里留第二份"
+    assert child_ids[:4] == grouped and controls["children"][4]["type"] == "separator"
+    assert child_ids[5:] == ["drag_physics", "no_move", "on_top", "autostart", "return_corner", "hide_pet",
                              "spawn_pet", "clear_spawned_pets", "golden_spin", "edge_probe"], "原来的控制项一个不少、顺序不变"
 
     class FakePet:
@@ -2492,10 +2501,12 @@ def test_animation_controls_live_in_the_fish_controls_submenu_not_the_root():
     populate_context_menu(menu, FakePet())
     root = [action.text() for action in menu.actions() if not action.isSeparator()]
     assert not {"播放动画", "切换角色", "播放速率", "大小"} & set(root)
+    rendered_root = ["|" if action.isSeparator() else action.text() for action in menu.actions()]
+    assert rendered_root[1:5] == ["|", "护驾", "列队", "|"]
     controls_menu = next(action.menu() for action in menu.actions() if action.text() == "肥鱼控制")
     rendered = ["|" if action.isSeparator() else action.text() for action in controls_menu.actions()]
-    assert rendered[:8] == ["护驾", "列队", "|", "播放动画", "切换角色", "播放速率", "大小", "|"]
-    assert all(controls_menu.actions()[i].menu() is not None for i in range(3, 7)), "四项照旧各带自己的下一级"
+    assert rendered[:5] == ["播放动画", "切换角色", "播放速率", "大小", "|"]
+    assert all(controls_menu.actions()[i].menu() is not None for i in range(0, 4)), "四项照旧各带自己的下一级"
     menu.close()
     app.processEvents()
 

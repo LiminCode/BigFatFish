@@ -853,9 +853,12 @@ def test_modern_context_menu_has_compact_semantic_groups(monkeypatch):
     menu = QMenu()
     window_mod._populate_context_menu(menu, pet)
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
-    # 2026-11-21 起：根菜单第一组是浏览器里的页（这个假宠没挂控制器，只剩配置全景）；护驾 / 列队收进肥鱼控制
+    # 2026-11-21 起：根菜单有一组是浏览器里的页（这个假宠没挂控制器，只剩配置全景）；
+    # 护驾 / 列队 2026-11-25 起回到根菜单、紧跟彩蛋（用户：天天用）
     expected_labels = [
         "厉害了我的鲸",
+        "护驾",
+        "列队",
         "配置全景",
         "AI 对话",
         "待办提醒",
