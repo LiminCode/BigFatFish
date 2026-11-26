@@ -3228,6 +3228,23 @@ class AppShell:
             logging.exception("个人助理接线失败")
             return
         self._start_capture_organizer(service)
+        self._start_review(service)
+
+    def _start_review(self, personal_service) -> None:
+        """随手记的复习（可选服务，2026-11-26，ADR 0021）：复习页（/report/review）打分改笔记的 review 一行，一轮一起推送。
+        和随手记推送、整理任务共用个人助理那把 git 锁。打了分 / 推完：复习页和个人简报页（「复习 N 条」那个按钮）重画。"""
+        if getattr(self, "_review", None) is not None:
+            return
+        try:
+            from . import run_recording
+            from .review_service import ReviewService
+
+            review = self._review = ReviewService(self.config, lock=personal_service.git_lock, parent=self.app)
+            review.changed.connect(lambda: (self._publish_report("review"), self._publish_report("personal_briefing")))
+            review.start()
+            self._record_runs(run_recording.CAPTURE_REVIEW, review)
+        except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
+            logging.exception("随手记复习接线失败")
 
     def _start_capture_organizer(self, personal_service) -> None:
         """随手记的整理任务（可选服务，2026-11-25，ADR 0021）：记下后等几分钟、启动后、每小时兜底，个人 key 照知识库里的规矩
@@ -3582,7 +3599,8 @@ class AppShell:
             from . import run_recording
 
             outcome = {run_recording.SLACK_WATCH: run_recording.slack_outcome,
-                       run_recording.CAPTURE_ORGANIZE: run_recording.organize_outcome}.get(job, run_recording.briefing_outcome)
+                       run_recording.CAPTURE_ORGANIZE: run_recording.organize_outcome,
+                       run_recording.CAPTURE_REVIEW: run_recording.review_outcome}.get(job, run_recording.briefing_outcome)
 
             def timeline_changed() -> None:
                 panorama = getattr(self, "_panorama_service", None)
@@ -3666,6 +3684,7 @@ class AppShell:
                          panorama_reports.CAPTURE_ACTION: panorama_reports.add_capture(personal_service),
                          panorama_reports.ORGANIZE_ACTION: panorama_reports.organize_captures(
                              lambda: getattr(self, "_capture_organizer", None)),
+                         panorama_reports.REVIEW_ACTION: panorama_reports.review_action(lambda: getattr(self, "_review", None)),
                          panorama_reports.OBSIDIAN_ACTION: panorama_actions.generate_report(
                              {panorama_reports.PERSONAL_BRIEFING: panorama_reports.open_obsidian(personal)}),
                          panorama_notes.NOTE_ACTION: panorama_notes.note_action({panorama_notes.WORK_NOTES: notes_service,
@@ -3673,7 +3692,9 @@ class AppShell:
                 reports={panorama_activity.REPORT: panorama_activity.provider(
                              self._runs(), timeline_context, lambda work: self._panorama_service.on_gui(work)),
                          panorama_reports.WORK_BRIEFING: panorama_reports.work_briefing(briefing_service, self.config),
-                         panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(personal_service, self.config),
+                         panorama_reports.PERSONAL_BRIEFING: panorama_reports.personal_briefing(
+                             personal_service, self.config, review_of=lambda: getattr(self, "_review", None)),
+                         panorama_reports.REVIEW: panorama_reports.review_page(lambda: getattr(self, "_review", None), self.config),
                          panorama_notes.WORK_NOTES: panorama_notes.work_notes(notes_service, self.config),
                          panorama_notes.SLACK_WATCH: panorama_notes.slack_watch(slack_notes_service, slack_watch_service, self.config)})
         return service

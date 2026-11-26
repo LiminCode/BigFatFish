@@ -53,6 +53,17 @@ def organize_outcome(result, manual: bool = False) -> tuple[bool, str, str, list
     return bool(manual), str(result.state or "failed"), "" if result.ok else str(result.error or ""), effects
 
 
+CAPTURE_REVIEW = "capture_review"         # 复习打完分之后的那次推送（review_service）
+
+
+def review_outcome(result, manual: bool = False) -> tuple[bool, str, str, list[dict]]:
+    """复习推送的 ``finished(ReviewPush, 手动?)``：推了几条笔记的复习状态，推上去了带提交号。哪几条、标题都不记。"""
+    effects = [{"kind": "reviewed", "notes": int(result.notes or 0)}]
+    if result.commit:
+        effects.append({"kind": "git", "op": "commit", "repo": "personal", "pushed_ids": [str(result.commit)]})
+    return bool(manual), "ok" if result.ok else "failed", "" if result.ok else str(result.error or ""), effects
+
+
 class Recorder:
     """一个功能的运行记录器。``started`` / ``finished`` 直接接到那个服务的同名信号上。
     ``after``：每落一行之后叫一声（时间轴页开着的话要重画）；它出错不影响任何事。"""

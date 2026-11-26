@@ -11,6 +11,8 @@
 | `pet/personal_vault.py` | 零 Qt、不导入 `pet.chat`。配置键 `personal`、Windows 的 git（`run_git` / `token_env` / `sync_path`）、`obsidian_vault_uri` |
 | `pet/capture_inbox.py` | 零 Qt、不调 AI、不碰 git。随手记写进收件箱：`write_capture`（一条一个文件 + 图片）、`decode_images`（页面发来的图）、`commit_message` |
 | `pet/capture_organize.py` | 零 Qt。随手记的整理：配置键 `capture`、`pending`、`build_request`、`shape`（收模型的输出）/ `apply`（落盘）、`run`（一次运行）、整理不了的记录 `capture-organize.json` |
+| `pet/capture_review.py` | 零 Qt。复习：读笔记的 `review`、`due`、`grade`（换档表）、`write_grade`（只改那一行）、本机 `capture-review.json` |
+| `pet/review_service.py` | `ReviewService`：今天的一轮、打分、一轮一起推送（`Review: N notes`） |
 | `pet/capture_service.py` | `CaptureOrganizer`：记下后 / 启动后 / 每小时 / 「现在整理」，后台线程，结果排回界面线程 |
 | `pet/personal_briefing.py` | 提示词、`GuardedKnowledgeBase`（拒绝名单）/ `RecordingToolset`（记读过的文件）、`generate`、状态文件 `personal-briefing.json` |
 | `pet/personal_service.py` | `PersonalService`：每分钟 `check()`，线程里先 `pull` 再 `generate`；随手记落盘后后台推送（一把 git 锁） |
@@ -89,7 +91,7 @@ sequenceDiagram
 - **用 Windows 的 `git.exe`，不经 WSL**（那边登录的是公司账号）：`sync_path(repo, [笔记, 图片…], message)`——`add` 这几个路径
   → 有变化才 `commit` → `pull --rebase --autostash` → `push`。pull 失败就 `rebase --abort` 并报告，本地文件保留；永远不 force。
   提交说明只有时间（`capture: YYYY-MM-DD HH:MM`），日志也不记正文。
-- 复习提醒还没做，见路线图；在那之前，复习在手机上的 Claude Code 会话里照规矩问。
+- 复习见下面「随手记的复习」；定点 / 随机提醒还没做，见路线图。
 - **Token 不进命令行**：钥匙串里的 GitHub Token 经 `GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n` 环境变量注入
   （清空 `credential.helper` + 给 `http.https://github.com/.extraheader` 加认证头），不进 argv、不进 `.git/config`；只有碰
   远端的 pull / push 带它。
@@ -140,6 +142,24 @@ sequenceDiagram
 - **量级**（2026-11-25 实测，claude-opus-5-5 · medium）：一条带一张截图约 20 秒、3 轮工具、输入约 1.7 万 token、输出约 950。
   每小时兜底那一下只列目录（5 条时 0.17 毫秒），收件箱空或全是整理不了的就不调模型。
 - 日志和运行记录只记条数、用时、token、提交号；标题和正文只在提交说明和笔记里（都在私有库）。
+
+### 随手记的复习（2026-11-26 起）
+
+整理好的笔记带 `review: {next, interval, count, lapses}`；复习页（`/report/review`）一次给一张卡，照私有库那份规矩的「复习」一节：
+
+- **到期** = `next` ≤ 今天；一轮最多 5 条，`lapses` 多的先，再按 `next` 早的（`capture_review.due`）。状态只在笔记自己的 frontmatter 里：
+  手机上的 Claude 复习过，电脑这边拉一次就知道，反过来也一样。
+- **一张卡两步**：先只给标题、种类、记下的日期、出处，让人回想；「看答案」（空格 / 回车）露出「要点」和「我的话」；三个回答
+  （1 记得 / 2 模糊 / 3 忘了），按钮上写着选它下次几天后再见。换档表：记得进一档（1 → 3 → 7 → 14 → 30 → 90 → 180，封顶），
+  模糊原档，忘了回 1 天、`lapses + 1`；都 `count + 1`，`next` = 今天 + 新间隔。
+- **只改那一行**（`capture_review.write_grade`）：frontmatter 里的 `review`（块写法的几行收成一行流式写法），原子写回，别的一个字不动；
+  只认 `9-Learning/Notes/` 下的笔记，路径跳出去、文件不在、没有 `review` 一律不改。打分在界面线程上，拿 git 锁最多等 2 秒——正在
+  推送时回「正在推送，等一下再点」。
+- **一轮一个提交**（`ReviewService`）：`Review: N notes`，正文列出改了哪几条。这一轮打完了立刻推；没打完就在最后一次打分 2 分钟后推；
+  页面上也有「现在推送」。还没推的几条和今天复习了几条记在本机 `capture-review.json`，关掉肥鱼下次启动 30 秒后接着推。git 和随手记
+  推送、整理任务共用 `PersonalService.git_lock`。推送进运行记录（任务 `capture_review`），提交挂在时间轴那一行下面。
+- **入口**：个人简报页的副按钮在今天有到期的笔记时多一个「复习 N 条」；配置全景随手记磁贴的详情里有「复习」。
+- 量级：200 条笔记挑一轮 15 毫秒（读文件头），打一次分 5 毫秒；页面开着时每次打分重画一次。
 
 ### 在 Obsidian 打开
 
@@ -246,7 +266,7 @@ sequenceDiagram
 - **Obsidian**：`%APPDATA%\obsidian\obsidian.json` 的 `vaults.<id>.path`；`obsidian://open?path=`。
 - **系统钥匙串**：服务名 `big-fat-fish`（读不到时回退旧服务名），条目 `connector/github`——连接器、知识库同步、随手记推送共用。
 - 本机数据：`%APPDATA%/big-fat-fish/knowledge-base/{current,state.json}`、`personal-briefing.json`、`capture-organize.json`
-  （整理不了的那几条；丢了最多再问一次模型）。
+  （整理不了的那几条；丢了最多再问一次模型）、`capture-review.json`（打了分还没推的几条、今天复习了几条；丢了改动仍在克隆里）。
 
 ## 排障
 

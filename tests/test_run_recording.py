@@ -111,6 +111,20 @@ def test_an_organize_run_with_nothing_done_has_no_git_effect(tmp_path, state, ex
     assert [effect["kind"] for effect in row["effects"]] == ["model", "notes"]
 
 
+def test_a_review_push_records_how_many_notes_and_the_commit(tmp_path):
+    from pet.review_service import ReviewPush
+
+    recorder, journal, _ = _recorder(tmp_path, rr.CAPTURE_REVIEW, rr.review_outcome)
+    recorder.started(False)
+    recorder.finished(ReviewPush(ok=True, state="ok", notes=3, commit="0123456789ab"), False)
+    recorder.started(True)
+    recorder.finished(ReviewPush(notes=1, error="rejected"), True)
+    failed, ok = journal.read()
+    assert (ok["job"], ok["result"], ok["effects"]) == ("capture_review", "ok", [
+        {"kind": "reviewed", "notes": 3}, {"kind": "git", "op": "commit", "repo": "personal", "pushed_ids": ["0123456789ab"]}])
+    assert (failed["trigger"], failed["result"], failed["error"], failed["effects"]) == ("manual", "failed", "rejected", [{"kind": "reviewed", "notes": 1}])
+
+
 def test_someone_is_told_after_each_row_and_their_failure_changes_nothing(tmp_path):
     told = []
     recorder, journal, _ = _recorder(tmp_path, rr.WORK_BRIEFING, rr.briefing_outcome, after=lambda: told.append(1))

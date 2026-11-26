@@ -39,16 +39,22 @@ NOTES_SHELL = "notes.html"
 NOTES_STYLES = ("tokens.css", "notes.css")
 NOTES_MODULES = ("util.js", "client.js", "notelist.js", "notes.js")
 NOTES_SCRIPT_TAG = '<script type="module" src="/notes.js"></script>'
+#: 复习页（``/report/review``，见 ``reports.review_page``）：一次一张卡，同一条数据路、自己的外壳和模块。
+REVIEW_SHELL = "review.html"
+REVIEW_STYLES = ("tokens.css", "review.css")
+REVIEW_MODULES = ("util.js", "client.js", "review.js")
+REVIEW_SCRIPT_TAG = '<script type="module" src="/review.js"></script>'
 #: 报告类页面的种类 → （外壳文件, 它的 script 标签）。provider 函数的 ``page`` 属性选哪一种（没有就是 report）。
-PAGE_SHELLS = {"report": (REPORT_SHELL, REPORT_SCRIPT_TAG), "notes": (NOTES_SHELL, NOTES_SCRIPT_TAG)}
+PAGE_SHELLS = {"report": (REPORT_SHELL, REPORT_SCRIPT_TAG), "notes": (NOTES_SHELL, NOTES_SCRIPT_TAG),
+               "review": (REVIEW_SHELL, REVIEW_SCRIPT_TAG)}
 #: 页面脚本的原生模块，**按依赖顺序**：被 import 的排在前面，入口 ``boot.js`` 在最后。
 #: 本机服务把它们一个个发出去，浏览器按 import 自己装配；离线快照没法这样（``file://`` 页面加载不了模块），
 #: 所以 ``bundle()`` 按这个顺序把它们拼成一段普通脚本。加模块就在这里登记。
 MODULES = ("util.js", "layout.js", "roads.js", "draw.js", "viewer.js", "memory.js", "form.js", "settings.js", "repair.js",
            "timeline.js", "interact.js", "app.js", "client.js", "boot.js")
 #: 本机服务发的静态文件：名字 → 内容类型。**都不含用户数据**，所以不要令牌。
-ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES + REPORT_STYLES + NOTES_STYLES},
-          **{name: "text/javascript; charset=utf-8" for name in MODULES + REPORT_MODULES + NOTES_MODULES}}
+ASSETS = {**{name: "text/css; charset=utf-8" for name in STYLES + REPORT_STYLES + NOTES_STYLES + REVIEW_STYLES},
+          **{name: "text/javascript; charset=utf-8" for name in MODULES + REPORT_MODULES + NOTES_MODULES + REVIEW_MODULES}}
 # 模块里只许这两种写法，bundle() 才拼得起来：整行的具名 import，和顶层声明前的 export。
 _IMPORT_LINE = re.compile(r"^import \{\w+(?:, \w+)*\} from '\./[a-z]+\.js';\n", re.M)
 _EXPORT_PREFIX = re.compile(r"^export (?=(?:function|const) )", re.M)
@@ -66,7 +72,7 @@ PAGE_KEYS = ("title", "search_placeholder", "motion_on", "motion_off", "help_tit
              "sync_busy", "sync_missing", "activity", "activity_working", "activity_opened", "activity_failed",
                "open_page", "open_page_working", "open_page_opened", "open_page_failed",
              "organize", "organize_working", "organize_started", "organize_busy", "organize_empty", "organize_missing",
-             "organize_failed", "organize_lost",
+             "organize_failed", "organize_lost", "review_open", "review_open_working", "review_open_opened", "review_open_failed",
              "list_count", "list_filter", "expand_all", "collapse_all", "ago_now", "ago_minutes", "ago_hours", "ago_days", "gutter_tip",
              *("form_" + key for key in (
                  "saving", "saved", "stale", "invalid", "busy", "unavailable", "failed", "lost", "save", "revert", "restore_builtin",
@@ -90,7 +96,11 @@ NOTES_KEYS = ("report_lost", "report_action_started", "report_action_busy", "rep
               "notes_confirm_delete", "notes_saved", "notes_empty_text", "notes_failed", "notes_started", "notes_opened",
               "notes_folder_opened", "notes_no_link", "notes_missing", "notes_lost",
               "notes_watch_last", "notes_watch_found", "notes_watch_next", "notes_watch_never", "notes_watch_busy")
-PAGE_STRING_KEYS = {"report": REPORT_KEYS, "notes": NOTES_KEYS}
+#: 复习页的界面文字（卡片上的字、三个回答之后的那句、推送按钮和它的回答）
+REVIEW_KEYS = ("report_lost", "review_left", "review_show", "review_points", "review_words", "review_counts", "review_push",
+               "review_keys", "review_graded", "review_busy", "review_missing", "review_failed", "review_flush_started",
+               "review_flush_busy", "review_flush_empty", "review_flush_missing")
+PAGE_STRING_KEYS = {"report": REPORT_KEYS, "notes": NOTES_KEYS, "review": REVIEW_KEYS}
 NODE_STATE_KEYS = ("live", "ok", "warn", "bad", "unknown", "off", "info")
 EDGE_STATE_KEYS = ("live", "ok", "warn", "broken", "unknown", "off")
 

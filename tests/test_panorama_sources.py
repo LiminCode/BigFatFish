@@ -263,8 +263,9 @@ def test_the_capture_tile_opens_the_page_with_the_box_and_can_organize_now():
     graph = sources.build(samples.facts())
     tile = _node(graph, "f_capture")
     organize = {"name": "organize_captures", "words": "organize", "ask": False, "body": {}}
+    review = {"name": "open_report", "words": "review_open", "ask": False, "body": {"report": "review"}, "icon": "eye"}
     assert tile["face"] == _page("personal_briefing")
-    assert tile["actions"] == [_page("personal_briefing"), organize]
+    assert tile["actions"] == [_page("personal_briefing"), organize, review], "详情里：查看、现在整理、复习"
     assert tile["settings"] == "capture" and tile["kind"] == "feature_personal"
     assert _edge(graph, "f_capture", "vault_personal")["line"] == "memory"
 

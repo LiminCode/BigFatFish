@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/review.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap bar">
+    <div class="tl">
+      <h1 id="title"></h1>
+      <span class="counts" id="counts"></span>
+    </div>
+    <div class="tr">
+      <span class="status" id="status"></span>
+      <span class="sync" id="sync"></span>
+      <button class="btn ghost" id="push" hidden></button>
+    </div>
+  </div>
+</header>
+<div class="lost" id="lost" hidden>__LOST__</div>
+<main class="wrap">
+  <p class="empty" id="empty" hidden></p>
+  <article class="card" id="card" hidden></article>
+  <p class="keys" id="keys" hidden></p>
+</main>
+<script type="module" src="/review.js"></script>
+</body>
+</html>

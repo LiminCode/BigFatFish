@@ -1,0 +1,46 @@
+/* 复习页（/report/review）：一次一张卡。颜色令牌和 Qt 共用（tokens.css 的 --m-*，深色默认、data-theme="light" 换浅色）。
+   Metro：方角、磁贴无边框、白字不描边、悬停提亮；三种回答用淡一点的实色（记得绿、模糊琥珀、忘了红），层次用玻璃阴影。 */
+:root{color-scheme:dark;--link:#6cb4ff;--bad:#ff6b61;--ok:#3cb371;--warn:#ffa94d;--glass:0 10px 30px rgba(0,0,0,.28);
+  --a-remember:#3f9a6b;--a-fuzzy:#b8862f;--a-forgot:#b85a55}
+:root[data-theme="light"]{color-scheme:light;--link:#0a6fd6;--bad:#d93025;--ok:#2e8b57;--warn:#e8710a;--glass:0 10px 28px rgba(0,0,0,.12);
+  --a-remember:#4caf7d;--a-fuzzy:#d39b3a;--a-forgot:#cf6b66}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--m-page);color:var(--m-text);font:15px/1.6 "Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:0 28px}
+[hidden]{display:none !important}
+
+.top{position:sticky;top:0;z-index:5;background:var(--m-page);box-shadow:0 1px 0 var(--m-divider)}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 24px;padding-top:16px;padding-bottom:10px}
+.tl{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.tl h1{margin:0;font-size:28px;font-weight:300;letter-spacing:.02em;color:var(--m-title)}
+.counts{color:var(--m-muted);font-size:13px}
+.tr{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.status,.sync{color:var(--m-muted);font-size:13px;max-width:380px}.status.bad,.sync.bad{color:var(--bad)}.status.ok{color:var(--ok)}
+.btn{background:var(--m-accent);color:var(--m-selected-text);border:0;padding:9px 20px;font:inherit;font-size:14px;cursor:pointer;box-shadow:var(--glass);line-height:1.3}
+.btn:hover{filter:brightness(1.08)}.btn:focus-visible{outline:2px solid var(--m-outline);outline-offset:2px}
+.btn:disabled{background:var(--m-tile);color:var(--m-disabled);cursor:default;box-shadow:none;filter:none}
+.btn.ghost{background:var(--m-tile);color:var(--m-text);box-shadow:none;padding:6px 12px;font-size:13px}
+.btn.ghost:hover{background:var(--m-tile-hover);filter:none}
+.lost{max-width:860px;margin:10px auto 0;padding:10px 28px;color:var(--warn);font-size:13px}
+
+main{padding-top:26px;padding-bottom:48px}
+.empty{color:var(--m-muted);font-size:15px;margin:24px 0}
+
+/* 卡片：标题、一行出处，「看答案」；翻开后是要点和我的话，下面三个回答 */
+.card{background:var(--m-tile);padding:26px 30px 24px;box-shadow:var(--glass)}
+.card .left{color:var(--m-muted);font-size:12.5px;margin:0 0 10px}
+.card h2{margin:0 0 8px;font-size:24px;font-weight:600;color:var(--m-title);line-height:1.35}
+.card .meta{color:var(--m-muted);font-size:13px;margin:0 0 20px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.card .meta a{color:var(--link);text-decoration:none;word-break:break-all}.card .meta a:hover{text-decoration:underline}
+.card .kind{background:var(--m-page);padding:0 8px}
+.card .show{font-size:15px;padding:10px 26px}
+.card h3{margin:18px 0 6px;font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--m-muted)}
+.card .md{font-size:15.5px}.card .md p{margin:0 0 8px}.card .md ul{margin:0 0 8px;padding-left:22px}
+.card .md a{color:var(--link)}
+.answers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:24px}
+.answers .btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 10px;font-size:16px}
+.answers .btn small{font-size:12px;opacity:.85}
+.answers .remember{background:var(--a-remember)}.answers .fuzzy{background:var(--a-fuzzy)}.answers .forgot{background:var(--a-forgot)}
+.answers .btn:disabled{background:var(--m-page);color:var(--m-disabled)}
+.keys{color:var(--m-muted);font-size:12.5px;text-align:center;margin-top:14px}
+@media (max-width:560px){.wrap{padding:0 16px}.card{padding:20px 18px}.answers{grid-template-columns:1fr}}
