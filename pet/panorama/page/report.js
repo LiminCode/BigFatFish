@@ -10,8 +10,11 @@
    这类纯文字这里转义。
    「重新生成」：POST /api/actions/<动作名> {report}；服务回 started 之后不动按钮——生成开始的信号会让页面重画成忙碌，
    结束再重画成新内容。回 busy 时按钮保持灰，别的回答把原因写在状态栏、按钮放开。
-   顶部的输入区（composer，个人简报的「记灵感」）：POST /api/actions/<动作名> {report, text}，回 saved 就清空框；推送到哪一步了
-   由服务说（回答里的 status，之后每次重画也带着），页面不自己编。 */
+   顶部的输入区（composer，个人简报的「随手记」）：POST /api/actions/<动作名> {report, text, images?}，回 saved 就清空框；
+   推送到哪一步了由服务说（回答里的 status，之后每次重画也带着），页面不自己编。
+   服务给了 composer.images 才收图：粘贴（剪贴板里同时有文字时不拦，让文字照常进框）、拖进输入框、点「添加图片」选文件；
+   先排成一行缩略图（点 × 去掉），「记下」时和文字一起发 [{type, data(base64)}]。超过 composer.images.max 张的不收、说一声；
+   太大的图（> SHRINK_BYTES）先在画布上缩成长边 SHRINK_EDGE 的 JPEG 再收——服务那头单张只收 3 MB。 */
 import {esc} from './util.js';
 import {takeToken, makeApi} from './client.js';
 import {classify, passes, navTiles, filterChips, card} from './items.js';
@@ -23,6 +26,8 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
   var el = function (id) { return document.getElementById(id); };
   var revision = 0, waiting = false, dead = false, S = {};
   var filters = [], hideDone = false, collapsed = {}, doneKey = '', done = {};
+  var SHRINK_BYTES = 2500000, SHRINK_EDGE = 2000;
+  var pictures = [], reading = 0, pictureRules = null;  /* 排着的图 [{type, data}]、还在读的张数；服务说的收图规矩（composer.images），没有就不收 */
 
   function lost() { dead = true; waiting = false; el('lost').hidden = false; el('action').disabled = true; el('add').disabled = true; }
 
@@ -88,6 +93,11 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
       el('composer-status').textContent = c.status || '';
       el('composer-status').className = 'cstatus' + (c.failed ? ' bad' : '');
     }
+    pictureRules = c && c.images ? c.images : null;
+    el('pick').hidden = !pictureRules;
+    el('pick').textContent = pictureRules ? pictureRules.label || '' : '';
+    if (!pictureRules) pictures = [];
+    tray();
     /* 详情几段也是服务端渲染好的 HTML（reports.trace_sections），第一段默认展开；里面「到设置里改」的占位换成
        配置全景带令牌的地址（同一个服务、同一个令牌） */
     var settingsUrl = location.origin + '/#' + token + (r.settings_focus ? '&settings=' + encodeURIComponent(r.settings_focus) : '');
@@ -178,20 +188,87 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
   }
   el('action').addEventListener('click', function () { act(el('action')); });
 
+  /* 排着的图：一行缩略图，每张一个 × */
+  function tray() {
+    var box = el('tray');
+    box.hidden = !pictures.length;
+    box.innerHTML = pictures.map(function (p, i) {
+      return '<span class="thumb"><img src="data:' + esc(p.type) + ';base64,' + esc(p.data) + '" alt="">' +
+        '<button type="button" class="drop" data-drop="' + i + '" title="' + esc(pictureRules ? pictureRules.remove : '') + '">×</button></span>';
+    }).join('');
+  }
+  function say(text, bad) { var status = el('composer-status'); status.textContent = text || ''; status.className = 'cstatus' + (bad ? ' bad' : ''); }
+  /* 一个图片文件 → {type, data}：太大的先缩成 JPEG。读不出来的就算了（服务那头还会再查一遍） */
+  function readPicture(file, done) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var url = String(reader.result || ''), comma = url.indexOf(',');
+      if (comma < 0) return;
+      if (file.size <= SHRINK_BYTES || typeof document.createElement !== 'function') {
+        done({type: file.type, data: url.slice(comma + 1)}); return;
+      }
+      var img = document.createElement('img');
+      img.onload = function () {
+        var scale = Math.min(1, SHRINK_EDGE / Math.max(img.naturalWidth, img.naturalHeight)), canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        var small = canvas.toDataURL('image/jpeg', 0.85);
+        done({type: 'image/jpeg', data: small.slice(small.indexOf(',') + 1)});
+      };
+      img.src = url;
+    };
+    reader.readAsDataURL(file);
+  }
+  function takePictures(files) {
+    if (!pictureRules || dead) return;
+    files.forEach(function (file) {
+      if (!file || !/^image\/(png|jpeg|webp|gif)$/.test(file.type || '')) return;
+      if (pictures.length + reading >= (pictureRules.max || 0)) { say(pictureRules.full, true); return; }
+      reading += 1;                              /* 读图是异步的：还在读的也算进上限 */
+      readPicture(file, function (picture) { reading -= 1; pictures.push(picture); tray(); });
+    });
+  }
+  function filesOf(items) { var out = []; for (var i = 0; i < (items ? items.length : 0); i++) out.push(items[i]); return out; }
+
   function compose() {
     var box = el('text'), btn = el('add'), status = el('composer-status');
     if (btn.disabled || dead) return;
-    if (!String(box.value || '').trim()) { status.textContent = S.report_compose_empty || ''; status.className = 'cstatus bad'; return; }
+    var sending = pictures.slice();
+    if (!String(box.value || '').trim() && !sending.length) { say(S.report_compose_empty, true); return; }
     btn.disabled = true;
-    api.post('/api/actions/' + btn.dataset.name, {report: btn.dataset.report, text: box.value}).then(function (r) {
+    var body = {report: btn.dataset.report, text: box.value};
+    if (sending.length) body.images = sending.map(function (p) { return {type: p.type, data: p.data}; });
+    api.post('/api/actions/' + btn.dataset.name, body).then(function (r) {
       var body = r.body || {}, state = body.state;
       btn.disabled = false;
-      if (r.status === 200 && state === 'saved') box.value = '';
+      if (r.status === 200 && state === 'saved') { box.value = ''; pictures = []; tray(); }
       status.textContent = body.status || S[state === 'empty' ? 'report_compose_empty' : 'report_action_failed'] || '';
       status.className = 'cstatus' + (state === 'saved' ? '' : ' bad');
     }).then(null, function () { btn.disabled = false; status.textContent = S.report_action_lost || ''; status.className = 'cstatus bad'; });
   }
   el('add').addEventListener('click', compose);
+  el('text').addEventListener('paste', function (event) {
+    var items = filesOf(event.clipboardData && event.clipboardData.items);
+    var files = items.filter(function (it) { return it.kind === 'file'; }).map(function (it) { return it.getAsFile(); });
+    if (!pictureRules || !files.length) return;
+    if (!items.some(function (it) { return it.kind === 'string'; })) event.preventDefault();
+    takePictures(files);
+  });
+  el('text').addEventListener('dragover', function (event) { if (pictureRules) event.preventDefault(); });
+  el('text').addEventListener('drop', function (event) {
+    var files = filesOf(event.dataTransfer && event.dataTransfer.files);
+    if (!pictureRules || !files.length) return;
+    event.preventDefault();
+    takePictures(files);
+  });
+  el('pick').addEventListener('click', function () { el('file').click(); });
+  el('file').addEventListener('change', function (event) { takePictures(filesOf(event.target.files)); event.target.value = ''; });
+  el('tray').addEventListener('click', function (event) {
+    var drop = event.target.closest ? event.target.closest('[data-drop]') : null;
+    if (!drop) return;
+    pictures.splice(Number(drop.dataset.drop), 1);
+    tray();
+  });
   el('text').addEventListener('keydown', function (event) {
     if ((event.key === 'Enter' || event.keyCode === 13) && (event.ctrlKey || event.metaKey)) { event.preventDefault(); compose(); }
   });

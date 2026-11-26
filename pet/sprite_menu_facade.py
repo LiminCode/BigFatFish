@@ -562,7 +562,7 @@ class SpriteMenuFacade:
             controller.open_window()
 
     def open_personal_briefing(self) -> None:
-        """「个人简报」：浏览器里的个人简报页（岛上的人形走同一个方法；记灵感在页顶的输入区）。"""
+        """「个人简报」：浏览器里的个人简报页（岛上的人形走同一个方法；随手记在页顶的输入区）。"""
         controller = getattr(self._shell, "personal", None)
         if controller is not None:
             controller.open_window()

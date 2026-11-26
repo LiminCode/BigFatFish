@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""个人助理的 Qt 侧：服务（定时 / 线程 / git 锁）、提醒、岛状态、「在 Obsidian 打开」。页面（简报、灵感输入区）在浏览器里，
+"""个人助理的 Qt 侧：服务（定时 / 线程 / git 锁）、提醒、岛状态、「在 Obsidian 打开」。页面（简报、随手记输入区）在浏览器里，
 见 test_personal_report_page。
 
 纪律：不调 Anthropic、不起 git、不打开 Obsidian——全部用同步的假函数；样例文字中性。
@@ -34,7 +34,7 @@ def _chinese_again():
 
 
 class _Fakes:
-    """生成 / pull / sync / append / 打开 的替身：同步跑，记下参数与顺序。"""
+    """生成 / pull / sync / 打开 的替身：同步跑，记下参数与顺序。"""
 
     def __init__(self, *, ok=True, pull_ok=True, sync_ok=True, open_ok=True):
         self.order: list[str] = []
@@ -58,9 +58,9 @@ class _Fakes:
         self.order.append("pull")
         return (True, "") if self.pull_ok else (False, "fatal: unable to access remote")
 
-    def sync(self, repo_dir, now, *, token=""):
+    def sync(self, repo_dir, paths, now, *, token=""):
         self.order.append("sync")
-        self.syncs.append((repo_dir, now, token))
+        self.syncs.append((repo_dir, list(paths), now, token))
         return (True, "") if self.sync_ok else (False, "remote: Permission denied\n[token scopes: repo]")
 
     def open(self, target):
@@ -142,32 +142,38 @@ def test_without_a_claude_provider_the_service_reports_instead_of_crashing(tmp_p
     assert "Claude" in service.last_error() and service.latest() is None
 
 
-# ---------------------------------------------------------------- 服务：灵感
-def test_an_idea_is_appended_then_committed_and_pushed_with_the_token(tmp_path, clone):
+# ---------------------------------------------------------------- 服务：随手记
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+
+
+def test_a_capture_is_written_to_the_inbox_then_committed_and_pushed_with_the_token(tmp_path, clone):
     fakes = _Fakes()
     service = _service(tmp_path, clone, fakes)
     saved, synced, changes = [], [], []
-    service.inspiration_saved.connect(saved.append)
+    service.capture_saved.connect(saved.append)
     service.synced.connect(lambda *a: synced.append(a))
     service.changed.connect(lambda: changes.append(service.sync_state))
-    path = service.add_inspiration("把阳台的灯换成感应的")
-    assert path == pv.inspiration_path(clone) and "- 09:00 把阳台的灯换成感应的" in path.read_text(encoding="utf-8")
-    assert saved == [str(path)] and fakes.syncs == [(str(clone), NOW, "ghp_test")]
+    note = service.add_capture("把阳台的灯换成感应的", [(".png", PNG)])
+    assert note == "0-Inbox/2026-10-17 0900 把阳台的灯换成感应的.md"
+    assert "把阳台的灯换成感应的\n\n![[assets/" in (clone / note).read_text(encoding="utf-8")
+    assert saved == [note] and service.last_capture == note
+    assert fakes.syncs == [(str(clone), [note, "0-Inbox/assets/2026-10-17 0900 把阳台的灯换成感应的-1.png"], NOW, "ghp_test")]
     assert synced == [(True, "")] and changes == ["pushing", "pushed"] and service.pushed_at == "09:00"
-    assert service.add_inspiration("   ") is None, "空的不记"
+    assert service.add_capture("   ") is None, "空的不记"
+    assert service.add_capture("", [(".png", PNG)]) == "0-Inbox/2026-10-17 0900 截图.md", "只有图也记"
 
 
 def test_a_failed_push_keeps_the_file_and_says_why(tmp_path, clone):
     fakes = _Fakes(sync_ok=False)
     service = _service(tmp_path, clone, fakes)
-    assert service.add_inspiration("x") is not None
+    note = service.add_capture("x")
+    assert note is not None and (clone / note).exists()
     assert service.sync_state == "failed" and "token scopes: repo" in service.sync_error
-    assert pv.inspiration_path(clone).exists()
 
 
 def test_without_a_clone_nothing_is_written(tmp_path):
     service = _service(tmp_path, tmp_path / "missing", _Fakes())
-    assert service.add_inspiration("x") is None
+    assert service.add_capture("x") is None
     assert service.sync_state == "failed" and "missing" in service.sync_error and not service.repo_ready()
 
 

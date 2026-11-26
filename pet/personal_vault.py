@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""个人助理的纯逻辑（零 Qt、不依赖 ``pet.chat``）：配置键、AI-Base 本地克隆、灵感记录、Windows git、Obsidian。
+"""个人助理的纯逻辑（零 Qt、不依赖 ``pet.chat``）：配置键、AI-Base 本地克隆、Windows git、Obsidian。
 
 和工作笔记（``work_notes.py``）的差别：仓库是**个人**知识库 AI-Base 的本地克隆，git 直接用 Windows 的
 ``git.exe``（不经 WSL——那边登录的是公司账号），推送用肥鱼钥匙串里的 GitHub Token（和知识库同步 / GitHub
 连接器共用的那一个），Token 只经环境变量交给 git，不进命令行。
 
-灵感记录不经 AI：追加到 ``User/灵感 Inspiration.md`` 当天那一节，然后 add / commit / pull --rebase / push。
+随手记不经 AI：``capture_inbox`` 写进 ``0-Inbox/`` 一条一个文件，然后 ``sync_path`` add / commit / pull --rebase / push。
 提交说明只有日期时间，不带正文；本模块也不记录正文到日志。
 
 ``config.py`` 在导入时就要用 ``normalize``，所以这里不能导入 ``pet.chat``（钥匙串 Token 的读取是惰性导入）。
@@ -13,10 +13,8 @@
 from __future__ import annotations
 
 import base64
-import datetime as dt
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -29,9 +27,6 @@ from . import work_notes as wn
 
 CONFIG_KEY = "personal"
 DEFAULT_TIME = "08:30"
-#: 灵感记录在库里的位置（用户 2026-10-17 选的单文件）
-INSPIRATION_FILE = "User/灵感 Inspiration.md"
-INSPIRATION_TITLE = "灵感 Inspiration"
 #: 没在 PATH 里时的 Git for Windows 默认位置
 GIT_FALLBACK = r"C:\Program Files\Git\cmd\git.exe"
 GIT_TIMEOUT_S = 120.0
@@ -44,8 +39,6 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 MODEL_CHOICES = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1")
 TIME_CHOICES = ("07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00", "20:00", "21:00")
 
-_H2_DATE_RE = re.compile(r"^## +(\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE)
-_UPDATED_RE = re.compile(r"^updated: .*$", re.MULTILINE)
 _AUTH_FAILED_MARKS = ("403", "401", "authentication failed", "could not read username", "permission denied",
                       "invalid username or token", "terminal prompts disabled")
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -217,16 +210,11 @@ def upstream_state(repo_dir: str | Path, *, run: GitRunner = run_git) -> dict:
     return {"head": head, "behind": None, "ahead": None}
 
 
-def sync_inspiration(repo_dir: str | Path, now: dt.datetime, *, run: GitRunner = run_git,
-                     token: str = "") -> tuple[bool, str]:
-    """灵感文件：add → 有变化才 commit → pull --rebase → push。返回 (成功?, 失败原因尾巴)。"""
-    return sync_path(repo_dir, INSPIRATION_FILE, f"inspiration: {now:%Y-%m-%d %H:%M}", run=run, token=token)
-
-
-def sync_path(repo_dir: str | Path, rel_path: str, message: str, *, run: GitRunner = run_git,
+def sync_path(repo_dir: str | Path, rel_path: str | list[str], message: str, *, run: GitRunner = run_git,
               token: str = "") -> tuple[bool, str]:
-    """仓库里的一个文件：add → 有变化才 commit → pull --rebase → push（灵感记录、会话记忆镜像共用）。"""
-    code, out = run(repo_dir, ["add", "--", rel_path])
+    """仓库里的一个或几个文件：add → 有变化才 commit → pull --rebase → push（随手记、会话记忆镜像共用）。"""
+    paths = [rel_path] if isinstance(rel_path, str) else list(rel_path)
+    code, out = run(repo_dir, ["add", "--", *paths])
     if code != 0:
         return False, out.strip()[-300:]
     code, out = run(repo_dir, ["diff", "--cached", "--quiet"])
@@ -241,51 +229,6 @@ def sync_path(repo_dir: str | Path, rel_path: str, message: str, *, run: GitRunn
         return False, reason
     code, out = _remote(repo_dir, ["push", "-q"], run=run, token=token)
     return code == 0, "" if code == 0 else out.strip()[-300:]
-
-
-# ---------------------------------------------------------------- 灵感记录
-
-def inspiration_path(repo_dir: str | Path) -> Path:
-    return Path(repo_dir) / INSPIRATION_FILE
-
-
-def _new_file(now: dt.datetime) -> str:
-    day = now.date().isoformat()
-    return (f"---\ntitle: {INSPIRATION_TITLE}\ntags:\n  - inspiration\ncreated: {day}\nupdated: {day}\n---\n\n"
-            f"# {INSPIRATION_TITLE}\n\n灵感随手记：桌面上记一条就追加一行，按日期分节。\n")
-
-
-def _entry(text: str, now: dt.datetime) -> str:
-    lines = [line.rstrip() for line in str(text or "").strip().splitlines()] or [""]
-    first, rest = lines[0], lines[1:]
-    return "\n".join([f"- {now:%H:%M} {first}", *(f"  {line}" for line in rest)])
-
-
-def append_inspiration(repo_dir: str | Path, text: str, now: dt.datetime) -> Path:
-    """把一条灵感追加到当天那一节（没有就开一节），原子写回；返回文件路径。"""
-    path = inspiration_path(repo_dir)
-    content = path.read_text(encoding="utf-8") if path.exists() else _new_file(now)
-    day = now.date().isoformat()
-    entry = _entry(text, now)
-    headings = list(_H2_DATE_RE.finditer(content))
-    todays = [match for match in headings if match.group(1) == day]
-    if todays:
-        start = todays[-1].end()
-        later = [match.start() for match in headings if match.start() > start]
-        end = later[0] if later else len(content)
-        section = content[start:end].rstrip("\n")
-        tail = content[end:].lstrip("\n")
-        content = content[:start] + section + "\n" + entry + "\n" + ("\n" + tail if tail else "")
-    else:
-        content = content.rstrip("\n") + f"\n\n## {day}\n\n{entry}\n"
-    if content.startswith("---"):
-        content = _UPDATED_RE.sub(f"updated: {day}", content, count=1)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".md.tmp")
-    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(content if content.endswith("\n") else content + "\n")
-    os.replace(tmp, path)
-    return path
 
 
 # ---------------------------------------------------------------- Obsidian
@@ -305,5 +248,5 @@ def obsidian_vault_uri(repo_dir: str | Path, vaults: dict | None = None) -> str:
 
 
 def summary_for_log(ok: bool, reason: str) -> str:
-    """日志只记成败和原因，不记灵感正文。"""
+    """日志只记成败和原因，不记随手记的正文。"""
     return "ok" if ok else json.dumps(reason[-120:], ensure_ascii=False)

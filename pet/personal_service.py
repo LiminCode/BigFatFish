@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""个人助理的 Qt 侧服务：每日个人简报的定时与后台线程、灵感记录的落盘与 git 推送、Obsidian 打开。
+"""个人助理的 Qt 侧服务：每日个人简报的定时与后台线程、随手记的落盘与 git 推送、Obsidian 打开。
 
 照工作简报 / 工作笔记的样子：每分钟看一眼「该不该生成」；真要生成时在 daemon 线程里先 ``git pull``
 再调肥鱼自己的 Claude（个人 API key），结果经信号排队回 GUI 线程落盘；git 串行（一把锁）；
@@ -12,13 +12,13 @@ import datetime as dt
 import logging
 import os
 import threading
-from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from . import personal_briefing as pb
+from . import capture_inbox as ci
 from . import personal_vault as pv
 from .i18n import t
 
@@ -45,13 +45,19 @@ def resolve_chat_provider(config):
     return provider
 
 
+
+def _sync_capture(repo_dir: str, paths: list[str], now: dt.datetime, *, token: str = "") -> tuple[bool, str]:
+    """一条随手记写下的那几个文件：一个提交（说明只有时间），pull --rebase，push。"""
+    return pv.sync_path(repo_dir, paths, ci.commit_message(now), token=token)
+
+
 class PersonalService(QObject):
-    """``started(手动?)`` / ``finished(PersonalBriefing, 手动?)``；``inspiration_saved(path)``；
-    ``synced(ok, error)``：灵感推送的结果；``changed()``：状态行该刷新了。"""
+    """``started(手动?)`` / ``finished(PersonalBriefing, 手动?)``；``capture_saved(笔记的相对路径)``；
+    ``synced(ok, error)``：随手记推送的结果；``changed()``：状态行该刷新了。"""
 
     started = Signal(bool)
     finished = Signal(object, bool)
-    inspiration_saved = Signal(str)
+    capture_saved = Signal(str)
     synced = Signal(bool, str)
     changed = Signal()
     _done = Signal(int, object, bool)
@@ -61,7 +67,7 @@ class PersonalService(QObject):
     CHECK_INTERVAL_MS = 60_000
 
     def __init__(self, config, *, generate: Callable | None = None, pull: Callable | None = None,
-                 sync: Callable | None = None, append: Callable | None = None, spawn: Callable | None = None,
+                 sync: Callable | None = None, write: Callable | None = None, spawn: Callable | None = None,
                  now: Callable[[], dt.datetime] | None = None, opener: Callable[[str], bool] | None = None,
                  token: Callable[[], str] | None = None, provider: Callable | None = None,
                  parent: QObject | None = None) -> None:
@@ -69,8 +75,8 @@ class PersonalService(QObject):
         self._config = config
         self._generate = generate or pb.generate
         self._pull = pull or pv.pull
-        self._sync = sync or pv.sync_inspiration
-        self._append = append or pv.append_inspiration
+        self._sync = sync or _sync_capture
+        self._write = write or ci.write_capture
         self._spawn = spawn or _spawn_thread
         self._now = now or dt.datetime.now
         self._open = opener or _open_target
@@ -84,6 +90,7 @@ class PersonalService(QObject):
         self._sync_state = "idle"        # idle / pushing / pushed / failed
         self._sync_error = ""
         self._pushed_at = ""
+        self._last_capture = ""      # 最近一条记下的笔记（相对仓库）：状态行说「已写进 …」
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.check)
         self._done.connect(self._on_done)
@@ -125,6 +132,10 @@ class PersonalService(QObject):
     @property
     def sync_error(self) -> str:
         return self._sync_error
+
+    @property
+    def last_capture(self) -> str:
+        return self._last_capture
 
     @property
     def pushed_at(self) -> str:
@@ -211,33 +222,37 @@ class PersonalService(QObject):
                  "" if briefing.ok else f"：{briefing.error[:120]}")
         self.finished.emit(briefing, manual)
 
-    # ---------------------------------------------------------- 灵感
-    def add_inspiration(self, text: str) -> Path | None:
-        """立刻追加到文件，然后后台 commit + push。空的不记；仓库副本不在就不记。"""
-        if not str(text or "").strip():
+    # ---------------------------------------------------------- 随手记
+    def add_capture(self, text: str, images: list[tuple[str, bytes]] | tuple = ()) -> str | None:
+        """立刻写进收件箱（一条一个文件，图片放 assets），然后后台 commit + push。返回笔记的相对路径；
+        没字也没图不记；仓库副本不在、写不进去也不记（状态行写着原因）。"""
+        images = list(images or [])
+        if not str(text or "").strip() and not images:
             return None
         repo_dir = self.settings()["repo_dir"]
         if not pv.repo_ready(repo_dir):
-            self._set_sync("failed", t("personal.inspiration.no_repo", path=repo_dir))
+            self._set_sync("failed", t("personal.capture.no_repo", path=repo_dir))
             return None
+        fallback = t("personal.capture.name_picture" if images and not str(text or "").strip() else "personal.capture.name_text")
         try:
-            path = self._append(repo_dir, text, self._now())
+            paths = self._write(repo_dir, text, images, self._now(), fallback=fallback)
         except OSError as exc:
-            self._set_sync("failed", t("personal.inspiration.write_failed", error=exc.strerror or str(exc)))
-            log.warning("灵感记录：写文件失败", exc_info=True)
+            self._set_sync("failed", t("personal.capture.write_failed", error=exc.strerror or str(exc)))
+            log.warning("随手记：写文件失败", exc_info=True)
             return None
-        self.inspiration_saved.emit(str(path))
-        self._start_sync(repo_dir)
-        return path
+        self._last_capture = paths[0]
+        self.capture_saved.emit(paths[0])
+        self._start_sync(repo_dir, paths)
+        return paths[0]
 
-    def _start_sync(self, repo_dir: str) -> None:
+    def _start_sync(self, repo_dir: str, paths: list[str]) -> None:
         generation, sync, lock, now, token = self._generation, self._sync, self._git_lock, self._now(), self._token
         self._set_sync("pushing", "")
 
         def run() -> None:
             with lock:
                 try:
-                    ok, out = sync(repo_dir, now, token=token())
+                    ok, out = sync(repo_dir, paths, now, token=token())
                 except Exception as exc:  # noqa: BLE001
                     ok, out = False, t("personal.service.error_while_committing_name", name__=type(exc).__name__)
             try:
@@ -248,7 +263,7 @@ class PersonalService(QObject):
         try:
             self._spawn(run)
         except Exception:  # noqa: BLE001
-            log.exception("灵感记录：启动 git 线程失败")
+            log.exception("随手记：启动 git 线程失败")
             self._set_sync("failed", "thread")
 
     def _on_sync_done(self, generation: int, ok: bool, out: str) -> None:
@@ -258,7 +273,7 @@ class PersonalService(QObject):
             self._pushed_at = f"{self._now():%H:%M}"
             self._set_sync("pushed", "")
         else:
-            log.warning("灵感记录：git 失败：%s", out[-200:])
+            log.warning("随手记：git 失败：%s", out[-200:])
             self._set_sync("failed", out[-200:])
         self.synced.emit(ok, "" if ok else out)
 

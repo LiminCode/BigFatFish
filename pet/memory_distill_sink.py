@@ -317,7 +317,7 @@ def write_vault_note(repo_dir: Path | str, entries: Iterable[Entry], now: dt.dat
 
 
 def sync_vault(repo_dir: Path | str, now: dt.datetime, *, run_git: pv.GitRunner = pv.run_git, token: str = "") -> tuple[bool, str]:
-    """add → 有变化才 commit → pull --rebase → push（和灵感记录同一条路）。阻塞，放线程里。"""
+    """add → 有变化才 commit → pull --rebase → push（和随手记同一条路）。阻塞，放线程里。"""
     return pv.sync_path(repo_dir, VAULT_NOTE, f"claude memory: {now:%Y-%m-%d %H:%M}", run=run_git, token=token)
 
 

@@ -248,11 +248,14 @@ var dom = function () { var el = document.getElementById; return {title: el('tit
   sideHidden: el('side').hidden, navTitle: el('nav-title').textContent, actions: el('actions').innerHTML,
   composerHidden: el('composer').hidden, placeholder: el('text').placeholder, text: el('text').value, addLabel: el('add').textContent,
   addDisabled: el('add').disabled, hint: el('composer-hint').textContent, cstatus: el('composer-status').textContent,
-  cstatusClass: el('composer-status').className}; };
+  cstatusClass: el('composer-status').className, tray: el('tray').innerHTML, trayHidden: el('tray').hidden,
+  pickHidden: el('pick').hidden, pickLabel: el('pick').textContent}; };
 var clicks = {};
 document.getElementById('add').addEventListener = function (type, fn) { clicks['add_' + type] = fn; };
 document.getElementById('action').addEventListener = function (type, fn) { clicks[type] = fn; };
 document.getElementById('actions').addEventListener = function (type, fn) { clicks['actions_' + type] = fn; };
+['text', 'tray', 'pick', 'file'].forEach(function (id) {
+  document.getElementById(id).addEventListener = function (type, fn) { clicks[id + '_' + type] = fn; }; });
 """
 
 def _payload(revision=1, **over):
@@ -343,7 +346,7 @@ def test_extra_actions_get_their_own_buttons_and_an_opened_answer_is_reported(en
 
 
 COMPOSER = {"placeholder": "一句灵感", "label": "记下", "hint": "说明", "status": "", "failed": False,
-            "action": {"name": "add_inspiration", "report": "demo"}}
+            "action": {"name": "add_capture", "report": "demo"}}
 
 
 def test_the_composer_is_laid_out_from_the_payload_and_posts_the_text(engine):
@@ -354,7 +357,7 @@ def test_the_composer_is_laid_out_from_the_payload_and_posts_the_text(engine):
                 "document.getElementById('text').value = ' 周末整理旧书 ';\nclicks.add_click();")
     dom = out["dom"]
     assert dom["composerHidden"] is False and dom["placeholder"] == "一句灵感" and dom["addLabel"] == "记下" and dom["hint"] == "说明"
-    assert out["requests"][-1] == {"path": "/api/actions/add_inspiration", "method": "POST", "token": "tok-1",
+    assert out["requests"][-1] == {"path": "/api/actions/add_capture", "method": "POST", "token": "tok-1",
                                    "body": '{"report":"demo","text":" 周末整理旧书 "}'}
     assert dom["text"] == "" and dom["cstatus"] == "已写进文件，正在推送…" and dom["cstatusClass"] == "cstatus" and dom["addDisabled"] is False
     empty = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}'], "clicks.add_click();")
@@ -368,6 +371,42 @@ def test_the_composer_is_laid_out_from_the_payload_and_posts_the_text(engine):
     lost = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}'], "document.getElementById('text').value = 'x';\nclicks.add_click();")
     assert lost["dom"]["cstatus"] == "连不上肥鱼。" and lost["dom"]["addDisabled"] is False
     assert _page(engine, [_ok(_payload()), '{"hang": true}'])["dom"]["composerHidden"] is True, "工作简报没有输入区"
+
+
+PICTURES = {**COMPOSER, "images": {"label": "添加图片", "remove": "移除", "max": 2, "full": "一次最多 2 张图"}}
+PASTE = """
+var FileReader = function () {};
+FileReader.prototype.readAsDataURL = function (f) { this.result = 'data:' + f.type + ';base64,' + f.b64; this.onload(); };
+var file = function (type, b64) { return {type: type, size: 12, b64: b64}; };
+var item = function (f) { return {kind: 'file', type: f.type, getAsFile: function () { return f; }}; };
+var stopped = 0, stop = function () { stopped++; };
+clicks.text_paste({clipboardData: {items: [item(file('image/png', 'AAAA')), {kind: 'string', type: 'text/plain'}]}, preventDefault: stop});
+clicks.text_paste({clipboardData: {items: [item(file('image/jpeg', 'BBBB')), item(file('image/png', 'CCCC'))]}, preventDefault: stop});
+"""
+
+
+def test_the_composer_takes_pasted_images_shows_them_and_posts_them_with_the_text(engine):
+    """随手记的截图：粘贴（或拖进、点「添加图片」）进来先排成一行缩略图，「记下」时和文字一起发；超过上限的不收、说一声；
+    粘贴里同时有文字时不拦（让文字照常进框）。服务没说收图（工作简报那类）就没有这些。"""
+    before = _page(engine, [_ok(_payload(composer=PICTURES)), '{"hang": true}'], PASTE)["dom"]
+    assert before["pickHidden"] is False and before["pickLabel"] == "添加图片" and before["trayHidden"] is False
+    assert before["tray"].count("<img") == 2 and 'src="data:image/png;base64,AAAA"' in before["tray"] and "CCCC" not in before["tray"]
+    assert 'title="移除"' in before["tray"] and before["cstatus"] == "一次最多 2 张图"
+    sent = _page(engine, [_ok(_payload(composer=PICTURES)), '{"hang": true}',
+                          '{"status": 200, "data": {"report": "demo", "state": "saved", "status": "已写进"}}'],
+                 PASTE + "document.getElementById('text').value = '截图';\nclicks.add_click();")
+    assert sent["requests"][-1]["body"] == ('{"report":"demo","text":"截图","images":[{"type":"image/png","data":"AAAA"},'
+                                            '{"type":"image/jpeg","data":"BBBB"}]}')
+    assert sent["dom"]["tray"] == "" and sent["dom"]["trayHidden"] is True, "记下了就清空"
+    only = _page(engine, [_ok(_payload(composer=PICTURES)), '{"hang": true}', '{"status": 200, "data": {"state": "saved"}}'],
+                 PASTE + "clicks.add_click();")
+    assert '"text":""' in only["requests"][-1]["body"] and only["dom"]["cstatus"] != "先写点什么再记。", "只有图也能记"
+    removed = _page(engine, [_ok(_payload(composer=PICTURES)), '{"hang": true}'],
+                    PASTE + "clicks.tray_click({target: {closest: function () { return {dataset: {drop: '0'}}; }}});")["dom"]
+    assert removed["tray"].count("<img") == 1 and "AAAA" not in removed["tray"]
+    plain = _page(engine, [_ok(_payload(composer=COMPOSER)), '{"hang": true}'],
+                  PASTE + "document.getElementById('text').value = 'x';\nclicks.add_click();")
+    assert plain["dom"]["pickHidden"] is True and plain["dom"]["tray"] == "" and "images" not in plain["requests"][-1]["body"]
     assert _page(engine, [_ok(_payload(composer=COMPOSER, available=False)), '{"hang": true}'])["dom"]["composerHidden"] is True
 
 

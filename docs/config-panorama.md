@@ -29,7 +29,7 @@
 | `pet/panorama/feed.py` | 发布台 `Feed`：存最近一次发布的数据和它的编号，让「等新数据」的请求等到有为止。**只用标准库** |
 | `pet/panorama/routes.py` | `build_router`：登记有哪些网址（外壳、静态文件、`/api/ping`、`/api/graph` 及它的「等更新的」用法、`/api/files`、`/api/file`、`/api/settings/<组>`、`/api/audit`、`/api/actions/<动作>`、`/report/<名字>` + `/api/report/<名字>`） |
 | `pet/panorama/actions.py` | 页面动作的处理器：`repair_hooks`（装 hooks）、`generate_report`（报告页的「重新生成」） |
-| `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`inspiration_composer` / `add_inspiration`（个人简报页顶部记灵感）、`open_obsidian` |
+| `pet/panorama/reports.py` | 报告页的数据：`work_briefing` / `personal_briefing(service_of, config)` 把各自服务的最近一份翻成页面要摆的字典；`split_sections`、`trace_sections` / `personal_details`、`generate_briefing`、`capture_composer` / `add_capture`（个人简报页顶部的随手记，可带图）、`open_obsidian` |
 | `pet/panorama/notes.py` | 笔记页的数据与动作：`work_notes(service_of, config)` / `slack_watch(notes_of, watch_of, config)` 把 `WorkNotesService`（和 Slack 关注的检查状态）翻成页面字典（provider 带 `page = "notes"`）；`note_action` 把页面的 `add / done / snooze / delete / resummarize / open_link / obsidian / folder / push` 分发到服务；`check_slack` 是 Slack 页「现在检查」的分发项 |
 | `pet/panorama/markdown.py` | 简报那一小块 Markdown → HTML（零依赖，只认简报会写出来的子集；★ / bug 记号变成类名） |
 | `pet/panorama/settings_api.py` | 读、改一组设置的那段逻辑（`read` / `write`）：先重读、对版本、校验、落盘、记审计。不碰 Qt，拿活的 `Config` 干活 |

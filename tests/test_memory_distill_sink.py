@@ -117,7 +117,8 @@ def test_vault_note_is_regenerated_from_entries_and_synced(tmp_path):
     assert ok and reason == ""
     assert calls[0] == ["add", "--", "User/Claude Memory.md"] and calls[2][:3] == ["commit", "-q", "-m"]
     assert calls[2][3] == "claude memory: 2026-10-31 21:40" and calls[-1] == ["push", "-q"]
-    assert pv.sync_inspiration(vault, NOW, run=git, token="") == (True, ""), "灵感记录还走同一条路"
+    assert pv.sync_path(vault, ["0-Inbox/a.md"], "capture: x", run=git, token="") == (True, ""), "随手记还走同一条路"
+    assert calls[-5] == ["add", "--", "0-Inbox/a.md"]
 
 
 # ---------------------------------------------------------------- 一条提案落到所有地方
