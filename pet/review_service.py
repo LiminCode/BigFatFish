@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import random
 import threading
 from dataclasses import dataclass
 from typing import Callable
@@ -18,6 +19,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
+from . import capture_organize as co
 from . import capture_review as cr
 from . import personal_vault as pv
 
@@ -26,6 +28,12 @@ log = logging.getLogger(__name__)
 
 def _spawn_thread(target: Callable[[], None]) -> None:
     threading.Thread(target=target, daemon=True, name="pet-capture-review").start()
+
+
+def _session_active() -> bool:
+    from .slack_watch import session_active
+
+    return session_active(ReviewService.ACTIVE_IDLE_S)
 
 
 def _head(repo_dir) -> str:
@@ -44,6 +52,7 @@ class ReviewPush:
 
 class ReviewService(QObject):
     changed = Signal()
+    remind = Signal(str, object)        # daily {count} / random {path, title}
     started = Signal(bool)
     finished = Signal(object, bool)
     _done = Signal(int, object, object, bool)
@@ -51,10 +60,12 @@ class ReviewService(QObject):
     FLUSH_DELAY_MS = 120_000
     STARTUP_DELAY_MS = 30_000
     LOCK_WAIT_S = 2.0
+    CHECK_INTERVAL_MS = 60_000
+    ACTIVE_IDLE_S = 5 * 60              # 随机那一下：最近 5 分钟动过键鼠才算人在
 
     def __init__(self, config, *, lock=None, token: Callable[[], str] | None = None, now: Callable[[], dt.datetime] | None = None,
                  spawn: Callable | None = None, sync: Callable | None = None, head: Callable | None = None,
-                 parent: QObject | None = None) -> None:
+                 active: Callable[[], bool] | None = None, rng=None, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._lock = lock or threading.Lock()
@@ -63,6 +74,10 @@ class ReviewService(QObject):
         self._spawn = spawn or _spawn_thread
         self._sync = sync or pv.sync_path
         self._head = head or _head
+        self._active = active or _session_active
+        self._rng = rng or random.Random()
+        self._check_timer = QTimer(self)
+        self._check_timer.timeout.connect(self.check_reminders)
         self._generation = 0
         self._pushing = False
         self._sync_state, self._sync_error, self._pushed_at = "idle", "", ""
@@ -84,12 +99,27 @@ class ReviewService(QObject):
     def today(self) -> dt.date:
         return self._now().date()
 
-    def round(self, limit: int = cr.DEFAULT_BATCH) -> dict:
-        """今天这一轮：``{cards（ReviewNote，按顺序）, due（一共到期几条）, done（今天复习了几条）, next（之后最早哪天到期）}``。"""
+    def settings(self) -> dict:
+        return co.normalize(self._config.get(co.CONFIG_KEY))
+
+    def round(self, limit: int | None = None) -> dict:
+        """今天这一轮：``{cards（ReviewNote，按顺序）, due（一共到期几条）, done（今天复习了几条）, next（之后最早哪天到期）}``。
+        一轮几条按设置（``review_batch``）；随机冒出来、用户点了「看看」的那条（spotlight）不管到没到期都排第一张。"""
         items, today = cr.notes(self.repo_dir()), self.today()
-        batch, total = cr.due(items, today, limit=limit)
-        return {"cards": batch if total else [], "due": total, "done": cr.done_today(self._config.dir, today),
-                "next": cr.next_due(items, today)}
+        batch, total = cr.due(items, today, limit=limit or self.settings()["review_batch"])
+        spot = cr.load_state(self._config.dir)["spotlight"]
+        picked = next((note for note in items if note.path == spot), None) if spot else None
+        if picked is not None:
+            batch = [picked, *(note for note in batch if note.path != spot)]
+        return {"cards": batch, "due": total, "done": cr.done_today(self._config.dir, today), "next": cr.next_due(items, today)}
+
+    def spotlight(self, rel_path: str) -> None:
+        """随机提醒上点了「看看」：这条排到复习页第一张，打完分就回原位。"""
+        try:
+            cr.mark(self._config.dir, spotlight=rel_path)
+        except OSError:
+            log.warning("复习：记不下要先看的那条", exc_info=True)
+        self.changed.emit()
 
     def due_count(self) -> int:
         return cr.due(cr.notes(self.repo_dir()), self.today())[1]
@@ -126,7 +156,9 @@ class ReviewService(QObject):
         finally:
             self._lock.release()
         try:
-            cr.note_graded(self._config.dir, rel_path, self.today())
+            state = cr.note_graded(self._config.dir, rel_path, self.today())
+            if state["spotlight"] == rel_path:
+                cr.mark(self._config.dir, spotlight="")
         except OSError:
             log.warning("复习：记不下还没推的那几条", exc_info=True)
         if self.due_count() == 0:
@@ -136,12 +168,46 @@ class ReviewService(QObject):
         self.changed.emit()
         return {"state": "graded", "next": review["next"].isoformat(), "interval": review["interval"]}
 
+    # ---------------------------------------------------------- 提醒
+    def check_reminders(self) -> str:
+        """每分钟一次（界面线程，读一遍笔记头、几毫秒）：该提醒就发 ``remind`` 并记下今天提醒过。回发了哪种（空 = 没发）。
+        今天随机那一下的时刻第一次看的时候定下来、记在本机。克隆不在、什么都读不到就什么都不做。"""
+        if not self.repo_ready():
+            return ""
+        try:
+            settings, now, config_dir = self.settings(), self._now(), self._config.dir
+            today = now.date()
+            state = cr.load_state(config_dir)
+            if settings["review_random"] and state["random_date"] != today.isoformat():
+                state = cr.mark(config_dir, random_date=today.isoformat(), random_at=cr.pick_slot(self._rng))
+            items = cr.notes(self.repo_dir())
+            batch, total = cr.due(items, today, limit=settings["review_batch"])
+            want_random = settings["review_random"] and state["random_done"] != today.isoformat()
+            kind = cr.decide(settings, state, now, due_count=total, active=bool(self._active()) if want_random else False,
+                             notes=len(items))
+            if kind == "daily":
+                cr.mark(config_dir, daily=today.isoformat())
+                self.remind.emit("daily", {"count": total})
+            elif kind == "random":
+                cr.mark(config_dir, random_done=today.isoformat())
+                note = cr.random_pick(items, today, {n.path for n in batch}, self._rng)
+                if note is None:
+                    return ""
+                self.remind.emit("random", {"path": note.path, "title": note.title})
+            return kind
+        except OSError:
+            log.warning("复习：看提醒时读写失败", exc_info=True)
+            return ""
+
     # ---------------------------------------------------------- 推送
     def start(self) -> None:
         if self.pending():
             QTimer.singleShot(self.STARTUP_DELAY_MS, lambda: self.flush(manual=False))
+        QTimer.singleShot(self.STARTUP_DELAY_MS, self.check_reminders)
+        self._check_timer.start(self.CHECK_INTERVAL_MS)
 
     def stop(self) -> None:
+        self._check_timer.stop()
         self._flush_timer.stop()
         self._generation += 1
         self._pushing = False

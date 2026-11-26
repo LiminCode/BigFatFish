@@ -258,7 +258,11 @@ def test_capture_is_declared_with_the_features_own_bounds_and_an_editable_builti
     group = st.group("capture")
     assert group.config_key == co.CONFIG_KEY and group.zone == "personal" and group.normalize is co.normalize
     by_id = {s.id: s for s in group.settings}
-    assert list(by_id) == ["enabled", "delay_minutes", "max_per_run", "model", "effort", "prompt"]
+    assert list(by_id) == ["enabled", "delay_minutes", "max_per_run", "model", "effort", "prompt",
+                           "review_enabled", "review_time", "review_batch", "review_random"]
+    assert by_id["review_time"].control == "choice_or_text" and by_id["review_time"].depends_on == "review_enabled"
+    assert by_id["review_batch"].bounds == co.REVIEW_BATCH_RANGE and by_id["review_random"].control == "toggle"
+    assert st.check_changes(group, {}, {"review_time": "25:00"}) == (None, [{"id": "review_time", "code": "rejected"}])
     assert by_id["delay_minutes"].bounds == co.DELAY_RANGE and by_id["max_per_run"].bounds == co.BATCH_RANGE
     assert by_id["model"].choices == ("", *pv.MODEL_CHOICES) and dict(by_id["model"].labels)[""] == "personal.settings.same_as_chat"
     assert by_id["prompt"].control == "long_text" and by_id["prompt"].disclosure == "advanced"

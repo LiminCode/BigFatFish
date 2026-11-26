@@ -3239,8 +3239,13 @@ class AppShell:
             from . import run_recording
             from .review_service import ReviewService
 
+            from .review_ui import ReviewController
+
             review = self._review = ReviewService(self.config, lock=personal_service.git_lock, parent=self.app)
             review.changed.connect(lambda: (self._publish_report("review"), self._publish_report("personal_briefing")))
+            # 每天定点一批、白天随机一条：提醒挂在岛上，「开始复习」「看看」开复习页；复习页开着时不弹
+            self._review_ui = ReviewController(self._overlay_shell, review, open_report=lambda: self._open_report("review"),
+                                               report_watched=lambda: self._report_watched("review"))
             review.start()
             self._record_runs(run_recording.CAPTURE_REVIEW, review)
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
