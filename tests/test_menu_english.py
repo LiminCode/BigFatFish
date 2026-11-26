@@ -99,7 +99,8 @@ def test_the_chinese_right_click_menu_is_unchanged(tmp_path, stubs):
             assert label in top, label
         assert top[-2:] == ["肥鱼设置", "退出"]
         controls = next(a.menu() for a in menu.actions() if a.text() == "肥鱼控制")
-        assert _labels(controls)[:2] == ["护驾", "列队"], "2026-11-21 起护驾 / 列队收进肥鱼控制最前"
+        assert top[1:3] == ["护驾", "列队"], "2026-11-25 起护驾 / 列队在根菜单紧跟彩蛋"
+        assert not {"护驾", "列队"} & set(_labels(controls)), "子菜单里不留第二份"
     finally:
         shell_._delete_runtime_marker()
 
