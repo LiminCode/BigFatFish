@@ -134,6 +134,11 @@ class PersonalService(QObject):
         return self._sync_error
 
     @property
+    def git_lock(self) -> threading.Lock:
+        """这个克隆上的 git 一次只跑一条：随手记的推送和整理任务（``CaptureOrganizer``）共用。"""
+        return self._git_lock
+
+    @property
     def last_capture(self) -> str:
         return self._last_capture
 

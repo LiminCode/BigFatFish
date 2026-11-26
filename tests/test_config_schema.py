@@ -152,6 +152,7 @@ RELOAD_WHITELIST_SNAPSHOT = frozenset(
         "work_notes",
         "personal",
         "vault_sync",
+        "capture",  # 2026-11-25 随手记的整理任务
         "memory_distill",
         "config_backup",  # 2026-11-14 配置备份到 GitHub
         "festival_custom_quotes_cn",

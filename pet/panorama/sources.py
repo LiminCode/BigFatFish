@@ -328,7 +328,8 @@ def fish_features(g: Graph, f: dict) -> None:
             facts.append([L("fact.note"), L(f"note.{feature.note}")])
         kind = {"personal": "feature_personal", "work": "feature_work", "link": "link"}[feature.route]
         column = 3 if feature.route == "work" or feature.id == "link_wsl" else 2
-        view = {"face": page_action(feature.report), "actions": [page_action(feature.report)]} if feature.report else {}
+        view = ({"face": page_action(feature.report), "actions": [page_action(feature.report), *(dict(a) for a in feature.more)]}
+                if feature.report else {})
         g.node(node_id, "win", column, kind, L(f"feature.{feature.id}"), sub, "ok" if s["enabled"] else "off", "row",
                icon=feature.icon, group=FISH_NODE, facts=facts, source=_src(f["cfg_path"], feature.config_key),
                page=L(f"page.{feature.page}") if feature.page else "",

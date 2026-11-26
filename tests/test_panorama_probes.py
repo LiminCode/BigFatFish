@@ -245,7 +245,7 @@ def test_windows_side_collects_everything_without_touching_wsl(tmp_path):
     assert facts["personal_vault"]["exists"] is False and facts["win"]["memory_count"] == 1
     assert facts["work_mirror"]["exists"] is False
     assert set(facts["features"]) == {"link_win", "session_fish", "session_history", "link_sounds", "chat", "distill_personal",
-                                      "assistant", "vault_sync", "link_wsl", "briefing", "slack", "notes", "distill_work"}
+                                      "assistant", "capture", "vault_sync", "link_wsl", "briefing", "slack", "notes", "distill_work"}
     assert SECRET not in json.dumps(facts)
 
 

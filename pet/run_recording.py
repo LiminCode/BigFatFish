@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 WORK_BRIEFING = "work_briefing"
 PERSONAL_BRIEFING = "personal_briefing"
 SLACK_WATCH = "slack_watch"
+CAPTURE_ORGANIZE = "capture_organize"     # = capture_organize.JOB（这里不导入它：本模块只认信号参数的形状）
 
 Outcome = Callable[..., "tuple[bool, str, str, list[dict]]"]
 
@@ -38,6 +39,18 @@ def slack_outcome(result, manual: bool = False, fresh=()) -> tuple[bool, str, st
     effect = {"kind": "found", "items": len(result.items or []), "new": len(fresh or []), "turns": int(result.turns or 0)}
     state = "failed" if not result.ok else "ok" if fresh else "noop"
     return bool(manual), state, "" if result.ok else str(result.error or ""), [effect]
+
+
+def organize_outcome(result, manual: bool = False) -> tuple[bool, str, str, list[dict]]:
+    """随手记整理的 ``finished(Result, 手动?)``：用的模型、整理 / 跳过 / 失败 / 剩下几条；推上去了就带提交号，
+    时间轴把那个提交挂在这次运行下面。笔记的标题和路径不进运行记录。"""
+    effects = [{"kind": "model", "model": str(result.model or ""), "effort": str(result.effort or ""),
+                "tokens_in": int(result.tokens_in or 0), "tokens_out": int(result.tokens_out or 0), "turns": int(result.turns or 0)},
+               {"kind": "notes", "organized": int(result.organized or 0), "skipped": int(result.skipped or 0),
+                "failed": int(result.failed or 0), "left": int(result.left or 0)}]
+    if result.commit:
+        effects.append({"kind": "git", "op": "commit", "repo": "personal", "pushed_ids": [str(result.commit)]})
+    return bool(manual), str(result.state or "failed"), "" if result.ok else str(result.error or ""), effects
 
 
 class Recorder:

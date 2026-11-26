@@ -157,6 +157,16 @@ def test_the_actions_dispatch_regenerate_and_open_obsidian_by_report_name_and_ad
     assert (gone.value.status, gone.value.code) == (503, "unavailable")
 
 
+def test_organize_now_answers_with_what_the_organizer_did():
+    answers = iter(["started", "busy", "empty", "missing", "failed"])
+    organizer = type("Org", (), {"organize_now": lambda self: next(answers)})()
+    organize = reports.organize_captures(lambda: organizer)
+    assert [organize({})["state"] for _ in range(5)] == ["started", "busy", "empty", "missing", "failed"]
+    with pytest.raises(actions.ActionError) as gone:
+        reports.organize_captures(lambda: None)({})
+    assert (gone.value.status, gone.value.code) == (503, "unavailable")
+
+
 # ---------------------------------------------------------------- 真实服务：记下 → 推送 → 状态
 
 def test_the_composer_saves_a_capture_and_the_status_follows_the_push(tmp_path, vault):

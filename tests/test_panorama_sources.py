@@ -255,7 +255,18 @@ def test_features_with_a_page_of_their_own_open_it_from_their_face():
     sync = _node(graph, "f_vault_sync")
     assert sync["face"] == TIMELINE and sync["actions"] == [TIMELINE], "同步的运行记录就在时间轴上：在右栏里看"
     with_face = {n["id"] for n in graph["nodes"] if n["id"].startswith("f_") and n.get("face")}
-    assert with_face == set(FEATURE_PAGES) | {"f_vault_sync"}, "没有页面的功能磁贴不放按钮"
+    assert with_face == set(FEATURE_PAGES) | {"f_vault_sync", "f_capture"}, "没有页面的功能磁贴不放按钮"
+
+
+def test_the_capture_tile_opens_the_page_with_the_box_and_can_organize_now():
+    """随手记：正面「查看」开个人简报页（输入框在那一页顶上）；详情里多一个「现在整理」，不用等下一次自动整理。"""
+    graph = sources.build(samples.facts())
+    tile = _node(graph, "f_capture")
+    organize = {"name": "organize_captures", "words": "organize", "ask": False, "body": {}}
+    assert tile["face"] == _page("personal_briefing")
+    assert tile["actions"] == [_page("personal_briefing"), organize]
+    assert tile["settings"] == "capture" and tile["kind"] == "feature_personal"
+    assert _edge(graph, "f_capture", "vault_personal")["line"] == "memory"
 
 
 def test_every_feature_page_is_a_report_the_service_serves():

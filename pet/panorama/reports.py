@@ -37,6 +37,7 @@ from .actions import ActionError
 WORK_BRIEFING = "work_briefing"
 PERSONAL_BRIEFING = "personal_briefing"
 CAPTURE_ACTION = "add_capture"                     # 个人简报页顶部输入区的「记下」：写进 AI-Base 的收件箱并推送（add_capture）
+ORGANIZE_ACTION = "organize_captures"              # 随手记磁贴上的「现在整理」（organize_captures）
 OBSIDIAN_ACTION = "open_obsidian"                   # 个人简报页「在 Obsidian 打开 AI-Base」：在肥鱼里开 Obsidian（open_obsidian）
 GENERATE_ACTION = "generate_report"                 # 页面上「重新生成」走的动作名（actions.generate_report）
 USAGE_ORDER = ("model", "effort", "time", "tokens_in", "tokens_out", "cost")
@@ -184,6 +185,18 @@ def add_capture(service_of: Callable[[], object]) -> Callable[[object], dict]:
             return {"report": report, "state": "empty", "status": ""}
         saved = service.add_capture(text, images)
         return {"report": report, "state": "saved" if saved is not None else "failed", "status": capture_status(service)}
+    return run
+
+
+def organize_captures(organizer_of: Callable[[], object]) -> Callable[[object], dict]:
+    """随手记磁贴上的「现在整理」：``POST /api/actions/organize_captures {}``，在界面线程上跑，只是叫整理任务现在开始。
+    回 ``{state}``：``started`` / ``busy`` / ``empty``（收件箱是空的）/ ``missing``（克隆不在）/ ``failed``（没有能用的模型服务）。
+    整理在后台跑几十秒，跑完运行记录多一行、全景重探，磁贴上的历史条跟着变。没接整理任务 503 ``unavailable``。"""
+    def run(_body) -> dict:
+        organizer = organizer_of()
+        if organizer is None:
+            raise ActionError(503, "unavailable")
+        return {"state": organizer.organize_now()}
     return run
 
 
