@@ -376,11 +376,22 @@ class SessionPetController(QObject):
             log.info("冻结的会话小鱼离场 agent=%s session=%s", key[0], key[1][:8])
         self.session_gone.emit(key)
 
-    def _make_room(self) -> bool:
-        """活的会话要出场、上限满了：最旧的那只冻结鱼让位。"""
-        if not self._frozen:
+    def _make_room(self, phase: str) -> bool:
+        """活的会话要出场、上限满了：最旧的那只冻结鱼让位；没有冻结鱼、而进来的会话在干活
+        （工作中 / 等批准）时，休息最久的那只「休息中」活鱼让位（会话照记，再干活时同样挤回来）。
+
+        「等你回复」和在干活的鱼不让；认领来的休息中会话只挤冻结鱼——否则每轮认领互相挤来挤去。"""
+        if self._frozen:
+            self._retire_frozen(next(reversed(self._frozen)))
+            return True
+        if phase not in ("working", "waiting"):
             return False
-        self._retire_frozen(next(reversed(self._frozen)))
+        resting = [key for key in self._pets if (self._sessions.get(key) or {}).get("phase") == "resting"]
+        if not resting:
+            return False
+        victim = min(resting, key=lambda key: float(self.since(key) or 0.0))
+        log.info("会话小鱼给干活的会话让位 agent=%s session=%s", victim[0], victim[1][:8])
+        self._retire(victim)
         return True
 
     def _retire(self, key: tuple[str, str]) -> None:
@@ -439,7 +450,7 @@ class SessionPetController(QObject):
                     extras[name] = str(update[name])
             seen_now = previous_phase == "review" and phase == "resting"
             if previous_phase != phase and not seen_now:
-                extras["since"] = time.time()
+                extras["since"] = self._clock()
             if phase in ("working", "waiting") and self._decisions.revive(key):
                 log.info("会话又活跃了，关闭决定作废 agent=%s session=%s", key[0], key[1][:8])
         if changed:
@@ -462,7 +473,7 @@ class SessionPetController(QObject):
                 self._after_update()
                 return  # 没赶上它干活（或刚被退掉）：不凭空生一只，等它下次提问（从清单认领来的例外：它确实开着）
             sprite = shell.spawn_session_pet()
-            if sprite is None and self._make_room():
+            if sprite is None and self._make_room(phase):
                 sprite = shell.spawn_session_pet()
             if sprite is None:
                 self._after_update()
