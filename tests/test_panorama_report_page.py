@@ -427,9 +427,14 @@ def test_a_newer_report_redraws_in_place_and_nothing_new_retries_later(engine):
     assert out["timers"] == 1, "204 之后隔一会儿再去等"
 
 
-def test_losing_the_service_says_so_and_disables_the_button(engine):
-    out = _page(engine, [_ok(_payload())])                      # 第二个请求没有回答 = 连不上
-    assert out["dom"]["lost"] is False and out["dom"]["buttonDisabled"] is True
+def test_losing_the_service_says_it_is_reconnecting_and_keeps_the_button(engine):
+    out = _page(engine, [_ok(_payload())])                      # 第二个请求没有回答 = 连不上：肥鱼退出或重启中
+    assert out["dom"]["lost"] is False and out["dom"]["buttonDisabled"] is False and out["timers"] == 1
+
+
+def test_a_refused_token_says_so_and_disables_the_button(engine):
+    out = _page(engine, [_ok(_payload()), '{"status": 401}'])
+    assert out["dom"]["lost"] is False and out["dom"]["buttonDisabled"] is True and out["timers"] == 0
 
 
 def test_the_regenerate_button_posts_and_leaves_the_redraw_to_the_started_signal(engine):

@@ -53,14 +53,20 @@ class Feed:
         return revision
 
     def wait_newer(self, after: int, timeout: float) -> bytes | None:
-        """等到有比 ``after`` 更新的一份就返回它；等满 ``timeout`` 秒、或发布台关了，返回 ``None``。"""
+        """等到有一份不是 ``after`` 的就返回它；等满 ``timeout`` 秒、或发布台关了，返回 ``None``。
+
+        「不是」而不只是「更新」：页面手里的编号比这里还大，说明那是肥鱼重启之前的编号（编号从头数了），
+        它手里那份不是现在这一份，马上把现在的给它。"""
+        def different() -> bool:
+            return self._payload is not None and self._revision != after
+
         with self._changed:
             self._waiting += 1
             try:
-                self._changed.wait_for(lambda: self._closed or self._revision > after, timeout)
+                self._changed.wait_for(lambda: self._closed or different(), timeout)
             finally:
                 self._waiting -= 1
-            if self._revision > after and not self._closed:
+            if different() and not self._closed:
                 return self._payload
             return None
 

@@ -11,7 +11,7 @@
 import {esc, clampAside} from './util.js';
 import {runAction} from './repair.js';
 
-const OPEN_WIDTH = 640, RETRY_MS = 1000;
+const OPEN_WIDTH = 640, RETRY_MS = 1000, RECONNECT_MS = 3000;
 let livePanel = null;
 
 export function timelinePanel(api, S) {
@@ -38,16 +38,20 @@ function show(data) { const r = (data && data.report) || {};
   revision = data && data.revision || 0;
   frame(r.title || S.activity, [r.summary, r.generated].filter(Boolean).join(' · '),
         r.available === false ? `<p class="hint">${esc(r.empty_text || '')}</p>` : (r.html || `<p class="hint">${esc(r.empty_text || '')}</p>`)); }
-function wait(mine) {               /* 开着就一直等更新的：有就重画再等，没有（null）隔一会儿再等，连不上就停 */
+function wait(mine) {               /* 开着就一直等更新的：有就重画再等，没有（null）隔一会儿再等 */
   api('/api/report/' + encodeURIComponent(name) + '?after=' + revision).then(data => { if (mine !== turn) return;
     if (data) show(data); else return setTimeout(() => { if (mine === turn) wait(mine); }, RETRY_MS);
-    wait(mine); }, () => { /* 服务没了：留着最后一份，不再问 */ }); }
+    wait(mine); }, () => retry(mine)); }
+/* 连不上（肥鱼退出、重启中）：留着最后一份，隔几秒不带编号重新要一份（重启后编号从头数），要到了接着等 */
+function retry(mine) { if (mine === turn) setTimeout(() => { if (mine === turn) fetchFresh(mine); }, RECONNECT_MS); }
+function fetchFresh(mine) {
+  api('/api/report/' + encodeURIComponent(name)).then(data => { if (mine !== turn) return; show(data); wait(mine); }, () => retry(mine)); }
 function open(report, act) { if (!api || !report) return;
   const mine = ++turn; name = report; action = act || null; revision = 0;
   box.hidden = false; detailCard.hidden = true; widen();
   frame(S.activity, '', `<p class="hint">${esc(S.viewer_loading)}</p>`);
   api('/api/report/' + encodeURIComponent(name)).then(data => { if (mine !== turn) return; show(data); wait(mine); },
-    () => { if (mine === turn) frame(S.activity, '', `<p class="hint">${esc(S.timeline_failed)}</p>`); }); }
+    () => { if (mine === turn) { frame(S.activity, '', `<p class="hint">${esc(S.timeline_failed)}</p>`); retry(mine); } }); }
 /* 一个带 data-show="panel" 的按钮（磁贴正面或详情里）→ 开它 body 里那份报告；「在新页面打开」用同一个动作，去掉 show */
 function openFrom(el) { const d = el.dataset || {}; let body = {};
   try { body = d.body ? JSON.parse(d.body) : {}; } catch (e) { body = {}; }

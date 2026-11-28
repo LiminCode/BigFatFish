@@ -470,3 +470,75 @@ def test_refreshing_an_off_gui_report_republishes_only_once_someone_has_opened_i
     assert service.refresh_report("slow") is True and len(built) == 2
     assert json.loads(service.report("slow", first, 0))["revision"] == first + 1, "挂着等更新的页面立刻拿到新的一份"
     assert service.refresh_report("nope") is False
+
+
+# ---------------------------------------------------------------- 重启之后旧标签页接得上（会话文件 + 安静的一轮）
+
+def test_a_quiet_round_publishes_but_opens_no_browser(tmp_path):
+    """开着的标签页重连上来、发布台是空的：采一轮给它，但不再弹一个新标签页。"""
+    h = _Harness(tmp_path)
+    assert h.service.collect_quietly() is True
+    assert h.opened == [] and h.published()["revision"] == 2
+    assert len(h.finished) == 1 and h.finished[0][0] is True
+    h.service.open()                                                     # 之后用户自己点：照常开浏览器
+    assert h.opened == [_FakeServer.URL]
+
+
+def test_a_quiet_round_while_one_is_running_does_not_start_another_or_open_anything(tmp_path):
+    runs = []
+    h = _Harness(tmp_path, spawn=runs.append)
+    h.service.open()
+    assert h.service.collect_quietly() is False and len(runs) == 1 and h.opened == []
+
+
+def test_resume_starts_the_service_only_after_the_panorama_was_used_once(tmp_path):
+    service = PanoramaService(_config(tmp_path), windows=_windows_facts, wsl=samples.wsl_home,
+                              open_page=lambda target: None, spawn=lambda run: run())
+    try:
+        assert service.resume() is False and service._server is None      # 从没开过：启动时什么都不做
+    finally:
+        service.stop()
+
+
+def test_after_a_restart_the_old_tab_reconnects_with_its_token_and_gets_fresh_data(tmp_path):
+    """肥鱼退出再启动：同一个端口、同一个令牌；旧标签页重连时发布台是空的，服务现采一轮给它，不开浏览器。"""
+    import http.client
+    import time
+
+    app = QApplication.instance()
+    opened = []
+    first = PanoramaService(_config(tmp_path), windows=_windows_facts, wsl=samples.wsl_home,
+                            open_page=opened.append, spawn=lambda run: run())
+    first.open()
+    first.stop()
+    base, _, token = opened[0].partition("/#")
+    port = int(base.rsplit(":", 1)[1])
+    assert (tmp_path / "panorama-session.json").is_file()
+
+    second = PanoramaService(_config(tmp_path), windows=_windows_facts, wsl=samples.wsl_home,
+                             open_page=opened.append, spawn=lambda run: run())
+    try:
+        assert second.resume() is True and second._server.port == port and second._server.token == token
+        box = {}
+
+        def get():
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+            try:
+                connection.request("GET", "/api/graph", headers={"Host": f"127.0.0.1:{port}", "X-Panorama-Token": token})
+                response = connection.getresponse()
+                box["out"] = response.status, response.read()
+            finally:
+                connection.close()
+
+        worker = threading.Thread(target=get, daemon=True)
+        worker.start()
+        deadline = time.monotonic() + 15                                 # 现采那一轮要回界面线程起：主线程转事件循环
+        while worker.is_alive() and time.monotonic() < deadline:
+            app.processEvents()
+            worker.join(0.005)
+        assert not worker.is_alive()
+        status, body = box["out"]
+        assert status == 200 and json.loads(body)["revision"] >= 1
+        assert len(opened) == 1                                          # 没有为重连再开一个标签页
+    finally:
+        second.stop()

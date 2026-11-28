@@ -9,6 +9,10 @@
 **发布**是两件事：把数据交给本机服务（页面带着令牌向 ``/api/graph`` 要），同时写一份离线快照
 （``panorama.html``，肥鱼没开时也能看）。浏览器打开的是本机服务的网址；服务起不来时退回打开快照文件。
 
+本机服务跟着肥鱼起停，端口和令牌记在数据目录的 ``panorama-session.json`` 里：肥鱼重启后（``resume()``，启动时调）
+用回同一个端口、同一个令牌，开着的标签页自己重连上来。重连时发布台是空的，服务就安静地采一轮给它（``collect_quietly``，
+不开浏览器）。
+
 两段都在一条 daemon 线程里；结果经信号排队回 GUI 线程（``ConfigBackupSync`` 同一个模式）。
 配置在 GUI 线程上拷贝一份再交给线程，线程不碰活的 ``Config``。本机服务有自己的线程，只从发布台
 （``feed.Feed``）取数据、等数据；每次发布是整份替换，不原地改。
@@ -26,7 +30,7 @@ from PySide6.QtCore import QObject, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
-from . import features, probes, render, settings_api, sources
+from . import SESSION_FILE, features, probes, render, settings_api, sources
 from .actions import ActionError
 from .feed import Feed
 from .settings_api import Busy
@@ -115,6 +119,7 @@ class PanoramaService(QObject):
         self._last_published: tuple[dict, Path] | None = None       # 上一次发布用的事实和快照目录：设置改了之后拿它重画
         self._settings_dirty = False            # 设置在一轮采集途中被改过：那一轮回来时要按新设置再发布一次
         self._focus = ""                        # 这次打开要直接翻到的那一组设置（只用一次）
+        self._show_page = True                  # 这一轮第一段发布后开不开浏览器（安静的一轮不开）
         self._stage.connect(self._on_stage)
         self._call.connect(self._run_call)      # 从别的线程 emit 时自动排队到本对象所在的界面线程
         app = QApplication.instance()
@@ -124,6 +129,23 @@ class PanoramaService(QObject):
     @property
     def page_path(self) -> Path:
         return Path(self._config.dir) / OUT_SUBDIR / render.PAGE_NAME
+
+    @property
+    def session_path(self) -> Path:
+        return Path(self._config.dir) / SESSION_FILE
+
+    def resume(self) -> bool:
+        """（界面线程，启动时）用过配置全景（会话文件在）就把本机服务按上次的端口和令牌起起来，开着的标签页好重连。
+        不采集、不开浏览器；从没用过就什么都不做。返回服务是否在跑。"""
+        if self._server is not None and self._server.running:
+            return True
+        if not self.session_path.is_file():
+            return False
+        return bool(self._server_url("/"))
+
+    def collect_quietly(self) -> bool:
+        """（界面线程）采一轮、照常发布，但不开浏览器：开着的标签页重连上来、发布台却是空的时候用。返回是否发起了。"""
+        return self.open(show=False)
 
     def is_busy(self) -> bool:
         return self._busy
@@ -148,15 +170,22 @@ class PanoramaService(QObject):
             except Exception:  # noqa: BLE001 - 退出路径上不抛
                 log.exception("配置全景：停本机服务失败")
 
-    def open(self, focus: str = "") -> bool:
+    def open(self, focus: str = "", *, show: bool = True) -> bool:
         """采一轮并打开页面；返回是否真的发起了新一轮。上一轮还没跑完时只把现有页面再打开一次。
 
         ``focus``：页面画完就直接翻到的那一组设置（设置表里的组 id）。不在设置表里的不认，当没给。
+        ``show``：假 = 安静的一轮，照常发布，不开浏览器（见 ``collect_quietly``）。
         """
-        self._focus = focus if focus and _known_group(focus) else ""
+        if not show:
+            if self._busy:
+                return False
+        else:
+            self._focus = focus if focus and _known_group(focus) else ""
         if self._busy:
             if self._feed.latest() is not None or self.page_path.is_file():
                 self._open_page(self._page_target(str(self.page_path)))
+            else:
+                self._show_page = True          # 在路上的是安静的一轮，还没发布过：等它第一段发布时替用户开
             return False
         try:
             cfg = copy.deepcopy(self._config.data)
@@ -169,6 +198,7 @@ class PanoramaService(QObject):
         generation = self._generation
         previous, previous_seconds = self._last_wsl, self._last_wsl_seconds
         self._busy = True
+        self._show_page = show
 
         def emit(stage: str, text: str) -> None:
             try:
@@ -468,7 +498,9 @@ class PanoramaService(QObject):
                 from ..claude_hooks import run_wsl
 
                 reader = Reader(config_dir=self._config.dir, home=Path.home(), run_wsl=run_wsl)
-                self._server = PanoramaServer(build_router(self._feed, files=reader, settings=self))
+                self._server = PanoramaServer(build_router(self._feed, files=reader, settings=self,
+                                                           collect=lambda: self.on_gui(self.collect_quietly)),
+                                              session=self.session_path)
             self._server.start()
             return self._server.page_url() if path == "/" else self._server.page_url(path)
         except Exception:  # noqa: BLE001 - 端口绑不上之类
@@ -493,6 +525,9 @@ class PanoramaService(QObject):
         if stage != "page":
             self._settings_dirty = False
         if stage == "page":
+            if not self._show_page:
+                log.info("配置全景：安静的一轮，Windows 一侧已发布（不开浏览器）")
+                return
             target = self._page_target(text)
             # 网址里的 # 片段是令牌，不进日志
             log.info("配置全景：Windows 一侧已发布，打开浏览器 %s", target.split("#")[0])

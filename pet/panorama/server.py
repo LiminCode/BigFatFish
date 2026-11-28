@@ -3,7 +3,9 @@
 
 **只用标准库、不碰 Qt。** 这个模块只管三件事：
 
-1. 生命周期：只绑 ``127.0.0.1``、端口由系统随机给、每次启动换一个令牌；空闲一段时间自己停。
+1. 生命周期：只绑 ``127.0.0.1``；跟着肥鱼起停，不空闲自停。给了会话文件（``session``）就把端口和令牌记在里面，
+   肥鱼重启后用回同一个端口、同一个令牌——开着的标签页自己重连得上；端口被别人占了就换一个空的，令牌照旧。
+   没给会话文件时端口由系统随机给、每次启动换一个令牌。
 2. 守门：每个请求先过同一串检查（见 ``PanoramaServer._check``），通过了才交给路由表里的处理函数。
 3. 路由表 ``Router``：一条 = (方法, 路径模板) → 处理函数。以后的接口（读图、读写设置、读写文件、动作）
    都往表里加，不改这里的守门逻辑。
@@ -17,20 +19,22 @@
 - 写请求只收 JSON：普通表单能跨站直接提交，JSON 不能；
 - 不发任何 CORS 头；页面带只许同源的内容策略。
 
-令牌放在页面网址的 ``#`` 片段里交给页面：片段不发给服务器、不进 Referer、不进访问日志。
+令牌放在页面网址的 ``#`` 片段里交给页面：片段不发给服务器、不进 Referer、不进访问日志。会话文件在肥鱼的数据目录里：
+浏览器里的网页读不到磁盘，所以记在那里不放宽上面任何一道门；本机别的程序本来就读得到肥鱼的配置。
 """
 from __future__ import annotations
 
 import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import socket
 import sys
 import threading
-import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping
 
@@ -40,8 +44,7 @@ HOST = "127.0.0.1"
 TOKEN_HEADER = "X-Panorama-Token"
 MAX_BODY = 17 << 20                 # 写请求正文上限 17 MiB：随手记一次最多 4 张图、每张 3 MB（base64 胀 4/3）；
                                     # 设置和记忆文件都远小于它。只认本机回环、要令牌，正文读进内存一次就丢
-IDLE_SECONDS = 15 * 60.0            # 这么久没有一次有效请求就自己停
-POLL_SECONDS = 0.5                  # 服务线程多久醒一次看「该不该停」
+POLL_SECONDS = 2.0                  # 服务线程多久醒一次看「该不该停」；stop() 会敲门叫醒它，这个间隔只是兜底
 REQUEST_TIMEOUT = 10.0              # 一条连接最多占一个线程这么久（挡只连不发的慢连接）
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -64,6 +67,30 @@ HARDENING_HEADERS = {
 _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"          # 路径参数：一段，不含 / % \，不能以点开头（所以不会是 ..）
 _PATTERN = re.compile(r"^/[A-Za-z0-9._/{}-]*$")
 _PARAM = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
+_TOKEN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")     # secrets.token_urlsafe 的字母表；会话文件里的令牌不合这个就换新的
+
+
+def load_session(path: Path) -> tuple[int, str] | None:
+    """会话文件里记的 (端口, 令牌)；文件不在、读不了、内容不像样都是 ``None``（调用方换新的）。"""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    port, token = data.get("port"), data.get("token")
+    if type(port) is not int or not 1024 <= port <= 65535 or not isinstance(token, str) or not _TOKEN.match(token):
+        return None
+    return port, token
+
+
+def save_session(path: Path, port: int, token: str) -> None:
+    """先写临时文件再替换：写到一半断电，留下的也是旧的那一份。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps({"port": port, "token": token}), encoding="utf-8")
+    os.replace(temp, path)
 
 
 class HttpError(Exception):
@@ -173,24 +200,21 @@ class _Httpd(ThreadingHTTPServer):
 class PanoramaServer:
     """``start()`` 起服务并返回根网址；``stop()`` 停。两者都可重复调用，线程安全。
 
-    ``on_stop`` 在服务停下后调用一次（空闲自停和 ``stop()`` 都算），**在服务线程或调用 stop 的线程上**，
-    里面不要碰 Qt 对象——需要的话发信号。
+    ``on_stop`` 在服务停下后调用一次，**在服务线程或调用 stop 的线程上**，里面不要碰 Qt 对象——需要的话发信号。
+    ``session``：会话文件的路径（见模块说明）；不给就每次启动随机端口、新令牌。
     """
 
-    def __init__(self, router: Router, *, idle_seconds: float = IDLE_SECONDS,
-                 clock: Callable[[], float] = time.monotonic, poll_seconds: float = POLL_SECONDS,
+    def __init__(self, router: Router, *, poll_seconds: float = POLL_SECONDS, session: Path | None = None,
                  on_stop: Callable[[], None] | None = None) -> None:
         self._router = router
-        self._idle = float(idle_seconds)
-        self._clock = clock
         self._poll = float(poll_seconds)
+        self._session = Path(session) if session is not None else None
         self._on_stop = on_stop
         self._lock = threading.Lock()
         self._httpd: _Httpd | None = None
         self._thread: threading.Thread | None = None
         self._halt = threading.Event()
         self._token = ""
-        self._last_seen = 0.0
 
     # ------------------------------------------------------------ 状态
 
@@ -229,16 +253,28 @@ class PanoramaServer:
             class Handler(_RequestHandler):
                 server_ref = owner
 
-            httpd = _Httpd((HOST, 0), Handler)
+            remembered = load_session(self._session) if self._session is not None else None
+            httpd = None
+            if remembered is not None:
+                try:
+                    httpd = _Httpd((HOST, remembered[0]), Handler)
+                except OSError:                     # 上次的端口被别的程序占了：换一个空的，令牌照旧
+                    log.info("配置全景服务：上次的端口 %d 被占了，换一个", remembered[0])
+            if httpd is None:
+                httpd = _Httpd((HOST, 0), Handler)
             httpd.timeout = self._poll
             halt = threading.Event()
             self._httpd, self._halt = httpd, halt
-            self._token = secrets.token_urlsafe(32)
-            self._last_seen = self._clock()
+            self._token = remembered[1] if remembered is not None else secrets.token_urlsafe(32)
+            if self._session is not None and remembered != (self.port, self._token):
+                try:
+                    save_session(self._session, self.port, self._token)
+                except OSError:                     # 记不下来只是重启后旧标签页接不上，服务照开
+                    log.warning("配置全景服务：会话文件写不进去", exc_info=True)
             self._thread = threading.Thread(target=self._serve, args=(httpd, halt), daemon=True,
                                             name="pet-panorama-server")
             self._thread.start()
-            log.info("配置全景服务已启动：%s（空闲 %d 秒后自停）", self.base_url, int(self._idle))
+            log.info("配置全景服务已启动：%s（%s）", self.base_url, "接着上次的端口和令牌" if remembered == (self.port, self._token) else "新端口或新令牌")
             return self.base_url
 
     def stop(self) -> None:
@@ -254,15 +290,12 @@ class PanoramaServer:
                 socket.create_connection((HOST, port), timeout=1.0).close()
             except OSError:
                 pass                                # 已经停了，或者刚好在关：都不用管
-        thread.join(timeout=max(2.0, self._poll * 4))
+        thread.join(timeout=max(2.0, self._poll * 2))
 
     def _serve(self, httpd: _Httpd, halt: threading.Event) -> None:
         try:
             while not halt.is_set():
                 httpd.handle_request()              # 最多等 poll 秒；来了请求就另起线程处理
-                if self._clock() - self._last_seen > self._idle:
-                    log.info("配置全景服务：空闲超过 %d 秒，自停", int(self._idle))
-                    break
         finally:
             httpd.server_close()
             with self._lock:
@@ -287,7 +320,6 @@ class PanoramaServer:
         except Exception:  # noqa: BLE001 - 处理函数的异常不外泄，只进日志
             log.exception("配置全景服务：处理 %s 时出错", method)
             return Response.error(500, "internal_error")
-        self._last_seen = self._clock()             # 只有放行的请求才算「有人在用」
         return response
 
     def _check(self, method: str, target: str, headers: Mapping[str, str], read_body: Callable[[int], bytes],

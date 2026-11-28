@@ -108,7 +108,8 @@ def _boot(engine, setup: str, steps: str = "") -> dict:
                      "\nreturn JSON.stringify({calls: calls, timers: timers.length, intervals: intervals.length, reloads: reloads, "
                      "replaced: replaced, started: started, disposed: disposed, store: store, hash: location.hash, "
                      "watching: Object.keys(_docListeners), "
-                     "lost: document.getElementById('lost').hidden === false, lang: document.documentElement.lang, "
+                     "lost: document.getElementById('lost').hidden === false, lostText: document.getElementById('lost').textContent, "
+                     "lang: document.documentElement.lang, "
                      "title: document.title});")
 
 
@@ -594,19 +595,52 @@ def test_becoming_visible_twice_does_not_stack_requests(engine):
     assert len(out["calls"]) == 2                                          # 已经有一个挂着：不再发第二个
 
 
-@pytest.mark.parametrize("first", [_reply(0, status=401), "null"])
-def test_served_page_says_so_when_it_cannot_reach_the_fish(engine, first):
-    """令牌作废（401）或连不上：亮出「连接断了」，不画半张图。"""
-    out = _boot(engine, f"location.hash = '#OLD'; responses = [{first}];".replace("[null]", "[]"))
-    assert out["lost"] and out["started"] == [] and out["watching"] == []
+#: 横幅的两种话：外壳把「正在重连」放在 data-retry 里，正文是「接不上了」
+BANNER = "document.getElementById('lost').dataset.retry = 'RETRY'; document.getElementById('lost').textContent = 'GONE';"
 
 
-def test_losing_the_service_later_shows_the_notice_keeps_the_map_and_stops_asking(engine):
-    """肥鱼退出了：亮出「连接断了」，图留着；之后再切回这个标签页也不再去敲一个不存在的服务。"""
-    setup = f"location.hash = '#T'; responses = [{_reply(1)}];"            # 第二个请求没人应
-    out = _boot(engine, setup, "_docListeners.visibilitychange(); _docListeners.visibilitychange();")
-    assert out["lost"] and len(out["started"]) == 1 and out["disposed"] == []
-    assert len(out["calls"]) == 2 and out["timers"] == 0
+def _banner(out: dict) -> str:
+    return out["lostText"] if out["lost"] else ""
+
+
+@pytest.mark.parametrize("status", [401, 404])
+def test_a_refused_token_is_final_no_retrying(engine, status):
+    """令牌对不上（4xx）：重连也没用，亮出「接不上了」，不画半张图、不排重试。"""
+    out = _boot(engine, BANNER + f"location.hash = '#OLD'; responses = [{_reply(0, status=status)}];")
+    assert _banner(out) == "GONE" and out["started"] == [] and out["timers"] == 0
+
+
+@pytest.mark.parametrize("first", ["null", _reply(0, status=503), _reply(0, status=500)])
+def test_a_fish_that_is_not_there_yet_is_retried_until_it_is(engine, first):
+    """连不上、服务说还没准备好：亮出「正在重连」，隔一会儿再要一份；要到了横幅收起、照常画图。"""
+    setup = BANNER + f"location.hash = '#T'; responses = [{first}];".replace("[null]", "[]")
+    waiting = _boot(engine, setup)
+    assert _banner(waiting) == "RETRY" and waiting["started"] == [] and waiting["timers"] == 1
+    back = _boot(engine, setup, f"responses.push({_reply(1)}); responses.push({HANG}); tick();")
+    assert _banner(back) == "" and back["started"] == [{"revision": 1, "kept": None}]
+    assert [c["path"] for c in back["calls"]] == ["/api/graph", "/api/graph", "/api/graph?after=1"]
+
+
+def test_losing_the_fish_later_keeps_the_map_and_reconnects_with_a_fresh_copy(engine):
+    """肥鱼退出 / 重启：图留着，横幅说正在重连；它回来后不带编号重新要一份（重启后编号从头数），原地重画、保留选中。"""
+    setup = BANNER + f"location.hash = '#T'; responses = [{_reply(5)}];"   # 第二个请求没人应
+    gone = _boot(engine, setup)
+    assert _banner(gone) == "RETRY" and len(gone["started"]) == 1 and gone["disposed"] == [] and gone["timers"] == 1
+    still = _boot(engine, setup, "tick();")                                # 还没回来：接着排下一次，不叠请求
+    assert _banner(still) == "RETRY" and still["timers"] == 1 and len(still["calls"]) == 3
+    back = _boot(engine, setup, f"tick(); responses.push({_reply(1)}); responses.push({HANG}); tick();")
+    assert [c["path"] for c in back["calls"]] == ["/api/graph", "/api/graph?after=5", "/api/graph", "/api/graph",
+                                                  "/api/graph?after=1"]
+    assert back["started"][-1] == {"revision": 1, "kept": {"selected": "seen-in-0"}} and _banner(back) == ""
+
+
+def test_a_hidden_tab_does_not_retry_until_it_is_shown(engine):
+    setup = BANNER + f"location.hash = '#T'; responses = [{_reply(1)}];"
+    hidden = _boot(engine, setup, "document.visibilityState = 'hidden'; tick();")
+    assert len(hidden["calls"]) == 2 and hidden["timers"] == 0              # 到点了但藏着：不敲门
+    shown = _boot(engine, setup, f"document.visibilityState = 'hidden'; tick(); responses.push({_reply(2)}); responses.push({HANG});"
+                                 "document.visibilityState = 'visible'; _docListeners.visibilitychange();")
+    assert [c["path"] for c in shown["calls"]][-2:] == ["/api/graph", "/api/graph?after=2"] and _banner(shown) == ""
 
 
 # ---------------------------------------------------------------- boot.js：离线快照
@@ -767,10 +801,10 @@ def test_a_check_that_did_not_happen_can_be_tried_again(engine, reply, state, te
 def test_lists_are_compact_by_default_with_a_fold_per_item_a_count_and_a_filter_when_long(engine):
     i18n.set_language("zh")
     graph = sources.build(samples.facts())
-    long = _details(engine, graph, "st_fish_free", "undefined")           # 17 条：筛选框出现
-    assert long.count('<div class="item" data-row=') == 17 and long.count('<dl class="more" hidden>') == 17
-    assert long.count('<button class="fold" data-toggle=') == 17 and 'aria-expanded="false">▸</button>' in long
-    assert '<span class="lcount">17 条</span>' in long and 'class="lfilter" data-filter="st_fish_free"' in long
+    long = _details(engine, graph, "st_fish_free", "undefined")           # 18 条：筛选框出现
+    assert long.count('<div class="item" data-row=') == 18 and long.count('<dl class="more" hidden>') == 18
+    assert long.count('<button class="fold" data-toggle=') == 18 and 'aria-expanded="false">▸</button>' in long
+    assert '<span class="lcount">18 条</span>' in long and 'class="lfilter" data-filter="st_fish_free"' in long
     assert '<button class="peek" data-expand-all="1">全部展开</button>' in long
     short = _details(engine, graph, "st_cc_win_local", "undefined")       # 5 条：有折叠、没有筛选框
     assert '<span class="lcount">5 条</span>' in short and 'lfilter' not in short and 'data-expand-all' in short

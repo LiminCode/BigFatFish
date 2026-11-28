@@ -2,7 +2,7 @@
 """配置全景的本机回环服务：生命周期与拒绝矩阵。
 
 用真实的回环套接字测（``http.client`` 能随意改 Host / Origin，正好冒充浏览器里的坏页面）。
-不用固定 sleep：空闲自停靠注入的假时钟推进，再等 ``stopped`` 事件，预算给宽。
+等事件不用固定 sleep，预算给宽。
 """
 from __future__ import annotations
 
@@ -126,38 +126,88 @@ def test_page_url_carries_the_token_in_the_fragment_only(server):
     assert "?" not in url
 
 
-def test_idle_server_stops_itself_and_reports_it():
-    now = [0.0]
-    stopped = threading.Event()
-    instance = srv.PanoramaServer(_router(), idle_seconds=300, clock=lambda: now[0], poll_seconds=0.02,
-                                  on_stop=stopped.set)
+def test_server_keeps_running_however_long_nobody_asks():
+    """不再空闲自停：标签页在后台放一晚上，回来时服务还在、令牌还认。"""
+    import time
+
+    instance = srv.PanoramaServer(_router(), poll_seconds=0.01)
     instance.start()
     try:
-        now[0] = 200.0
-        assert _call(instance)[0] == 200            # 一次有效请求把空闲计时拨回 200
-        now[0] = 450.0                              # 距上次有效请求 250 秒：还没到 300
-        assert _call(instance)[0] == 200
-        now[0] = 760.0                              # 距上次 310 秒
-        assert stopped.wait(WAIT)
-        assert not instance.running
+        assert not hasattr(instance, "_idle")       # 没有空闲计时这回事了
+        deadline = time.monotonic() + 0.3           # 让服务线程空转几十轮：没有哪一轮会让它停
+        while time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert instance.running and _call(instance)[0] == 200
     finally:
         instance.stop()
 
 
-def test_rejected_requests_do_not_keep_the_server_alive():
-    """坏页面不停地敲门，不能让服务一直开着。"""
-    now = [0.0]
-    stopped = threading.Event()
-    instance = srv.PanoramaServer(_router(), idle_seconds=300, clock=lambda: now[0], poll_seconds=0.02,
-                                  on_stop=stopped.set)
-    instance.start()
+# ---------------------------------------------------------------- 会话文件：令牌和端口跨重启
+
+def test_with_a_session_file_a_restart_keeps_the_same_port_and_token(tmp_path):
+    """肥鱼重启后旧标签页还认得路：同一个端口、同一个令牌。"""
+    session = tmp_path / "panorama-session.json"
+    first = srv.PanoramaServer(_router(), poll_seconds=0.02, session=session)
+    first.start()
+    port, token = first.port, first.token
+    first.stop()
+    assert json.loads(session.read_text("utf-8")) == {"port": port, "token": token}
+
+    second = srv.PanoramaServer(_router(), poll_seconds=0.02, session=session)
+    second.start()
     try:
-        now[0] = 200.0
-        assert _call(instance, token="wrong")[0] == 401
-        now[0] = 310.0                              # 距启动 310 秒；要是那次被拒的请求算数，这里才过了 110 秒
-        assert stopped.wait(WAIT)
+        assert (second.port, second.token) == (port, token)
+        assert _call(second, token=token)[0] == 200
+    finally:
+        second.stop()
+
+
+def test_a_taken_port_falls_back_to_a_free_one_and_the_file_follows(tmp_path):
+    import socket
+
+    session = tmp_path / "panorama-session.json"
+    squatter = socket.socket()
+    squatter.bind(("127.0.0.1", 0))
+    squatter.listen(1)
+    taken = squatter.getsockname()[1]
+    session.write_text(json.dumps({"port": taken, "token": "t" * 43}), "utf-8")
+    instance = srv.PanoramaServer(_router(), poll_seconds=0.02, session=session)
+    try:
+        instance.start()
+        assert instance.running and instance.port != taken
+        assert instance.token == "t" * 43                                   # 令牌照旧：换的只是端口
+        assert json.loads(session.read_text("utf-8")) == {"port": instance.port, "token": "t" * 43}
     finally:
         instance.stop()
+        squatter.close()
+
+
+@pytest.mark.parametrize("content", ["", "not json", "[]", '{"port": 80, "token": "' + "a" * 43 + '"}',
+                                     '{"port": 50000, "token": "short"}', '{"port": 50000, "token": "bad token with spaces!!!!!!!!!!!!!!!"}',
+                                     '{"port": "50000", "token": 7}'])
+def test_a_broken_session_file_is_replaced_with_a_fresh_one(tmp_path, content):
+    session = tmp_path / "panorama-session.json"
+    session.write_text(content, "utf-8")
+    instance = srv.PanoramaServer(_router(), poll_seconds=0.02, session=session)
+    instance.start()
+    try:
+        saved = json.loads(session.read_text("utf-8"))
+        assert saved == {"port": instance.port, "token": instance.token} and len(instance.token) >= 32
+    finally:
+        instance.stop()
+
+
+def test_without_a_session_file_every_start_still_gets_a_new_token(tmp_path):
+    instance = srv.PanoramaServer(_router(), poll_seconds=0.02)
+    instance.start()
+    old = instance.token
+    instance.stop()
+    instance.start()
+    try:
+        assert instance.token != old
+    finally:
+        instance.stop()
+    assert list(tmp_path.iterdir()) == []
 
 
 # ---------------------------------------------------------------- 放行

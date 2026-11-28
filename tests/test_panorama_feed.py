@@ -42,7 +42,14 @@ def test_waiting_times_out_with_nothing_when_no_one_publishes():
     feed = Feed()
     feed.publish(lambda revision: b"one")
     assert feed.wait_newer(1, timeout=0.05) is None
-    assert feed.wait_newer(7, timeout=0.05) is None                               # 页面记的编号比这里还新（服务重启过）：也只是等
+
+
+def test_a_page_holding_a_number_from_before_a_restart_gets_the_current_copy_at_once():
+    """页面记的编号比这里还新：那是肥鱼重启之前的编号（编号从头数了）。它手里那份不是这一份，马上给它现在的。"""
+    feed = Feed()
+    assert feed.wait_newer(7, timeout=0.05) is None                               # 还什么都没有：照常等
+    feed.publish(lambda revision: b"one")
+    assert feed.wait_newer(7, timeout=WAIT) == b"one"
 
 
 def test_a_waiter_is_woken_by_the_next_publish():

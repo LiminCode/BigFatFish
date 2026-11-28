@@ -1965,6 +1965,7 @@ class AppShell:
         self._apply_balance_timer()
         self._start_knowledge_sync()
         self._start_config_backup()
+        self._resume_panorama_later()
         self._sync_todo_service()
         # 先同步节日服务：报时服务在 start() 里会立刻 tick 一次，那一刻就需要能问到
         # "本分钟是否让位"。顺序反了会出现"报时先响、节日后响"从而两者都出声。
@@ -3579,6 +3580,24 @@ class AppShell:
             self._config_backup_sync.start()
         except Exception:  # noqa: BLE001 - 可选服务，缺失不阻断启动
             logging.exception("配置自动备份接线失败")
+
+    PANORAMA_RESUME_DELAY_MS = 5000
+
+    def _resume_panorama_later(self) -> None:
+        """用过配置全景的话，启动几秒后把本机服务按上次的端口和令牌起起来：肥鱼重启前开着的标签页自己重连上来。
+        只看会话文件在不在（一次 stat）；从没用过就什么都不建、不 import。晚几秒是为了不和启动抢界面线程。"""
+        from .panorama import SESSION_FILE
+
+        if not (Path(self.config.dir) / SESSION_FILE).is_file():
+            return
+
+        def resume() -> None:
+            try:
+                self._panorama().resume()
+            except Exception:  # noqa: BLE001 - 旁路：起不来只是旧标签页要从肥鱼里再打开一次
+                logging.exception("配置全景：启动时恢复本机服务失败")
+
+        QTimer.singleShot(self.PANORAMA_RESUME_DELAY_MS, resume)
 
     def open_config_panorama(self, focus: str = "") -> None:
         """打开「配置全景」：后台采一轮本机的 AI 配置，写成本地页面，用默认浏览器打开。

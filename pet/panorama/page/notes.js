@@ -8,15 +8,14 @@
 
    选中的那条记在 sessionStorage（刷新不丢）；肥鱼从提醒气泡「查看」开过来时网址片段里带 note=<名字>，进来就选中它。 */
 import {esc} from './util.js';
-import {takeToken, makeApi} from './client.js';
+import {takeToken, makeApi, follow, banner} from './client.js';
 import {filterNotes, countsHtml, filterChips, rowsHtml, detailHtml, repoHtml, watchHtml} from './notelist.js';
 
 (function () {
-  var RETRY_MS = 1000;
   var name = location.pathname.split('/').pop();
   var taken = takeToken('report-token'), token = taken.token, api = makeApi(token);
   var el = function (id) { return document.getElementById(id); };
-  var revision = 0, waiting = false, dead = false, S = {}, R = {};
+  var dead = false, S = {}, R = {};
   var filter = 'all', query = '', selected = '', selKey = 'notes-selected:' + name;
 
   (taken.extras || []).forEach(function (part) {      /* note=<名字>：肥鱼让这页直接翻到那一条 */
@@ -26,7 +25,7 @@ import {filterNotes, countsHtml, filterChips, rowsHtml, detailHtml, repoHtml, wa
   if (!selected) { try { selected = sessionStorage.getItem(selKey) || ''; } catch (e) { selected = ''; } }
 
   function remember() { try { sessionStorage.setItem(selKey, selected); } catch (e) { /* 隐私窗口：刷新后从头选 */ } }
-  function lost() { dead = true; waiting = false; el('lost').hidden = false; el('add').disabled = true; }
+  function gone() { dead = true; el('add').disabled = true; }   /* 令牌作废：重连也没用 */
   function say(text, cls) { el('status').textContent = text || ''; el('status').className = 'status' + (cls ? ' ' + cls : ''); }
 
   function current() {
@@ -71,7 +70,6 @@ import {filterNotes, countsHtml, filterChips, rowsHtml, detailHtml, repoHtml, wa
       el('search').placeholder = S.notes_search || '';
       paint();
     }
-    revision = data.revision;
   }
 
   function actionButton(action, busy) {
@@ -169,20 +167,7 @@ import {filterNotes, countsHtml, filterChips, rowsHtml, detailHtml, repoHtml, wa
     if (btn) generic(btn);
   });
 
-  function listen() {
-    if (waiting || dead || document.visibilityState !== 'visible') return;
-    waiting = true;
-    api('/api/report/' + name + '?after=' + revision).then(function (next) {
-      waiting = false;
-      if (next) { show(next); listen(); } else setTimeout(listen, RETRY_MS);
-    }).then(null, lost);
-  }
-
-  api('/api/report/' + name).then(function (data) {
-    if (!data) throw new Error('empty');
-    show(data);
-    if (selected) select(selected, true);
-    document.addEventListener('visibilitychange', listen);
-    listen();
-  }).then(null, lost);
+  follow(api, '/api/report/' + name, {
+    show: function (data, first) { show(data); if (first && selected) select(selected, true); },
+    trouble: banner(el('lost'), gone)});
 })();

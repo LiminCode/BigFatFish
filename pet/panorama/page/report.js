@@ -16,20 +16,19 @@
    先排成一行缩略图（点 × 去掉），「记下」时和文字一起发 [{type, data(base64)}]。超过 composer.images.max 张的不收、说一声；
    太大的图（> SHRINK_BYTES）先在画布上缩成长边 SHRINK_EDGE 的 JPEG 再收——服务那头单张只收 3 MB。 */
 import {esc} from './util.js';
-import {takeToken, makeApi} from './client.js';
+import {takeToken, makeApi, follow, banner} from './client.js';
 import {classify, passes, navTiles, filterChips, card} from './items.js';
 
 (function () {
-  var RETRY_MS = 1000;         /* 服务说「这段时间没有新数据」之后隔多久再去等：只为防止出错时空转 */
   var name = location.pathname.split('/').pop();
   var token = takeToken('report-token').token, api = makeApi(token);
   var el = function (id) { return document.getElementById(id); };
-  var revision = 0, waiting = false, dead = false, S = {};
+  var dead = false, S = {};
   var filters = [], hideDone = false, collapsed = {}, doneKey = '', done = {};
   var SHRINK_BYTES = 2500000, SHRINK_EDGE = 2000;
   var pictures = [], reading = 0, pictureRules = null;  /* 排着的图 [{type, data}]、还在读的张数；服务说的收图规矩（composer.images），没有就不收 */
 
-  function lost() { dead = true; waiting = false; el('lost').hidden = false; el('action').disabled = true; el('add').disabled = true; }
+  function gone() { dead = true; el('action').disabled = true; el('add').disabled = true; }   /* 令牌作废：重连也没用 */
 
   function load(key) { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 隐私窗口等：勾掉就只在这一次 */ } }
@@ -105,7 +104,6 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
       return '<details' + (i === 0 ? ' open' : '') + '><summary>' + esc(d.title) + '</summary><div class="d">' +
         String(d.html || '').split('__SETTINGS_URL__').join(settingsUrl) + '</div></details>';
     }).join('');
-    revision = data.revision;
   }
 
   /* 每张卡里顶层的每一条：分类、勾选框、正文包进 .body；然后按当前筛选显示 / 隐藏 */
@@ -165,15 +163,6 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
     collapsed[id] = !collapsed[id];
     if (section) { section.dataset.collapsed = collapsed[id] ? '1' : ''; fold.textContent = collapsed[id] ? '▸' : '▾'; fold.setAttribute('aria-expanded', !collapsed[id]); }
   });
-
-  function listen() {          /* 同一时刻只挂一个请求；标签页藏着或连接已断就不挂 */
-    if (waiting || dead || document.visibilityState !== 'visible') return;
-    waiting = true;
-    api('/api/report/' + name + '?after=' + revision).then(function (next) {
-      waiting = false;
-      if (next) { show(next); listen(); } else setTimeout(listen, RETRY_MS);
-    }).then(null, lost);
-  }
 
   function act(btn) {
     if (btn.disabled || dead) return;
@@ -277,10 +266,6 @@ import {classify, passes, navTiles, filterChips, card} from './items.js';
     if (btn) act(btn);
   });
 
-  api('/api/report/' + name).then(function (data) {
-    if (!data) throw new Error('empty');
-    show(data);
-    document.addEventListener('visibilitychange', listen);   /* 回到这个标签页时接着等（期间有新数据会立刻拿到） */
-    listen();
-  }).then(null, lost);
+  /* 先要现成的，再挂着等更新的；连不上就亮出「正在重连」、隔几秒再试（client.js 的 follow） */
+  follow(api, '/api/report/' + name, {show: show, trouble: banner(el('lost'), gone)});
 })();

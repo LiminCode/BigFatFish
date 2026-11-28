@@ -30,6 +30,7 @@
 """
 from __future__ import annotations
 
+from typing import Callable
 from urllib.parse import parse_qs
 
 from . import render
@@ -134,7 +135,9 @@ def _add_report_routes(router: Router, port, wait_seconds: float) -> None:
     router.add("GET", "/api/report/{name}", data)
 
 
-def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float = LONG_POLL_SECONDS) -> Router:
+def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float = LONG_POLL_SECONDS,
+                 collect: Callable[[], object] | None = None) -> Router:
+    """``collect``：发布台还是空的时候（肥鱼刚重启、开着的标签页重连上来）怎么现采一轮——不开浏览器，采完自己发布。"""
     router = Router()
     router.static("/", lambda: render.shell().encode("utf-8"), "text/html; charset=utf-8")
     for name, content_type in render.ASSETS.items():
@@ -145,8 +148,15 @@ def build_router(feed: Feed, *, files=None, settings=None, wait_seconds: float =
 
     def graph(request: Request) -> Response:
         after = parse_qs(request.query, keep_blank_values=True).get("after")
+        if feed.latest() is None and collect is not None:
+            try:
+                collect()
+            except Busy:                        # 界面线程这会儿腾不出手：页面过几秒再来
+                raise HttpError(503, "not_ready") from None
         if after is None:
             body = feed.latest()
+            if body is None and collect is not None:
+                body = feed.wait_newer(0, wait_seconds)     # 第一段发布只要零点几秒：等到就直接回，省页面一轮重试
             if body is None:
                 raise HttpError(503, "not_ready")
             return Response(200, body, JSON_TYPE)
