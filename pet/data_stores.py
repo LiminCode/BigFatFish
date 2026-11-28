@@ -236,6 +236,8 @@ STORES: tuple[Store, ...] = (
     Store("probe_cache", "personal", "data", ("harness_probe_cache.json", "balance_cache.json"), "cache",
           ("harness_launcher", "app"), _REBUILD),
     Store("panorama_snapshot", "mixed", "data", ("panorama/*",), "cache", ("panorama",), _REBUILD),
+    Store("panorama_session", "personal", "data", ("panorama-session.json", "panorama-session.json.tmp"), "state",
+          ("panorama",), _DISPOSABLE),
     # ── 日志、锁和标记 ──
     Store("logs", "personal", "data", ("pet-*.log*", "pet-overlay-gate.log"), "log", ("app", "overlay_instance_gate"), _DISPOSABLE),
     Store("settings_audit", "mixed", "data", ("settings-audit.jsonl",), "log", ("settings_audit",), _DISPOSABLE),

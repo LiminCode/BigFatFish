@@ -123,6 +123,37 @@ def test_a_held_request_is_answered_the_moment_new_data_is_published():
         instance.stop()
 
 
+def test_a_page_that_comes_back_before_anything_was_collected_starts_a_round_and_gets_its_result():
+    """肥鱼刚重启、发布台是空的，开着的标签页重连上来：现采一轮（不开浏览器），等到第一段发布就回给它。"""
+    i18n.set_language("zh")
+    feed = Feed()
+    asked = []
+
+    def collect():                       # 真实的那一个把活交给界面线程、起后台线程；这里另起线程晚一点发布，不赌先后
+        asked.append(True)
+        threading.Thread(target=lambda: _publish(feed), daemon=True).start()
+
+    instance = _serve(feed, wait_seconds=WAIT, collect=collect)
+    try:
+        status, _type, body = _get(instance, "/api/graph")
+        assert status == 200 and json.loads(body)["revision"] == 1 and asked == [True]
+        assert _get(instance, "/api/graph?after=7")[0] == 200                  # 有了之后：手里是重启前的编号，马上给现在这份
+        assert asked == [True]                                                  # 已经有数据了：不再另起一轮
+    finally:
+        feed.close()
+        instance.stop()
+
+
+def test_a_round_that_cannot_start_leaves_the_page_with_not_ready():
+    feed = Feed()
+    instance = _serve(feed, wait_seconds=0.05, collect=lambda: None)          # 起了也没发布（比如正忙）
+    try:
+        assert _get(instance, "/api/graph")[0] == 503
+    finally:
+        feed.close()
+        instance.stop()
+
+
 def test_closing_the_feed_lets_held_requests_go():
     """退出应用：挂着的请求马上放回去（204），不拖着线程等满。"""
     feed = Feed()

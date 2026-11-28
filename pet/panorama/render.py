@@ -97,7 +97,7 @@ NOTES_KEYS = ("report_lost", "report_action_started", "report_action_busy", "rep
               "notes_folder_opened", "notes_no_link", "notes_missing", "notes_lost",
               "notes_watch_last", "notes_watch_found", "notes_watch_next", "notes_watch_never", "notes_watch_busy")
 #: 复习页的界面文字（卡片上的字、三个回答之后的那句、推送按钮和它的回答）
-REVIEW_KEYS = ("report_lost", "review_left", "review_show", "review_points", "review_words", "review_counts", "review_push",
+REVIEW_KEYS = ("report_lost", "report_action_lost", "review_left", "review_show", "review_points", "review_words", "review_counts", "review_push",
                "review_keys", "review_graded", "review_busy", "review_missing", "review_failed", "review_flush_started",
                "review_flush_busy", "review_flush_empty", "review_flush_missing")
 PAGE_STRING_KEYS = {"report": REPORT_KEYS, "notes": NOTES_KEYS, "review": REVIEW_KEYS}
@@ -170,23 +170,23 @@ def report_payload(report: dict, *, revision: int = 0, page: str = "report") -> 
 
 
 def report_shell(page: str = "report") -> str:
-    """报告页 / 笔记页的外壳：公开的静态文件，没有数据，只有结构、语言、临时标题（页面拿到数据后再换）和「连接断了」那句话。
+    """报告页 / 笔记页的外壳：公开的静态文件，没有数据，只有结构、语言、临时标题（页面拿到数据后再换）和「正在重连」「接不上了」那两句话。
     ``page`` 是 ``PAGE_SHELLS`` 里的一种；不认识的当 report。"""
     shell_name, script_tag = PAGE_SHELLS.get(page, PAGE_SHELLS["report"])
     page = (PAGE_DIR / shell_name).read_text(encoding="utf-8")
     if script_tag not in page:
         raise RuntimeError("report shell lost its script tag")
     return page.replace("__LANG__", _language()).replace("__TITLE__", _html(L("ui.report_shell_title"))).replace(
-        "__LOST__", _html(L("ui.report_lost")))
+        "__LOST__", _html(L("ui.report_lost"))).replace("__RETRY__", _html(L("ui.reconnecting")))
 
 
 def shell() -> str:
-    """本机服务发的页面外壳：没有数据，只有结构、语言、标题和「连接断了」那句话。"""
+    """本机服务发的页面外壳：没有数据，只有结构、语言、标题和「正在重连」「接不上了」那两句话。"""
     page = (PAGE_DIR / "shell.html").read_text(encoding="utf-8")
     if STYLE_LINK not in page or SCRIPT_TAGS not in page:
         raise RuntimeError("panorama shell lost its style or script tags")
     return page.replace("__LANG__", _language()).replace("__TITLE__", _html(L("ui.window_title"))).replace(
-        "__LOST__", _html(L("ui.lost")))
+        "__LOST__", _html(L("ui.lost"))).replace("__RETRY__", _html(L("ui.reconnecting")))
 
 
 def render(graph: dict) -> str:

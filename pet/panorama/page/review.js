@@ -5,7 +5,7 @@
    （1 / 2 / 3），每个按钮上写着选它下次几天后再见。动作一律 POST /api/actions/review {op, path?, answer?}：
    grade（打分）/ flush（现在推送）。页面不自己改列表，等服务的新数据。 */
 import {esc} from './util.js';
-import {takeToken, makeApi} from './client.js';
+import {takeToken, makeApi, follow, banner} from './client.js';
 
 /* 一张卡的 HTML。revealed：答案露没露出来；busy：刚点了回答，等服务回话时按钮灰着 */
 export function cardHtml(card, revealed, busy, left, S) {
@@ -27,13 +27,12 @@ export function cardHtml(card, revealed, busy, left, S) {
 
 (function () {
   if (typeof document === 'undefined' || !document.getElementById('card')) return;
-  var RETRY_MS = 1000;
   var taken = takeToken('report-token'), token = taken.token, api = makeApi(token);
   var el = function (id) { return document.getElementById(id); };
-  var revision = 0, waiting = false, dead = false, S = {}, R = {};
+  var dead = false, S = {}, R = {};
   var shownPath = '', revealed = false, busy = false;
 
-  function lost() { dead = true; waiting = false; el('lost').hidden = false; el('push').disabled = true; }
+  function gone() { dead = true; el('push').disabled = true; }   /* 令牌作废：重连也没用 */
   function say(text, cls) { el('status').textContent = text || ''; el('status').className = 'status' + (cls ? ' ' + cls : ''); }
   function card() { return (R.cards || [])[0] || null; }
 
@@ -64,7 +63,6 @@ export function cardHtml(card, revealed, busy, left, S) {
     el('keys').hidden = !c;
     el('keys').textContent = S.review_keys || '';
     paint();
-    revision = data.revision;
   }
 
   function reveal() { if (card() && !revealed) { revealed = true; paint(); } }
@@ -78,7 +76,7 @@ export function cardHtml(card, revealed, busy, left, S) {
       if (state === 'graded') { say(String(S.review_graded || '').replace('{next}', b.next || ''), 'ok'); return; }
       busy = false; paint();
       say(S['review_' + state] || S.review_failed || '', 'bad');
-    }).then(null, function () { busy = false; paint(); say(S.report_lost || '', 'bad'); });
+    }).then(null, function () { busy = false; paint(); say(S.report_action_lost || '', 'bad'); });
   }
 
   el('card').addEventListener('click', function (event) {
@@ -101,22 +99,8 @@ export function cardHtml(card, revealed, busy, left, S) {
       var state = (r.body || {}).state;
       el('push').disabled = false;
       say(S['review_flush_' + state] || S.review_failed || '', state === 'started' ? '' : 'bad');
-    }).then(null, function () { el('push').disabled = false; say(S.report_lost || '', 'bad'); });
+    }).then(null, function () { el('push').disabled = false; say(S.report_action_lost || '', 'bad'); });
   });
 
-  function listen() {
-    if (waiting || dead || document.visibilityState !== 'visible') return;
-    waiting = true;
-    api('/api/report/review?after=' + revision).then(function (next) {
-      waiting = false;
-      if (next) { show(next); listen(); } else setTimeout(listen, RETRY_MS);
-    }).then(null, lost);
-  }
-
-  api('/api/report/review').then(function (data) {
-    if (!data) throw new Error('empty');
-    show(data);
-    document.addEventListener('visibilitychange', listen);
-    listen();
-  }).then(null, lost);
+  follow(api, '/api/report/review', {show: show, trouble: banner(el('lost'), gone)});
 })();

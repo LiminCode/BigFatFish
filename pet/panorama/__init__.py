@@ -11,3 +11,7 @@
 
 命令行：``python -m pet.panorama [--no-wsl] [--no-open]``。
 """
+
+#: 本机服务的端口和令牌记在数据目录的这个文件里（见 ``server.py``）。放在包这一层：应用启动时只拿它查一次文件在不在，
+#: 不用把采集、渲染那一大串 import 进来。丢了只是旧标签页要从肥鱼里再打开一次（存储表：disposable）。
+SESSION_FILE = "panorama-session.json"

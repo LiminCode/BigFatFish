@@ -241,9 +241,14 @@ def test_a_newer_copy_redraws_in_place_keeping_the_selection_and_nothing_new_ret
     assert out["dom"]["rows"].count('<a class="row') == 2 and 'data-note="n2" aria-current="true"' in out["dom"]["rows"]
 
 
-def test_losing_the_service_says_so_and_disables_saving(engine):
+def test_losing_the_service_says_it_is_reconnecting_and_keeps_saving(engine):
     out = _page(engine, [_ok(_payload())])
-    assert out["dom"]["lost"] is False and out["dom"]["addDisabled"] is True
+    assert out["dom"]["lost"] is False and not out["dom"].get("addDisabled") and out["timers"] == 1
+
+
+def test_a_refused_token_says_so_and_disables_saving(engine):
+    out = _page(engine, [_ok(_payload()), '{"status": 401}'])
+    assert out["dom"]["lost"] is False and out["dom"]["addDisabled"] is True and out["timers"] == 0
 
 
 def test_the_watch_strip_and_its_check_button_use_the_report_action_channel(engine):
